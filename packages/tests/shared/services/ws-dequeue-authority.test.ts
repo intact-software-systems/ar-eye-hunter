@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -40,7 +41,7 @@ describe('WS first dequeue authority', () => {
         async (shape) => {
             const fixture = createFixture();
             const message = createMessage(shape.startsWith('canonical') ? 'broadcast' : 'unicast');
-            const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
             expect(decodePersistedALMessage(raw.resource)).toEqual(message);
             const entry = shape.startsWith('canonical')
                 ? { ...raw, key: toALOutboundCanonicalKey(fixture.stores.admissionStore.canonicalScope, message) }
@@ -86,7 +87,7 @@ describe('WS first dequeue authority', () => {
             }
 
             const observed = shape === 'colliding-raw'
-                ? QueueBoxUtilities.toResourceEntryFromMsg(older, EnqueuedType.WS_OUTBOX)
+                ? QueueBoxUtilities.toResourceEntryFromMsg(older, EnqueuedType.WS_OUTBOX, Temporal.Now.instant())
                 : { ...completed, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } };
             if (shape === 'colliding-raw') {
                 await fixture.stores.workQueue.enqueue(observed);
@@ -110,7 +111,7 @@ describe('WS first dequeue authority', () => {
     it('captures verified scoped unicast at the real dequeue boundary', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(() => fixture.native.sent.length).toBe(1);
@@ -124,7 +125,7 @@ describe('WS first dequeue authority', () => {
             qos: { durability: { algo: 'local-outbox' } },
             groupRef: { ...SCOPE, groupId: 'room' }
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
@@ -134,7 +135,7 @@ describe('WS first dequeue authority', () => {
     it('captures an explicitly empty frozen audience without widening it to the connected target', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: [], recipientScope: SCOPE }));
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => fixture.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(true);
@@ -149,7 +150,7 @@ describe('WS first dequeue authority', () => {
             return { admittedAudience: ['peer'], recipientScope: SCOPE };
         }, stores);
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);

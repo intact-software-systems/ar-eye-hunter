@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -403,7 +404,8 @@ describe('topology AppInbox transaction and idempotency', () => {
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(
             message,
-            EnqueuedType.APP_INBOX
+            EnqueuedType.APP_INBOX,
+            Temporal.Now.instant()
         );
         const handler = new TopologyAppInboxHandler({
             groupStateService: harness.groupStateService,

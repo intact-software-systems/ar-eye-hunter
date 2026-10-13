@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     expect,
@@ -11,14 +12,15 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+import '../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    holdOutboundClaims
+    holdOutboundClaims,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -55,7 +57,12 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     };
     const store = createALOutboundAdmissionStore(options);
     const stores = { admissionStore: store, workQueue: backend.workQueue };
-    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
+    const competitor = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('competing-sender-version'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const commit = store.commitBundle.bind(store);
     let first = true;
     // A competing sender wins the version fence inside the first commit, so the admission below is

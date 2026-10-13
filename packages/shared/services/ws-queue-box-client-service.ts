@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import { AL_WS_CLIENT_CAPABILITIES, toALCarrierQosInputProvider } from '../al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { isALControlTypeId } from '../al-contracts/al-control-type-ids.ts';
@@ -18,11 +20,11 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import type {
-    ALInboundRuntimeStores,
-    ALVolatileInboundRuntimeStores
+import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
 } from '../alm/inbound/al-inbound-message-runtime.ts';
-import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
 import {
     recordALInboundDiagnostic,
@@ -32,20 +34,16 @@ import {
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
-    writeALOutboundCongestionDeferral,
-    type ALOutboundCancelOutcome
-} from '../alm/outbound/al-outbound-message-runtime.ts';
-import type {
-    ALCheckpointOutboundRuntimeStores,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores,
-    ALVolatileOutboundRuntimeStores
-} from '../alm/outbound/al-outbound-message-runtime.ts';
-import {
     ALOutboundMessageRuntime,
+    writeALOutboundCongestionDeferral,
+    type ALCheckpointOutboundRuntimeStores,
+    type ALOutboundCancelOutcome,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
-    type ALOutboundSettledSendResult
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundRuntimeStores,
+    type ALOutboundSettledSendResult,
+    type ALVolatileOutboundRuntimeStores
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -128,6 +126,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Input {
+        readonly creationNow?: QueueBoxUtilities.CreationClock;
         /** Standalone transports may have no domain prerequisite; browser composition supplies room readiness. */
         readonly readSubmissionIneligibility?: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
@@ -160,6 +159,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly readSubmissionIneligibility: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
@@ -235,7 +235,8 @@ export class WsQueueBoxClientService {
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+                        this.dependencies.creationNow()
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 // A plan without authority is a new admission's; a retained message is planned with its captured one.
@@ -250,7 +251,8 @@ export class WsQueueBoxClientService {
                     return await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
                             msg,
-                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+                            this.dependencies.creationNow()
                         ),
                         lifecycle
                     );
@@ -524,7 +526,11 @@ export class WsQueueBoxClientService {
         if (!this.isSocketOpen()) {
             return 'socket-closed';
         }
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(
+            message,
+            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+            this.dependencies.creationNow()
+        );
         this.socket.sendAsJsonString(entry.resource);
         return 'sent';
     }
@@ -722,7 +728,9 @@ export class WsQueueBoxClientService {
 }
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
+    const creationNow = input.creationNow ?? Temporal.Now.instant;
     return new WsQueueBoxClientService({
+        creationNow,
         readSubmissionIneligibility: input.readSubmissionIneligibility ?? (() => undefined),
         submissionReadinessFaultPort: input.submissionReadinessFaultPort ??
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
@@ -735,7 +743,8 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX),
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, creationNow()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({

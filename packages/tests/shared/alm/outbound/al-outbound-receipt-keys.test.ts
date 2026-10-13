@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
+import { Temporal } from '@js-temporal/polyfill';
 import 'fake-indexeddb/auto';
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -20,9 +25,13 @@ import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { computeOutboundTestAdmission } from '../outbound-runtime-test-fixture.ts';
 
-type ReceiptTestStores = ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+import { readOutboundTestAdmission } from '../outbound-runtime-test-fixture.ts';
+
+interface ReceiptTestObligation {
+    readonly mode: ALOutboundPendingAckSnapshot['mode'];
+    readonly expectedPeerIds: readonly string[];
+}
 
 const ORIGIN = 'origin';
 const RELAY = 'relay';
@@ -31,7 +40,7 @@ const ALREADY_COUNTED = 'confirms a peer the receipt already counted';
 
 let indexedDbCount = 0;
 
-const BACKENDS: readonly (readonly [string, () => ReceiptTestStores])[] = [
+const BACKENDS: readonly (readonly [string, () => ALOutboundRuntimeStores<ALOutboundTransportMessage>])[] = [
     ['memory', () =>
         createDefaultInMemoryALOutboundRuntimeStores({
             namespace: 'receipt-keys',
@@ -59,8 +68,8 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             settlements: (fact) => settlements.push(fact)
         });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
-        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(createRelayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
 
         expect(await stores.admissionStore.readReceiptState({ originPeerId: ORIGIN, msgId: MSG_ID }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['r1', 'r2'], ackedPeerIds: ['r1', 'r2'] });
@@ -76,7 +85,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             complete: true
         });
 
-        const repeat = await control.admit(relayAck('r1', 'ack-r1-repeat'), 'peer');
+        const repeat = await control.admit(createRelayAck('r1', 'ack-r1-repeat'), 'peer');
         expect(repeat.kind).toBe('rejected');
         expect(repeat.kind === 'rejected' && repeat.reason).toContain('already admitted');
     });
@@ -87,7 +96,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
 
         // A hop ACK names the hop itself; under `receiver` it is never a logical confirmation.
-        const hop = await control.admit(relayAck(RELAY, 'ack-hop'), 'peer');
+        const hop = await control.admit(createRelayAck(RELAY, 'ack-hop'), 'peer');
 
         expect(hop).toEqual({
             kind: 'rejected',
@@ -108,9 +117,9 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             settlements: (fact) => settlements.push(fact)
         });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
         // Not a duplicate (another recipient), but the hop is already counted: refused without a write.
-        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({
+        expect(await control.admit(createRelayAck('r2', 'ack-r2'), 'peer')).toEqual({
             kind: 'rejected',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
@@ -127,13 +136,13 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         await seedObligation(stores.admissionStore, { mode: 'receiver', expectedPeerIds: ['r1', 'r2'] });
         const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(createRelayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
         // Another relay's ACK for `r1` is not a duplicate by key, but `r1` is already counted.
-        expect(await control.admit(relayAck('r1', 'ack-r1-other-relay', 'other-relay'), 'peer')).toEqual({
+        expect(await control.admit(createRelayAck('r1', 'ack-r1-other-relay', 'other-relay'), 'peer')).toEqual({
             kind: 'rejected',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
-        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(createRelayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
     });
 
     it('keeps two origins\' pending rows for one msgId apart in one namespace', async () => {
@@ -145,7 +154,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
                     mutations: [{
                         kind: 'set-pending-ack',
                         originPeerId,
-                        snapshot: toPendingSnapshot({ mode: 'receiver', expectedPeerIds }),
+                        snapshot: toPendingSnapshot({ mode: 'receiver', expectedPeerIds }, Date.now()),
                         expireAtTimestamp: Date.now() + 30_000
                     }],
                     durableEffects: []
@@ -160,11 +169,6 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
     });
 });
 
-interface ReceiptTestObligation {
-    readonly mode: ALOutboundPendingAckSnapshot['mode'];
-    readonly expectedPeerIds: readonly string[];
-}
-
 async function seedObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
     obligation: ReceiptTestObligation
@@ -177,7 +181,12 @@ async function seedObligation(
         targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
         constraints: { expiresAtMs: Date.now() + 30_000 }
     };
-    const admission = await computeOutboundTestAdmission(admissionStore, msg);
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     expect(
         await admissionStore.commitBundle({
             ...admission,
@@ -186,7 +195,7 @@ async function seedObligation(
                 {
                     kind: 'set-pending-ack',
                     originPeerId: ORIGIN,
-                    snapshot: toPendingSnapshot(obligation),
+                    snapshot: toPendingSnapshot(obligation, Date.now()),
                     expireAtTimestamp: Date.now() + 30_000
                 }
             ],
@@ -195,7 +204,7 @@ async function seedObligation(
     ).toBe('committed');
 }
 
-function toPendingSnapshot(obligation: ReceiptTestObligation): ALOutboundPendingAckSnapshot {
+function toPendingSnapshot(obligation: ReceiptTestObligation, observedAtMs: number): ALOutboundPendingAckSnapshot {
     return {
         msgId: MSG_ID,
         mode: obligation.mode,
@@ -204,12 +213,12 @@ function toPendingSnapshot(obligation: ReceiptTestObligation): ALOutboundPending
         timeoutMs: 2_000,
         maxAttempts: 3,
         attempts: 0,
-        deadlineAtMs: Date.now() + 2_000
+        deadlineAtMs: observedAtMs + 2_000
     };
 }
 
 /** The relay re-originates one ACK per logical recipient it confirmed, each from itself. */
-function relayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
+function createRelayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
     return newALAckControlMessage(
         { v: 3, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now() },
         {

@@ -1,12 +1,22 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -35,6 +45,12 @@ interface LeaseRecoveryRun {
     readonly recoveredAtMs: number[];
     /** How many rows each of those sweeps returned. */
     readonly recoveredRowCounts: number[];
+}
+
+interface CrashedLeaseInput {
+    readonly resourceId: string;
+    readonly attempts: number;
+    readonly startMs: number;
 }
 
 afterEach(() => {
@@ -238,17 +254,12 @@ function recordLeaseSweeps(
     return recorded;
 }
 
-interface CrashedLeaseInput {
-    readonly resourceId: string;
-    readonly attempts: number;
-    readonly startMs: number;
-}
-
 /** A dequeue row an owner reserved at `startMs` and never released, as a crashed owner leaves it; returns its lease end. */
 async function writeCrashedLease(run: LeaseRecoveryRun, input: CrashedLeaseInput): Promise<number> {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
         createOutboundMessage(input.resourceId, { ttlMs: MESSAGE_TTL_MS }),
-        DEQUEUE_TYPE
+        DEQUEUE_TYPE,
+        Temporal.Now.instant()
     );
     await run.queue.enqueueIfAbsent(toReservedEntry(entry, input.startMs, input.attempts));
     return input.startMs + AL_OUTBOUND_WORK_LEASE_MS;
@@ -262,8 +273,8 @@ function toReservedEntry(entry: ResourceEntry, startMs: number, attempts: number
     };
 }
 
-function toCrashedKey(resourceId: string) {
-    return createOutboundMessage(resourceId).route;
+function toCrashedKey(resourceId: string): Key {
+    return { topicId: 'chat', resourceId, contextId: 'conversation-1' };
 }
 
 async function advanceUntilRecovered(run: LeaseRecoveryRun): Promise<number> {

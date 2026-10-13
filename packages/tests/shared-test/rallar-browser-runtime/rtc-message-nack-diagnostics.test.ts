@@ -1,9 +1,11 @@
-import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import {
-    createOutboundWorkPort
-} from '../../shared/alm/outbound-runtime-test-fixture.ts';
-import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { readBlackBoxRtcMessageNacks } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores, resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -11,13 +13,10 @@ import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+
 import '../../setup-browser-indexeddb.ts';
+import { createOutboundWorkPort, readOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -91,7 +90,12 @@ async function admitAttemptedMessage(
         payload: { typeId: 'diagnostic-test', resource: '{}' },
         constraints: { expiresAtMs: nowMs + 30_000 }
     };
-    const bundle = await computeOutboundTestAdmission(store, message);
+    const bundle = await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     await store.commitBundle({
         ...bundle,
         mutations: [

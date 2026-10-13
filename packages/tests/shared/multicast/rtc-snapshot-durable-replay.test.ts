@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
@@ -12,14 +22,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
 interface ReplayObservedState {
@@ -371,7 +374,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         stores,
         queueEngine: engine,
         planIncomingMessage: planner,
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

@@ -1,7 +1,5 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
-import { computeOutboundTestAdmission } from './alm/outbound-runtime-test-fixture.ts';
+import { Temporal } from '@js-temporal/polyfill';
 // @vitest-environment happy-dom
-
 import {
     beforeEach,
     describe,
@@ -15,6 +13,7 @@ import {
     createTestALInboundControlAdmission,
     createTestALInboundWorkPort
 } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -22,6 +21,7 @@ import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inboun
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     ALOutboundMessageRuntime,
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -45,16 +45,16 @@ import {
     type ALOutboundPlanner,
     type ResourceEntry
 } from '@shared/mod.ts';
-
-import '../setup-browser-indexeddb.ts';
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+
 import {
     createOutboundRuntimeWithWorkTask,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
-    peekOutboundWorkReadyAt
+    peekOutboundWorkReadyAt,
+    readOutboundTestAdmission
 } from './alm/outbound-runtime-test-fixture.ts';
+import '../setup-browser-indexeddb.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -223,7 +223,7 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                     ...observations
                 }),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
             dispatchInboxEntry: async (entry) => {
                 const msg = decodePersistedALMessage(entry.resource);
                 dispatchedMsgIds.push(msg.id.msgId);
@@ -506,7 +506,12 @@ describe('IndexedDB AL runtime stores', () => {
         const msg = createOutboundUnicastMessage('msg-outbound-ephemeral-retention');
         const planner = createOutboundPlanner();
 
-        const bundle = await computeOutboundTestAdmission(admissionStore, msg);
+        const bundle = await readOutboundTestAdmission({
+            store: admissionStore,
+            message: msg,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(
             await admissionStore.commitBundle({
                 ...bundle,
@@ -808,7 +813,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInb
                 fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
@@ -850,7 +855,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALO
                 namespace,
                 decodePrepared: decodeOutboundTestPayload
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({

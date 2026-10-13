@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -179,7 +180,7 @@ describe('exact RTC ACK boundary observations', () => {
             });
 
             try {
-                const snapshot = toOriginDirectedSnapshot(createOriginSnapshot(topology.map(([sessionId]) => sessionId), 1), 'director');
+                const snapshot = toOriginDirectedSnapshot(createOriginSnapshot(topology.map(([sessionId]) => sessionId), 1), 'director', Date.now());
                 const overlayId = toScopedOverlayId(ORIGIN_ROOM);
                 for (const [sessionId, peerIds] of topology) {
                     const faultPort = createPassThroughTransportFaultPort();
@@ -215,6 +216,8 @@ describe('exact RTC ACK boundary observations', () => {
                     });
                     outboundResources.set(sessionId, resources);
                     const manager = new WebRtcOverlayMulticastManager({
+                        quotaNow: Date.now,
+                        creationNow: Temporal.Now.instant,
                         connectionService: connection.service,
                         groupCache,
                         overlayCache,
@@ -260,7 +263,7 @@ describe('exact RTC ACK boundary observations', () => {
                             nowMs: relayNowMs,
                             queueEngine: engine,
                             selfPeerId: sessionId,
-                            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX),
+                            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX, Temporal.Now.instant()),
                             random: () => 0.5
                         })
                         : undefined;

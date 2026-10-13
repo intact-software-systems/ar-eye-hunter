@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -575,12 +576,15 @@ class RtcReceiveFixture {
     private readonly overlays = new shared.LatestRepository<string, shared.OverlayInfo>();
     private readonly ready: Promise<void[]>;
     private readonly inboundBatches = new ALWorkBatchTestObserver();
-    private closing: Promise<void> | undefined;
+    private readonly openings: Promise<void>[] = [];
 
     constructor(
         stores = shared.createDefaultInMemoryALInboundRuntimeStores(),
         roomAuthorityRefresh?: shared.WebRtcRxStreamerService.Input['roomAuthorityRefresh']
     ) {
+        onTestFinished(() => this.nativeRuntime.dispose());
+        onTestFinished(() => this.groups.dispose());
+        onTestFinished(() => this.overlays.dispose());
         this.stores = stores;
         this.connection = createNativeRtcConnectionFixture(
             {
@@ -593,8 +597,11 @@ class RtcReceiveFixture {
             this.nativeRuntime,
             createPassThroughTransportFaultPort()
         );
+        onTestFinished(() => this.connection.dispose());
         this.observeRoomAuthority();
         this.multicast = new shared.WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: this.connection.service,
             groupCache: this.groups,
             overlayCache: this.overlays,
@@ -608,6 +615,7 @@ class RtcReceiveFixture {
             faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
+        onTestFinished(() => this.multicast.dispose());
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsSink = Object.assign(() => {}, {
             acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: this.inboundBatches.batchObservations }
         });
@@ -618,18 +626,27 @@ class RtcReceiveFixture {
             inboundDiagnostics,
             roomAuthorityRefresh
         });
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([this.service.dispose(), ...this.openings]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
+        });
         this.service.setRttReportingPeerIds([]);
-        const openings: Promise<void>[] = [];
+        this.startPeers();
+        this.ready = Promise.all(this.openings);
+        void this.ready.catch(() => undefined);
+    }
+
+    private startPeers(): void {
         for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
             this.connection.service.ensurePeerConnectionStarted(peerId, true);
             this.service.addPeer(this.connection.service.readPeer(peerId)!);
-            openings.push(this.connection.nativePeer(peerId).channels[0].open());
+            const opening = this.connection.nativePeer(peerId).channels[0].open();
+            void opening.catch(() => undefined);
+            this.openings.push(opening);
         }
-        this.ready = Promise.all(openings);
-        void this.ready.catch(() => undefined);
-        onTestFinished(async () => {
-            await this.close();
-        });
     }
 
     private observeRoomAuthority(): void {
@@ -669,35 +686,6 @@ class RtcReceiveFixture {
         return this.connection.service.knownPeerIds().flatMap((peerId) =>
             this.connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)))
         );
-    }
-
-    private close(): Promise<void> {
-        this.closing ??= this.closeOwnedResources();
-        return this.closing;
-    }
-
-    private async closeOwnedResources(): Promise<void> {
-        const outcomes = await Promise.allSettled([this.service.dispose(), this.multicast.dispose(), this.ready]);
-        const rejected = outcomes.find((outcome) => outcome.status === 'rejected');
-        let failure = rejected?.status === 'rejected' ? toError(rejected.reason) : undefined;
-        for (
-            const dispose of [
-                () => this.connection.dispose(),
-                () => this.groups.dispose(),
-                () => this.overlays.dispose(),
-                () => this.nativeRuntime.dispose()
-            ]
-        ) {
-            try {
-                dispose();
-            }
-            catch (caught) {
-                failure ??= toError(caught);
-            }
-        }
-        if (failure) {
-            throw failure;
-        }
     }
 }
 
@@ -828,8 +816,9 @@ interface ConnectedEndpoints {
 
 function createConnectedEndpoints(): ConnectedEndpoints {
     const sender = new RtcEndpointFixture('sender', 'receiver');
+    endpoints.push(sender);
     const receiver = new RtcEndpointFixture('receiver', 'sender');
-    endpoints.push(sender, receiver);
+    endpoints.push(receiver);
     sender.connect(receiver);
     receiver.connect(sender);
     return { sender, receiver };

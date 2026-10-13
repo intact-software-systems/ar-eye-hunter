@@ -1,6 +1,4 @@
-// @vitest-environment happy-dom
-
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     expect,
@@ -9,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+// @vitest-environment happy-dom
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores
@@ -35,8 +34,7 @@ import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-
+import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import '../../setup-browser-indexeddb.ts';
 import { captureOutboundWorkRunnable, peekOutboundWorkReadyAt } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
@@ -266,6 +264,8 @@ class RtcRecoveryOwner {
         }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: this.connection,
             groupCache: this.groups,
             overlayCache: this.overlays,

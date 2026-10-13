@@ -1,8 +1,15 @@
+import { Temporal } from '@js-temporal/polyfill';
+import assert from 'node:assert/strict';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { AppInboxReservationConflictError, AppInboxType, type AppInboxExecutionMetadata } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxReservationConflictError,
+    AppInboxType,
+    type AppInboxExecutionMetadata
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
-import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { computeAppInboxCompletion, validateAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
@@ -10,7 +17,8 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import assert from 'node:assert/strict';
+
+import { createAppInboxQueueMessageFixture } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
 import { createResourceEntry, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 for (const owner of ['handler', 'retry-finalizer'] as const) {
@@ -25,7 +33,10 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
                 data: { requestId: `conflict-${owner}` }
             } as const;
             const entry: ResourceEntry = {
-                ...toAppInboxResourceEntry(enqueue, 'conflict-test'),
+                ...createAppInboxResourceEntry(enqueue, 'conflict-test', {
+                    creationNow: Temporal.Now.instant,
+                    createMessage: createAppInboxQueueMessageFixture
+                }),
                 status: EntityStatus.RESERVED,
                 dequeueAudit: { attempts: 2 }
             };

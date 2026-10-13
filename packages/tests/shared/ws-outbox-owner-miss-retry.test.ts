@@ -194,13 +194,13 @@ describe('durable WS outbox owner misses', () => {
                 { peerId: 'writer-session', connectionId: 'writer-session' }
             ]
         });
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: nonOwner,
             bridge: bus,
             channel: 'ws',
             publisherId: 'non-owner'
         });
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: owner,
             bridge: bus,
             channel: 'ws',
@@ -240,7 +240,7 @@ describe('durable WS outbox owner misses', () => {
                 { peerId: 'remote-session', connectionId: 'remote-session' }
             ]
         });
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: claimant,
             bridge: bus,
             channel: 'ws',
@@ -248,7 +248,7 @@ describe('durable WS outbox owner misses', () => {
 
             timing: (event) => timing.push(event)
         });
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: remote,
             bridge: bus,
             channel: 'ws',
@@ -308,6 +308,10 @@ describe('durable WS outbox owner misses', () => {
             channel: 'ws',
             publisherId: 'remote'
         });
+        onTestFinished(async () => {
+            bus.releaseSecondSubscription();
+            await remoteReadiness;
+        });
         const beforeReadinessKey = (await enqueueDurableOutboxEntry(
             claimant,
             createUnicastMessage('published-before-readiness', 'reply-before-readiness')
@@ -341,7 +345,7 @@ describe('durable WS outbox owner misses', () => {
         vi.setSystemTime(1_000);
         const outbox = new InMemoryQueueBox();
         const invalid = { ...createUnicastMessage(), targets: undefined };
-        await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX));
+        await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
         const { service, engine } = createService({
             outbox,
             outboundStores: createSharedOutboundStores(outbox),
@@ -349,7 +353,7 @@ describe('durable WS outbox owner misses', () => {
             name: 'claimant',
             resolveRecipients: () => []
         });
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: service,
             bridge: createBridgeBus(),
             channel: 'ws',
@@ -383,7 +387,7 @@ describe('durable WS outbox owner misses', () => {
                 throw new Error('simulated pub/sub outage');
             }
         };
-        installQueueBoxPubSubBridge({
+        await installQueueBoxPubSubBridge({
             wsQBoxServerService: service,
             bridge: bus,
             channel: 'ws',
@@ -430,13 +434,13 @@ describe('durable WS outbox owner misses', () => {
                 delaysAfterAttemptMs: [50, 50],
                 maxDelayMs: 50
             };
-            installQueueBoxPubSubBridge({
+            await installQueueBoxPubSubBridge({
                 wsQBoxServerService: claimant,
                 bridge: bus,
                 channel: 'ws',
                 publisherId: 'claimant'
             });
-            installQueueBoxPubSubBridge({
+            await installQueueBoxPubSubBridge({
                 wsQBoxServerService: remote,
                 bridge: bus,
                 channel: 'ws',

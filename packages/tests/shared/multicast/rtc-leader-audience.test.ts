@@ -21,7 +21,6 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 
 import { room, RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
@@ -39,6 +38,8 @@ import {
 
 type LeaderAudience = 'room multicast' | 'room broadcast' | 'room except' | 'principal' | 'list';
 
+const LEADER_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
+
 describe('the RTC leg of a group-leader room send', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -53,7 +54,7 @@ describe('the RTC leg of a group-leader room send', () => {
     it.each<LeaderAudience>(['room multicast', 'room broadcast', 'principal', 'list'])(
         'freezes a group-leader %s send as the director session alone, the one recipient its leader receipt expects',
         async (audience) => {
-            const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+            const fixture = createLeaderFixture(createDirectedSnapshot('d'));
             const message = createLeaderSend(audience, ['b', 'd']);
 
             const admitted = await enqueueLegAndDrain(fixture, message);
@@ -91,8 +92,8 @@ describe('the RTC leg of a group-leader room send', () => {
             ['director', ['02']],
             ['08', ['03']]
         ] as const;
-        const endpoints = topology.map(([sessionId, peerIds]) =>
-            new RtcEndpointFixture(sessionId, peerIds, {
+        const endpoints = topology.map(([sessionId, peerIds]) => {
+            const endpoint = new RtcEndpointFixture(sessionId, peerIds, {
                 outboundSettlements: (settlement) => {
                     if (
                         settlement.kind !== 'acknowledgement' ||
@@ -112,21 +113,16 @@ describe('the RTC leg of a group-leader room send', () => {
                         }
                     }
                 }
-            })
-        );
-        onTestFinished(async () => {
-            const outcomes = await Promise.allSettled(endpoints.map((endpoint) => endpoint.close()));
-            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-            if (failure?.status === 'rejected') {
-                throw toError(failure.reason);
-            }
+            });
+            onTestFinished(() => endpoint.close());
+            return endpoint;
         });
         const bySession = new Map(endpoints.map((endpoint) => [endpoint.sessionId, endpoint]));
         for (const endpoint of endpoints) {
             endpoint.observe(1, room, ['03', '04', '02', 'director', '08']);
             endpoint.observeOverlay(1);
             const key = toScopedOverlayId(room);
-            endpoint.groups.set(key, toOriginDirectedSnapshot(endpoint.groups.read(key)!, 'director'));
+            endpoint.groups.set(key, toOriginDirectedSnapshot(endpoint.groups.read(key)!, 'director', Date.now()));
             for (const peerId of endpoint.peers.keys()) {
                 endpoint.connect(bySession.get(peerId)!);
             }
@@ -192,7 +188,7 @@ describe('the RTC leg of a group-leader room send', () => {
     it.each([{ readyPeerIds: [] }, { readyPeerIds: ['r'] }])(
         'hands over a missing accepted RTC edge with ready peers $readyPeerIds, then admits that edge when ready',
         async ({ readyPeerIds }) => {
-            const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd');
+            const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now());
             const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
             validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
             const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'] });
@@ -227,7 +223,7 @@ describe('the RTC leg of a group-leader room send', () => {
     );
 
     it.each(['direct', 'hold'] as const)('keeps %s RTC route waiting when the accepted edge is absent', async (strategy) => {
-        const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd');
+        const directed = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now());
         const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
         validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
         const fixture = createLeaderFixture(snapshot);
@@ -253,7 +249,7 @@ describe('the RTC leg of a group-leader room send', () => {
         { denial: 'forbidden repair', verdict: { kind: 'skipped', reason: 'planner-drop' } }
     ])('preserves $denial on a hand-over leg with an absent accepted edge', async ({ denial, verdict }) => {
         const origin = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
-        const directed = denial === 'no leader' ? origin : toOriginDirectedSnapshot(origin, 'd');
+        const directed = denial === 'no leader' ? origin : toOriginDirectedSnapshot(origin, 'd', Date.now());
         const snapshot = { ...directed, causalRevision: { groupRevision: 4, presenceRevision: 4 } };
         validateAuthoritativeGroupSnapshot(snapshot, ORIGIN_ROOM);
         const fixture = createRtcOriginOverlayFixture({
@@ -280,11 +276,11 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 
     it('keeps a leader send frozen to the director it was admitted to after the room appoints another', async () => {
-        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+        const fixture = createLeaderFixture(createDirectedSnapshot('d'));
         const message = createLeaderSend('room multicast', []);
         await enqueueLegAndDrain(fixture, message);
 
-        fixture.groups.accept('room', toDirectedSnapshot('c'));
+        fixture.groups.accept('room', createDirectedSnapshot('c'));
         await vi.advanceTimersByTimeAsync(3_000);
 
         expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d']), toLeaderFrozenTargets(['d'])]);
@@ -294,7 +290,7 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 
     it('retries a leader send its director has not confirmed toward the director, frozen to it and expected alone', async () => {
-        const fixture = createRtcOriginOverlayFixture({ snapshot: toDirectedSnapshot('d'), nextHopPeerIds: ['b', 'c', 'd'] });
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createDirectedSnapshot('d'), nextHopPeerIds: ['b', 'c', 'd'] });
         const message = createLeaderSend('room multicast', []);
         await enqueueLegAndDrain(fixture, message);
 
@@ -307,12 +303,12 @@ describe('the RTC leg of a group-leader room send', () => {
 
     it.each<{ label: string; snapshot: GroupSnapshot; audience: LeaderAudience; }>([
         { label: 'the room appoints no director', snapshot: createOriginPrincipalSnapshot(), audience: 'room multicast' },
-        { label: 'the appointed director is not present', snapshot: toDirectedSnapshot('z'), audience: 'room multicast' },
-        { label: 'the director\'s session lease has expired', snapshot: toLeaseExpired(toDirectedSnapshot('d'), 'd'), audience: 'room multicast' },
-        { label: 'the sender is the director', snapshot: toDirectedSnapshot('a'), audience: 'room broadcast' },
-        { label: 'the list leaves the director out', snapshot: toDirectedSnapshot('c'), audience: 'list' },
-        { label: 'the principal is not the director\'s', snapshot: toDirectedSnapshot('c'), audience: 'principal' },
-        { label: 'the exceptions name the director', snapshot: toDirectedSnapshot('d'), audience: 'room except' }
+        { label: 'the appointed director is not present', snapshot: createDirectedSnapshot('z'), audience: 'room multicast' },
+        { label: 'the director\'s session lease has expired', snapshot: toLeaseExpired(createDirectedSnapshot('d'), 'd'), audience: 'room multicast' },
+        { label: 'the sender is the director', snapshot: createDirectedSnapshot('a'), audience: 'room broadcast' },
+        { label: 'the list leaves the director out', snapshot: createDirectedSnapshot('c'), audience: 'list' },
+        { label: 'the principal is not the director\'s', snapshot: createDirectedSnapshot('c'), audience: 'principal' },
+        { label: 'the exceptions name the director', snapshot: createDirectedSnapshot('d'), audience: 'room except' }
     ])('refuses a group-leader send as no-leader when $label, sending nothing', async ({ snapshot, audience }) => {
         const fixture = createLeaderFixture(snapshot);
         const message = createLeaderSend(audience, ['b', 'd']);
@@ -327,7 +323,7 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 
     it('refuses a room send that asks for a leader receipt by quality of service alone as unsupported, sending nothing', async () => {
-        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+        const fixture = createLeaderFixture(createDirectedSnapshot('d'));
         const message = newALMulticastMessage(
             'a',
             { topicId: 'chat', resourceId: 'qos-leader', contextId: ORIGIN_ROOM.groupId },
@@ -349,7 +345,7 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 
     it('holds a durable group-leader send admitted before its room snapshot and freezes it to the director when the snapshot arrives', async () => {
-        const fixture = createLeaderFixture(toDirectedSnapshot('d'));
+        const fixture = createLeaderFixture(createDirectedSnapshot('d'));
         fixture.groups.delete('room');
         const message = createLeaderSend('room broadcast', [], 'local-outbox');
 
@@ -359,7 +355,7 @@ describe('the RTC leg of a group-leader room send', () => {
         expect(admitted.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
         expect([...fixture.channels.b!.sent, ...fixture.channels.c!.sent]).toEqual([]);
 
-        fixture.groups.accept('room', toDirectedSnapshot('d'));
+        fixture.groups.accept('room', createDirectedSnapshot('d'));
         await vi.advanceTimersByTimeAsync(200);
 
         expect(readSentTargets(fixture.channels.b!)).toEqual([toLeaderFrozenTargets(['d'])]);
@@ -369,15 +365,13 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 });
 
-const LEADER_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
-
 function createLeaderFixture(snapshot: GroupSnapshot): RtcOriginOverlayFixture {
     return createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b', 'c'] });
 }
 
 /** The room of `a`, `b`, `c` and `d` (`a`, `b` and `d` sessions of one principal) with its director appointed. */
-function toDirectedSnapshot(directorSessionId: string): GroupSnapshot {
-    return toOriginDirectedSnapshot(createOriginPrincipalSnapshot(), directorSessionId);
+function createDirectedSnapshot(directorSessionId: string): GroupSnapshot {
+    return toOriginDirectedSnapshot(createOriginPrincipalSnapshot(), directorSessionId, Date.now());
 }
 
 function toLeaseExpired(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {

@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -8,6 +8,7 @@ import {
     vi
 } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type {
@@ -75,7 +76,7 @@ describe('ALOutboundMessageRuntime', () => {
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             random: () => 0,
             diagnostics: undefined,
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ resourceId: msg.route.resourceId }] }),
             planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),

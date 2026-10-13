@@ -1,16 +1,23 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxWorkPage } from '@shared/queuebox/queue-box-types.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, isExpiredResourceEntry, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isExpiredResourceEntry,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import type {
     OnQueuedMessageCallback,
     OnRejectedQueuedMessageCallback
 } from '@shared/services/queue-message-callbacks.ts';
+
+import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export namespace InboxQueueReader {
@@ -47,7 +54,8 @@ export class InboxQueueReader {
 
     constructor(
         inbox: QueueBoxResourceEntryRepository,
-        dequeueOptions: DequeueResourceEntryOptions = {}
+        dequeueOptions: DequeueResourceEntryOptions = {},
+        creationNow: QueueBoxUtilities.CreationClock = Temporal.Now.instant
     ) {
         this.inbox = inbox;
         this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
@@ -58,6 +66,7 @@ export class InboxQueueReader {
         );
         this.reader = new QueueMessageReader(inbox, {
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
+            creationNow,
             dequeueOptions
         });
     }

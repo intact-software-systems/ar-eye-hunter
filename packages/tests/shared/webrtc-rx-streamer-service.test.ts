@@ -1,10 +1,4 @@
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -13,9 +7,13 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -24,6 +22,8 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -32,6 +32,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection, type QRtcOnRemoteStreamCallback } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { EmptyMediaStream, EmptyRtcTrackEvent } from './rtc-media-test-events.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface MediaFixture extends MediaPeerFixture {
     readonly service: WebRtcRxStreamerService;
@@ -111,6 +112,8 @@ interface MediaFixtureInput {
 
 function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
     const multicast = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: {
             input: { sessionId: 'self' },
             readyPeerIdsForLane: () => [],
@@ -130,14 +133,9 @@ function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    onTestFinished(() => multicast.dispose());
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self', ...input });
-    onTestFinished(async () => {
-        const cleanup = await Promise.allSettled([service.dispose(), multicast.dispose()]);
-        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
-        if (failure?.status === 'rejected') {
-            throw failure.reason;
-        }
-    });
+    onTestFinished(() => service.dispose());
     service.setRttReportingPeerIds([]);
     return { service, ...createMediaPeerFixture() };
 }
@@ -182,7 +180,7 @@ describe('RTC receiver owned inbound completion', () => {
         const resources = createDefaultALInboundRuntimeResources({
             queueEngine: engine,
             selfPeerId: 'self',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const entered = Promise.withResolvers<void>();
         const allowRelease = Promise.withResolvers<void>();

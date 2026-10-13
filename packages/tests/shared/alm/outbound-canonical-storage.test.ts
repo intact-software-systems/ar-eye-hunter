@@ -1,13 +1,6 @@
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import {
-    EntityStatus,
-    isKeysEqual,
-    toKeyAsString,
-    toResourceEntryWithKey
-} from '@shared/queuebox/ResourceEntry.ts';
 // @vitest-environment happy-dom
 
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -17,6 +10,7 @@ import {
 } from 'vitest';
 
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -26,19 +20,26 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    toKeyAsString,
+    toResourceEntryWithKey
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { waitForSettledOutboundWork } from '../wait-for-al-outbound-work.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    holdOutboundClaims
+    holdOutboundClaims,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('canonical outbound payload storage', () => {
     it('retains IndexedDB canonical facts through public QueueBox cleanup and restart', async () => {
@@ -261,7 +262,9 @@ describe('canonical outbound payload storage', () => {
         const claims = holdOutboundClaims(stores);
         const runtime = createRuntime();
         const message = createOutboundMessage('crossing-deadline', { ttlMs: 10 });
-        const candidate = operation === 'commit' ? await computeOutboundTestAdmission(store, message) : undefined;
+        const candidate = operation === 'commit'
+            ? await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+            : undefined;
         const admission = await runtime.enqueueIfAbsent(message);
         await runtime.dispose();
         await claims.release(runtime);
@@ -302,8 +305,18 @@ describe('canonical outbound payload storage', () => {
         });
         const first = createOutboundMessage('same-message-id');
         const second = { ...first, id: { ...first.id, senderId: 'different-sender' } };
-        const firstAdmission = await computeOutboundTestAdmission(store, first);
-        const secondAdmission = await computeOutboundTestAdmission(store, second);
+        const firstAdmission = await readOutboundTestAdmission({
+            store: store,
+            message: first,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const secondAdmission = await readOutboundTestAdmission({
+            store: store,
+            message: second,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(firstAdmission)).toBe('committed');
         await expect(store.commitBundle(secondAdmission)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await store.readSentMessage(first.id.msgId))?.msg.id.senderId).toBe(first.id.senderId);

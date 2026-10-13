@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -22,7 +23,6 @@ import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/crea
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -120,16 +120,11 @@ interface ConnectedRtcEndpoints {
 
 function createConnectedEndpoints(): ConnectedRtcEndpoints {
     const sender = new RtcEndpointFixture('sender', 'receiver');
+    onTestFinished(() => sender.close());
     const receiver = new RtcEndpointFixture('receiver', 'sender');
+    onTestFinished(() => receiver.close());
     sender.connect(receiver);
     receiver.connect(sender);
-    onTestFinished(async () => {
-        const outcomes = await Promise.allSettled([sender.close(), receiver.close()]);
-        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-        if (failure?.status === 'rejected') {
-            throw toError(failure.reason);
-        }
-    });
     return { sender, receiver };
 }
 
@@ -293,12 +288,13 @@ function createControlRecoveryRuntime(
             throw error;
         }
     });
+    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         nowMs,
         queueEngine: engine,
         random: () => 0.5,
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     });
     const batches = new ALWorkBatchTestObserver();
     const diagnostics: ALInboundRuntimeDiagnosticsSink = Object.assign(() => {}, {
@@ -316,10 +312,7 @@ function createControlRecoveryRuntime(
         sendControlMessages,
         diagnostics
     });
-    onTestFinished(async () => {
-        await runtime.dispose();
-        await engine.stop();
-    });
+    onTestFinished(() => runtime.dispose());
     return { runtime, resources, engine, batches, delivered };
 }
 

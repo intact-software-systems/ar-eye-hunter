@@ -1,6 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -33,7 +37,7 @@ export function createQueueResilience(maxAttempts = DEFAULT_RESOURCE_INBOX_RETRY
 
 export async function seedRetry(queue: QueueBoxResourceEntryRepository, resourceId: string): Promise<ResourceEntry> {
     const entry = await queue.enqueueIfAbsent(
-        QueueBoxUtilities.toResourceEntryFromMsg(createQueueMessage(resourceId), EnqueuedType.APP_INBOX)
+        QueueBoxUtilities.toResourceEntryFromMsg(createQueueMessage(resourceId), EnqueuedType.APP_INBOX, Temporal.Now.instant())
     );
     const reserved = await queue.reserveEntries({
         typeIds: new Set([EnqueuedType.APP_INBOX]),

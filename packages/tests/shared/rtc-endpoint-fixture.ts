@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
@@ -92,6 +93,8 @@ export class RtcEndpointFixture {
         vi.spyOn(service, 'readPeer').mockImplementation((id) => this.peers.get(id));
         vi.spyOn(service, 'readyPeerIdsForLane').mockImplementation(() => [...this.peers.keys()]);
         this.multicast = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: service,
             groupCache: this.groups,
             overlayCache: this.overlays,

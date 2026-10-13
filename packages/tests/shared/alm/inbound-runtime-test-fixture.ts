@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
@@ -66,8 +67,14 @@ export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observati
 export const INBOUND_TEST_EFFECT_PREPARATION: ALInboundEffectPreparationDependencies = {
     newControlId: crypto.randomUUID.bind(crypto),
     selfPeerId: INBOUND_TEST_SELF_PEER_ID,
-    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
 };
+
+export interface InboundTestDecision {
+    readonly read: ALInboundAdmissionRead;
+    readonly plan: ALMessageHandlingPlan;
+    readonly bundle: ALInboundCommitBundle;
+}
 
 export type InboundTestStorage = 'memory' | 'indexeddb';
 
@@ -178,7 +185,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             stores: input.stores,
             volatileStores: input.volatileStores,
             queueEngine,
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         carrier: input.carrier,

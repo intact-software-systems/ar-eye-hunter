@@ -1,5 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
+import {
     createRallarMiddlewareQueueRegistration,
     type RegisterRallarMiddlewareQueueTasksInput
 } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
@@ -22,20 +30,18 @@ import {
     type WsQueueBoxServerService
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
 import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-import {
-    computeOutboundTestAdmission,
     createOutboundMessage,
     createOutboundRuntimeWithWorkTask,
     holdOutboundClaims,
+    readOutboundTestAdmission,
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+
+interface QueueTaskFixtureInput extends RegisterRallarMiddlewareQueueTasksInput {
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+}
 
 const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
@@ -50,7 +56,12 @@ describe('Rallar middleware queue registration completeness', () => {
             decodePrepared: decodeWsQueueBoxServerPreparedMessage
         });
         const store = stores.admissionStore;
-        const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-server-admission'));
+        const competitor = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('competing-server-admission'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         const commit = store.commitBundle.bind(store);
         vi.spyOn(store, 'commitBundle').mockImplementationOnce(async (bundle) => {
             expect(await commit(competitor)).toBe('committed');
@@ -197,10 +208,6 @@ describe('Rallar middleware queue registration completeness', () => {
         );
     });
 });
-
-interface QueueTaskFixtureInput extends RegisterRallarMiddlewareQueueTasksInput {
-    readonly wsQBoxServerService: WsQueueBoxServerService;
-}
 
 function createQueueTaskInput(
     outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,

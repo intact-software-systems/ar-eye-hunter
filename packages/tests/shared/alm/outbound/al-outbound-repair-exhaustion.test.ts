@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -13,8 +14,7 @@ import {
     type ALNackPayload,
     type ALRepairPayload
 } from '@shared/al-contracts/al-control.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundPlanner,
@@ -64,7 +64,7 @@ async function planRepairMessage(msg: ALMessage): Promise<ALOutboundDispatchPlan
     };
 }
 
-function toOrderedMessage(seq: number): ALMessage {
+function createOrderedMessage(seq: number): ALMessage {
     return {
         ...createOutboundMessage(`msg-seq-${seq}`),
         ordering: { orderingKey: 'conversation-1', epoch: 0, seq }
@@ -72,7 +72,7 @@ function toOrderedMessage(seq: number): ALMessage {
 }
 
 /** What every control of the test shares: the addressee reports a gap before the revealing message. */
-function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: readonly ALSeqRange[]) {
+function toGapReport(revealing: ALMessage, trackKey: string, missingRanges: readonly ALSeqRange[]): Omit<ALNackPayload, 'reason'> {
     return {
         msgId: revealing.id.msgId,
         fromPeerId: 'peer-1',
@@ -120,7 +120,7 @@ function createRepairRetransmission(
             lane: 'durable',
             admissionStore: stores.admissionStore,
             workPort: createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -165,7 +165,7 @@ describe('the repair budget runs out', () => {
                 return { status: 'sent', submissionAttempted: true };
             }
         });
-        const [first, second, third, fourth] = [1, 2, 3, 4].map(toOrderedMessage) as [
+        const [first, second, third, fourth] = [1, 2, 3, 4].map(createOrderedMessage) as [
             ALMessage,
             ALMessage,
             ALMessage,
@@ -249,7 +249,7 @@ describe('the repair budget runs out', () => {
                 return { status: 'sent', submissionAttempted: true };
             }
         });
-        const [first, second, third, fourth] = [1, 2, 3, 4].map(toOrderedMessage) as [
+        const [first, second, third, fourth] = [1, 2, 3, 4].map(createOrderedMessage) as [
             ALMessage,
             ALMessage,
             ALMessage,
@@ -306,7 +306,7 @@ describe('a ranged hint whose sequences have left the sent cache', () => {
                 return { status: 'sent', submissionAttempted: true };
             }
         });
-        const track = [40, 41, 42].map(toOrderedMessage);
+        const track = [40, 41, 42].map(createOrderedMessage);
         for (const message of track) {
             await enqueueOutboundOrThrow(runtime, message);
         }

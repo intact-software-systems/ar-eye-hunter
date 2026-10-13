@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -55,7 +56,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 effectPreparation: {
                     newControlId: crypto.randomUUID.bind(crypto),
                     selfPeerId: 'receiver',
-                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX')
+                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX', Temporal.Now.instant())
                 },
                 planIncomingMessage: planner,
                 forwardMessage: undefined,

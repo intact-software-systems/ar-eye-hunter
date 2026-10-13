@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -11,7 +12,11 @@ import {
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
+import {
+    planALMessageHandling,
+    type ALMessageHandlingPlan,
+    type ALMessagePlanningContext
+} from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
@@ -51,9 +56,9 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
-    computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -102,7 +107,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
 
         await runStaleReadThenSequentialCommit({
             fixture,
-            arbitratedKey: `${fixture.namespace}:dedup:${toInboundDedupKey(a)}`,
+            arbitratedKey: `${fixture.namespace}:dedup:${toInboundDedupKey(a, Date.now())}`,
             keyOnlyAWrites: toALInboundMessageOwnerKey(fixture.namespace, a.id.msgId, a.id.senderId),
             readA: () => readInboundDecision(store, a),
             readB: () => readInboundDecision(store, b),
@@ -202,13 +207,37 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
             fixture,
             arbitratedKey: toALOutboundVersionKey(fixture.namespace, a.id.senderId),
             keyOnlyAWrites: toALOutboundSentMessageKey(fixture.namespace, a.id.msgId),
-            readA: () => computeOutboundTestAdmission(store, a, OUTBOUND_ONE_COPY_PLANNER),
-            readB: () => computeOutboundTestAdmission(store, b, OUTBOUND_ONE_COPY_PLANNER),
+            readA: () =>
+                readOutboundTestAdmission({
+                    store: store,
+                    message: a,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_ONE_COPY_PLANNER
+                }),
+            readB: () =>
+                readOutboundTestAdmission({
+                    store: store,
+                    message: b,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_ONE_COPY_PLANNER
+                }),
             commitB: (bundle) => store.commitBundle(bundle),
             commitA: (bundle) => store.commitBundle(bundle)
         });
 
-        expect(await store.commitBundle(await computeOutboundTestAdmission(store, a, OUTBOUND_ONE_COPY_PLANNER))).toBe('committed');
+        expect(
+            await store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: store,
+                    message: a,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_ONE_COPY_PLANNER
+                })
+            )
+        ).toBe('committed');
         expect((await store.readSentMessage(a.id.msgId))?.msg).toEqual(a);
     });
 
@@ -222,13 +251,37 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('shared-key arbitratio
             fixture,
             arbitratedKey: toALOutboundOrderingHeadKey(fixture.namespace, toALSequenceMintTrackKey(a)!),
             keyOnlyAWrites: toALOutboundSentMessageKey(fixture.namespace, a.id.msgId),
-            readA: () => computeOutboundTestAdmission(store, a, OUTBOUND_MINTING_PLANNER),
-            readB: () => computeOutboundTestAdmission(store, b, OUTBOUND_MINTING_PLANNER),
+            readA: () =>
+                readOutboundTestAdmission({
+                    store: store,
+                    message: a,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_MINTING_PLANNER
+                }),
+            readB: () =>
+                readOutboundTestAdmission({
+                    store: store,
+                    message: b,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_MINTING_PLANNER
+                }),
             commitB: (bundle) => store.commitBundle(bundle),
             commitA: (bundle) => store.commitBundle(bundle)
         });
 
-        expect(await store.commitBundle(await computeOutboundTestAdmission(store, a, OUTBOUND_MINTING_PLANNER))).toBe('committed');
+        expect(
+            await store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: store,
+                    message: a,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner: OUTBOUND_MINTING_PLANNER
+                })
+            )
+        ).toBe('committed');
         expect((await store.readSentMessage(b.id.msgId))?.msg.ordering?.seq).toBe(1);
         expect((await store.readSentMessage(a.id.msgId))?.msg.ordering?.seq).toBe(2);
     });
@@ -365,11 +418,11 @@ function createClaimingInboundMessage(senderId: string): ALMessage {
     );
 }
 
-function toInboundDedupKey(message: ALMessage): string {
-    return planALMessageHandling(message, toInboundPlanningContext(message, Date.now())).dedupKey;
+function toInboundDedupKey(message: ALMessage, observedAtMs: number): string {
+    return planALMessageHandling(message, toInboundPlanningContext(message, observedAtMs)).dedupKey;
 }
 
-function toInboundPlanningContext(message: ALMessage, nowMs: number) {
+function toInboundPlanningContext(message: ALMessage, nowMs: number): ALMessagePlanningContext {
     return { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
 }
 
@@ -395,7 +448,7 @@ async function readInboundDecision(store: ALInboundAdmissionStore, message: ALMe
     const facts = readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
-        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     return {
         plan,
@@ -456,7 +509,7 @@ async function readSupersedingOutboundDecision(
     });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+        outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',

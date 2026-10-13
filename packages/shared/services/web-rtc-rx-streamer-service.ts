@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
@@ -6,11 +8,11 @@ import {
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
-import type {
-    ALInboundRuntimeStores,
-    ALVolatileInboundRuntimeStores
+import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
 } from '../alm/inbound/al-inbound-message-runtime.ts';
-import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
 import {
     ALInboundRtcAckObservation,
@@ -66,6 +68,7 @@ export namespace WebRtcRxStreamerService {
     }
 
     export interface Input {
+        readonly creationNow?: QueueBoxUtilities.CreationClock;
         readonly queueEngine?: InboxOutboxEngine;
         readonly multicast: WebRtcOverlayMulticastManager;
         readonly sessionId: string;
@@ -562,6 +565,7 @@ export class WebRtcRxStreamerService {
 }
 
 export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerService.Input): WebRtcRxStreamerService {
+    const creationNow = input.creationNow ?? Temporal.Now.instant;
     return new WebRtcRxStreamerService({
         multicast: input.multicast,
         sessionId: input.sessionId,
@@ -570,7 +574,8 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX),
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX, creationNow()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         epochNow: input.nowEpochMs ?? Date.now,

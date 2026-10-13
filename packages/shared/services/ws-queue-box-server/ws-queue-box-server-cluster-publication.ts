@@ -32,6 +32,7 @@ export namespace WsQueueBoxServerClusterPublication {
     ) => Promise<void>;
 
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         /** The outbound owner's canonical scope, which locates the outbox row a publication names. */
         readonly canonicalScope: string;
@@ -99,7 +100,11 @@ export class WsQueueBoxServerClusterPublication {
             const publisher = this.#publisher;
             if (publisher !== undefined) {
                 const entry = {
-                    ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX),
+                    ...QueueBoxUtilities.toResourceEntryFromMsg(
+                        message,
+                        EnqueuedType.WS_OUTBOX,
+                        this.#dependencies.creationNow()
+                    ),
                     key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
                 };
                 publisherCall = 'invoked';

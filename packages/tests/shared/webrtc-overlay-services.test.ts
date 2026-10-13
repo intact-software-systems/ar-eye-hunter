@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     beforeEach,
     describe,
@@ -16,6 +15,7 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -45,7 +45,11 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { createOutboundRuntimeWithWorkTask, drainEngine, runOutboundWorkTask } from './alm/outbound-runtime-test-fixture.ts';
+import {
+    createOutboundRuntimeWithWorkTask,
+    drainEngine,
+    runOutboundWorkTask
+} from './alm/outbound-runtime-test-fixture.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
@@ -68,6 +72,8 @@ describe('WebRtc overlay services', () => {
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService,
                 groupCache: new LatestRepository(),
                 overlayCache: new LatestRepository(),
@@ -135,6 +141,8 @@ describe('WebRtc overlay services', () => {
             return result;
         });
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connection,
             groupCache: groups,
             overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
@@ -236,6 +244,8 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -290,6 +300,8 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -337,6 +349,8 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -381,6 +395,8 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -428,6 +444,8 @@ describe('WebRtc overlay services', () => {
         const context = createOverlayContext(['self', 'peer-1'], [], groupRef('group-1'));
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({ 'group-1': context.room }),
                 overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
@@ -496,6 +514,8 @@ describe('WebRtc overlay services', () => {
         );
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({
                     'shared-room': workspaceA.room,
@@ -569,6 +589,8 @@ describe('WebRtc overlay services', () => {
         );
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({
                     'workspace-a-room': workspaceA.room,
@@ -626,6 +648,8 @@ describe('WebRtc overlay services', () => {
         });
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -676,6 +700,8 @@ describe('WebRtc overlay services', () => {
         });
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
@@ -730,6 +756,8 @@ describe('WebRtc overlay services', () => {
         const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
         circuitBreaker.failureCount(2);
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -767,6 +795,8 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
         const engine = new InboxOutboxEngine();
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService,
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
@@ -782,9 +812,8 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
         const message = createUnicastRtcMessage('sender-corrupt', 'persisted-corrupt');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
-        // toResourceEntryFromMsg's createdTs falls back through Temporal.Now (local wall clock)
-        // reinterpreted as UTC; a due nextTs sidesteps that gap instead of relying on it for readiness.
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX, Temporal.Now.instant());
+        // Make the corrupted row due at the explicit runtime clock observation.
         await manager.outbox.enqueueIfAbsent({
             ...entry,
             resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 }, forwarding: { nextHopPeerIds: ['peer-1'] } }),
@@ -805,6 +834,8 @@ describe('WebRtc overlay services', () => {
     it('returns an outbox entry for durable RTC sends', async () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -857,6 +888,8 @@ describe('WebRtc overlay services', () => {
 
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -914,6 +947,8 @@ describe('WebRtc overlay services', () => {
         const context = createOverlayContext(['self', 'peer-1'], ['peer-1'], groupRef('group-1'));
         const manager = createOutboundRuntimeWithWorkTask(() =>
             new WebRtcOverlayMulticastManager({
+                quotaNow: Date.now,
+                creationNow: Temporal.Now.instant,
                 connectionService: connectionService,
                 groupCache: createReadableCache({ 'group-1': context.room }),
                 overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
@@ -961,11 +996,13 @@ describe('WebRtc overlay services', () => {
     it('keeps durable rtc send effects retryable when dequeue cannot find a channel', async () => {
         vi.useFakeTimers();
 
-        const peer: { channel: ReturnType<typeof createOpenRtcChannel> | undefined; } = { channel: undefined };
+        const peer: { channel: CapturedRtcChannel | undefined; } = { channel: undefined };
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': peer
         });
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
@@ -1220,6 +1257,8 @@ describe('RTC overlay owned outbound completion', () => {
             return await releaseEntries(entries);
         });
         const manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: connection,
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),

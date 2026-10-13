@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
 
 import 'fake-indexeddb/auto';
-
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { createCountingIndexedDbOperationObserver, type IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
@@ -13,7 +17,11 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { QueueMessageReader } from '@shared/services/queue-message-reader.ts';
 
-import { createQueueMessage, createQueueResilience, seedRetry } from './fair-service-fixture.ts';
+import {
+    createQueueMessage,
+    createQueueResilience,
+    seedRetry
+} from './fair-service-fixture.ts';
 
 const ARMS = ['current1000', 'fixed1', 'adaptive', 'fixedRetry2'] as const;
 
@@ -48,6 +56,7 @@ class QueueComparison {
     private readonly options = { nowEpochMs: () => this.now };
     private readonly reader = new InboxQueueReader(this.queue, this.options);
     private readonly genericReader = new QueueMessageReader(this.queue, {
+        creationNow: Temporal.Now.instant,
         enqueueType: EnqueuedType.APP_INBOX,
         dequeueOptions: this.options
     });
@@ -62,7 +71,7 @@ class QueueComparison {
     constructor(arm: typeof ARMS[number], recurring: boolean) {
         this.arm = arm;
         this.recurring = recurring;
-        const callback = { onMessage: async (message: ReturnType<typeof createQueueMessage>) => this.onMessage(message) };
+        const callback = { onMessage: async (message: ALMessage) => this.onMessage(message) };
         this.reader.onInboxMessageDo('test.fair-service', callback);
         this.genericReader.onMessageDo('test.fair-service', callback);
     }
@@ -116,7 +125,7 @@ class QueueComparison {
         }
     }
 
-    private async onMessage(message: ReturnType<typeof createQueueMessage>): Promise<void> {
+    private async onMessage(message: ALMessage): Promise<void> {
         this.completed.push(message.route.resourceId);
         if (this.completed.filter((id) => id.startsWith('retry')).length === 12) {
             this.retryCompletionPass ||= this.passes;

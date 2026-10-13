@@ -1,4 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
+
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
 import {
     newALEventRoute,
@@ -13,12 +20,6 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished
-} from 'vitest';
 
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
@@ -46,7 +47,7 @@ describe('Rallar middleware queue wake', () => {
 
         // A server mutation writes its WS_OUTBOX row inside its own transaction, so the owner learns
         // of it only from the wake that follows the commit.
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(), EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(), EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.outbox.enqueueIfAbsent(entry);
         await queueEngine.executeOnce();
 

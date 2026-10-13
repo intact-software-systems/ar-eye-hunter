@@ -24,12 +24,6 @@ import type {
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
-import type {
-    ALOutboundCancelOutcome,
-    ALOutboundEnqueueResult,
-    ALOutboundPreparedSendResult,
-    ALOutboundRuntimeDiagnosticsSink
-} from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
@@ -39,7 +33,11 @@ import {
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
     toALOutboundCongestionDrop,
-    type ALOutboundDropReasonCode
+    type ALOutboundCancelOutcome,
+    type ALOutboundDropReasonCode,
+    type ALOutboundEnqueueResult,
+    type ALOutboundPreparedSendResult,
+    type ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -66,7 +64,7 @@ import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { computeRateLimiterRetryAfterMs } from '../resilience/compute-rate-limiter-retry-after-ms.ts';
 import { Either } from '../resilience/Either.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
+import type { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
@@ -143,6 +141,9 @@ export namespace WebRtcOverlayMulticastManager {
     }
 
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
+        /** Epoch-ms domain of the supplied limiter; seed custom limiters with RateLimiter.initWithTs. */
+        readonly quotaNow: () => number;
         readonly connectionService: Connection;
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
@@ -177,6 +178,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
     private readonly rateLimiter: RateLimiter;
+    private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
@@ -189,6 +191,7 @@ export class WebRtcOverlayMulticastManager {
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
+        this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
         this.clock = dependencies.outboundRuntime.clock;
@@ -211,7 +214,8 @@ export class WebRtcOverlayMulticastManager {
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WebRtcOverlayMulticastManager.ENQUEUE_TYPE
+                        WebRtcOverlayMulticastManager.ENQUEUE_TYPE,
+                        dependencies.creationNow()
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 // A plan without authority is a new admission's; a retained message is planned with its captured one.
@@ -272,7 +276,7 @@ export class WebRtcOverlayMulticastManager {
             results.length > 0 &&
             results.every((result) => result.verdict.kind === 'unroutable' && result.verdict.reason === 'rate-limited')
         ) {
-            const retryAfterMs = computeRateLimiterRetryAfterMs(this.rateLimiter, Date.now());
+            const retryAfterMs = computeRateLimiterRetryAfterMs(this.rateLimiter, this.quotaNow());
             if (retryAfterMs !== undefined) {
                 throw new NotReadyException(Math.max(1, retryAfterMs), results[0]!.reason);
             }
@@ -323,17 +327,16 @@ export class WebRtcOverlayMulticastManager {
             return msgs.map(WebRtcOverlayMulticastManager.toCircuitOpenResult);
         }
 
-        return RateLimiter.tryToExecuteOrDefault<readonly ALOutboundEnqueueResult[]>(
-            this.rateLimiter,
-            () => this.enqueueThroughCircuitBreaker(msgs),
-            msgs.map((msg) =>
+        if (!this.rateLimiter.allowAt(this.quotaNow())) {
+            return msgs.map((msg) =>
                 WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
                     kind: 'unroutable',
                     reason: 'rate-limited',
                     detail: 'RTC enqueue rate limit exceeded'
                 })
-            )
-        );
+            );
+        }
+        return await this.enqueueThroughCircuitBreaker(msgs);
     }
 
     private async enqueueThroughCircuitBreaker(

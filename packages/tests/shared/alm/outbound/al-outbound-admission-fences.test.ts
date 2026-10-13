@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -54,9 +55,9 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import '../../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
-    computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -80,8 +81,18 @@ interface FenceFixture {
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fences over %s', (storage) => {
     it('aborts a changed sender version without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
-        const winner = await computeOutboundTestAdmission(fixture.store, createOutboundMessage('version-winner'));
-        const stale = await computeOutboundTestAdmission(fixture.store, createOutboundMessage('version-loser'));
+        const winner = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('version-winner'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const stale = await readOutboundTestAdmission({
+            store: fixture.store,
+            message: createOutboundMessage('version-loser'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
 
         expect(await fixture.store.commitBundle(winner)).toBe('committed');
         const before = await fixture.readAdmissionState();
@@ -105,7 +116,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
     it('aborts a consumed pending admission without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const message = createOutboundMessage('pending-fence');
-        const canonicalEntry = createOutboundCanonicalEntry(fixture.store, message);
+        const canonicalEntry = createOutboundCanonicalEntry(fixture.store, message, Temporal.Now.instant());
         expect(
             await fixture.store.retainPendingAdmission({
                 canonicalEntry,
@@ -149,7 +160,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toDeliveredAck(message), 'peer')).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toDeliveredAck(message, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -159,7 +170,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const control = createFenceControlAdmission(fixture);
         const message = await seedControlObligation(fixture.store);
         // Both repairs name the same repair-hint effect, so the second observes what the first wrote.
-        expect(await control.admit(toRepairControl(message, 'retransmit'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(toRepairControl(message, 'retransmit', Date.now()), 'peer')).toEqual({ kind: 'committed' });
         const repairWork = await readOutboundWorkRow(fixture.backend, 'repair-hint');
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
@@ -170,7 +181,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toRepairControl(message, 'missing-seq'), 'peer')).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toRepairControl(message, 'missing-seq', Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -183,7 +194,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const message = await seedControlObligation(fixture.store);
 
         const before = await fixture.readAdmissionState();
-        expect(await control.scheduleNotYetInSyncRetry(toRetrySchedule(message.id.senderId, message.id.msgId)))
+        expect(await control.scheduleNotYetInSyncRetry(toRetrySchedule(message.id.senderId, message.id.msgId, Date.now())))
             .toEqual({ status: 'conflict' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
@@ -194,12 +205,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const control = createFenceControlAdmission(fixture);
         // A sender the store never committed for: its absent version is the one the schedule
         // expects, so the fence under test is the effect row, not the version.
-        const schedule = toRetrySchedule('never-committed', 'retry-effect-fence');
+        const schedule = toRetrySchedule('never-committed', 'retry-effect-fence', Date.now());
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
         vi.spyOn(fixture.backend, 'write').mockImplementationOnce(async (operation) => {
             // Another owner writes the retry's own effect row between the schedule's read and its write.
-            await fixture.backend.workQueue.enqueue(toRetryEffectEntry(schedule.msgId));
+            await fixture.backend.workQueue.enqueue(toRetryEffectEntry(schedule.msgId, Date.now()));
             before = await fixture.readAdmissionState();
             return await write(operation);
         });
@@ -215,7 +226,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const commitBundles = fixture.store.commitBundles.bind(fixture.store);
         const groupCommit = vi.spyOn(fixture.store, 'commitBundles').mockImplementationOnce(async (bundles) => {
             // Another send of the same sender commits after the group read its version.
-            const interleaved = await computeOutboundTestAdmission(fixture.store, createOutboundMessage('interleaved'));
+            const interleaved = await readOutboundTestAdmission({
+                store: fixture.store,
+                message: createOutboundMessage('interleaved'),
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() }
+            });
             expect(await commitBundles([interleaved])).toBe('committed');
             return await commitBundles(bundles);
         });
@@ -318,7 +334,12 @@ function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
 async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTestPayload>): Promise<ALMessage> {
     const message = createOutboundMessage('control-fence');
-    const admission = await computeOutboundTestAdmission(store, message);
+    const admission = await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const committed = await store.commitBundle({
         ...admission,
         mutations: [...admission.mutations, {
@@ -341,15 +362,15 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
     return message;
 }
 
-function toDeliveredAck(message: ALMessage): ALMessage {
-    return newALAckControlMessage({ v: 3, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() }, {
+function toDeliveredAck(message: ALMessage, observedAtMs: number): ALMessage {
+    return newALAckControlMessage({ v: 3, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: observedAtMs }, {
         fromPeerId: 'peer-1',
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,
         originPeerId: message.id.senderId,
         logicalRecipientPeerId: 'peer-1',
         status: 'delivered',
-        observedAtEpochMs: Date.now(),
+        observedAtEpochMs: observedAtMs,
         carrier: 'ws'
     });
 }
@@ -364,7 +385,7 @@ function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatch
             workQueue: fixture.backend.workQueue,
             nowMs: Date.now
         }),
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
@@ -400,8 +421,7 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
     });
 }
 
-function toRepairControl(message: ALMessage, reason: ALRepairReason): ALMessage {
-    const observedAtEpochMs = Date.now();
+function toRepairControl(message: ALMessage, reason: ALRepairReason, observedAtEpochMs: number): ALMessage {
     return newALRepairControlMessage(
         { v: 3, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs },
         {
@@ -415,8 +435,7 @@ function toRepairControl(message: ALMessage, reason: ALRepairReason): ALMessage 
 }
 
 /** The schedule a repair admission computes for a sender it observed without a version. */
-function toRetrySchedule(senderId: string, msgId: string): ALOutboundNotYetInSyncRetrySchedule {
-    const nowMs = Date.now();
+function toRetrySchedule(senderId: string, msgId: string, nowMs: number): ALOutboundNotYetInSyncRetrySchedule {
     return {
         senderId,
         expectedVersion: undefined,
@@ -428,8 +447,7 @@ function toRetrySchedule(senderId: string, msgId: string): ALOutboundNotYetInSyn
 }
 
 /** The queue row the first attempt of that schedule would write, as a foreign owner already wrote it. */
-function toRetryEffectEntry(msgId: string): ResourceEntry {
-    const nowMs = Date.now();
+function toRetryEffectEntry(msgId: string, nowMs: number): ResourceEntry {
     return computeALOutboundWorkEntry({
         namespace: FENCE_NAMESPACE,
         effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]),
@@ -449,13 +467,19 @@ async function readSupersedingBundle(
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
     message: ALMessage
 ): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
-    return await computeOutboundTestAdmission(store, message, (msg) => ({
-        msg,
-        dropReasonCode: undefined,
-        lane: 'volatile',
-        preparedMessages: [{ text: msg.id.msgId }],
-        supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
-    }));
+    return await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [{ text: msg.id.msgId }],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+        })
+    });
 }
 
 async function readOutboundWorkRow(backend: ALAdmissionWorkBackend, kind: string): Promise<ResourceEntry> {

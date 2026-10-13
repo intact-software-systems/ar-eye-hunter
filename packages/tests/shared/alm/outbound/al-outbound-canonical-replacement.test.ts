@@ -1,12 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import { newALMulticastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { isALOutboundCanonicalReplacement } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { isALOutboundCanonicalRowFrozenBy } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+const CREATED_AT = Temporal.Instant.from('2026-10-13T00:00:00.123456789Z');
 
 const HELD = newALMulticastMessage(
     'origin',
@@ -44,7 +55,7 @@ describe('a canonical row frozen by a plan', () => {
 });
 
 function toEntry(message: ALMessage): ResourceEntry {
-    return QueueBoxUtilities.toResourceEntryFromMsg(message, 'AL_OUTBOUND_MESSAGE');
+    return QueueBoxUtilities.toResourceEntryFromMsg(message, 'AL_OUTBOUND_MESSAGE', CREATED_AT);
 }
 
 function toMalformedEntry(): ResourceEntry {

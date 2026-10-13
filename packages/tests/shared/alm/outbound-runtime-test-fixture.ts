@@ -1,5 +1,9 @@
-import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { expect, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    expect,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -10,14 +14,36 @@ import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/de
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID, type ALStorageResetListeners } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
+    ALOutboundCommitBundle,
+    ALOutboundEffectSnapshot,
+    ALOutboundPlanner,
+    ALOutboundPreparedMessageDecoder
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import type {
     ALCheckpointOutboundRuntimeStores,
     ALOutboundAckTrackingPlan,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    AL_OUTBOUND_WORK_LEASE_MS,
+    readALOutboundWorkReadyAt,
+    toALOutboundWorkType
+} from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
+import {
+    AL_WORK_LEASE_SWEEP_WINDOW_LEASES,
+    createLimitedALWorkLeaseRecovery
+} from '@shared/alm/work/al-work-lease-recovery.ts';
+import {
+    createALWorkQueuePort,
+    type ALWorkOutcome,
+    type ALWorkQueuePort
+} from '@shared/alm/work/al-work-queue-port.ts';
 import {
     ALOutboundMessageRuntime,
     createALOutboundAdmissionStore,
@@ -30,35 +56,14 @@ import {
     type ALOutboundAdmissionStore,
     type ResourceEntry
 } from '@shared/mod.ts';
+import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
     INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
     InboxOutboxEngine
 } from '@shared/services/inbox-outbox-engine.ts';
-
-import type {
-    ALOutboundEffectSnapshot,
-    ALOutboundPlanner,
-    ALOutboundPreparedMessageDecoder
-} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import {
-    AL_OUTBOUND_WORK_LEASE_MS,
-    readALOutboundWorkReadyAt,
-    toALOutboundWorkType
-} from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
-import {
-    AL_WORK_LEASE_SWEEP_WINDOW_LEASES,
-    createLimitedALWorkLeaseRecovery
-} from '@shared/alm/work/al-work-lease-recovery.ts';
-import {
-    createALWorkQueuePort,
-    type ALWorkOutcome,
-    type ALWorkQueuePort
-} from '@shared/alm/work/al-work-queue-port.ts';
-import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -197,7 +202,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             carrier: options.carrier ?? 'ws',
             settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
             planRepairMessage: options.planRepairMessage,
@@ -417,26 +422,33 @@ export function firstValue<K, V>(map: Map<K, V>): V {
 
 export function createOutboundCanonicalEntry<TPrepared>(
     store: ALOutboundAdmissionStore<TPrepared>,
-    msg: ALMessage
+    msg: ALMessage,
+    createdAt: Temporal.Instant
 ): ResourceEntry {
-    return { ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'), key: toALOutboundCanonicalKey(store.canonicalScope, msg) };
+    return { ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', createdAt), key: toALOutboundCanonicalKey(store.canonicalScope, msg) };
 }
 
-export async function computeOutboundTestAdmission<TPrepared>(
-    store: ALOutboundAdmissionStore<TPrepared>,
-    message: ALMessage,
-    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
-) {
-    const read = await store.readOutgoingMessage({
-        msg: message,
-        planner,
+export interface ReadOutboundTestAdmissionInput<TPrepared> {
+    readonly store: ALOutboundAdmissionStore<TPrepared>;
+    readonly message: ALMessage;
+    readonly creationNow: QueueBoxUtilities.CreationClock;
+    readonly clock: ALOutboundMessageRuntime.Clock;
+    readonly planner?: ALOutboundPlanner<TPrepared>;
+}
+
+export async function readOutboundTestAdmission<TPrepared>(
+    input: ReadOutboundTestAdmissionInput<TPrepared>
+): Promise<ALOutboundCommitBundle<TPrepared>> {
+    const read = await input.store.readOutgoingMessage({
+        msg: input.message,
+        planner: input.planner ?? ((msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });
     const computed = computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
-        dispatchAtMs: Date.now(),
+        outboxEntry: createOutboundCanonicalEntry(input.store, read.msg, input.creationNow()),
+        dispatchAtMs: input.clock.nowMs(),
         intent: 'enqueue',
         phase: 'immediate',
         options: {}

@@ -1,7 +1,9 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -13,6 +15,7 @@ import {
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
+import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const COMMAND = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -23,6 +26,59 @@ const COMMAND = {
 } as const;
 
 describe('AppInbox durable enqueue', () => {
+    it('generates one resource ID for a sparse command and preserves supplied IDs', async () => {
+        const queue = new TestResourceInbox(new Map());
+        const createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const creationNow = () => createdAt;
+        const newResourceId = vi.fn(() => 'generated-command');
+        const writer = new AppInboxQueueEntryWriter({
+            repository: queue,
+            inboxQueueReader: new InboxQueueReader(queue, undefined, creationNow),
+            creationNow,
+            newResourceId,
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
+
+        const generated = await writer.enqueue({ ...COMMAND, resourceId: undefined });
+        const supplied = await writer.enqueue(COMMAND);
+
+        expect(generated.key).toEqual({
+            topicId: 'app-inbox.client-state',
+            resourceId: 'generated-command',
+            contextId: 'app:workspace:principal'
+        });
+        expect(supplied.key.resourceId).toBe('durable-command-1');
+        expect(newResourceId).toHaveBeenCalledTimes(1);
+        expect(generated.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+        expect(generated.dequeueAudit).toEqual({ attempts: 0 });
+    });
+
+    it('captures a new precise replacement instant and resets attempts while leaving an active replay unchanged', async () => {
+        const queue = new TestResourceInbox(new Map());
+        let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const writer = new AppInboxQueueEntryWriter({
+            repository: queue,
+            inboxQueueReader: new InboxQueueReader(queue),
+            creationNow: () => createdAt,
+            newResourceId: () => 'unused-command',
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
+        const key = await writer.enqueueReplacingTerminal(COMMAND);
+        const initial = await queue.getItem(key);
+        if (initial === undefined) {
+            throw new Error('Expected the inserted AppInbox row.');
+        }
+        createdAt = Temporal.Instant.from('2026-10-14T00:00:00.987654321Z');
+        await writer.enqueueReplacingTerminal(COMMAND);
+        expect(await queue.getItem(key)).toEqual(initial);
+        await queue.enqueue({ ...initial, status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 15 } });
+
+        await writer.enqueueReplacingTerminal(COMMAND);
+
+        expect((await queue.getItem(key))?.audit.createdTs.toString()).toBe('2026-10-14T00:00:00.987654321');
+        expect((await queue.getItem(key))?.dequeueAudit).toEqual({ attempts: 0 });
+    });
+
     it('returns the exact persisted row without waiting for command completion', async () => {
         const queue = new TestResourceInbox(new Map());
         const service = createService(queue);
@@ -127,6 +183,9 @@ function createService(
 ): AppInboxQueueEntryWriter {
     return new AppInboxQueueEntryWriter(
         {
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture,
+            newResourceId: crypto.randomUUID.bind(crypto),
             inboxQueueReader: new InboxQueueReader(queue),
             repository: queue
         },
