@@ -24,10 +24,14 @@ export function isRoutineBrowserDiagnostic(topic: string, detail: unknown): deta
     if (computeRallarBlackBoxDiagnosticSeverity({ topic, detail }) !== 'info') {
         return false;
     }
-    if (detail === undefined) {
-        return true;
-    }
     switch (topic) {
+        case 'rallar.browser.connect_completed':
+        case 'rallar.browser.connect.phase_completed':
+        case 'rallar.browser.formation.changed':
+        case 'rallar.browser.formation.layout':
+        case 'rallar.browser.formation.ready':
+        case 'rallar.browser.formation.not-ready':
+            return false;
         case 'rallar.browser.formation.room-status':
             return isRoutineFormationRoomDetail(detail);
         case 'rallar.browser.rtc.lifecycle':
@@ -37,7 +41,7 @@ export function isRoutineBrowserDiagnostic(topic: string, detail: unknown): deta
         case 'rallar.browser.rtc.signaling_diagnostics':
             return isRoutineSignalingDiagnostic(detail);
         default:
-            return false;
+            return detail === undefined;
     }
 }
 
@@ -53,14 +57,15 @@ function isRoutineSignalingDiagnostic(detail: unknown): detail is RtcSignalingDi
             'signalingState'
         ]) ||
         !isIdentity(detail.localSessionId) || !isIdentity(detail.peerSessionId) ||
+        typeof detail.disposition !== 'string' ||
         detail.localSessionId === detail.peerSessionId || !isNonnegativeNumber(detail.atEpochMs)
     ) {
         return false;
     }
+    const signalType = detail.signalType;
     if (
-        detail.signalType === 'IceCandidate'
-            ? detail.offerId !== undefined
-            : !isOneOf(detail.signalType, ['Offer', 'Answer']) || !isIdentity(detail.offerId)
+        !isOneOf(signalType, ['Offer', 'Answer', 'IceCandidate']) ||
+        (signalType === 'IceCandidate' ? detail.offerId !== undefined : !isIdentity(detail.offerId))
     ) {
         return false;
     }
@@ -87,15 +92,29 @@ function isRoutineSignalingDiagnostic(detail: unknown): detail is RtcSignalingDi
     }
     return detail.kind === 'native-signal-decision' && detail.result === undefined &&
         detail.offerMatches === undefined && detail.signalingState === undefined &&
-        isOneOf(detail.disposition, [
-            'application-started',
-            'remote-description-returned',
-            'rollback-and-remote-description-returned',
-            'local-answer-description-returned',
-            'ice-queued',
-            'ice-added',
-            'application-returned'
-        ]);
+        isRoutineNativeDisposition(signalType, detail.disposition);
+}
+
+/** Mirrors the SDK's separate candidate, answer and offer application branches. */
+function isRoutineNativeDisposition(
+    signalType: string,
+    disposition: string
+): boolean {
+    switch (disposition) {
+        case 'application-started':
+        case 'application-returned':
+            return true;
+        case 'ice-queued':
+        case 'ice-added':
+            return signalType === 'IceCandidate';
+        case 'remote-description-returned':
+            return signalType === 'Offer' || signalType === 'Answer';
+        case 'rollback-and-remote-description-returned':
+        case 'local-answer-description-returned':
+            return signalType === 'Offer';
+        default:
+            return false;
+    }
 }
 
 function isRoutineNativeIdentity(detail: unknown): detail is RtcSignalingDiagnostics.NativeIdentity {

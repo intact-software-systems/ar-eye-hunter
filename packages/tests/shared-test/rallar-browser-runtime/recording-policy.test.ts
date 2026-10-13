@@ -1,12 +1,4 @@
-import type { RallarRoomTransportStatus, RallarRtcLifecycleEvent } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
-import {
-    createHealthyRecordingPeer,
-    createHealthyRecordingRtcStatus,
-    createHealthyRecordingWsStatus,
-    createNativeRecordingEvents,
-    createRecordingFormationStatus
-} from './recording-policy-fixtures.ts';
 
 import {
     createBlackBoxRallarRuntime,
@@ -17,9 +9,17 @@ import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/brow
 import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserRallarEvent, RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { RallarRoomTransportStatus, RallarRtcLifecycleEvent } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { facade, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    createHealthyRecordingPeer,
+    createHealthyRecordingRtcStatus,
+    createHealthyRecordingWsStatus,
+    createNativeRecordingEvents,
+    createRecordingFormationStatus
+} from './recording-policy-fixtures.ts';
 
 beforeEach(resetFacade);
 afterEach(() => vi.unstubAllGlobals());
@@ -366,4 +366,138 @@ it('retains contradictory and malformed RTC snapshots even when the event kind s
     expect(recorder.state().events.slice(before).map((row) => row.payload)).toEqual(
         JSON.parse(JSON.stringify(inconsistent)).map((data: object) => expect.objectContaining({ data }))
     );
+});
+
+it.each(['producer', 'admission'] as const)('retains contradictory native signaling pairs at the %s boundary', async (boundary) => {
+    const { recorder, published } = await connectRecorder('disabled');
+    const signaling = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.signalingDiagnostics;
+    const base = {
+        ...signalIdentity,
+        kind: 'native-signal-decision',
+        nativeIdentity,
+        capturedPeerConnection: true,
+        currentPeerConnection: true,
+        offerMatches: undefined,
+        signalingState: undefined
+    } as const;
+    const supported: readonly RtcSignalingDiagnostics.Event[] = [
+        { ...base, disposition: 'remote-description-returned' },
+        { ...base, signalType: 'Answer', disposition: 'remote-description-returned' },
+        { ...base, disposition: 'rollback-and-remote-description-returned' },
+        { ...base, disposition: 'local-answer-description-returned' },
+        { ...base, signalType: 'IceCandidate', offerId: undefined, disposition: 'ice-added' },
+        { ...base, signalType: 'IceCandidate', offerId: undefined, disposition: 'ice-queued' },
+        ...(['Offer', 'Answer', 'IceCandidate'] as const).flatMap((signalType) =>
+            (['application-started', 'application-returned'] as const).map((disposition) => ({
+                ...base,
+                signalType,
+                offerId: signalType === 'IceCandidate' ? undefined : base.offerId,
+                disposition
+            }))
+        )
+    ];
+    const contradictory: readonly RtcSignalingDiagnostics.Event[] = [
+        { ...base, disposition: 'ice-added' },
+        { ...base, disposition: 'ice-queued' },
+        { ...base, signalType: 'Answer', disposition: 'ice-added' },
+        { ...base, signalType: 'Answer', disposition: 'rollback-and-remote-description-returned' },
+        { ...base, signalType: 'Answer', disposition: 'local-answer-description-returned' },
+        { ...base, signalType: 'IceCandidate', offerId: undefined, disposition: 'remote-description-returned' },
+        { ...base, signalType: 'IceCandidate', offerId: undefined, disposition: 'rollback-and-remote-description-returned' },
+        { ...base, signalType: 'IceCandidate', offerId: undefined, disposition: 'local-answer-description-returned' }
+    ];
+    const topic = 'rallar.browser.rtc.signaling_diagnostics';
+    const before = recorder.state().events.length;
+    for (const data of [...supported, ...contradictory]) {
+        if (boundary === 'producer') {
+            signaling?.(data);
+        }
+        else {
+            recorder.receiveRallarBrowserEvent({ kind: 'diagnostic', topic, data, routineBrowserDiagnostic: true, severity: 'info' });
+        }
+    }
+    expect(recorder.state().events.slice(before).map((row) => row.payload)).toEqual(
+        JSON.parse(JSON.stringify(contradictory)).map((data: object) => expect.objectContaining({ data }))
+    );
+    if (boundary === 'producer') {
+        expect(published.filter((event) => event.topic === topic).map((event) => event.routineBrowserDiagnostic))
+            .toEqual([...supported.map(() => true), ...contradictory.map(() => undefined)]);
+    }
+    expect((await recorder.execute({ kind: 'health' })).value).toMatchObject({
+        browserDiagnostics: { omittedRoutineBrowserDiagnostics: supported.length + 1 }
+    });
+});
+
+it.each(['producer', 'admission'] as const)('retains connecting formation without observable peer progress at the %s boundary', async (boundary) => {
+    const status = createRecordingFormationStatus();
+    const data = {
+        groupRevision: status.snapshot.causalRevision.groupRevision,
+        room: {
+            state: 'connecting',
+            acceptedLayoutIdentity: status.accepted!.identity,
+            desiredPeerIds: ['session-c'],
+            activePeerIds: [],
+            readyPeerIds: [],
+            failedPeerIds: []
+        }
+    } as const;
+    const transport: RallarRoomTransportStatus = {
+        roomRef: status.roomRef,
+        roomId: status.roomRef.groupId,
+        ws: createHealthyRecordingWsStatus(),
+        rtc: { ...data.room, desired: true, mode: 'eager', knownPeerIds: [], peers: [], laneId: 'realtime' }
+    };
+    const handle = facade.behavior.roomFormation(status.roomRef);
+    facade.behavior.roomFormation.mockReturnValue({ ...handle, roomRef: status.roomRef, status: () => status });
+    facade.behavior.rtcRoomStatus.mockReturnValue(transport);
+    const { recorder, published } = await connectRecorder('disabled', status.roomRef.groupId);
+    const before = recorder.state().events.length;
+    const topic = 'rallar.browser.formation.room-status';
+    if (boundary === 'producer') {
+        const notify = facade.behavior.rtcOnStatus.mock.calls.at(-1)?.[0];
+        await notify?.(createHealthyRecordingRtcStatus([]));
+    }
+    else {
+        recorder.receiveRallarBrowserEvent({ kind: 'diagnostic', topic, data, routineBrowserDiagnostic: true, severity: 'info' });
+    }
+    expect(recorder.state().events.slice(before)).toEqual([
+        expect.objectContaining({ topic, payload: expect.objectContaining({ data }) })
+    ]);
+    if (boundary === 'producer') {
+        expect(published.filter((event) => event.topic === topic).map((event) => event.routineBrowserDiagnostic)).toEqual([undefined]);
+    }
+    expect((await recorder.execute({ kind: 'health' })).value).toMatchObject({
+        browserDiagnostics: { omittedRoutineBrowserDiagnostics: 1 }
+    });
+});
+
+it('retains marked no-data structured families and protected receipt topics before generic no-data admission', async () => {
+    const recorder = createDefaultRallarBlackBoxBrowserTestRuntime({ routineBrowserDiagnostics: 'disabled' });
+    const protectedTopics = [
+        'rallar.browser.rtc.signaling_diagnostics',
+        'rallar.browser.rtc.lifecycle',
+        'rallar.browser.ws.lifecycle',
+        'rallar.browser.formation.room-status',
+        'rallar.browser.connect_completed',
+        'rallar.browser.connect.phase_completed',
+        'rallar.browser.formation.changed',
+        'rallar.browser.formation.layout',
+        'rallar.browser.formation.ready',
+        'rallar.browser.formation.not-ready'
+    ];
+    for (const topic of [...protectedTopics, 'routine-progress', 'rallar.browser.connect_started']) {
+        recorder.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic,
+            data: undefined,
+            routineBrowserDiagnostic: true,
+            severity: 'info',
+            connection: 'observer-a'
+        });
+    }
+    expect(recorder.state().events.map((row) => row.topic)).toEqual(protectedTopics);
+    expect(recorder.state().events.every((row) => row.connection === 'observer-a')).toBe(true);
+    expect((await recorder.execute({ kind: 'health' })).value).toMatchObject({
+        browserDiagnostics: { omittedRoutineBrowserDiagnostics: 2 }
+    });
 });

@@ -154,7 +154,8 @@ export function isRoutineFormationRoomDetail(detail: unknown): detail is Formati
     }
     return room.activePeerIds.every((peerId) => (room.desiredPeerIds as string[]).includes(peerId)) &&
         room.readyPeerIds.every((peerId) => (room.activePeerIds as string[]).includes(peerId)) &&
-        (room.state === 'connecting' && !isSameIdentitySet(room.desiredPeerIds, room.readyPeerIds) ||
+        (room.state === 'connecting' && room.activePeerIds.length > 0 &&
+                !isSameIdentitySet(room.desiredPeerIds, room.readyPeerIds) ||
             room.state === 'open' && isSameIdentitySet(room.desiredPeerIds, room.readyPeerIds));
 }
 
