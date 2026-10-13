@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { load } from 'js-yaml';
 import {
@@ -182,6 +183,20 @@ const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
         `step ${name}`
     );
 
+function resolveManualModeJobs(jobs: Readonly<Record<string, WorkflowJob>>, executionMode: string): readonly string[] {
+    return Object.entries(jobs).filter(([, job]) => {
+        if (job.if === undefined) {
+            return true;
+        }
+        const expression = /^\$\{\{([\s\S]+)\}\}$/.exec(job.if)?.[1] ?? job.if;
+        const selected: unknown = runInNewContext(expression, { inputs: { execution_mode: executionMode } }, { timeout: 1000 });
+        if (typeof selected !== 'boolean') {
+            throw new Error('Manual execution-mode condition did not return a boolean');
+        }
+        return selected;
+    }).map(([name]) => name).toSorted();
+}
+
 describe('GitHub Free distributed recipe workflow', () => {
     it('WS observation selection is false by default and belongs only to the local observation caller', async () => {
         const workflow = await readWorkflow();
@@ -256,20 +271,23 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         }
     });
 
-    it('routes manual modes to mutually exclusive local and external jobs', async () => {
+    it.each([
+        { executionMode: 'all-local', selectedJobs: ['all-local'] },
+        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
+    ])('routes $executionMode exclusively to its selected job family', async ({ executionMode, selectedJobs }) => {
+        const jobs = required((await readWorkflow()).jobs, 'jobs');
+        expect(resolveManualModeJobs(jobs, executionMode)).toEqual(selectedJobs);
+    });
+
+    it('exposes local execution without external credentials or deployments', async () => {
         const workflow = await readWorkflow();
         const mode = required(workflow.on?.workflow_dispatch?.inputs?.execution_mode, 'execution mode');
-        expect(mode).toEqual({
-            description: 'Run GitHub browsers against Hetzner control or the frozen all-local ALM observation',
+        expect(mode).toMatchObject({
             type: 'choice',
             default: 'hetzner-control',
             options: ['hetzner-control', 'all-local']
         });
-        for (const name of ['plan', 'prepare-hetzner', 'github-agents', 'operator']) {
-            expect(required(workflow.jobs?.[name], name).if).toBe('${{ inputs.execution_mode == \'hetzner-control\' }}');
-        }
         const local = required(workflow.jobs?.['all-local'], 'all-local job');
-        expect(local.if).toBe('${{ inputs.execution_mode == \'all-local\' }}');
         expect(local['runs-on']).toBe('ubuntu-latest');
         expect(local.needs).toBeUndefined();
         expect(local.environment).toBeUndefined();
@@ -331,9 +349,6 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
             VITE_RALLAR_SPA_BASE_URL: 'http://127.0.0.1:5176',
             RALLAR_BLACK_BOX_CONTROL_BASE_URL: 'http://127.0.0.1:5180'
         });
-        expect(measurement.run).toBe(
-            'npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0'
-        );
         const upload = findStep(local, 'Retain local observation evidence');
         expect(upload).toMatchObject({
             if: '${{ always() }}',

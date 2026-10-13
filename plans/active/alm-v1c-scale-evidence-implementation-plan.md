@@ -36,7 +36,9 @@ pull request retain prior outcomes and review chronology; do not copy that histo
   completion. Preserve canonical AR Eye payloads, nested relay/game identities, match coherence
   and isolated room scope, including serialized arrival matches.
 - Preserve the existing 5,000 ms HTTP allowance, separate 45-second initial socket and 45-second
-  RTC-readiness allowances, 15-second barriers and 30-second workload/ACK window. The declared
+  RTC-readiness allowances, 15-second coordinator start barrier and 45-second recipe setup
+  barriers. The existing 65-second shots-complete declaration is clipped by its enclosing
+  30-second absolute workload/ACK window. The declared
   330-second outer terminal allowance and existing 120-second hosted registration allowance are
   lifecycle bounds, not extensions of those inner deadlines. Preserve parent clipping, cancellation
   and truthful incomplete results. Late diagnostics cannot resurrect a failed window or end event.

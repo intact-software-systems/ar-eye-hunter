@@ -1,5 +1,9 @@
 import { appendFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    readFile,
+    writeFile
+} from 'node:fs/promises';
 import path from 'node:path';
 
 const authoredAlmPaths = new Map([
@@ -34,7 +38,7 @@ export async function admitAllLocalAlmManifest(input) {
         ]);
     const authored = [...createAlmScaleManifestEntries(), ...createAlmScaleDiagnosticEntries()]
         .find((entry) => entry.filePath === selection.path && entry.agentCount === selection.participantCount);
-    const source = await readFile(path.join(input.repositoryRoot ?? process.cwd(), selection.path));
+    const source = await readFile(path.join(input.repositoryRoot, selection.path));
     if (authored === undefined || source.toString('utf8') !== `${JSON.stringify(authored.manifest, null, 2)}\n`) {
         throw new Error('Selected ALM source does not match its canonical producer.');
     }
@@ -58,7 +62,8 @@ if (process.argv[1]?.endsWith('/select-all-local-alm-manifest.mjs')) {
             targetAgentCount: process.env.TARGET_AGENT_COUNT,
             browserEngine: process.env.BROWSER_ENGINE,
             registerBeforeLogin: process.env.REGISTER_BEFORE_LOGIN,
-            storageDir: process.env.RALLAR_BLACK_BOX_STORAGE_DIR
+            storageDir: process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
+            repositoryRoot: process.cwd()
         };
         const selection = process.argv.includes('--admit')
             ? await admitAllLocalAlmManifest(input)

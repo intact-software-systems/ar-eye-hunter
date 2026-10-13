@@ -22,6 +22,7 @@ export default defineConfig({
             spaBaseUrl: headlessBaseUrl,
             reuseExistingServer: false,
             requireFreshPostgres: true,
+            appInboxPhaseTiming: true,
             admittedRtcCaseId: null,
             environment: process.env
         }),

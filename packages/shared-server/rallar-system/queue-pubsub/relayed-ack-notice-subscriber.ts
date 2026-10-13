@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+
 import type { RelayedAckNoticeChannel } from './relayed-ack-notice.ts';
 
 export interface InstallRelayedAckNoticeSubscriberInput extends RelayedAckNoticeChannel {
