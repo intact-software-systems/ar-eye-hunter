@@ -1,5 +1,7 @@
-import { toRallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/rallar-bb-test/browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts';
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';

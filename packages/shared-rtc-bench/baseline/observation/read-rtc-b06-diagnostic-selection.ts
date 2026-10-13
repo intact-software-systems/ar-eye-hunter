@@ -1,5 +1,7 @@
-import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts';
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
 import { decodeRtcBaselineEnvironment } from '../contracts/rtc-baseline-artifact-decoding.ts';
 import type {

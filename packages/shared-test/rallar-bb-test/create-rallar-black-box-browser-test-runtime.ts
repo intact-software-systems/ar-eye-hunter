@@ -3,6 +3,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import type {
+    BrowserDiagnosticsReceipt,
+    RallarBlackBoxRoutineBrowserDiagnostics
+} from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import {
     dispatchAlmBrowserCommand,
     type RallarBlackBoxAlmBrowserPort,
@@ -20,8 +24,7 @@ import type {
     RallarBlackBoxBrowserRallarEvent,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocket,
-    RallarBlackBoxBrowserWebSocketFactory,
-    RallarBlackBoxRoutineBrowserDiagnostics
+    RallarBlackBoxBrowserWebSocketFactory
 } from './browser/browser-command-contracts.ts';
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser/browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser/browser-command-placeholders.ts';
@@ -32,7 +35,6 @@ import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
 import { isRoutineBrowserDiagnostic } from './browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
-import type { BrowserDiagnosticsReceipt } from './browser/diagnostic-recording/to-browser-diagnostics-receipt.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
 import { computeRallarBlackBoxDiagnosticSeverity } from './diagnostics.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';

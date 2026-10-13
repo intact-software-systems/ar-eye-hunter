@@ -1,7 +1,7 @@
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
 
 import { createRtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';

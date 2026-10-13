@@ -426,7 +426,7 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts',
     'tests/playwright/rallar-black-box/live-rtc-browser-recording.ts',
-    'packages/shared-test/rallar-bb-test/browser/diagnostic-recording/to-browser-diagnostics-receipt.ts',
+    'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-capture-evidence.ts'
 ];
 

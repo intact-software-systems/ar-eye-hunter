@@ -1,9 +1,9 @@
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import {
     toBrowserDiagnosticsReceipt,
     validateBrowserDiagnosticsLifetime,
-    type BrowserDiagnosticsReceipt
-} from '@shared-test/rallar-bb-test/browser/diagnostic-recording/to-browser-diagnostics-receipt.ts';
+    type BrowserDiagnosticsReceipt,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord } from './live-rtc-evidence-json.ts';

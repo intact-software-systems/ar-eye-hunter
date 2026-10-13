@@ -4,6 +4,7 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type {
     RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestCommand,
@@ -162,8 +163,6 @@ export type RallarBlackBoxBrowserTestRuntime =
     & Readonly<{
         receiveRallarBrowserEvent(event: RallarBlackBoxBrowserRallarEvent): void;
     }>;
-
-export type RallarBlackBoxRoutineBrowserDiagnostics = 'enabled' | 'disabled';
 
 export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
     & Omit<

@@ -1,6 +1,7 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import {
     computeRallarBlackBoxBootstrapLaunch,
     type RallarBlackBoxBootstrapIssue,
@@ -16,7 +17,6 @@ import {
     type LaunchSetting,
     type RallarBlackBoxBootstrapEnvironment
 } from './browser-control-agent/resolve-launch-value.ts';
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from './browser/browser-command-contracts.ts';
 import {
     RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     type RallarBlackBoxProviderMode

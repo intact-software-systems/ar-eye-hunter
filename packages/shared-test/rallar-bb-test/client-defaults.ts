@@ -1,6 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from './browser/browser-command-contracts.ts';
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type { RallarBlackBoxTestConfig, RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
 import { decodeRecord } from './runtime/decode-runtime-result-values.ts';
 

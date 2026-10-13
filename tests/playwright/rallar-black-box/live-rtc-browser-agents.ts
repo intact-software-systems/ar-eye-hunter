@@ -6,11 +6,11 @@ import {
 } from '@playwright/test';
 
 import type { BlackBoxRallarRoomRefreshOptions } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type {
     FullStackRtcBrowserEntry,
     FullStackRtcServedBuild
 } from '@shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 

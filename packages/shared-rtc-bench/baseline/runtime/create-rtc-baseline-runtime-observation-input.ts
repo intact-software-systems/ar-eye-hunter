@@ -1,4 +1,4 @@
-import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts';
+import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../catalog/rtc-baseline-workload-catalog.ts';
 import type {
     RtcBaselineCaptureRequestDto,

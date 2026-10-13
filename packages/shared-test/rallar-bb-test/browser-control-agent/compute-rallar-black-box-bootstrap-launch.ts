@@ -1,8 +1,11 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '../../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
-import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../browser/browser-command-contracts.ts';
 import {
     isRallarBlackBoxProviderMode,
     RALLAR_BLACK_BOX_PROVIDER_MODES,
@@ -15,7 +18,6 @@ import {
     type LaunchSetting,
     type LaunchValue
 } from './resolve-launch-value.ts';
-import { toRallarBlackBoxRoutineBrowserDiagnostics } from './to-rallar-black-box-routine-browser-diagnostics.ts';
 
 /** A launch value that names a bootstrap setting but does not read as one. */
 export interface RallarBlackBoxBootstrapIssue {

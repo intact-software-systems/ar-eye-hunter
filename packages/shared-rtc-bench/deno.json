@@ -1,6 +1,5 @@
 {
   "imports": {
-    "@shared-test/": "../shared-test/",
     "@shared-server/": "../shared-server/",
     "@shared-web/": "../shared-web/",
     "@shared/": "../shared/",
