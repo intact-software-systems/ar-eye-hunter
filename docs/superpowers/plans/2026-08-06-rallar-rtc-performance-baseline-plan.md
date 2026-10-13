@@ -20,7 +20,55 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-09:** Optional HOST capture and operator RUN forwarding have
+**Current checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
+is merged into `codex/rtc-baseline-refresh`; this is not evidence of a direct merge to `main`.
+Configurable routine browser diagnostic recording is published in draft
+[PR659](https://github.com/intact-software-systems/ar-eye-hunter/pull/659), stacked on
+`codex/e3-volatile-inbound-retention`. Its source correctness checks pass; RTC observation
+integrity is skipped, and ordinary CI supplies no E3 acceptance. The current profiling branch,
+`codex/e3-disabled-heap-retainers`, carries the measured finding; the proposed retention policy
+is not implemented. The measured source is `9ec3e5347885a1b81afe30d5616ec63730356b87`.
+
+**Accepted E3 cohorts: zero.** The governed diagnostics-disabled primary,
+`20261013T120035793Z-9ec3e5347885-e3-memory-local`, completed all three warmups and
+eleven retained attempts. Every producer and canonical sample passed;
+only the heap cohort failed. All three retained 100-cycle members breached the unchanged
+heap rule, with aggregate post-GC growth of 45.680, 47.746 and 45.643 MiB. Settled peer,
+lane and connection-timer state did not drift. The failed primary requires no repeat;
+no repeat was launched. Actual retention receipts show RTC applied/off, ALM false and
+routine browser diagnostics disabled. Default and all-scenario cases preserve their
+separate enabled-diagnostics configurations.
+
+A separate instrumented recapture, `20261013T141047668Z-9ec3e5347885-e3-memory-local`,
+completed one 100-cycle retention attempt with all eleven original checkpoints and
+six coherent cycle-0/cycle-100 heap snapshots across the
+same three browser pages. Its full manifest remains incomplete and unfinalized; it is
+diagnostic evidence, not a primary, repeat or accepted cohort. Sequential snapshots perturb
+GC and timing. Earlier damaged inputs and invalid cross-snapshot ID comparisons remain
+preserved and excluded; original failed analysis is preserved. Independent runtime and findings
+reviews approve the qualified ownership evidence: the canonical browser runtime appends
+all admitted events to unbounded `currentState.events`, and a React memoized projection
+retains many of the same records. Unique event field-data grows by approximately 5.2–5.7 MiB
+per page. This identifies an owner; it proves neither reclaimable bytes nor optimization
+savings, and exact compiled React component ownership remains unproven.
+
+The proposed opt-in 64-event recent-history policy is **awaiting human design approval**.
+Historical event waits, absence proofs, assertions, barrier single-use and offline unsent
+replay are verified consumer requirements. A general tail cap would break them. The next
+two conditional slices are the canonical runtime policy with truthful coverage and TDD,
+then actual browser launch, connected capture and retention-recipe admission with TDD.
+Implement only after design approval and independently review both slices before a fresh
+governed E3 acquisition; Section 11 owns this horizon.
+
+The full B01–B06 baseline, deployed HOST/RUN and actual Actions application, remaining
+Task65 outcomes and successful E3 acceptance remain required. B07 remains held. Preserve
+the original workloads, environments, sample counts, deadlines, heap/drift criteria,
+conditional repeat, zero retries and every failed attempt. E3 uses serialized repository
+work on its frozen host/load; E1's quiet-host requirement is separate. The user's wait
+instruction still protects the foreign processes and Claude checkout from termination.
+The records below describe earlier source checkpoints and do not supersede this status.
+
+**Historical checkpoint, 2026-10-09:** Optional HOST capture and operator RUN forwarding have
 independent specification and complete quality acceptance. The canonical parser,
 manifest/control/artifact admission and existing RUN > STEP > RECIPE > HOST > default precedence
 remain authoritative. Omission preserves authored settings; malformed selections fail before launch
@@ -2587,6 +2635,44 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
+The diagnostics-disabled primary is complete and heap-failed; accepted E3 cohorts remain
+zero. The independently reviewed six-snapshot diagnostic locates the unbounded canonical
+runtime event history and a concurrent React projection, but does not prove savings or
+close the heap gate. The proposed 64-event opt-in recent-history design is awaiting human
+approval.
+
+Keep only these next two useful implementation slices concrete, conditional on approval:
+
+1. **Canonical recent-history policy and semantic TDD:** implement the approved bounded
+   recent view in the existing runtime owner, with truthful history coverage and cumulative
+   counters. Prove retained ordering, uncovered-history refusal, absence witnesses,
+   cancellation, barrier identity and current connection facts at their owned boundaries.
+   Preserve verified ordinary full-history wait/assert/reconnect behavior. Do not equate
+   diagnostic-recording selection with history retention or replace row growth with a
+   duplicated unbounded buffer. Complete recursive touched-file closure, affected package
+   validation and independent specification/quality review.
+2. **Actual launch, connected capture and recipe admission with semantic TDD:** carry the
+   approved immutable selection through the real browser construction roots and expose
+   attributable Health/final evidence. Prove connected event streaming and irreversible
+   incomplete-capture reporting for a publication or offline gap, including reset and
+   assignment ownership. Admit the selected retention recipe only with actual policy and
+   capture receipts; verify the full recorder journal rather than treating a local socket
+   send as durable evidence. Preserve the same three pages, 100 reconnect cycles, eleven
+   checkpoints, original assertions and deadlines. Complete affected browser/app/package
+   validation and independent specification/quality review.
+
+Measurement follows both reviewed slices on an exact frozen source/configuration using
+the unchanged E3 primary and conditional repeat. Do not overlap native measurement with
+agents, tests, builds, downloads or artifact analysis. Neither semantic tests, normal CI
+nor an instrumented diagnostic accepts E3. Later outcomes remain successful E3 and all
+remaining B01–B06, deployed HOST/RUN, actual Actions and Task65 gates; B07 stays held.
+No new retention implementation or optimization is accepted at this checkpoint.
+
+### Earlier implementation horizon (historical)
+
+The following source checkpoints and intended actions retain their original evidence
+scope. Their then-current work ordering does not replace the two slices above.
+
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
 correctness. Task 36 preserves a failed diagnostic and finite observations; it
@@ -2663,7 +2749,7 @@ Task58's initial application/currentness checkpoint is published at
 accepted. Its unpublished acquired-send successor has witnessed semantic RED/GREEN.
 The review's unreachable live/tab resources finding is corrected and independently closed;
 quality remains unaccepted for the separate public encrypted-output typing decision.
-The next two useful implementation actions are:
+The intended implementation actions at that historical checkpoint were:
 
 1. **Repair the real parent conflicts:** combine current main's canonical exclusive-audience
    routing with the parent's capture/acquisition and final admission guards. Establish the
