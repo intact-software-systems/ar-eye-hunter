@@ -130,37 +130,42 @@ export function createAlmScaleGroupAssertions(playerCount: number): readonly Ral
                 expected: role === 'director' ? playerCount * 6 : 2
             }),
             ...(role === 'director'
-                ? [
-                    ...['start', 'end'].flatMap((event) =>
-                        createReceiptGroupAssertions(`${prefix}-${event}-receipt`, playerCount)
-                    ),
-                    ...(['start', 'end'] as const).flatMap((event) =>
-                        (['expectedRecipientPeerIds', 'confirmedRecipientPeerIds'] as const).map((field) => ({
-                            groupAssertionId: `${prefix}-${event}-receipt-${field}-frozen-player-sessions`,
-                            aggregate: 'sameUniqueStringSetAsRole' as const,
-                            scope: { role: 'sender' },
-                            source: {
-                                recipeId: 'alm-scale-director',
-                                commandId: `${prefix}-${event}-receipt`,
-                                path: field
-                            },
-                            comparison: {
-                                role: 'receiver',
-                                source: {
-                                    recipeId: 'alm-scale-player',
-                                    commandId: 'alm-scale-player-connect',
-                                    path: 'sessionId'
-                                }
-                            }
-                        }))
-                    )
-                ]
+                ? createDirectorLifecycleGroupAssertions(playerCount)
                 : ([['iterations', 6], ['pacing.completedIterations', 6], ['failed', 0], ['cancelled', false]] as const)
                     .map(([path, expected]) =>
                         createGroupAssertion(role, `${prefix}-shots`, { path, operator: 'equals', expected })
                     ))
         ];
     });
+}
+
+function createDirectorLifecycleGroupAssertions(
+    playerCount: number
+): readonly RallarBlackBoxDistributedGroupAssertion[] {
+    const prefix = 'alm-scale-director';
+    return [
+        ...['start', 'end'].flatMap((event) => createReceiptGroupAssertions(`${prefix}-${event}-receipt`, playerCount)),
+        ...(['start', 'end'] as const).flatMap((event) =>
+            (['expectedRecipientPeerIds', 'confirmedRecipientPeerIds'] as const).map((field) => ({
+                groupAssertionId: `${prefix}-${event}-receipt-${field}-frozen-player-sessions`,
+                aggregate: 'sameUniqueStringSetAsRole' as const,
+                scope: { role: 'sender' },
+                source: {
+                    recipeId: 'alm-scale-director',
+                    commandId: `${prefix}-${event}-receipt`,
+                    path: field
+                },
+                comparison: {
+                    role: 'receiver',
+                    source: {
+                        recipeId: 'alm-scale-player',
+                        commandId: 'alm-scale-player-connect',
+                        path: 'sessionId'
+                    }
+                }
+            }))
+        )
+    ];
 }
 
 function createWorkloadGroupAssertions(

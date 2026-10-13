@@ -1,5 +1,6 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
+
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH

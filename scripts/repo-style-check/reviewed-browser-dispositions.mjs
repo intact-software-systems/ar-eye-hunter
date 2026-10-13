@@ -10,6 +10,14 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 119
     }),
+    // A workflow condition's VM result is untrusted until its boolean guard.
+    // Only that checked decision leaves the manual-mode job selector.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveManualModeJobs',
+        maximumMagnitude: 1
+    }),
     // The named app composition boundary assembles defaults before the required
     // constructor. This module-owned prompt has no checker symbol, even though
     // its display message names the default factory.

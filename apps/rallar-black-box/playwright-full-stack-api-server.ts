@@ -34,7 +34,7 @@ export interface FullStackApiV1WebServerInput {
     readonly reuseExistingServer: boolean;
     readonly requireFreshPostgres: boolean;
     readonly timingCaptureDirectory?: string;
-    readonly appInboxPhaseTiming?: boolean;
+    readonly appInboxPhaseTiming: boolean;
     readonly environment: Readonly<NodeJS.ProcessEnv>;
     readonly admittedRtcCaseId: ReadFullStackRtcIceFixtureRequestsInput['admittedCaseId'];
 }
@@ -117,7 +117,7 @@ export function createDefaultFullStackApiV1WebServer(
         reuseExistingServer: input.reuseExistingServer ?? true,
         requireFreshPostgres: input.requireFreshPostgres ?? false,
         timingCaptureDirectory: input.timingCaptureDirectory,
-        appInboxPhaseTiming: input.appInboxPhaseTiming,
+        appInboxPhaseTiming: input.appInboxPhaseTiming ?? true,
         environment,
         admittedRtcCaseId: input.admittedRtcCaseId ?? null
     });
@@ -133,8 +133,7 @@ export function createFullStackApiV1WebServer(
     const apiBaseUrl = normalizeBaseUrl(input.apiBaseUrl);
     const spaBaseUrl = normalizeBaseUrl(input.spaBaseUrl);
 
-    const appInboxPhaseTiming = input.appInboxPhaseTiming ?? true;
-    const apiInvocation = toFullStackApiInvocation(input.timingCaptureDirectory, mode, appInboxPhaseTiming);
+    const apiInvocation = toFullStackApiInvocation(input.timingCaptureDirectory, mode, input.appInboxPhaseTiming);
     const iceRequests = mode === 'memory'
         ? readFullStackRtcIceFixtureRequests({
             environment: input.environment,

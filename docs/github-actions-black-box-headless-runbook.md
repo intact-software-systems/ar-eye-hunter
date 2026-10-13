@@ -45,7 +45,7 @@ results and events on success or failure. Recorder completeness compares exact
 exported bytes, received counts and the latest-per-command snapshot inventory.
 
 Acceptance requires terminal `passed`, `rollup.ok`, 15 distinct principals/clients,
-the frozen roles, all 15 successful recipes and 73 passed group assertions with
+the frozen roles, all 15 successful recipes and 231 passed group assertions with
 zero failures or incomplete evidence. Worker exit zero or readable analysis alone
 does not establish acceptance. Preserve any setup failure without changing auth,
 readiness, barrier, workload or ACK limits. Fresh ephemeral PGlite, local pubsub/ICE,
@@ -236,7 +236,7 @@ principal. The workflow supplies the existing per-agent
   dispatch.
 - Barrier timeout: retain native command delivery and readiness evidence and
   investigate the demonstrated boundary before rerunning. The frozen all-local
-  observation keeps its 15-second barrier and does not create a relaxed fixture.
+  observation keeps its 15-second coordinator start barrier and does not create a relaxed fixture.
 
 ## Cleanup
 
