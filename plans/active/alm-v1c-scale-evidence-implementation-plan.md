@@ -169,14 +169,27 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   cause is established for the END failure or earlier hosted delay.
 - The native-send evidence repair now preserves the existing attempted failure settlement and
   original error detail after an immediate native send throws, with ordinary retry unchanged.
-  Focused tests, full-file reviews and affected consumer checks pass. The remaining source-review
-  findings are the inbound authorization name, forwarding-only receipt writer and import grouping;
-  resolve them with complete recursive closure. None identifies the END handoff reason.
-- The public finalization type correction and three awaitable runtime/multicast disposal methods
-  still require the maintainer's separate compatibility decisions. Verified repository consumers
-  and passing cleanup tests alone cannot supply those decisions. The exported WS first-refusal
-  authorization callback name is also a compatibility boundary before renaming. No legacy adapter
-  is selected.
+  Focused tests, full-file reviews and affected consumer checks pass. The approved inbound
+  authorization naming is implemented, with affected checks passing. The forwarding-only receipt
+  writer and import grouping still require complete recursive closure. None identifies the END
+  handoff reason; whole-branch review remains open.
+- The current first-guard native-entry diagnostic captures 171 exact own-hop terminal controls
+  from twelve healthy shots belonging to the two previously failing origins. Every selected
+  record joins the complete scoped SDK incoming multiset; observed entry-to-callback gaps are
+  0–1 ms. All fifteen page owners complete without pauses, errors or caps. The same workload
+  still fails: 84 sends pass, 83 shot ACK observations pass and another player fails shot six.
+  The other thirteen players pass 78 explicit receipts; all 105 samples and 1,155 bounds pass.
+  That player's required director control reaches an intermediate relay, whose exact forwarded
+  control has seven pre-deadline throwing handoffs and no recorded SDK submission in the complete
+  export. Its typed handoff reason remains uncaptured. The selector excludes that origin and
+  forwarded control, so its absence cannot supply negative evidence. END, final checks and all
+  231 native predicates remain unexecuted. Complete producer/export parity and reaped cleanup
+  pass. Healthy current native gaps do not explain the earlier late callbacks or hosted failure.
+- The maintainer approved the public finalization type correction, three awaitable disposal
+  methods and exported WS first-refusal callback rename. The callback keeps its function type,
+  default and authorization behavior; verified callers and affected support enter complete
+  closure. No legacy adapter or migration path is selected. Source review and original acceptance
+  remain independent requirements.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
@@ -185,19 +198,22 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-Resolve the two current sixth-shot ACK failures from the retained native receipt and relay
-completion evidence. Their exact terminal controls converge on a late SDK callback at one relay,
-after pre-deadline submission. Local director dispatch return does not prove subtree completion.
-The next missing discriminator is the earliest owned QRtc receive entry, before raw subscribers
-and application dispatch. Reuse the existing reviewed first-guard native-entry capability for the
-current causal control family and a healthy same-run control; do not invent another observer.
-Derive current sessions and actual transport hops from the new producer, rather than transplanting
-failed-run identities or assuming the same role remains the relay. Prove the changed selection,
-negative/healthy cases, cap behavior and original caller effects, then verify the actual served
-location and compiled current SDK. Preserve source/context custody, distinct invocation ordinals,
-private projection bounds and owned cleanup. Review the exact changed private sources before one
-earned instrumented execution. Entry and SDK clocks distinguish measured boundaries; they do not
-measure wire receipt or establish a renderer, network, memory, quota or scheduler cause.
+The reviewed first-guard QRtc observation has completed one earned diagnostic. Its 171 exact
+controls are healthy; the current failure moves to another player's sixth shot and an intermediate
+forwarded logical-director control with throwing handoffs. The missing discriminator is that
+control's typed handoff reason. Reuse the existing reviewed handoff capability for current variable
+player origins and forwarded logical-director paths. Derive the complete current roster and subject
+joins from the producer, keeping origin, logical recipient, sender, physical peer, target and
+invocation multiplicity distinct. Do not transplant the failed-run identities or require from to
+match logical recipient for forwarded controls.
+
+Prove the changed selection at the actual compiled current SDK, including a positive forwarded
+refusal, healthy path, typed reason preservation, negative cases, bounded capture and original caller
+effects. Review the exact changed private sources before one earned execution. Preserve one owned
+recorder tail, source/context custody, ordinal reconciliation and cleanup. A cap stays incomplete;
+positive reasons need exact failed-subject joins. The completed native observation does not earn
+an unchanged repeat, and widening an own-hop selector cannot supply a missing typed handoff reason.
+No new framework, quota change, deadline change or heap/CPU hypothesis is selected.
 
 Select a meaningful production repair only when that evidence and the existing owner establish
 a violated invariant. Preserve quotas, storage, deadlines and ACK semantics. A source hypothesis
@@ -231,14 +247,17 @@ throw behavior and the verified async consumer remain unchanged. Its focused and
 already pass; do not repeat them solely for a plan update. Owned completion boundaries remain
 required in tests instead of arbitrary settlement flushes.
 
-Give the inbound authorization/read/observation operation a truthful owned name while preserving
-its first-refusal precedence and lazy relay read. Keep the immutable receipt projection, remove
-its forwarding-only writer and call the canonical guarded diagnostic writer at receipt admission.
-Correct the two external/local import separators. Follow verified callers and support files into
-full closure, without a compatibility alias, duplicate guard, old-path module or migration code.
-The exported WS authorization callback returns a first refusal, so its current validation name
-also needs a truthful compatibility decision before a public rename. Prepare that concrete
-decision from verified callers; independently safe receipt/import closure can proceed.
+Preserve the implemented, approved WS callback and protocol authorization names, their function
+types, omission default, original-message handling, first-refusal precedence and lazy relay read.
+Their verified callers and affected support pass the selected semantic, type and browser-boundary
+checks. Complete review and publication of this increment while whole-branch closure stays open.
+
+Keep the immutable receipt projection, remove its forwarding-only writer and call the canonical
+guarded diagnostic writer at receipt admission. Correct the two external/local import separators.
+Follow every verified caller and changed support file into complete closure, without a compatibility
+alias, duplicate guard, old-path module or migration code. Preserve the maintainer-approved public
+callback contract while completing the remaining independent receipt/import work. Each remaining
+change requires its full-file review and affected validation before publication.
 
 Keep the original acceptance workload as the priority while this independently evidenced review
 fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful

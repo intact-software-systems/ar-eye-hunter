@@ -34,7 +34,7 @@ export function toALInboundReceiver(
     return { selfPeerId, readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER) };
 }
 
-export function validateALInboundMessage(
+export function readALInboundMessageAuthorization(
     msg: ALMessage,
     source: ALInboundMessageRuntime.Source,
     receiver: ALInboundReceiver
@@ -59,7 +59,7 @@ export function validateALInboundMessage(
         return Either.ofLeft({ code: 'malformed', message: 'RTC room multicast carries no frozen audience' });
     }
     if (msg.payload.typeId.startsWith('al.control.')) {
-        const rejection = validateALInboundControlAddress(msg, source, receiver);
+        const rejection = readALInboundControlRejection(msg, source, receiver);
         if (rejection) {
             return Either.ofLeft(rejection);
         }
@@ -72,7 +72,7 @@ export function validateALInboundMessage(
  * its ACK speaks only for itself, whoever it is addressed to. Any other control is for this receiver,
  * or a receiver ACK a relaying WS server admits for the origin it names.
  */
-function validateALInboundControlAddress(
+function readALInboundControlRejection(
     msg: ALMessage,
     source: ALInboundMessageRuntime.Source,
     receiver: ALInboundReceiver

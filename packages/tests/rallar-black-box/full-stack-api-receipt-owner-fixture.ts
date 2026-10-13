@@ -7,6 +7,7 @@ import { installQueueBoxPubSubBridge } from '../../shared-server/rallar-system/q
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../shared/al-contracts/al-carrier-capabilities.ts';
 import { isRoomScopedALMessage, type ALMessage } from '../../shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage, newALAckControlMessage } from '../../shared/al-contracts/al-control.ts';
+import { decodePersistedALMessage } from '../../shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../../shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '../../shared/alm/ALStoreRetention.ts';
 import { createDefaultALInboundRuntimeResources } from '../../shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -19,6 +20,7 @@ import {
 } from '../../shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../shared/api/api-config.ts';
 import { Either } from '../../shared/resilience/Either.ts';
+import { toError } from '../../shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '../../shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../../shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '../../shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
@@ -28,66 +30,16 @@ import { WsQueueBoxServerService } from '../../shared/services/ws-queue-box-serv
 import { ConnectionContext, JsonWebSocketServer } from '../../shared/websocket/json-web-socket-server.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 
-const scope = { applicationId: 'app', workspaceId: 'workspace' };
+export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
 
-async function commitCompetitor(store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>, message: ALMessage) {
-    const competitor = { ...message, id: { ...message.id, msgId: 'competing-version' } };
-    const read = await store.readOutgoingMessage({
-        msg: competitor,
-        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
-        observedCanonicalEntry: undefined,
-        intent: 'enqueue'
-    });
-    const computed = computeALOutboundDispatch({
-        read,
-        outboxEntry: {
-            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX),
-            key: toALOutboundCanonicalKey(store.canonicalScope, competitor)
-        },
-        dispatchAtMs: Date.now(),
-        intent: 'enqueue',
-        phase: 'immediate',
-        options: {}
-    });
-    assert.ok(computed.bundle);
-    return computed.bundle;
-}
-
-function subject(): ALMessage {
-    return {
-        id: { v: 3, msgId: 'subject', senderId: 'origin', ts: Date.now() },
-        route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room' },
-        targets: { mode: 'broadcast', scope: 'room', groupRef: { ...scope, groupId: 'room' } },
-        constraints: { expiresAtMs: Date.now() + 30_000 },
-        delivery: { reliability: 'at-least-once', ack: 'receiver' },
-        payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
-    };
-}
+export type ReceiptOwnerSink = 'collecting' | 'mutating' | 'throwing' | 'disabled' | 'unsafe' | 'unsafe-transport' | 'unsafe-publication' | 'clock-mutating';
 
 interface ReceiptOwnerSocket {
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
 }
 
-async function createSocket(): Promise<ReceiptOwnerSocket> {
-    const socket = new JsonWebSocketServer();
-    const origin = new SimulatedWebSocket('ws://origin');
-    const recipient = new SimulatedWebSocket('ws://recipient');
-    await origin.open();
-    await recipient.open();
-    socket.addConnection(new ConnectionContext({ id: 'origin', socket: origin }));
-    socket.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
-    return { socket, origin };
-}
-
-export type ReceiptOwnerScenario = 'native-return' | 'later-throw' | 'closed' | 'native-throw' | 'publish-return' | 'publish-throw' | 'direct-failure';
-
-export type ReceiptOwnerSink = 'collecting' | 'mutating' | 'throwing' | 'disabled' | 'unsafe' | 'unsafe-transport' | 'unsafe-publication' | 'clock-mutating';
-
-interface ReceiptFixtureClock {
-    nowMs: number;
-    reads: number;
-}
+const scope = { applicationId: 'app', workspaceId: 'workspace' };
 
 export async function writePendingReceiptOwnerEvidence(
     evidencePath: string,
@@ -95,7 +47,7 @@ export async function writePendingReceiptOwnerEvidence(
     sink: ReceiptOwnerSink = 'collecting'
 ): Promise<void> {
     const actualNow = Date.now;
-    const clock: ReceiptFixtureClock = { nowMs: 1700000000000, reads: 0 };
+    const clock: ReceiptOwnerFixture.Clock = { nowMs: 1700000000000, reads: 0 };
     Date.now = () => clock.nowMs;
     try {
         const fixture = new ReceiptOwnerFixture(await createSocket(), clock, sink);
@@ -105,15 +57,16 @@ export async function writePendingReceiptOwnerEvidence(
         }
         catch (caught) {
             bodyFailed = true;
-            throw caught;
+            throw toError(caught);
         }
         finally {
             await fixture.dispose().catch((caught) => {
+                const cleanupError = toError(caught);
                 if (!bodyFailed) {
-                    throw caught;
+                    throw cleanupError;
                 }
                 try {
-                    console.error('Receipt owner cleanup failed after body failure:', caught);
+                    console.error('Receipt owner cleanup failed after body failure:', cleanupError);
                 }
                 catch { /* Diagnostic failure cannot replace the original body error. */ }
             });
@@ -121,6 +74,26 @@ export async function writePendingReceiptOwnerEvidence(
     }
     finally {
         Date.now = actualNow;
+    }
+}
+
+namespace ReceiptOwnerFixture {
+    export interface Clock {
+        nowMs: number;
+        reads: number;
+    }
+
+    export interface Effects {
+        conflicted: boolean;
+        receiptControlMsgId: string;
+        nativeCalls: number;
+        publications: number;
+        receiptKey: string;
+        clockReads: number;
+        releases: number;
+        lastReceiptReleaseAtMs: number;
+        readonly receiptReleaseStatuses: string[];
+        readonly mutationResults: boolean[];
     }
 }
 
@@ -136,7 +109,7 @@ class ReceiptOwnerFixture {
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    readonly effects = {
+    readonly effects: ReceiptOwnerFixture.Effects = {
         conflicted: false,
         receiptControlMsgId: '',
         nativeCalls: 0,
@@ -145,22 +118,22 @@ class ReceiptOwnerFixture {
         clockReads: 0,
         releases: 0,
         lastReceiptReleaseAtMs: 0,
-        receiptReleaseStatuses: [] as string[],
-        mutationResults: [] as boolean[]
+        receiptReleaseStatuses: [],
+        mutationResults: []
     };
     readonly observations: WsQueueBoxServerReceiptObservation[] = [];
     readonly engine = new InboxOutboxEngine();
     readonly service: WsQueueBoxServerService;
     readonly socket: JsonWebSocketServer;
     readonly origin: SimulatedWebSocket;
-    readonly clock: ReceiptFixtureClock;
+    readonly clock: ReceiptOwnerFixture.Clock;
     readonly sink: ReceiptOwnerSink;
     readonly reserve = this.backend.workQueue.reserveEntries.bind(this.backend.workQueue);
     readonly recover = this.backend.workQueue.reserveTimeoutEntries.bind(this.backend.workQueue);
     readonly observer: ReturnType<typeof createApiV1WsReceiptObserver>;
     readonly observe: ((event: WsQueueBoxServerReceiptObservation) => void) | undefined;
 
-    constructor(sockets: { socket: JsonWebSocketServer; origin: SimulatedWebSocket; }, clock: ReceiptFixtureClock, sink: ReceiptOwnerSink) {
+    constructor(sockets: ReceiptOwnerSocket, clock: ReceiptOwnerFixture.Clock, sink: ReceiptOwnerSink) {
         this.socket = sockets.socket;
         this.origin = sockets.origin;
         this.clock = clock;
@@ -216,7 +189,7 @@ class ReceiptOwnerFixture {
             inboundDiagnostics: undefined,
             outboundDeliveryOutcome: undefined,
             deliveryDiagnostics: undefined,
-            validateInboundMessage: Either.ofRight,
+            authorizeInboundMessage: Either.ofRight,
             publishRelayedAck: undefined,
             forwardsRoomScopedMessages: true
         });
@@ -376,17 +349,17 @@ class ReceiptOwnerFixture {
 
 function installReceiptConflict(
     store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>,
-    effects: { conflicted: boolean; receiptControlMsgId: string; receiptKey: string; }
+    effects: Pick<ReceiptOwnerFixture.Effects, 'conflicted' | 'receiptControlMsgId' | 'receiptKey'>
 ): void {
     const commit = store.commitBundle.bind(store);
     const commitWithConflict: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>['commitBundle'] = async (bundle) => {
-        const message: ALMessage | undefined = bundle.canonicalEntry && JSON.parse(bundle.canonicalEntry.resource);
+        const message = bundle.canonicalEntry === undefined ? undefined : decodePersistedALMessage(bundle.canonicalEntry.resource);
         const control = message && decodeALControlMessage(message).right;
         if (!effects.conflicted && message && control?.type === 'receipt' && control.payload.phase === 'complete') {
             effects.conflicted = true;
             effects.receiptControlMsgId = message.id.msgId;
             effects.receiptKey = JSON.stringify(bundle.canonicalEntry?.key);
-            assert.equal(await commit(await commitCompetitor(store, message)), 'committed');
+            assert.equal(await commit(await readCompetingReceiptBundle(store, message)), 'committed');
             const result = await commit(bundle);
             assert.equal(result, 'conflict');
             return result;
@@ -397,7 +370,7 @@ function installReceiptConflict(
 }
 
 async function generateCompleteReceipt(service: WsQueueBoxServerService): Promise<void> {
-    assert.equal((await service.acceptIncomingMessage(subject(), 'origin')).right?.kind, 'admitted');
+    assert.equal((await service.acceptIncomingMessage(createReceiptSubject(), 'origin')).right?.kind, 'admitted');
     const ack = newALAckControlMessage(
         { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: Date.now() },
         {
@@ -424,4 +397,49 @@ async function drainReceipt(engine: InboxOutboxEngine, finished: () => boolean):
         await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.fail('The actual generated complete receipt did not reach its transport owner');
+}
+
+async function readCompetingReceiptBundle(store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>, message: ALMessage) {
+    const competitor = { ...message, id: { ...message.id, msgId: 'competing-version' } };
+    const read = await store.readOutgoingMessage({
+        msg: competitor,
+        planner: (msg) => ({ msg, lane: 'durable', dropReasonCode: undefined, preparedMessages: [] }),
+        observedCanonicalEntry: undefined,
+        intent: 'enqueue'
+    });
+    const computed = computeALOutboundDispatch({
+        read,
+        outboxEntry: {
+            ...QueueBoxUtilities.toResourceEntryFromMsg(competitor, EnqueuedType.WS_OUTBOX),
+            key: toALOutboundCanonicalKey(store.canonicalScope, competitor)
+        },
+        dispatchAtMs: Date.now(),
+        intent: 'enqueue',
+        phase: 'immediate',
+        options: {}
+    });
+    assert.ok(computed.bundle);
+    return computed.bundle;
+}
+
+function createReceiptSubject(): ALMessage {
+    return {
+        id: { v: 3, msgId: 'subject', senderId: 'origin', ts: Date.now() },
+        route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room' },
+        targets: { mode: 'broadcast', scope: 'room', groupRef: { ...scope, groupId: 'room' } },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+async function createSocket(): Promise<ReceiptOwnerSocket> {
+    const socket = new JsonWebSocketServer();
+    const origin = new SimulatedWebSocket('ws://origin');
+    const recipient = new SimulatedWebSocket('ws://recipient');
+    await origin.open();
+    await recipient.open();
+    socket.addConnection(new ConnectionContext({ id: 'origin', socket: origin }));
+    socket.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
+    return { socket, origin };
 }

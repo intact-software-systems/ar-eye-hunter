@@ -30,6 +30,13 @@ interface InstallMiddlewareLiveWsNoticeSubscriberInput {
     readonly wsQBoxServerService: RallarMiddlewareInfrastructure['wsQBoxServerService'];
 }
 
+interface CreateMiddlewareWsQueueBoxServerInput {
+    readonly options: CreateRallarMiddlewareOptions;
+    readonly queueEngine: InboxOutboxEngine;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly targetResolver: WsServerTargetResolver;
+}
+
 export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
@@ -86,13 +93,6 @@ export function createRallarMiddlewareInfrastructure(
     };
 }
 
-interface CreateMiddlewareWsQueueBoxServerInput {
-    readonly options: CreateRallarMiddlewareOptions;
-    readonly queueEngine: InboxOutboxEngine;
-    readonly webSocketServer: JsonWebSocketServer;
-    readonly targetResolver: WsServerTargetResolver;
-}
-
 function createMiddlewareWsQueueBoxServer(
     { options, queueEngine, webSocketServer, targetResolver }: CreateMiddlewareWsQueueBoxServerInput
 ): RallarMiddlewareInfrastructure['wsQBoxServerService'] {
@@ -112,7 +112,7 @@ function createMiddlewareWsQueueBoxServer(
         outboundSettlements: options.wsOutboundSettlements,
         inboundDiagnostics: options.wsInboundDiagnostics,
         receiptObserver: options.wsReceiptObserver,
-        validateInboundMessage: validateMiddlewareALIngress,
+        authorizeInboundMessage: authorizeMiddlewareALIngress,
         publishRelayedAck: options.relayedAckNotices
             ? createRelayedAckPublisher(options.relayedAckNotices)
             : undefined,
@@ -149,7 +149,7 @@ function installMiddlewareLiveWsNoticeSubscriber(
     });
 }
 
-function validateMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
     if (
         isStateSnapshotTopic(message.route.topicId) || isStateSnapshotTopic(message.payload.typeId) ||
         message.route.topicId === AppTopics.clientStateEvent || message.payload.typeId === AppTopics.clientStateEvent ||
