@@ -7,7 +7,6 @@ import {
 } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { LiveRtcBrowserRecording } from './live-rtc-browser-recording.ts';
 
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -26,6 +25,7 @@ import {
     type LiveRtcAgentDiagnostics,
     type LiveRtcLifecycleFailureInterval
 } from './live-rtc-agent-diagnostics.ts';
+import { LiveRtcBrowserRecording } from './live-rtc-browser-recording.ts';
 import {
     jsonRecord,
     normalizeJson,

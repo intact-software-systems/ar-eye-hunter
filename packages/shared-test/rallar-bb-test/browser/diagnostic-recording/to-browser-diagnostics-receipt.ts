@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts';
 import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../browser-command-contracts.ts';
 
@@ -7,7 +9,7 @@ export interface BrowserDiagnosticsReceipt {
     readonly forwardedBrowserDiagnostics: number;
 }
 
-export function toBrowserDiagnosticsReceipt(value: unknown): BrowserDiagnosticsReceipt | undefined {
+export function toBrowserDiagnosticsReceipt(value: ApiJsonValue | undefined): BrowserDiagnosticsReceipt | undefined {
     if (
         typeof value !== 'object' || value === null || Array.isArray(value) ||
         !('routineBrowserDiagnostics' in value) || !('omittedRoutineBrowserDiagnostics' in value) ||
