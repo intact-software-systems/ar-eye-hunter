@@ -362,6 +362,7 @@ export class WsQueueBoxServerService {
             },
             diagnostics: dependencies.outboundDiagnostics,
             receiptWorkCapture: this.receiptObserver === undefined ? undefined : {
+                phaseCapture: this.receiptObserver.phaseCapture,
                 batchObservations: ALWorkBatchObservations,
                 createEvidence: createALOutboundReceiptWorkEvidence,
                 observer: (observation) =>

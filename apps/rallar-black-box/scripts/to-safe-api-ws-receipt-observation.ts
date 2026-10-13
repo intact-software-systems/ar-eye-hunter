@@ -10,13 +10,18 @@ export interface SafeApiWsReceiptObservationDto extends ApiJsonObject {
         | 'receipt-outbox'
         | 'receipt-work'
         | 'receipt-transport'
-        | 'receipt-publication';
+        | 'receipt-publication'
+        | 'outbound-work-batch'
+        | 'outbound-readiness-probe'
+        | 'outbound-claim-phases'
+        | 'outbound-phase-flush'
+        | 'outbound-phase-summary';
     readonly serverPeerId: string;
 }
 
 interface ReceiptReturnField {
     readonly name: string;
-    readonly kind: 'identity' | 'number' | 'boolean' | readonly string[];
+    readonly kind: 'identity' | 'number' | 'boolean' | 'sequence' | 'ready-time' | readonly string[];
     readonly optional?: boolean;
 }
 
@@ -71,6 +76,7 @@ const OUTBOX_VERDICT_KINDS = [
 const RECEIPT_RETURN_FIELDS: Readonly<Record<string, readonly ReceiptReturnField[]>> = {
     'receipt-work': [
         { name: 'workerId', kind: 'identity' },
+        { name: 'claimSequence', kind: 'sequence', optional: true },
         { name: 'effectLocator', kind: 'identity' },
         { name: 'workLocator', kind: 'identity' },
         { name: 'attempts', kind: 'number' },
@@ -165,11 +171,112 @@ const OUTBOX_STORAGE_CAUSES = [
     'checkpoint-lag'
 ];
 
+const WORK_PHASE_FIELDS: Readonly<Record<string, readonly ReceiptReturnField[]>> = {
+    'outbound-work-batch': [
+        { name: 'workerId', kind: 'identity' },
+        { name: 'batchSequence', kind: 'sequence', optional: true },
+        { name: 'durationMs', kind: 'number' },
+        { name: 'claimedCount', kind: 'number' },
+        { name: 'completedCount', kind: 'number' },
+        { name: 'rescheduledCount', kind: 'number' },
+        { name: 'rejectedCount', kind: 'number' },
+        { name: 'selectionDurationMs', kind: 'number' },
+        { name: 'claimDurationMs', kind: 'number' },
+        { name: 'runDurationMs', kind: 'number' },
+        { name: 'releaseDurationMs', kind: 'number' },
+        { name: 'startedAtMs', kind: 'number' },
+        { name: 'batchStartedAtMs', kind: 'number' },
+        { name: 'batchEndedAtMs', kind: 'number' },
+        { name: 'durationClock', kind: ['api-epoch'] },
+        { name: 'dueWait', kind: ['uncaptured'] }
+    ],
+    'outbound-readiness-probe': [
+        { name: 'workerId', kind: 'identity' },
+        { name: 'durationMs', kind: 'number' },
+        { name: 'cause', kind: ['no-memory', 'own-commit', 'external-wake', 'age-bound', 'batch', 'retained-release'] },
+        { name: 'readyAtMs', kind: 'ready-time' },
+        { name: 'probeStartedAtMs', kind: 'number' },
+        { name: 'probeEndedAtMs', kind: 'number' },
+        { name: 'durationClock', kind: ['api-epoch'] }
+    ],
+    'outbound-claim-phases': [
+        { name: 'workerId', kind: 'identity' },
+        { name: 'workLocator', kind: 'identity' },
+        { name: 'attempts', kind: 'number' },
+        { name: 'storedClaimStartedAtMs', kind: 'number', optional: true },
+        { name: 'batchStartedAtMs', kind: 'number' },
+        { name: 'claimSequence', kind: 'sequence' },
+        { name: 'batchSequence', kind: 'sequence', optional: true },
+        { name: 'callbackStartedAtMs', kind: 'number' },
+        { name: 'lookupReturnedAtMs', kind: 'number', optional: true },
+        { name: 'callbackEndedAtMs', kind: 'number' },
+        { name: 'lookupDurationMs', kind: 'number', optional: true },
+        { name: 'callbackDurationMs', kind: 'number', optional: true },
+        { name: 'lookupOutcome', kind: ['returned', 'threw', 'expired'] },
+        { name: 'callbackOutcome', kind: ['completed', 'retry', 'not-ready', 'non-retryable', 'retained', 'threw'] },
+        {
+            name: 'effectKind',
+            kind: [
+                'admit-message',
+                'dequeue-message',
+                'send-prepared',
+                'admit-control',
+                'ack-timeout',
+                'repair-hint',
+                'nack-retry'
+            ],
+            optional: true
+        },
+        { name: 'effectLocator', kind: 'identity', optional: true },
+        { name: 'durationClock', kind: ['api-monotonic'] },
+        { name: 'reservationClock', kind: ['store'] }
+    ],
+    'outbound-phase-flush': [
+        { name: 'flushedRecordCount', kind: 'number' },
+        { name: 'durationMs', kind: 'number', optional: true },
+        { name: 'durationClock', kind: ['api-monotonic'] }
+    ],
+    'outbound-phase-summary': [
+        { name: 'closed', kind: 'boolean' },
+        { name: 'attemptedRecords', kind: 'number' },
+        { name: 'emittedRecords', kind: 'number' },
+        { name: 'emittedBytes', kind: 'number' },
+        { name: 'overflowRecords', kind: 'number' },
+        { name: 'sinkFailures', kind: 'number' },
+        { name: 'clockFailures', kind: 'number' },
+        { name: 'unfinishedBatches', kind: 'number' },
+        { name: 'abandonedBatches', kind: 'number' },
+        { name: 'maxRecords', kind: 'number' },
+        { name: 'maxBytes', kind: 'number' }
+    ]
+};
+
+function toSafeWorkPhaseObservation(
+    record: Readonly<Record<string, unknown>>
+): SafeApiWsReceiptObservationDto | undefined {
+    const contract = WORK_PHASE_FIELDS[String(record.kind)];
+    const fields = contract === undefined ? undefined : toSafeClosedReceiptFields(record, contract);
+    if (fields === undefined || (record.kind === 'outbound-phase-summary' && record.closed !== true)) {
+        return undefined;
+    }
+    return {
+        kind: record.kind as SafeApiWsReceiptObservationDto['kind'],
+        serverPeerId: String(record.serverPeerId),
+        ...fields
+    };
+}
+
 export function toSafeApiWsReceiptObservation(value: unknown): SafeApiWsReceiptObservationDto | undefined {
     if (!isApiTimingRecord(value) || !isSafeApiTimingIdentity(value.serverPeerId)) {
         return undefined;
     }
     switch (value.kind) {
+        case 'outbound-work-batch':
+        case 'outbound-readiness-probe':
+        case 'outbound-claim-phases':
+        case 'outbound-phase-flush':
+        case 'outbound-phase-summary':
+            return toSafeWorkPhaseObservation(value);
         case 'business-socket-decision':
             return toSafeBusinessSocketDecision(value);
         case 'socket-decision':
@@ -231,6 +338,10 @@ function toSafeClosedReceiptFields(
 
 function isSafeReceiptScalar(value: unknown, kind: ReceiptReturnField['kind']): value is string | number | boolean {
     switch (kind) {
+        case 'sequence':
+            return isNonNegativeApiTimingNumber(value) && Number.isSafeInteger(value) && value > 0;
+        case 'ready-time':
+            return value === 'none' || isNonNegativeApiTimingNumber(value);
         case 'identity':
             return isSafeApiTimingIdentity(value);
         case 'number':

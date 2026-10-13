@@ -1,14 +1,16 @@
-import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
+
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
@@ -33,8 +35,8 @@ import {
     readApiV1WebSocketStatus,
     type ApiV1AdminServices
 } from './create-api-v1-admin-services.ts';
-import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
-import { createApiV1Runtime } from './create-api-v1-runtime.ts';
+import { createApiV1RouteInstallers, type ApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
+import { createApiV1Runtime, type CreateApiV1RuntimeInput } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
 import { createApiV1WsLivePublication } from './create-api-v1-ws-live-publication.ts';
 import { createApiV1WsReceiptObserver } from './create-api-v1-ws-receipt-observer.ts';
@@ -161,17 +163,13 @@ function createConfiguredApiV1Runtime(
 ): ApiV1Runtime {
     const configuration = input.configuration;
     const database = input.databaseLifecycle.database;
-    const planning = configuration.topology.planning;
-    const rtcTopologyOptions = {
-        topologyKind: planning.topologyKind,
-        degreeLimit: planning.degreeLimit,
-        rttReportingDegreeLimit: planning.rttReportingDegreeLimit,
-        treeMinSize: planning.treeMinSize,
-        meshMinSize: planning.meshMinSize,
-        meshParamK: planning.meshParamK,
-        meshExitWidth: planning.meshExitWidth,
-        treeExitWidth: planning.treeExitWidth
-    };
+    const rtcTopologyOptions = toApiV1RtcTopologyOptions(configuration.topology.planning);
+    const wsReceiptObserver = createConfiguredWorkPhaseObserver({
+        enabled: configuration.observability.timingLogs,
+        timing,
+        nowEpochMs,
+        backgroundTasks
+    });
 
     return createApiV1Runtime({
         database,
@@ -186,12 +184,7 @@ function createConfiguredApiV1Runtime(
         authCredentialSecret: configuration.authentication.credentialSecret,
         nowEpochMs,
         timing,
-        wsReceiptObserver: createApiV1WsReceiptObserver({
-            enabled: configuration.observability.timingLogs,
-            timing,
-            serviceId: myServerId,
-            publisherId: myPublisherId
-        }),
+        wsReceiptObserver,
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
@@ -210,6 +203,47 @@ function createConfiguredApiV1Runtime(
         },
         backgroundTasks
     });
+}
+
+interface ConfiguredWorkPhaseObserverDependencies {
+    readonly enabled: boolean;
+    readonly timing: RallarTimingSink;
+    readonly nowEpochMs: () => number;
+    readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+}
+
+function createConfiguredWorkPhaseObserver(
+    dependencies: ConfiguredWorkPhaseObserverDependencies
+): WsQueueBoxServerReceiptObserver | undefined {
+    const observer = createApiV1WsReceiptObserver({
+        enabled: dependencies.enabled,
+        timing: dependencies.timing,
+        serviceId: myServerId,
+        publisherId: myPublisherId,
+        workPhases: {
+            serverPeerId: 'default-qbox-server',
+            clock: { nowEpochMs: dependencies.nowEpochMs, nowMonotonicMs: () => performance.now() }
+        }
+    });
+    if (observer?.phaseCapture !== undefined) {
+        dependencies.backgroundTasks.register(() => observer.phaseCapture?.close());
+    }
+    return observer;
+}
+
+function toApiV1RtcTopologyOptions(
+    planning: ApiV1Configuration['topology']['planning']
+): CreateApiV1RuntimeInput['rtcTopologyOptions'] {
+    return {
+        topologyKind: planning.topologyKind,
+        degreeLimit: planning.degreeLimit,
+        rttReportingDegreeLimit: planning.rttReportingDegreeLimit,
+        treeMinSize: planning.treeMinSize,
+        meshMinSize: planning.meshMinSize,
+        meshParamK: planning.meshParamK,
+        meshExitWidth: planning.meshExitWidth,
+        treeExitWidth: planning.treeExitWidth
+    };
 }
 
 interface DefaultApiV1AdminServicesInput {
@@ -288,7 +322,7 @@ function createDefaultApiV1RouteInstallers({
     crdtAdminMutations,
     authUserRepository,
     nowEpochMs
-}: DefaultApiV1RouteInstallersInput) {
+}: DefaultApiV1RouteInstallersInput): ApiV1RouteInstallers {
     const topology = runtime.topologyServices;
     return createApiV1RouteInstallers({
         runtime,

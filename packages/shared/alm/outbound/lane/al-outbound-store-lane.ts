@@ -1,8 +1,9 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
+import { fnv1a64 } from '../../../queuebox/AppQueueIdentity.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
-import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALCheckpointPort } from '../../checkpoint/al-checkpoint.ts';
@@ -26,6 +27,7 @@ import {
     createLimitedALWorkLeaseRecovery,
     type ALWorkLeaseRecovery
 } from '../../work/al-work-lease-recovery.ts';
+import type { ALWorkPhaseCapture } from '../../work/al-work-phase-capture.ts';
 import {
     createALWorkQueuePort,
     type ALWorkClaim,
@@ -340,22 +342,27 @@ export class ALOutboundStoreLane<TPrepared> {
         deferObservation?: ALWorkObservationDeferral
     ): Promise<ALWorkAttemptResult> {
         const capture = this.input.runtime.receiptWorkCapture;
+        const phase = this.beginOutboundClaimObservation(claim, batchStartedAtMs);
+        let lookupReturned: ALWorkPhaseCapture.ClockSample | undefined;
+        let lookupOutcome: ALWorkPhaseCapture.ClaimEnd['lookupOutcome'] = 'threw';
+        let work: ALOutboundEffectSnapshot<TPrepared> | undefined;
         let evidence: ALOutboundReceiptWorkEvidence | undefined;
         let result: ALWorkAttemptResult | undefined;
         try {
-            const work = await this.readExpirableOutboundWork(claim.entry);
+            work = await this.readExpirableOutboundWork(claim.entry);
+            lookupReturned = phase === undefined ? undefined : capture?.phaseCapture?.readClock();
+            lookupOutcome = work === undefined ? 'expired' : 'returned';
             if (work === undefined) {
-                return { status: 'completed' };
+                result = { status: 'completed' };
+                return result;
             }
-            try {
-                evidence = capture?.createEvidence({
-                    effect: work,
-                    workerId: this.input.workerId,
-                    batchStartedAtMs,
-                    deferObservation
-                });
-            }
-            catch { /* Optional evidence construction cannot change the claim's effects or release. */ }
+            evidence = capture === undefined ? undefined : this.createReceiptWorkEvidence({
+                effect: work,
+                workerId: this.input.workerId,
+                batchStartedAtMs,
+                claimSequence: phase?.claimSequence,
+                deferObservation
+            });
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
@@ -371,9 +378,45 @@ export class ALOutboundStoreLane<TPrepared> {
             throw error;
         }
         finally {
+            if (phase !== undefined) {
+                capture?.phaseCapture?.finishClaim({
+                    claim: phase,
+                    lookupReturned,
+                    lookupOutcome,
+                    callbackOutcome: result?.status ?? 'threw',
+                    effectKind: work?.payload.kind,
+                    effectLocator: work === undefined ? undefined : fnv1a64(work.effectId)
+                });
+            }
             if (capture !== undefined) {
                 evidence?.publish(capture.observer, result);
             }
+        }
+    }
+
+    /** Compact reservation facts are captured before the canonical read, outside its store transaction. */
+    private beginOutboundClaimObservation(
+        claim: ALWorkClaim,
+        batchStartedAtMs: number
+    ): ALWorkPhaseCapture.Claim | undefined {
+        return this.input.runtime.receiptWorkCapture?.phaseCapture?.beginClaim({
+            workerId: this.input.workerId,
+            workLocator: fnv1a64(toKeyAsString(claim.entry.key)),
+            attempts: claim.attempts,
+            storedClaimStartedAtMs: claim.entry.dequeueAudit.startTs?.epochMilliseconds,
+            batchStartedAtMs
+        });
+    }
+
+    private createReceiptWorkEvidence(
+        claim: ALOutboundReceiptWorkEvidence.Claim<TPrepared>
+    ): ALOutboundReceiptWorkEvidence | undefined {
+        try {
+            return this.input.runtime.receiptWorkCapture?.createEvidence(claim);
+        }
+        catch {
+            // Optional receipt projection cannot change the claim's effects or release.
+            return undefined;
         }
     }
 
@@ -563,6 +606,7 @@ export class ALOutboundStoreLane<TPrepared> {
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             claimSuccessor: undefined,
             batchObservations: runtime.receiptWorkCapture?.batchObservations,
+            phaseCapture: runtime.receiptWorkCapture?.phaseCapture,
             runClaim: (claim, batchStartedAtMs, deferObservation) =>
                 this.runOutboundClaim(claim, batchStartedAtMs, deferObservation),
             diagnostics: (event) => this.recordWorkDiagnostics(event),

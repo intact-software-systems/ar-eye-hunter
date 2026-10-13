@@ -8,6 +8,7 @@ import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
 import type { ALWorkBatchObservations } from './al-work-batch-observations.ts';
 import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
+import type { ALWorkPhaseCapture } from './al-work-phase-capture.ts';
 import type {
     ALWorkClaim,
     ALWorkOutcome,
@@ -47,6 +48,7 @@ export type ALWorkObservationDeferral = (publish: () => void) => void;
 
 export interface ALWorkHandlerDependencies {
     readonly batchObservations?: typeof ALWorkBatchObservations;
+    readonly phaseCapture?: ALWorkPhaseCapture;
 
     readonly workerId: string;
     readonly port: ALWorkQueuePort;
@@ -310,13 +312,23 @@ export class ALWorkHandler {
         }
         const probedAtMs = clock.nowMs();
         const probe = await this.readiness.readProbe(nowMs, () => readNextReadyAtMs(port));
-        diagnostics?.({
-            kind: 'readiness-probe',
-            workerId,
-            cause: probe.cause,
-            readyAtMs: probe.readyAtMs ?? 'none',
-            durationMs: computeElapsedMs(probedAtMs, clock.nowMs())
-        });
+        if (diagnostics !== undefined || this.dependencies.phaseCapture !== undefined) {
+            const endedAtMs = diagnostics === undefined
+                ? this.dependencies.phaseCapture?.readClock()?.epochMs
+                : clock.nowMs();
+            if (endedAtMs === undefined) {
+                return probe.readyAtMs;
+            }
+            const event: ALWorkReadinessProbeDiagnostics = {
+                kind: 'readiness-probe',
+                workerId,
+                cause: probe.cause,
+                readyAtMs: probe.readyAtMs ?? 'none',
+                durationMs: computeElapsedMs(probedAtMs, endedAtMs)
+            };
+            diagnostics?.(event);
+            this.dependencies.phaseCapture?.recordReadiness(event, probedAtMs, endedAtMs);
+        }
         return probe.readyAtMs;
     }
 
@@ -369,6 +381,7 @@ export class ALWorkHandler {
         primaryFailure: Error | undefined
     ): Promise<void> {
         this.batch = undefined;
+        this.dependencies.phaseCapture?.endBatch(this.dependencies.workerId);
         let following: Promise<void> | undefined;
         try {
             following = this.runPendingCommit();
@@ -382,6 +395,7 @@ export class ALWorkHandler {
         catch (failure) {
             primaryFailure ??= toError(failure);
         }
+        this.dependencies.phaseCapture?.flush();
         try {
             await following;
         }
@@ -433,6 +447,7 @@ export class ALWorkHandler {
     private async runSelectedWork(deferObservation: ALWorkObservationDeferral | undefined): Promise<ALWorkBatchEnd> {
         const { clock } = this.dependencies;
         const startedAtMs = clock.nowMs();
+        this.dependencies.phaseCapture?.beginBatch(this.dependencies.workerId);
         const progress: ALWorkBatchProgress = {
             claimedCount: 0,
             completedCount: 0,
@@ -518,16 +533,27 @@ export class ALWorkHandler {
     ): void {
         const { selection, runStartedAtMs } = run;
         const { clock, workerId, diagnostics } = this.dependencies;
-        diagnostics?.({
+        if (diagnostics === undefined && this.dependencies.phaseCapture === undefined) {
+            return;
+        }
+        const endedAtMs = diagnostics === undefined
+            ? this.dependencies.phaseCapture?.readClock()?.epochMs
+            : clock.nowMs();
+        if (endedAtMs === undefined) {
+            return;
+        }
+        const event: ALWorkBatchDiagnostics = {
             kind: 'work-batch',
             workerId,
-            durationMs: computeElapsedMs(startedAtMs, clock.nowMs()),
+            durationMs: computeElapsedMs(startedAtMs, endedAtMs),
             ...progress,
             selectionDurationMs: selection.selectionDurationMs,
             claimDurationMs: selection.claimDurationMs,
             queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs),
             startedAtMs: runStartedAtMs
-        });
+        };
+        diagnostics?.(event);
+        this.dependencies.phaseCapture?.recordBatch(event, startedAtMs, endedAtMs);
     }
 
     private async finalizeExhaustedWork(

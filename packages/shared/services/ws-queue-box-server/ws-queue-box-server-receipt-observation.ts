@@ -13,6 +13,7 @@ import type {
     ALOutboundReceiptWorkObservation
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
 import type { ALWorkObservationDeferral } from '../../alm/work/al-work-handler.ts';
+import type { ALWorkPhaseCapture } from '../../alm/work/al-work-phase-capture.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { WsServerLiveSendResult } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
@@ -117,6 +118,7 @@ export interface WsQueueBoxServerReceiptPublicationObservation extends ALOutboun
 }
 
 export type WsQueueBoxServerReceiptObservation =
+    | ALWorkPhaseCapture.Observation
     | WsQueueBoxServerReceiptAckRejectionObservation
     | (ALOutboundReceiptWorkObservation & { readonly serverPeerId: string; })
     | WsQueueBoxServerReceiptTransportObservation
@@ -165,7 +167,9 @@ export type WsQueueBoxServerReceiptObservation =
     };
 
 /** Private receipt-chain evidence includes ordinary subject ingress after owned effects; failures preserve results. */
-export type WsQueueBoxServerReceiptObserver = (observation: WsQueueBoxServerReceiptObservation) => void;
+export type WsQueueBoxServerReceiptObserver =
+    & ((observation: WsQueueBoxServerReceiptObservation) => void)
+    & { readonly phaseCapture?: ALWorkPhaseCapture; };
 
 interface WsQueueBoxServerReceiptAckRejectionIdentity {
     readonly kind: 'ack-rejection';

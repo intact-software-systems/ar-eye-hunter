@@ -9,6 +9,7 @@ import type {
     ALWorkAttemptResult,
     ALWorkObservationDeferral
 } from '../../work/al-work-handler.ts';
+import type { ALWorkPhaseCapture } from '../../work/al-work-phase-capture.ts';
 import type { ALOutboundEffectSnapshot } from '../admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase, ALOutboundMessageRuntime } from '../al-outbound-message-runtime.ts';
 
@@ -20,6 +21,7 @@ export interface ALOutboundReceiptFacts {
 export interface ALOutboundReceiptWorkObservation extends ALOutboundReceiptFacts {
     readonly kind: 'receipt-work';
     readonly workerId: string;
+    readonly claimSequence?: number;
     /** Compact joins only: the original effect/key may contain session, trace or prepared data. */
     readonly effectLocator: string;
     readonly workLocator: string;
@@ -47,10 +49,12 @@ export namespace ALOutboundReceiptWorkEvidence {
         readonly workerId: string;
         readonly batchStartedAtMs: number;
         readonly deferObservation: ALWorkObservationDeferral | undefined;
+        readonly claimSequence?: number;
     }
 
     /** Installed only by server composition; the lane constructs once per decoded claim, then publishes after its effects. */
     export interface Capture<TPrepared> {
+        readonly phaseCapture?: ALWorkPhaseCapture;
         readonly batchObservations: typeof ALWorkBatchObservations;
         readonly createEvidence: (claim: Claim<TPrepared>) => ALOutboundReceiptWorkEvidence | undefined;
         readonly observer: ALOutboundReceiptWorkObserver;
@@ -160,6 +164,7 @@ export function createALOutboundReceiptWorkEvidence<TPrepared>(
         ...facts,
         kind: 'receipt-work',
         workerId,
+        claimSequence: claim.claimSequence,
         effectKind: kind,
         effectLocator: fnv1a64(effect.effectId),
         workLocator: fnv1a64(toKeyAsString(effect.entry.key)),
