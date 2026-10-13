@@ -12,6 +12,7 @@ import type {
     RallarBlackBoxDistributedTargetPolicyMode
 } from '../distributed-run.ts';
 import type { RallarBlackBoxDistributedGroupAssertion } from '../distributed/group-assertions.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '../runtime/event-history.ts';
 import {
     toOrderedTargetRoleAssignmentPolicy,
     toRecipeRoleForPattern,
@@ -22,6 +23,7 @@ import {
 export type CreateDistributedRunManifestInput = CreateDistributedRunManifestFields & RallarBlackBoxDistributedRunStart;
 
 export interface CreateDistributedRunManifestFields {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly distributedRunId: string;
     readonly controlRunId: string;
     /** Absent when each invocation inherits its authored capture selection. */
@@ -59,6 +61,7 @@ export function createDistributedRunManifest(
         : { startMode: input.startMode };
 
     return {
+        ...(input.eventHistory === undefined ? {} : { eventHistory: Object.freeze({ ...input.eventHistory }) }),
         schemaVersion: 1,
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,

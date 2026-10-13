@@ -36,6 +36,8 @@ export const LAUNCH_ENVIRONMENT_KEYS = {
     transport: 'VITE_RALLAR_TRANSPORT',
     routineBrowserDiagnostics: 'VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS',
     rtcCaptureMode: 'VITE_RALLAR_RTC_CAPTURE_MODE',
+    eventHistory: 'VITE_RALLAR_EVENT_HISTORY',
+    eventHistoryMaxEvents: 'VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS',
     rallarUsername: 'VITE_RALLAR_USERNAME',
     rallarPassword: 'VITE_RALLAR_PASSWORD',
     rallarRegister: 'VITE_RALLAR_REGISTER',

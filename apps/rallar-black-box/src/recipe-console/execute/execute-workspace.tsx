@@ -5,6 +5,7 @@ import {
     type RefObject
 } from 'react';
 
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -53,6 +54,12 @@ interface ExecuteWorkflowDialogsProps {
     readonly controlOrigin: string;
     readonly workflow: ExecuteWorkflow;
     readonly focus: ExecuteDialogFocus;
+}
+
+interface ExecuteRunHistoryChoiceProps {
+    readonly disabled: boolean;
+    readonly policy: RallarBlackBoxEventHistoryPolicy | undefined;
+    onChange(policy: RallarBlackBoxEventHistoryPolicy | undefined): void;
 }
 
 interface ExecuteRunCaptureChoiceProps {
@@ -138,6 +145,11 @@ function ExecuteWorkflowColumn({ workspace, workflow }: ExecuteWorkflowViewProps
                 disabled={workflow.selectionLocked}
                 mode={workflow.run ? workflow.run.manifest.rtcCaptureMode : workflow.rtcCaptureMode}
                 onChange={workflow.setRtcCaptureMode}
+            />
+            <ExecuteRunHistoryChoice
+                disabled={workflow.selectionLocked}
+                policy={workflow.run ? workflow.run.manifest.eventHistory : workflow.eventHistory}
+                onChange={workflow.setEventHistory}
             />
             <ExecuteManifestDisclosure draft={workflow.manifest} />
             <ExecuteRunStatus
@@ -228,5 +240,43 @@ function ExecuteRunCaptureChoice({ disabled, mode, onChange }: ExecuteRunCapture
                 <option value="native">Full native</option>
             </select>
         </label>
+    );
+}
+
+function ExecuteRunHistoryChoice({ disabled, policy, onChange }: ExecuteRunHistoryChoiceProps) {
+    return (
+        <div>
+            <label className="field">
+                <span>Run event history</span>
+                <select
+                    disabled={disabled}
+                    value={policy?.mode ?? ''}
+                    onChange={(event) => {
+                        const mode = event.target.value;
+                        onChange(mode === 'recent' ? { mode, maxEvents: 64 } : mode === 'full' ? { mode } : undefined);
+                    }}
+                >
+                    <option value="">Inherit</option>
+                    <option value="full">Full</option>
+                    <option value="recent">Recent</option>
+                </select>
+            </label>
+            {policy?.mode === 'recent'
+                ? (
+                    <label className="field">
+                        <span>Retained event limit</span>
+                        <input
+                            type="number"
+                            min="1"
+                            max={Number.MAX_SAFE_INTEGER}
+                            step="1"
+                            disabled={disabled}
+                            value={policy.maxEvents}
+                            onChange={(event) => onChange({ mode: 'recent', maxEvents: event.target.valueAsNumber })}
+                        />
+                    </label>
+                )
+                : null}
+        </div>
     );
 }

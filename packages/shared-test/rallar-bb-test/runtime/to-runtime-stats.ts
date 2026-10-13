@@ -1,4 +1,6 @@
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type {
+    RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestLoopPacingSummary,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopSendSummary,
@@ -195,5 +197,24 @@ function toRuntimeConnectionStats(state: RallarBlackBoxTestState): RallarBlackBo
         transport: config?.transport,
         peerCount: state.connection.peerCount,
         laneHealth: state.connection.laneHealth
+    };
+}
+
+/** The page's readings join the runtime's own stats only where the page answered them, so absence stays absence. */
+export function toStatsWithPageReadings(
+    stats: RallarBlackBoxTestStatsSnapshot,
+    alm: RallarBlackBoxTestAlmUsage | undefined,
+    congestion: ALCongestionCounters | undefined
+): RallarBlackBoxTestStatsSnapshot {
+    if (alm === undefined && congestion === undefined) {
+        return stats;
+    }
+    return {
+        ...stats,
+        rallar: {
+            ...stats.rallar,
+            ...(alm === undefined ? {} : { alm }),
+            ...(congestion === undefined ? {} : { congestion })
+        }
     };
 }

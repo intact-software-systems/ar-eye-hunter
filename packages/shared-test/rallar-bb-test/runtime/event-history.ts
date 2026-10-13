@@ -133,11 +133,10 @@ export function validateEventHistoryPolicy(policy: unknown): readonly string[] {
 }
 
 export function resolveEventHistoryPolicyFailure(
-    command: RallarBlackBoxTestState['activeCommand'],
+    policy: RallarBlackBoxEventHistoryPolicy | undefined,
     history: RallarBlackBoxEventHistory,
     activeTopLevelCount: number
 ): RallarBlackBoxTestCommandOutcome | undefined {
-    const policy = command?.kind === 'configure' ? command.config.eventHistory : undefined;
     if (policy === undefined) {
         return undefined;
     }
@@ -152,9 +151,7 @@ export function resolveEventHistoryPolicyFailure(
             }
         };
     }
-    const changed = policy.mode !== history.policy.mode ||
-        (policy.mode === 'recent' && history.policy.mode === 'recent' && policy.maxEvents !== history.policy.maxEvents);
-    if (!changed || activeTopLevelCount === 0) {
+    if (isSameEventHistoryPolicy(policy, history.policy) || activeTopLevelCount === 0) {
         return undefined;
     }
     return {
@@ -205,4 +202,12 @@ function computeConnectionFacts(
         return { connected: true, peerCount, laneHealth };
     }
     return connection;
+}
+
+export function isSameEventHistoryPolicy(
+    left: RallarBlackBoxEventHistoryPolicy,
+    right: RallarBlackBoxEventHistoryPolicy
+): boolean {
+    return left.mode === right.mode &&
+        (left.mode !== 'recent' || right.mode !== 'recent' || left.maxEvents === right.maxEvents);
 }

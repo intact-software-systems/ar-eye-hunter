@@ -29,15 +29,17 @@ describe('rallar-bb runtime facade', () => {
         });
         const original = { runId: 'reset-A', agentId: 'agent-A' };
         const current = reassigned ? { runId: 'reset-B', agentId: 'agent-B' } : original;
-        const resetting = runtime.execute({ kind: 'reset', commandId: 'reset-A-command' }, original);
+        const resetting = runtime.execute({ kind: 'reset', commandId: 'reset-A-command' }, { controlIdentity: original });
         await entered.promise;
         try {
-            const configured = await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { defaults: { connection: 'B' } } }, current);
+            const configured = await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { defaults: { connection: 'B' } } }, {
+                controlIdentity: current
+            });
             const loaded = await runtime.execute({
                 kind: 'recipe.load',
                 commandId: 'B-load',
                 recipe: { schemaVersion: 1, recipeId: 'B-body', commands: [{ kind: 'health', commandId: 'B-health' }] }
-            }, current);
+            }, { controlIdentity: current });
             expect(configured.ok).toBe(true);
             expect(loaded.ok).toBe(true);
             const before = runtime.state();
@@ -56,7 +58,7 @@ describe('rallar-bb runtime facade', () => {
                 expect(settled.status).toBe('idle');
                 expect(Object.keys(settled.resultCache)).toEqual(['reset-A-command']);
             }
-            const run = await runtime.execute({ kind: 'recipe.run', commandId: 'B-run' }, current);
+            const run = await runtime.execute({ kind: 'recipe.run', commandId: 'B-run' }, { controlIdentity: current });
             expect.soft(run.ok).toBe(reassigned);
             expect.soft(effects.length).toBe(reassigned ? 1 : 0);
         }

@@ -33,9 +33,11 @@ describe('runtime assignment during synchronous admission callbacks', () => {
             if (!replaced && state.activeCommand?.commandId === 'original-command') {
                 replaced = true;
                 replacements.push(
-                    runtime.execute({ kind: 'configure', commandId: 'replacement-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT)
+                    runtime.execute({ kind: 'configure', commandId: 'replacement-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
+                        controlIdentity: REPLACEMENT
+                    })
                 );
-                replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'replacement-load', recipe: RECIPE }, REPLACEMENT));
+                replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'replacement-load', recipe: RECIPE }, { controlIdentity: REPLACEMENT }));
             }
         });
         const command: RallarBlackBoxTestCommand = kind === 'configure'
@@ -43,14 +45,14 @@ describe('runtime assignment during synchronous admission callbacks', () => {
             : kind === 'recipe.load'
             ? { kind, recipe: { schemaVersion: 1, recipeId: 'original', commands: [{ kind: 'rtc.connect', connection: 'original' }] } }
             : { kind, connection: 'original' };
-        const original = await runtime.execute({ ...command, commandId: 'original-command' }, ORIGINAL);
+        const original = await runtime.execute({ ...command, commandId: 'original-command' }, { controlIdentity: ORIGINAL });
         await Promise.all(replacements);
         expect.soft(original.ok).toBe(false);
         expect.soft(runtime.state().currentConfig).toMatchObject({ rallar: { rtcCaptureMode: 'native' } });
         expect.soft(runtime.state().loadedRecipe?.recipeId).toBe('replacement');
         expect.soft(runtime.state().resultCache['original-command']).toBeUndefined();
         expect.soft(effects).toEqual([]);
-        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'replacement-run' }, REPLACEMENT)).ok).toBe(true);
+        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'replacement-run' }, { controlIdentity: REPLACEMENT })).ok).toBe(true);
         expect(effects).toEqual(['replacement']);
         expect(capture.at(-1)?.rtcCapture).toEqual({ run: undefined, recipe: undefined, step: 'native' });
     });
@@ -81,16 +83,18 @@ describe('runtime assignment during synchronous admission callbacks', () => {
         onCallback = () => {
             onCallback = () => {};
             replacements.push(
-                runtime.execute({ kind: 'configure', commandId: 'replacement-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT)
+                runtime.execute({ kind: 'configure', commandId: 'replacement-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
+                    controlIdentity: REPLACEMENT
+                })
             );
-            replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'replacement-load', recipe: RECIPE }, REPLACEMENT));
+            replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'replacement-load', recipe: RECIPE }, { controlIdentity: REPLACEMENT }));
         };
         const command: RallarBlackBoxTestCommand = edge === 'start-clock'
             ? { kind: 'configure', commandId: 'original-command', config: { rallar: { rtcCaptureMode: 'off' } } }
             : edge === 'recipe-body-id'
             ? { kind: 'recipe.load', commandId: 'original-command', recipe: { schemaVersion: 1, recipeId: 'original', commands: [{ kind: 'health' }] } }
             : { kind: 'recipe.run', commandId: 'original-command', recipe: { schemaVersion: 1, recipeId: 'original', commands: [{ kind: 'rtc.connect' }] } };
-        const original = await runtime.execute(command, ORIGINAL);
+        const original = await runtime.execute(command, { controlIdentity: ORIGINAL });
         await Promise.all(replacements);
         expect.soft(original.ok).toBe(false);
         expect.soft(effects).toEqual([]);
@@ -110,9 +114,13 @@ describe('runtime assignment during synchronous admission callbacks', () => {
         const replacements: Promise<RallarBlackBoxTestResult>[] = [];
         onDispatch = () => {
             onDispatch = () => {};
-            replacements.push(runtime.execute({ kind: 'configure', commandId: 'new-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT));
+            replacements.push(
+                runtime.execute({ kind: 'configure', commandId: 'new-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
+                    controlIdentity: REPLACEMENT
+                })
+            );
         };
-        const original = await runtime.execute({ kind: 'health', commandId: 'old-health' }, ORIGINAL);
+        const original = await runtime.execute({ kind: 'health', commandId: 'old-health' }, { controlIdentity: ORIGINAL });
         await Promise.all(replacements);
         expect(original.ok).toBe(false);
         expect(runtime.state().resultCache['old-health']).toBeUndefined();
@@ -145,11 +153,13 @@ describe('reset caller completion after assignment changes', () => {
         const replacements: Promise<RallarBlackBoxTestResult>[] = [];
         onReset = () => {
             replacements.push(
-                runtime.execute({ kind: 'configure', commandId: 'successor-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT)
+                runtime.execute({ kind: 'configure', commandId: 'successor-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
+                    controlIdentity: REPLACEMENT
+                })
             );
-            replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'successor-load', recipe: RECIPE }, REPLACEMENT));
+            replacements.push(runtime.execute({ kind: 'recipe.load', commandId: 'successor-load', recipe: RECIPE }, { controlIdentity: REPLACEMENT }));
         };
-        const result = await runtime.execute({ kind: 'reset', commandId: 'old-reset' }, ORIGINAL);
+        const result = await runtime.execute({ kind: 'reset', commandId: 'old-reset' }, { controlIdentity: ORIGINAL });
         await Promise.all(replacements);
         if (disposition === 'unhandled') {
             expect.soft(result.ok).toBe(false);
@@ -174,7 +184,7 @@ describe('reset caller completion after assignment changes', () => {
         expect.soft(Object.keys(runtime.state().resultCache).sort()).toEqual(['successor-config', 'successor-load']);
         expect.soft(runtime.state().status).toBe('loaded');
         expect.soft(runtime.state().events.some((event) => event.commandId === 'old-reset')).toBe(false);
-        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'successor-run' }, REPLACEMENT)).ok).toBe(true);
+        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'successor-run' }, { controlIdentity: REPLACEMENT })).ok).toBe(true);
         expect(captures.at(-1)?.rtcCapture).toEqual({ run: undefined, recipe: undefined, step: 'native' });
     });
 
@@ -189,10 +199,10 @@ describe('reset caller completion after assignment changes', () => {
                 return undefined;
             }
         });
-        await runtime.execute({ kind: 'configure', commandId: 'config', config: { rallar: { rtcCaptureMode: 'native' } } }, ORIGINAL);
-        await runtime.execute({ kind: 'recipe.load', commandId: 'load', recipe: RECIPE }, ORIGINAL);
+        await runtime.execute({ kind: 'configure', commandId: 'config', config: { rallar: { rtcCaptureMode: 'native' } } }, { controlIdentity: ORIGINAL });
+        await runtime.execute({ kind: 'recipe.load', commandId: 'load', recipe: RECIPE }, { controlIdentity: ORIGINAL });
         runtime.recordEvent({ kind: 'event', topic: 'before-reset' });
-        const result = await runtime.execute({ kind: 'reset', commandId: 'reset' }, ORIGINAL);
+        const result = await runtime.execute({ kind: 'reset', commandId: 'reset' }, { controlIdentity: ORIGINAL });
         expect(result.ok).toBe(true);
         expect(result.value).toEqual({ reset: true });
         expect.soft(runtime.state().status).toBe('idle');
@@ -201,8 +211,8 @@ describe('reset caller completion after assignment changes', () => {
         expect.soft(Object.keys(runtime.state().resultCache)).toEqual(['reset']);
         expect.soft(runtime.state().commandHistory.map((entry) => entry.commandId)).toEqual(['reset']);
         expect.soft(runtime.state().events.map((event) => event.topic)).toEqual(['rallar.bb.command.result']);
-        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'missing-body' }, ORIGINAL)).ok).toBe(false);
-        expect((await runtime.execute({ kind: 'rtc.connect', commandId: 'current-connect' }, ORIGINAL)).ok).toBe(true);
+        expect((await runtime.execute({ kind: 'recipe.run', commandId: 'missing-body' }, { controlIdentity: ORIGINAL })).ok).toBe(false);
+        expect((await runtime.execute({ kind: 'rtc.connect', commandId: 'current-connect' }, { controlIdentity: ORIGINAL })).ok).toBe(true);
         expect(captures.at(-1)?.rtcCapture).toEqual({ run: undefined, recipe: undefined, step: undefined });
     });
 });
