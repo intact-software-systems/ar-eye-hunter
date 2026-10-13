@@ -1,14 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
-import postgres from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import {
+    decodeJsonWireText,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -16,22 +19,30 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
-import { toPSqlSql } from './postgres-sql-adapter.ts';
-import type { WorkerBarrier } from './postgres-worker-barrier.ts';
+import type {
+    TopologyAppOutboxWorkerInput,
+    TopologyAppOutboxWorkerOutput
+} from '../../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
+import {
+    createRuntimeStatePostgresSql,
+    requirePostgresClient,
+    withPostgresClients,
+    type PostgresSql
+} from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { waitForPostgresWorkerBarrier } from './postgres-worker-barrier.ts';
 import { createPostgresWorkerTransactionGate } from './postgres-worker-transaction-gate.ts';
 
-interface WorkerInput {
-    readonly groupSnapshot: GroupSnapshot;
-    readonly targetKey: Key;
-    readonly atEpochMs: number;
-    readonly traceFilePath: string;
-    readonly barrier: WorkerBarrier;
+export interface TopologyAppOutboxWorkerProcessInput {
+    readonly rawInput: string;
+    readonly workerPid: number;
+    readonly createSql: () => Promise<PostgresSql>;
+    readonly writeTrace: (path: string, content: string) => Promise<void>;
 }
 
 interface WorkerTrace {
@@ -39,10 +50,14 @@ interface WorkerTrace {
     barrierWaitCount: number;
 }
 
-interface RegisterTopologyAppOutboxHandlerInput {
-    readonly input: WorkerInput;
+interface TopologyAppOutboxWorkerExecutionInput {
+    readonly input: TopologyAppOutboxWorkerInput;
     readonly sql: PSqlSql;
     readonly trace: WorkerTrace;
+    readonly workerPid: number;
+}
+
+interface RegisterTopologyAppOutboxHandlerInput extends TopologyAppOutboxWorkerExecutionInput {
     readonly resources: PSqlResourceInboxRepository;
     readonly outboxQueueReader: OutboxQueueReader;
 }
@@ -52,29 +67,63 @@ async function main(): Promise<void> {
     if (!databaseUrl) {
         throw new Error('DATABASE_URL is required');
     }
-    const input = readInput();
-    const sql = postgres(databaseUrl, { max: 2, idle_timeout: 1, types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() } });
-    const [{ pid }] = await sql<{ pid: number; }[]>`select pg_backend_pid()::int as pid`;
-    const trace: WorkerTrace = { backendPid: pid, barrierWaitCount: 0 };
-    try {
-        const output = await runWorker(input, toPSqlSql(sql), trace);
-        console.log(JSON.stringify(output));
+    const rawInput = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
+    if (!rawInput) {
+        throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
     }
-    finally {
-        await Deno.writeTextFile(input.traceFilePath, JSON.stringify(trace));
-        await sql.end();
-    }
+    const output = await runTopologyAppOutboxWorkerProcess({
+        rawInput,
+        workerPid: Deno.pid,
+        createSql: async () => await createRuntimeStatePostgresSql(databaseUrl, 2),
+        writeTrace: async (path, content) => await Deno.writeTextFile(path, content)
+    });
+    console.log(JSON.stringify(output));
 }
 
-async function runWorker(
-    input: WorkerInput,
-    sql: PSqlSql,
-    trace: WorkerTrace
-): Promise<Readonly<{ resourceId: string; status: string; attemptCount: number; }>> {
-    const resources = createPSqlResourceInboxRepository(sql, () => new Date(input.atEpochMs));
-    const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources));
-    registerTopologyAppOutboxHandler({ input, sql, trace, resources, outboxQueueReader });
-    return await runTopologyAppOutboxUntilCompletion(input, resources, outboxQueueReader);
+export async function runTopologyAppOutboxWorkerProcess(
+    processInput: TopologyAppOutboxWorkerProcessInput
+): Promise<TopologyAppOutboxWorkerOutput> {
+    const input = decodeTopologyAppOutboxWorkerInput(processInput.rawInput);
+    return await withPostgresClients({
+        namespace: null,
+        clientCount: 1,
+        createClient: processInput.createSql
+    }, async (clients) => {
+        const sql = requirePostgresClient(clients, 0);
+        let trace: WorkerTrace | undefined;
+        let hasPrimaryFailure = false;
+        try {
+            const [backend] = await sql<{ pid: number; }[]>`select pg_backend_pid()::int as pid`;
+            if (!backend || !Number.isSafeInteger(backend.pid) || backend.pid <= 0) {
+                throw new TypeError('Topology APP_OUTBOX worker has no valid backend PID');
+            }
+            trace = { backendPid: backend.pid, barrierWaitCount: 0 };
+            return await runWorker({ input, sql, trace, workerPid: processInput.workerPid });
+        }
+        catch (error) {
+            hasPrimaryFailure = true;
+            throw error;
+        }
+        finally {
+            if (trace) {
+                try {
+                    await processInput.writeTrace(input.traceFilePath, JSON.stringify(trace));
+                }
+                catch (error) {
+                    if (!hasPrimaryFailure) {
+                        throw error;
+                    }
+                }
+            }
+        }
+    });
+}
+
+async function runWorker(execution: TopologyAppOutboxWorkerExecutionInput): Promise<TopologyAppOutboxWorkerOutput> {
+    const resources = createPSqlResourceInboxRepository(execution.sql, () => new Date(execution.input.atEpochMs));
+    const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources, Temporal.Now.instant));
+    registerTopologyAppOutboxHandler({ ...execution, resources, outboxQueueReader });
+    return await runTopologyAppOutboxUntilCompletion(execution.input, resources, outboxQueueReader);
 }
 
 function registerTopologyAppOutboxHandler(
@@ -83,7 +132,7 @@ function registerTopologyAppOutboxHandler(
     const input = registration.input;
     const transactionGate = createPostgresWorkerTransactionGate({
         sql: registration.sql,
-        beforeMutationTransaction: async () => await waitAtBarrier(input.barrier, String(Deno.pid)),
+        beforeMutationTransaction: async () => await waitForPostgresWorkerBarrier(input.barrier, String(registration.workerPid)),
         trace: registration.trace
     });
     const runtimeRepository = new PSqlRuntimeStateRepository(registration.sql);
@@ -108,17 +157,17 @@ function registerTopologyAppOutboxHandler(
                 undefined,
                 () => input.atEpochMs
             ),
-            serviceId: `postgres-topology-outbox-${Deno.pid}`
+            serviceId: `postgres-topology-outbox-${registration.workerPid}`
         })
     );
     transactionGate.arm();
 }
 
 async function runTopologyAppOutboxUntilCompletion(
-    input: WorkerInput,
+    input: TopologyAppOutboxWorkerInput,
     resources: PSqlResourceInboxRepository,
     outboxQueueReader: OutboxQueueReader
-): Promise<Readonly<{ resourceId: string; status: string; attemptCount: number; }>> {
+): Promise<TopologyAppOutboxWorkerOutput> {
     for (let iteration = 0; iteration < 40; iteration += 1) {
         const target = await resources.entries.findAnyByKey(input.targetKey);
         if (target?.status === EntityStatus.COMPLETED) {
@@ -151,31 +200,45 @@ function createResilience(): ResourceInboxResilience {
     });
 }
 
-async function waitAtBarrier(barrier: WorkerBarrier, participantId: string): Promise<void> {
-    await Deno.mkdir(barrier.readyDirectoryPath, { recursive: true });
-    await Deno.writeTextFile(`${barrier.readyDirectoryPath}/${participantId}.json`, participantId);
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-        try {
-            await Deno.stat(barrier.releaseFilePath);
-            return;
-        }
-        catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
-                throw error;
-            }
-        }
-        await new Promise((resolve) => setTimeout(resolve, 5));
+function decodeTopologyAppOutboxWorkerInput(raw: string): TopologyAppOutboxWorkerInput {
+    const input = decodeJsonWireText(raw, 'Topology APP_OUTBOX worker input');
+    if (!isJsonWireObject(input)) {
+        throw new TypeError('Topology APP_OUTBOX worker input must be an object');
     }
-    throw new Error(`Timed out waiting for topology APP_OUTBOX release: ${barrier.releaseFilePath}`);
+    const groupSnapshot = input.groupSnapshot;
+    validateAuthoritativeGroupSnapshot(groupSnapshot);
+    const targetKey = input.targetKey;
+    const barrier = input.barrier;
+    if (
+        !isJsonWireObject(targetKey) || !isJsonWireObject(barrier) ||
+        !isNonEmptyString(targetKey.topicId) ||
+        !isNonEmptyString(targetKey.contextId) ||
+        !isNonEmptyString(targetKey.resourceId) ||
+        typeof input.atEpochMs !== 'number' ||
+        !Number.isSafeInteger(input.atEpochMs) || input.atEpochMs < 0 ||
+        !isNonEmptyString(input.traceFilePath) ||
+        !isNonEmptyString(barrier.readyDirectoryPath) ||
+        !isNonEmptyString(barrier.releaseFilePath)
+    ) {
+        throw new TypeError('Topology APP_OUTBOX worker input has invalid runtime fields');
+    }
+    return {
+        groupSnapshot,
+        targetKey: { topicId: targetKey.topicId, contextId: targetKey.contextId, resourceId: targetKey.resourceId },
+        atEpochMs: input.atEpochMs,
+        traceFilePath: input.traceFilePath,
+        barrier: { readyDirectoryPath: barrier.readyDirectoryPath, releaseFilePath: barrier.releaseFilePath }
+    };
 }
 
-function readInput(): WorkerInput {
-    const raw = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
-    if (!raw) {
-        throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
-    }
-    return JSON.parse(raw) as WorkerInput;
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
 }
 
-await main();
+function isNonEmptyString(value: JsonWireValue | undefined): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
+if (import.meta.main) {
+    await main();
+}

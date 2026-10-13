@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { Temporal } from '@js-temporal/polyfill';
 import { readFileSync } from 'node:fs';
 import {
     describe,
@@ -7,8 +8,14 @@ import {
     vi
 } from 'vitest';
 
-import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import type {
+    PSqlParameter,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import {
     PSqlResourceInboxEntryRepository,
@@ -19,10 +26,14 @@ import {
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
+import type { GroupMutationComputedWrite } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import {
+    GroupConnectTriggerLatchRepository,
+    type GroupConnectTriggerIdentity
+} from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import {
     toRtcRttMutationReceiptId,
     toRtcRttTopologyOutboxId
@@ -40,9 +51,14 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { createPGliteSqlClient } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import {
@@ -51,7 +67,10 @@ import {
     requirePostgresDatabaseUrl,
     type PostgresSql
 } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
-import { createGroupAuthorityFacts, createGroupAuthorityRead } from './group-mutation-test-runtime.ts';
+import {
+    createGroupAuthorityFacts,
+    createGroupAuthorityRead
+} from './group-mutation-test-runtime.ts';
 
 describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%s)', (backend) => {
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
@@ -194,7 +213,13 @@ function observeStatements(transaction: PSqlSql, statements: string[]): PSqlSql 
     return observed;
 }
 
-async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
+interface ConnectWriteFixture {
+    readonly computed: GroupMutationComputedWrite;
+    readonly runtime: PSqlRuntimeStateRepository;
+    readonly identity: GroupConnectTriggerIdentity;
+}
+
+async function seedConnectWrite(sql: PSqlSql, applicationId: string): Promise<ConnectWriteFixture> {
     const groupRef = { applicationId, workspaceId: 'ws', groupId: 'connect' };
     const identity = { groupRef, formationEpoch: 3, triggerGeneration: 'retry-plan' };
     const expectedLayout = { groupRevision: 4, presenceRevision: 0, version: 1, state: 'active' } as const;
@@ -315,10 +340,19 @@ async function withPostgresConnectSql(
     }
 }
 
-function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
+interface PublicationHandlerHarness {
+    readonly resources: PSqlResourceInboxRepository;
+    readonly queue: PSqlQueueBox;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly group: GroupSnapshot;
+    readonly snapshots: RtcTopologySnapshotRepository;
+    readonly handler: OnMessageCallback;
+}
+
+function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): PublicationHandlerHarness {
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const resources = createPSqlResourceInboxRepository(sql, () => new Date());
-    const queue = new PSqlQueueBox(resources);
+    const queue = new PSqlQueueBox(resources, Temporal.Now.instant);
     const outboxQueueReader = new OutboxQueueReader(queue);
     const read = createGroupAuthorityRead({ applicationId, lifecycleState: 'planned', formationEpoch: 3 });
     const value = read.group!.value;
@@ -357,7 +391,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
     return { resources, queue, outboxQueueReader, group, snapshots, handler };
 }
 
-async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandlerHarness>, key: Key) {
+async function reserveTopologyWork(h: PublicationHandlerHarness, key: Key): Promise<ResourceEntry> {
     const entry = await h.queue.getItem(key);
     if (!entry || entry.status !== EntityStatus.NEW) {
         throw new Error('Missing new topology work');
@@ -370,7 +404,7 @@ async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandler
 }
 
 async function enqueueTopologyWork(
-    h: ReturnType<typeof createPublicationHandlerHarness>,
+    h: PublicationHandlerHarness,
     payloadKind: 'group-revision' | 'rtt-refresh'
 ): Promise<Key> {
     const nowEpochMs = Date.now();

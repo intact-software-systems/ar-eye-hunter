@@ -19,7 +19,7 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queueBox = new PSqlQueueBox(repository);
+        const queueBox = new PSqlQueueBox(repository, Temporal.Now.instant);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
 
         const future = createResourceEntry('scheduled-future');
@@ -60,7 +60,7 @@ Deno.test('PGlite retry release delay is honored under a skewed session time zon
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queueBox = new PSqlQueueBox(repository);
+        const queueBox = new PSqlQueueBox(repository, Temporal.Now.instant);
 
         await repository.entries.writeIfAbsentOrMatch(createResourceEntry('retry-delayed'));
         const reserved = await queueBox.reserveEntries({

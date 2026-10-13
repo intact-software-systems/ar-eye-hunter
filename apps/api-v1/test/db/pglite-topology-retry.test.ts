@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
@@ -20,7 +21,10 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
-import type { Group, GroupRef } from '@shared/api/group-types.ts';
+import type {
+    Group,
+    GroupRef
+} from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -51,7 +55,7 @@ Deno.test(
             const runtime = new PSqlRuntimeStateRepository(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
             const authSessions = new AuthSessionRepository(runtime);
             const authority: IssuedAuthSession = {
                 clientId: 'owner',
@@ -116,7 +120,7 @@ Deno.test(
                             waitRetryIntervalMsecs: 1,
                             waitMaxRetryIntervalMsecs: 4,
                             waitJitterRatio: 0,
-                            nowEpochMs: () => nowEpochMs
+                            nowEpochMs: Date.now
                         }
                     }
                 );
@@ -373,7 +377,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 return released;
             }
         }
-        const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox));
+        const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant));
         const appGroup = new TopologyInboxService(
             {
                 inboxQueueReader: inboxReader,
@@ -391,7 +395,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                     waitRetryIntervalMsecs: 1,
                     waitMaxRetryIntervalMsecs: 4,
                     waitJitterRatio: 0,
-                    nowEpochMs: () => nowEpochMs
+                    nowEpochMs: Date.now
                 }
             }
         );

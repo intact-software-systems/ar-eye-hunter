@@ -2,7 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import {
     EntityStatus,
-    NEVER_EXPIRE_TS,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -76,7 +75,7 @@ export function rowsToMap(
     const entries = new Map<string, ResourceEntry>();
     for (const row of rows) {
         const entry = toDomain(row);
-        entries.set(`${entry.key.contextId}::${entry.key.topicId}::${entry.key.resourceId}`, entry);
+        entries.set(row.ri_row_id.toString(), entry);
     }
     return entries;
 }
@@ -89,6 +88,10 @@ export function toResourceInboxStatusAndAttempts(
 
 export function toDomain(row: ResourceInboxRow): ResourceEntry {
     const { status, attempts } = toResourceInboxStatusAndAttempts(row);
+    if (!hasValidResourceInboxFullRowLifecycle(row)) {
+        throw new ResourceInboxRowCorruptionError('Resource inbox row has an invalid lifecycle');
+    }
+    const createdTs = parseTemporalPlainDateTime(row.created_ts);
 
     return {
         key: {
@@ -99,17 +102,10 @@ export function toDomain(row: ResourceInboxRow): ResourceEntry {
         resource: row.ri_resource,
         typeId: row.ri_type_id,
         audit: {
-            // date is not stored separately in the table; keep it derived from created_ts
-            date: Temporal.PlainTime.from(
-                parseTemporalPlainDateTime(row.created_ts)
-                    .toPlainTime()
-                    .toString()
-            ),
+            date: createdTs.toPlainTime(),
             createdBy: row.created_by,
-            createdTs: parseTemporalPlainDateTime(row.created_ts),
-            expiryTs: row.expire_ts
-                ? toInstant(row.expire_ts)
-                : NEVER_EXPIRE_TS
+            createdTs,
+            expiryTs: toInstant(row.expire_ts)
         },
         status,
         dequeueAudit: {
@@ -190,62 +186,9 @@ export function toInstant(timestamp: string | Date): Temporal.Instant {
     );
 }
 
+/** Immutable replay requires a processing lifecycle; retained AL facts also occupy full storage rows. */
 export function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
-    const attempts = row.ri_attempts === null ? NaN : Number(row.ri_attempts);
-    if (
-        !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
-        !Number.isSafeInteger(attempts) ||
-        attempts < 0
-    ) {
-        return false;
-    }
-
-    let createdTs: Temporal.PlainDateTime;
-    let expiryTs: Temporal.PlainDateTime;
-    let startTs: Temporal.PlainDateTime | null;
-    let endTs: Temporal.PlainDateTime | null;
-    let nextTs: Temporal.PlainDateTime | null;
-    try {
-        createdTs = parsePostgresTimestamp6(row.created_ts);
-        expiryTs = parsePostgresTimestamp6(row.expire_ts);
-        startTs = row.start_ts ? parsePostgresTimestamp6(row.start_ts) : null;
-        endTs = row.end_ts ? parsePostgresTimestamp6(row.end_ts) : null;
-        nextTs = row.next_ts ? parsePostgresTimestamp6(row.next_ts) : null;
-    }
-    catch {
-        return false;
-    }
-
-    if (
-        Temporal.PlainDateTime.compare(createdTs, expiryTs) >= 0 ||
-        (startTs && Temporal.PlainDateTime.compare(startTs, createdTs) < 0) ||
-        (endTs && (!startTs || Temporal.PlainDateTime.compare(endTs, startTs) < 0)) ||
-        (nextTs && endTs && Temporal.PlainDateTime.compare(nextTs, endTs) < 0) ||
-        (nextTs && !endTs && Temporal.PlainDateTime.compare(nextTs, createdTs) < 0)
-    ) {
-        return false;
-    }
-
-    switch (row.ri_status) {
-        case EntityStatus.NEW:
-            return attempts === 0 && !startTs && !endTs && !nextTs;
-        case EntityStatus.RETRY:
-            return attempts === 0
-                ? ((startTs === null && endTs === null) || (startTs !== null && endTs !== null)) && nextTs !== null
-                : startTs !== null && endTs !== null && nextTs !== null;
-        case EntityStatus.RESERVED:
-            return attempts > 0 && startTs !== null && !endTs && !nextTs;
-        case EntityStatus.FAILED:
-            return attempts > 0 && startTs !== null && endTs !== null;
-        case EntityStatus.COMPLETED:
-        case EntityStatus.ABORTED:
-        case EntityStatus.NON_RETRYABLE:
-        case EntityStatus.PARTITIONED:
-        case EntityStatus.MERGED:
-            return attempts > 0 && startTs !== null && endTs !== null && !nextTs;
-        default:
-            return false;
-    }
+    return hasValidResourceInboxFields(row) && hasValidResourceInboxProcessingState(row);
 }
 
 export function hasMatchingImmutableResourceInboxContent(
@@ -264,6 +207,76 @@ export function hasMatchingImmutableResourceInboxContent(
     }
     catch {
         return false;
+    }
+}
+
+function hasValidResourceInboxFullRowLifecycle(row: ResourceInboxRow): boolean {
+    if (!hasValidResourceInboxFields(row)) {
+        return false;
+    }
+    switch (row.ri_status) {
+        case EntityStatus.NEW:
+            return Number(row.ri_attempts) === 0 && !row.start_ts && !row.end_ts;
+        case EntityStatus.COMPLETED:
+            return Number(row.ri_attempts) === 0
+                ? Boolean(row.start_ts) === Boolean(row.end_ts)
+                : row.start_ts !== null && row.end_ts !== null;
+        default:
+            return hasValidResourceInboxProcessingState(row);
+    }
+}
+
+function hasValidResourceInboxFields(row: ResourceInboxRow): boolean {
+    const attempts = row.ri_attempts === null ? NaN : Number(row.ri_attempts);
+    if (
+        !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
+        !Number.isSafeInteger(attempts) ||
+        attempts < 0
+    ) {
+        return false;
+    }
+
+    try {
+        parsePostgresTimestamp6(row.created_ts);
+        parsePostgresTimestamp6(row.expire_ts);
+        for (const timestamp of [row.start_ts, row.end_ts, row.next_ts]) {
+            if (timestamp !== null) {
+                parsePostgresTimestamp6(timestamp);
+            }
+        }
+    }
+    catch {
+        return false;
+    }
+
+    return row.end_ts === null || row.start_ts !== null;
+}
+
+function hasValidResourceInboxProcessingState(row: ResourceInboxRow): boolean {
+    const attempts = Number(row.ri_attempts);
+    const hasStart = row.start_ts !== null;
+    const hasEnd = row.end_ts !== null;
+    const hasNext = row.next_ts !== null;
+
+    switch (row.ri_status) {
+        case EntityStatus.NEW:
+            return attempts === 0 && !hasStart && !hasEnd && !hasNext;
+        case EntityStatus.RETRY:
+            return attempts === 0
+                ? hasStart === hasEnd && hasNext
+                : hasStart && hasEnd && hasNext;
+        case EntityStatus.RESERVED:
+            return attempts > 0 && hasStart && !hasEnd && !hasNext;
+        case EntityStatus.FAILED:
+            return attempts > 0 && hasStart && hasEnd;
+        case EntityStatus.COMPLETED:
+        case EntityStatus.ABORTED:
+        case EntityStatus.NON_RETRYABLE:
+        case EntityStatus.PARTITIONED:
+        case EntityStatus.MERGED:
+            return attempts > 0 && hasStart && hasEnd && !hasNext;
+        default:
+            return false;
     }
 }
 

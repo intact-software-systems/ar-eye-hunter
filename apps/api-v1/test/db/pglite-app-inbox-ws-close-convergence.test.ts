@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -17,12 +18,15 @@ import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import {
     assertPGliteQueuedTypes,
-    assertPGliteQueueRetriedAndCompleted,
+    completePGliteAppInboxRetry,
     createPGliteAppInboxWsCloseHarness,
     pauseNextPGliteLifecycleRead,
     type PGliteAppInboxWsCloseHarness
 } from './pglite-app-inbox-ws-close-test-harness.ts';
-import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+    FUTURE_MS,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -57,7 +61,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
             }))?.activeSessions ?? [],
             []
         );
-        await assertPGliteQueueRetriedAndCompleted(sql, connectEntry.key);
+        await completePGliteAppInboxRetry(sql, harness.reader, connectEntry.key);
         assert.deepEqual(
             (await harness.clients.readSnapshot({
                 ...SCOPE,
@@ -120,7 +124,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
                 ?.activeSessions ?? [],
             []
         );
-        await assertPGliteQueueRetriedAndCompleted(sql, connectKey);
+        await completePGliteAppInboxRetry(sql, harness.reader, connectKey);
         assert.ok((await pending).right);
         assert.deepEqual(
             (await harness.groups.readSnapshot({ ...SCOPE, groupId }))
@@ -135,7 +139,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-delayed-presence-summary';
         const groupRef = { ...SCOPE, groupId };
-        const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox));
+        const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox, Temporal.Now.instant));
         const summaryWork = new GroupPresenceSummaryWork({
             now: Date.now,
             outboxQueueReader: outboxReader,

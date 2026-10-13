@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -16,7 +17,10 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from './pglite-auth-test-harness.ts';
 
 Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
     await withPGliteSql(async (sql) => {
@@ -24,7 +28,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
         const credentialIssuer = createHmacAuthCredentialIssuer(secret);
 
@@ -48,7 +52,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
                     waitRetryIntervalMsecs: 1,
                     waitMaxRetryIntervalMsecs: 4,
                     waitJitterRatio: 0,
-                    nowEpochMs: () => nowEpochMs
+                    nowEpochMs: Date.now
                 },
                 authFactNowEpochMs: () => nowEpochMs
             }
@@ -213,7 +217,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
 
         const user = {
             clientId: 'policy-client',
@@ -253,7 +257,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
                     waitRetryIntervalMsecs: 1,
                     waitMaxRetryIntervalMsecs: 4,
                     waitJitterRatio: 0,
-                    nowEpochMs: () => nowEpochMs
+                    nowEpochMs: Date.now
                 },
                 authFactNowEpochMs: () => nowEpochMs
             }
@@ -303,7 +307,7 @@ Deno.test(
             const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(databaseNowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
 
             let authFactNowEpochMs = databaseNowEpochMs;
             const issuer = createHmacAuthCredentialIssuer(
@@ -335,7 +339,7 @@ Deno.test(
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
-                        nowEpochMs: () => databaseNowEpochMs
+                        nowEpochMs: Date.now
                     },
                     authFactNowEpochMs: () => authFactNowEpochMs
                 }

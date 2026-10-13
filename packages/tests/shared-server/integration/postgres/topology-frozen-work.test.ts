@@ -24,7 +24,10 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
-import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key
+} from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -97,7 +100,7 @@ interface FrozenWorkHarness {
 
 function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHarness {
     const resources = createPSqlResourceInboxRepository(sql, () => new Date(now()));
-    const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources));
+    const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources, Temporal.Now.instant));
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const groupStateRepository = createTestGroupStateRepository(
         runtimeRepository,

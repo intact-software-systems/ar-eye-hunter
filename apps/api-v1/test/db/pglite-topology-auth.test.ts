@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
@@ -16,8 +17,14 @@ import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/t
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { decodeTopologyAppInboxAuthority } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
-import { readDurableTopologyAppInboxCommand, toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import { type TopologyAppInboxCommand, type TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import {
+    readDurableTopologyAppInboxCommand,
+    toTopologyAppInboxCommand
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import {
+    type TopologyAppInboxCommand,
+    type TopologyAppInboxRequestPayload
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
@@ -40,7 +47,10 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    waitForPGliteQueueRow
+} from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from './pglite-test-socket.ts';
 import {
@@ -80,7 +90,7 @@ Deno.test(
             const runtime = new PSqlRuntimeStateRepository(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
             const authSessions = new AuthSessionRepository(runtime);
             const authority: IssuedAuthSession = {
                 clientId: 'owner',
@@ -147,7 +157,7 @@ Deno.test(
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
-                        nowEpochMs: () => nowEpochMs
+                        nowEpochMs: Date.now
                     }
                 }
             );
@@ -492,7 +502,7 @@ Deno.test(
                 },
                 {
                     serviceId: 'pglite-app-inbox-topology',
-                    options: { nowEpochMs: () => nowEpochMs }
+                    options: { nowEpochMs: Date.now }
                 }
             );
             configureRttRepository({ ttlMs: 60_000 });

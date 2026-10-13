@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     createPSqlResourceInboxRepository,
@@ -48,7 +50,10 @@ import {
     createGroupFormationMetricsRecorder,
     type RallarGroupFormationMetricsRecorder
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
-import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import {
+    recordRallarTiming,
+    type RallarTimingSink
+} from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import {
@@ -244,7 +249,7 @@ function createApiV1MutationResources(
     const clientsRepository = new ClientStateRepository(runtimeStateRepository, clientStateEventStore);
     const groupsRepository = new GroupStateRepository(runtimeStateRepository, groupStateEventStore);
     return {
-        queueBox: new PSqlQueueBox(resourceInboxRepository),
+        queueBox: new PSqlQueueBox(resourceInboxRepository, Temporal.Now.instant),
         resourceInboxRepository,
         resourceInboxResultsRepository,
         runtimeStateRepository,

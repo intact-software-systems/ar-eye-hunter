@@ -6,16 +6,21 @@ import {
 } from 'vitest';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe('PostgreSQL resource inbox reservation', () => {
     it('returns Either left for expired rows and Either right for reserved rows', async () => {
-        const active = createEntry('active-1', Temporal.Now.instant().add({ minutes: 5 }));
+        const now = Temporal.Now.instant();
+        const active = createEntry('active-1', now.add({ minutes: 5 }), now.subtract({ minutes: 2 }));
         const expired = createEntry(
             'expired-1',
-            Temporal.Now.instant().subtract({ seconds: 1 })
+            now.subtract({ seconds: 1 }),
+            now.subtract({ minutes: 2 })
         );
         const { sql } = await createPSqlAdmissionTestStorage();
         const repo = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -35,14 +40,15 @@ describe('PostgreSQL resource inbox reservation', () => {
     });
 
     it('does not reserve an entry whose processing-attempt budget is exhausted', async () => {
+        const now = Temporal.Now.instant();
         const exhausted = {
-            ...createEntry('exhausted-20', Temporal.Now.instant().add({ minutes: 5 })),
+            ...createEntry('exhausted-20', now.add({ minutes: 5 }), now.subtract({ minutes: 2 })),
             status: EntityStatus.RETRY,
             dequeueAudit: {
                 attempts: 20,
-                startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
-                endTs: Temporal.Now.instant().subtract({ seconds: 31 }),
-                nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
+                startTs: now.subtract({ minutes: 1 }),
+                endTs: now.subtract({ seconds: 31 }),
+                nextTs: now.subtract({ seconds: 30 })
             }
         } satisfies ResourceEntry;
         const { sql } = await createPSqlAdmissionTestStorage();
@@ -58,14 +64,15 @@ describe('PostgreSQL resource inbox reservation', () => {
     });
 
     it('does not create attempt three with a configured two-attempt budget', async () => {
+        const now = Temporal.Now.instant();
         const exhausted = {
-            ...createEntry('exhausted-2', Temporal.Now.instant().add({ minutes: 5 })),
+            ...createEntry('exhausted-2', now.add({ minutes: 5 }), now.subtract({ minutes: 2 })),
             status: EntityStatus.RETRY,
             dequeueAudit: {
                 attempts: 2,
-                startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
-                endTs: Temporal.Now.instant().subtract({ seconds: 31 }),
-                nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
+                startTs: now.subtract({ minutes: 1 }),
+                endTs: now.subtract({ seconds: 31 }),
+                nextTs: now.subtract({ seconds: 30 })
             }
         } satisfies ResourceEntry;
         const { sql } = await createPSqlAdmissionTestStorage();
@@ -81,7 +88,8 @@ describe('PostgreSQL resource inbox reservation', () => {
     });
 });
 
-function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEntry {
+function createEntry(resourceId: string, expiryTs: Temporal.Instant, createdAt: Temporal.Instant): ResourceEntry {
+    const createdTs = createdAt.toZonedDateTimeISO('UTC');
     return {
         key: {
             topicId: 'topic-1',
@@ -92,9 +100,9 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
         typeId: 'type-1',
         status: EntityStatus.NEW,
         audit: {
-            date: Temporal.Now.plainDateTimeISO().toPlainTime(),
+            date: createdTs.toPlainTime(),
             createdBy: 'tester',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: createdTs.toPlainDateTime(),
             expiryTs
         },
         dequeueAudit: {

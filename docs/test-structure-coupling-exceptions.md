@@ -4063,6 +4063,21 @@ moved or changed test.
       "summary": "The existing RTC-B06 observation reports the finite default/all-scenarios/retention policies and SHA256 fingerprints of the actual configuration and fixture owners used by the current source tree.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
       "coverageRelation": "The test runs createRtcBaselineDenoObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
+    },
+    {
+      "id": "resource-inbox-guarded-winner-materialization",
+      "domain": "ResourceInbox guarded winner payload allocation",
+      "owner": "Shared Server maintainers",
+      "summary": "A guarded winning reservation invokes its supplied materializer exactly once; immutable replay returns the stored winner without invoking a replay materializer.",
+      "semanticCoverage": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts#prepares a supplied placeholder before opening winner materialization SQL",
+      "coverageRelation": "The test uses real PGlite SQL to insert one placeholder, captures the supplied winner callback, reads its durable payload, and replays the same identity with a throwing materializer that must remain unused.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "PSqlResourceInboxEntryRepository supplied guarded winner materializer",
+        "observableEffect": "One durable reservation allocates one winner payload; replay returns that exact stored payload without allocating a second one.",
+        "requiredConstraint": "Invoke the materializer once for the successful guarded winner and never for an existing immutable replay.",
+        "failureRationale": "Repeated winner invocation can allocate competing command identifiers or payloads for one reservation, while invoking replay allocation repeats work whose immutable winner already exists."
+      }
     }
   ],
   "entries": [
@@ -9114,6 +9129,17 @@ moved or changed test.
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "The independent read of each current configuration owner supplies the expected SHA256 for the emitted observation artifact. It catches missing, stale or substituted provenance even when policy values agree; changing source bytes remains valid when the observation records their current fingerprint.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
+    },
+    {
+      "id": "test-structure-coupling-513f1333780dca6a",
+      "path": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-guarded-winner-materialization",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Server maintainers",
+      "rationale": "The exact once assertion observes the caller-supplied guarded winner allocation port required by the specialized ResourceInbox contract; result equality alone could hide duplicate allocation before the same payload is persisted. The replay branch separately supplies a throwing materializer and must return the original winner.",
+      "semanticCoverage": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts#prepares a supplied placeholder before opening winner materialization SQL"
     }
   ]
 }

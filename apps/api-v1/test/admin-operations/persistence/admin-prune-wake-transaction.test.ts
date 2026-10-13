@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -12,8 +13,14 @@ import { createApiAdminInboxService } from '../../../src/admin-operations/create
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
-import { assertUtcPGliteSession, RealEngineAdminPruneFixture } from './admin-prune-real-engine-fixture.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withUtcPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
+import {
+    assertUtcPGliteSession,
+    RealEngineAdminPruneFixture
+} from './admin-prune-real-engine-fixture.ts';
 
 Deno.test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
     await withUtcPGliteSql(runRealEngineHandoffTest);
@@ -73,7 +80,7 @@ interface DeferredAdminCommitFixture {
 
 async function createDeferredAdminCommitFixture(sql: PGliteSql): Promise<DeferredAdminCommitFixture> {
     const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-    const queue = new PSqlQueueBox(repository);
+    const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
     const inbox = new InboxQueueReader(queue);
     const outbox = new OutboxQueueReader(queue);
     const now = await readPGliteDatabaseEpochMs(sql);
@@ -94,7 +101,7 @@ async function createDeferredAdminCommitFixture(sql: PGliteSql): Promise<Deferre
             waitRetryIntervalMsecs: 0,
             waitMaxRetryIntervalMsecs: 0,
             waitJitterRatio: 0,
-            nowEpochMs: () => now
+            nowEpochMs: Date.now
         },
         currentAuthority: {
             readSession: () => Promise.resolve({ clientId: 'admin', sessionId: 'admin-session', expiresAtEpochMs: now + 60_000 }),
@@ -197,7 +204,7 @@ async function assertDeferredAdminCommit(fixture: DeferredAdminCommitFixture, as
 Deno.test('dry-run initial admin work does not wake after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
@@ -216,7 +223,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
                 waitRetryIntervalMsecs: 0,
                 waitMaxRetryIntervalMsecs: 0,
                 waitJitterRatio: 0,
-                nowEpochMs: () => now
+                nowEpochMs: Date.now
             },
             currentAuthority: {
                 readSession: () =>
@@ -251,7 +258,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
 Deno.test('rolled-back initial admin page work does not wake the queue', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
@@ -285,7 +292,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
                 waitRetryIntervalMsecs: 0,
                 waitMaxRetryIntervalMsecs: 0,
                 waitJitterRatio: 0,
-                nowEpochMs: () => now
+                nowEpochMs: Date.now
             },
             currentAuthority: {
                 readSession: () =>
@@ -326,7 +333,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
 Deno.test('rejected initial admin outbox write does not wake or persist page work', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
@@ -356,7 +363,7 @@ Deno.test('rejected initial admin outbox write does not wake or persist page wor
                 waitRetryIntervalMsecs: 0,
                 waitMaxRetryIntervalMsecs: 0,
                 waitJitterRatio: 0,
-                nowEpochMs: () => now
+                nowEpochMs: Date.now
             },
             currentAuthority: {
                 readSession: () =>

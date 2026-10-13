@@ -1,9 +1,15 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import type {
+    CrdtMutationActor,
+    CrdtMutationResponseAudience
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
@@ -20,7 +26,10 @@ import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inb
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const REASON = 'api-v1-admin-compaction';
@@ -141,9 +150,14 @@ Deno.test(
     }
 );
 
-function createCrdtInboxHarness(sql: PGliteSql, now: number) {
+interface CrdtInboxHarness {
+    readonly service: AppCrdtInboxService;
+    readonly inboxQueueReader: InboxQueueReader;
+}
+
+function createCrdtInboxHarness(sql: PGliteSql, now: number): CrdtInboxHarness {
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
@@ -180,7 +194,7 @@ async function drain(
     );
 }
 
-function actor() {
+function actor(): CrdtMutationActor {
     return {
         actorId: 'client-1',
         principalId: 'client-1',
@@ -189,7 +203,7 @@ function actor() {
     } as const;
 }
 
-function audience() {
+function audience(): CrdtMutationResponseAudience {
     return {
         kind: 'admin',
         senderSessionId: 'session-1',

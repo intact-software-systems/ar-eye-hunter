@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -9,12 +10,15 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withUtcPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
@@ -34,7 +38,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
                 waitRetryIntervalMsecs: 0,
                 waitMaxRetryIntervalMsecs: 0,
                 waitJitterRatio: 0,
-                nowEpochMs: () => now
+                nowEpochMs: Date.now
             },
             currentAuthority: {
                 readSession: () => Promise.resolve(null),
@@ -79,7 +83,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
 Deno.test('committed initial admin page work wakes the queue after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
-        const queue = new PSqlQueueBox(repository);
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
@@ -99,7 +103,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
                 waitRetryIntervalMsecs: 0,
                 waitMaxRetryIntervalMsecs: 0,
                 waitJitterRatio: 0,
-                nowEpochMs: () => now
+                nowEpochMs: Date.now
             },
             currentAuthority: {
                 readSession: () =>
