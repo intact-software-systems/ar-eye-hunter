@@ -1,5 +1,14 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // One RTC carrier owner keeps admission protection, control-handoff translation
+    // and route/native guards together. The separation review accepts this exact
+    // cognitive score; other findings and further growth remain undispositioned.
+    Object.freeze({
+        path: 'packages/shared/multicast/web-rtc-overlay-multicast-manager.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 118
+    }),
     // The named app composition boundary assembles defaults before the required
     // constructor. This module-owned prompt has no checker symbol, even though
     // its display message names the default factory.

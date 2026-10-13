@@ -184,20 +184,22 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   completes 129 ms after that deadline; another has no subsequent outcome established. First-distinct
   capture cannot classify later retry exceptions. These observations do not establish wire latency,
   memory leaks, a transport cause or repair causality.
-- At the existing owners, the real multicast limiter refuses before outbound storage and stays
-  neutral to its circuit. Rx converts the refusal to an error; the control round tries individual
-  fallback, then remaining errors release inbound work for retry using spent attempts and existing
-  backoff. This source path earns a controlled test through the complete owner path, not a selected
-  policy defect. Existing manager-only recovery tests cannot establish replay, origin receipt or
-  attempt/backoff behavior at that upper boundary.
-- Controlled full-owner quota cases pass with current production behavior. A deliberately later
-  invocation at 1,251 ms proves replay and eventual same-subject ACK. A separate centered-jitter
-  case executes actual persisted due times: claim seven at 1,031 ms still retries; claim eight
-  submits and settles at 3,031 ms, although the real limiter allows at 1,251 ms. The selected
-  three suites pass eighteen tests. Controlled Date and manual engine execution characterize
-  durable retry policy, not browser scheduler latency, native failure causality or the comparative
-  benefit gate. This test increment requires independent specification and quality review before
-  publication.
+- Controlled full-owner baseline tests prove replay and same-origin receipt, but also show the
+  quota refusal becoming ordinary retry after individual fallback. With centered jitter and actual
+  persisted due times, claim seven at 1,031 ms still retries and claim eight submits/settles at
+  3,031 ms; the unchanged real limiter already allows at 1,251 ms. Independent specification and
+  quality review pass for that baseline. This is controlled durable retry policy, not browser
+  scheduler latency or native failure causality.
+- The earned readiness change now uses the existing limiter's nonspending eligibility forecast
+  and existing validated NotReady boundary. A whole-batch quota refusal retains every control
+  without individual fallback or charging a processing attempt; the inbound owner's own clock
+  determines its next due time. Actual admission still rechecks the same limiter. The meaningful
+  failing-first full-owner case now submits and receives its same-origin receipt on claim two at
+  1,251 ms: six fewer claims and 1,780 ms less controlled policy delay. Ordinary partially admitted
+  batch fallback, genuine twenty-attempt exhaustion, deadlines, independent clocks, NEW progress,
+  absent forecasts and concurrent quota admission retain their semantic coverage. Complete review
+  and affected checks are required before publication and original workload execution. This local
+  improvement does not establish original scale acceptance or the unchanged comparative benefit.
 - The maintainer approved the public finalization type correction, three awaitable disposal
   methods and exported WS first-refusal callback rename. The callback keeps its function type,
   default and authorization behavior; verified callers and affected support enter complete
@@ -211,36 +213,27 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-The missing first-claim typed reason is now captured for the current failed shot controls. Stop
-expanding the observer and do not repeat its unchanged diagnostic. The controlled full-owner
-cases retain the refused control work, preserve exact identities, prove native frame submission
-and same-origin receipt after recovery, keep the local circuit neutral and allow a healthy subject
-to progress. A deliberately later invocation proves eventual replay; the separate actual-due-time
-case exposes a 1,780 ms gap between positive limiter eligibility and claim-eight submission.
-This uses controlled Date, centered jitter and manual engine execution, not a browser latency proof.
-Require independent specification and quality review of this frozen test increment before
-publication or a runtime change.
+The first-distinct observer and controlled owner-path investigation are complete. Preserve their
+positive evidence and stop expanding or repeating that unchanged diagnostic. Complete independent
+specification and quality review of the readiness change and its whole-file support closure, then
+publish it with the affected semantic, type and browser-boundary checks. Retain the existing limiter
+and circuit defaults, durable authority, deadlines, ACK semantics, twenty genuine processing attempts
+and ordinary operational failure policy. No new observer, public error API, limiter increase or
+heap/CPU hypothesis is selected.
 
-Then evaluate the existing ALM readiness boundary against this exact quota-induced retry delay,
-using the same real multicast, Rx, inbound stores, engine and native frame fixture. Before choosing
-a runtime change, establish a meaningful failing-first latency/claim case and prove the proposed
-behavior improves it without false completion, lost replay, quota overspend or changed genuine
-failure retry/exhaustion. Preserve limiter defaults, durable authority, deadlines and ACK semantics;
-keep the twenty-attempt processing limit and ordinary operational failure policy. A passing invariant
-remains passing evidence; do not invent RED or infer that later native exceptions are quota refusals.
-No new observer, public error API, limiter increase or heap/CPU hypothesis is selected. Any earned
-behavior change requires independent specification and quality review and proportional affected
-checks. The local improvement would still not satisfy the unchanged comparative benefit gate.
+The meaningful failing-first case proves a concrete policy improvement through real multicast, Rx,
+inbound stores, engine, native frame submission and same-origin receipt: two claims at 1,251 ms
+instead of eight at 3,031 ms. With that reviewed change published, execute the original capture-off
+fifteen-agent workload once on the existing free GitHub runner. This is an earned acceptance test
+of changed behavior. It does not retroactively identify later native exceptions, the earlier END
+predecessor reasons or hosted native-entry delay; those remain unresolved.
 
-The earlier END predecessor reasons and hosted native-entry delay remain unresolved and are not
-identified by these current shot records. Incomplete capture cannot establish an absent boundary.
-Private diagnostics do not replace original uninstrumented acceptance. Before another original
-acceptance execution, resolve the controlled owner-path result and the exact remaining evidence
-gap; a source hypothesis or unchanged retry is insufficient. The acceptance execution retains
-its frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven samples per
-actor, storage and metric limits, deadlines, native predicates, source provenance and cleanup.
-Preserve original capture-off settings. Thirty and fifty remain gated by fifteen; comparative
-benefit and final whole-branch review remain open.
+Retain the frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven samples
+per actor, storage and metric limits, deadlines, all native predicates, source provenance and owned
+cleanup. Private diagnostics cannot replace original uninstrumented acceptance. Preserve capture-off
+settings and retain complete failed evidence. If fifteen fails, analyze the exact current failure and
+require a meaningful failing-first repair before another workload. Thirty and fifty remain gated by
+fifteen; unchanged comparative benefit and final whole-branch review remain open.
 
 ### 2. Preserve truthful ALM submission evidence and direct boundaries
 

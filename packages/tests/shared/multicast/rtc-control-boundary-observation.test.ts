@@ -34,6 +34,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
+import { computeRateLimiterRetryAfterMs } from '@shared/resilience/compute-rate-limiter-retry-after-ms.ts';
 import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -66,11 +67,14 @@ interface ControlWorkTransition {
 }
 
 describe('exact RTC ACK boundary observations', () => {
-    it.each(['healthy', 'quota-recovery', 'quota-due-time'] as const)(
+    it.each(['healthy', 'quota-readiness', 'quota-clock-preserved'] as const)(
         'joins automatic director and relayed ACKs to native submission and registered ingress despite throwing observers (%s)',
         async (mode) => {
             vi.useRealTimers();
             let quotaNowMs = 1791883286866;
+            let relayOutboundNowMs = quotaNowMs + (mode === 'quota-clock-preserved' ? 10_000 : 0);
+            let relayInboundNowMs = quotaNowMs + (mode === 'quota-clock-preserved' ? 20_000 : 0);
+            const relayNowMs = () => mode === 'quota-clock-preserved' ? relayInboundNowMs : quotaNowMs;
             if (mode !== 'healthy') {
                 vi.spyOn(Date, 'now').mockImplementation(() => quotaNowMs);
             }
@@ -205,7 +209,10 @@ describe('exact RTC ACK boundary observations', () => {
                     circuitBreakers.set(sessionId, circuitBreaker);
                     const rateLimiter = toRateLimiter();
                     rateLimiters.set(sessionId, rateLimiter);
-                    const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+                    const resources = createDefaultALOutboundRuntimeResources({
+                        decodePrepared: decodeALOutboundTransportMessage,
+                        nowMs: sessionId === '04' && mode === 'quota-clock-preserved' ? () => relayOutboundNowMs : Date.now
+                    });
                     outboundResources.set(sessionId, resources);
                     const manager = new WebRtcOverlayMulticastManager({
                         connectionService: connection.service,
@@ -236,11 +243,29 @@ describe('exact RTC ACK boundary observations', () => {
                         dequeueResilience: createDefaultALOutboundDequeueResilience()
                     });
                     managers.set(sessionId, manager);
-                    const stores = createDefaultInMemoryALInboundRuntimeStores();
-                    inboundStores.set(sessionId, stores);
+
                     const batches = new ALWorkBatchTestObserver();
                     batchObservers.set(sessionId, batches);
-                    const engine = sessionId === '04' && mode !== 'healthy' ? new InboxOutboxEngine() : undefined;
+                    const engine = sessionId === '04' && mode !== 'healthy'
+                        ? new InboxOutboxEngine({
+                            nowEpochMs: relayNowMs,
+                            random: () => 0.5,
+                            reportTaskFailure: (_id, error) => {
+                                throw error;
+                            }
+                        })
+                        : undefined;
+                    const inboundResources = sessionId === '04' && mode !== 'healthy'
+                        ? createDefaultALInboundRuntimeResources({
+                            nowMs: relayNowMs,
+                            queueEngine: engine,
+                            selfPeerId: sessionId,
+                            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX),
+                            random: () => 0.5
+                        })
+                        : undefined;
+                    const stores = inboundResources ?? createDefaultInMemoryALInboundRuntimeStores();
+                    inboundStores.set(sessionId, stores);
                     if (engine) {
                         engines.set(sessionId, engine);
                     }
@@ -261,18 +286,12 @@ describe('exact RTC ACK boundary observations', () => {
                         nowEpochMs: Date.now,
                         heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
                     };
-                    const streamer = sessionId === '04' && mode === 'quota-due-time'
+                    const streamer = inboundResources !== undefined
                         ? new WebRtcRxStreamerService({
                             multicast: manager,
                             sessionId,
-                            inboundRuntime: createDefaultALInboundRuntimeResources({
-                                stores,
-                                queueEngine: engine,
-                                selfPeerId: sessionId,
-                                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX),
-                                random: () => 0.5
-                            }),
-                            epochNow: Date.now,
+                            inboundRuntime: inboundResources,
+                            epochNow: relayNowMs,
                             heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 },
                             roomAuthorityRefresh: undefined,
                             inboundDiagnostics,
@@ -359,8 +378,8 @@ describe('exact RTC ACK boundary observations', () => {
                     const controls = await readForwardedControlWork(stores, relayed.id.msgId);
                     expect(controls).toHaveLength(1);
                     let retrying = controls[0]!;
-                    expect(retrying).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-                    expect(Number(retrying.dequeueAudit.nextTs!.epochMilliseconds) - quotaStartedAtMs).toBe(1);
+                    expect(retrying).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+                    expect(Number(retrying.dequeueAudit.nextTs!.epochMilliseconds) - relayNowMs()).toBe(1251);
                     controlTransitions.push(toControlWorkTransition(retrying));
                     expect(completedSubjects.has(relayed.id.msgId)).toBe(false);
                     const work = decodeALInboundWorkEntry(retrying, stores.admissionStore.namespace);
@@ -384,63 +403,58 @@ describe('exact RTC ACK boundary observations', () => {
                     expect(natives.get('04/03')!.sent.map((frame) => decodePersistedALMessageValue(JSON.parse(String(frame))).id))
                         .not.toContainEqual(control.id);
                     const engine = engines.get('04')!;
-                    for (
-                        const [attempt, minDelayMs, maxDelayMs, centeredDelayMs] of [[2, 2, 2, 2], [3, 3, 5, 4], [4, 6, 10, 8], [5, 13, 19, 16], [
-                            6,
-                            800,
-                            1200,
-                            1000
-                        ]] as const
-                    ) {
-                        const dueAtMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
-                        quotaNowMs = dueAtMs;
+                    const firstRelease = retrying;
+                    const limiter = rateLimiters.get('04')!;
+                    expect(limiter.isAllowedAt(quotaStartedAtMs + 1250)).toBe(false);
+                    expect(limiter.isAllowedAt(quotaStartedAtMs + 1251)).toBe(true);
+                    if (mode === 'quota-clock-preserved') {
+                        const applicationControl = { ...control, id: { ...control.id, msgId: 'application-clock-probe' } };
+                        const manager = managers.get('04')!;
+                        relayOutboundNowMs += 5_000;
+                        expect((await manager.enqueueIfAbsent(applicationControl)).verdict)
+                            .toMatchObject({ kind: 'unroutable', reason: 'rate-limited' });
+                        expect(computeRateLimiterRetryAfterMs(limiter, Date.now())).toBe(1251);
+                        relayInboundNowMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
                         await expect.poll(async () => {
                             await engine.executeOnce();
                             await batchObservers.get('04')!.waitForPublishedBatches();
                             await engine.stop();
                             retrying = (await stores.workQueue.getItem(retrying.key))!;
-                            return retrying.dequeueAudit.attempts;
-                        }).toBe(attempt);
-                        expect(retrying).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: attempt } });
+                            return retrying.dequeueAudit.endTs?.epochMilliseconds;
+                        }).toBe(relayInboundNowMs);
+                        expect(retrying).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+                        expect(Number(retrying.dequeueAudit.nextTs!.epochMilliseconds)).toBe(relayInboundNowMs + 1251);
                         controlTransitions.push(toControlWorkTransition(retrying));
-                        const delayMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds) - dueAtMs;
-                        expect(delayMs).toBeGreaterThanOrEqual(minDelayMs);
-                        expect(delayMs).toBeLessThanOrEqual(maxDelayMs);
-                        if (mode === 'quota-due-time') {
-                            expect(delayMs).toBe(centeredDelayMs);
-                        }
-                        expect(circuitBreakers.get('04')!.isClosed()).toBe(true);
-                        expect(completedSubjects.has(relayed.id.msgId)).toBe(false);
                         expect(await outboundResources.get('04')!.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(false);
+                        expect(completedSubjects.has(relayed.id.msgId)).toBe(false);
                         expect(natives.get('04/03')!.sent.map((frame) => decodePersistedALMessageValue(JSON.parse(String(frame))).id))
                             .not.toContainEqual(control.id);
-                    }
-                    // The default nominal 1,000 ms limiter includes one overlapping 250 ms bucket at its edge.
-                    expect(rateLimiters.get('04')!.isAllowedAt(quotaStartedAtMs + 1250)).toBe(false);
-                    expect(rateLimiters.get('04')!.isAllowedAt(quotaStartedAtMs + 1251)).toBe(true);
-                    if (mode === 'quota-due-time') {
-                        quotaNowMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
-                        expect(quotaNowMs - quotaStartedAtMs).toBe(1031);
-                        await expect.poll(async () => {
-                            await engine.executeOnce();
-                            await batchObservers.get('04')!.waitForPublishedBatches();
-                            await engine.stop();
-                            retrying = (await stores.workQueue.getItem(retrying.key))!;
-                            return retrying.dequeueAudit.attempts;
-                        }).toBe(7);
-                        expect(retrying.status).toBe(EntityStatus.RETRY);
-                        controlTransitions.push(toControlWorkTransition(retrying));
-                        expect(Number(retrying.dequeueAudit.nextTs!.epochMilliseconds) - quotaNowMs).toBe(2000);
-                        expect(circuitBreakers.get('04')!.isClosed()).toBe(true);
-                        expect(completedSubjects.has(relayed.id.msgId)).toBe(false);
-                        expect(await outboundResources.get('04')!.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(false);
-                        expect(natives.get('04/03')!.sent.map((frame) => decodePersistedALMessageValue(JSON.parse(String(frame))).id))
-                            .not.toContainEqual(control.id);
-                        quotaNowMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
-                        expect(quotaNowMs - quotaStartedAtMs).toBe(3031);
+                        quotaNowMs = quotaStartedAtMs + 1250;
+                        expect((await manager.enqueueIfAbsent(applicationControl)).verdict)
+                            .toMatchObject({ kind: 'unroutable', reason: 'rate-limited' });
+                        expect(computeRateLimiterRetryAfterMs(limiter, Date.now())).toBe(1);
+                        quotaNowMs = quotaStartedAtMs + 1251;
+                        expect(
+                            (await manager.enqueueIfAbsent({
+                                ...applicationControl,
+                                payload: {
+                                    ...applicationControl.payload,
+                                    resource: JSON.stringify({ ...parseALControlMessage(control)!.payload, ackedMsgId: 'untracked-clock-probe' })
+                                }
+                            })).verdict.kind
+                        ).toBe('admitted');
+                        relayInboundNowMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
                     }
                     else {
-                        quotaNowMs = quotaStartedAtMs + 1251;
+                        quotaNowMs = quotaStartedAtMs + 1250;
+                        await engine.executeOnce();
+                        await batchObservers.get('04')!.waitForPublishedBatches();
+                        await engine.stop();
+                        expect(await stores.workQueue.getItem(retrying.key)).toEqual(firstRelease);
+                        expect(await outboundResources.get('04')!.admissionStore.hasSentMessageAdmission(control.id.msgId)).toBe(false);
+                        expect(completedSubjects.has(relayed.id.msgId)).toBe(false);
+                        quotaNowMs = Number(retrying.dequeueAudit.nextTs!.epochMilliseconds);
+                        expect(quotaNowMs - quotaStartedAtMs).toBe(1251);
                     }
                     await expect.poll(async () => {
                         await engine.executeOnce();
@@ -451,7 +465,7 @@ describe('exact RTC ACK boundary observations', () => {
                     }).toBe(EntityStatus.COMPLETED);
                     expect(retrying).toMatchObject({
                         status: EntityStatus.COMPLETED,
-                        dequeueAudit: { attempts: mode === 'quota-due-time' ? 8 : 7 }
+                        dequeueAudit: { attempts: 1 }
                     });
                     controlTransitions.push(toControlWorkTransition(retrying));
                     expect(decodeALInboundWorkEntry(retrying, stores.admissionStore.namespace).payload).toEqual(work.payload);
@@ -462,6 +476,9 @@ describe('exact RTC ACK boundary observations', () => {
                     expect(frame.payload).toEqual(control.payload);
                     expect(frame.route).toEqual(control.route);
                     expect(nativeSubmissionAtByHop.get(`${relayed.id.msgId}/04/03`)).toBe(quotaNowMs);
+                    expect(controlTransitions).toHaveLength(mode === 'quota-clock-preserved' ? 3 : 2);
+                    expect(inbound.get('04')!.filter((event) => event.kind === 'claim-settled' && event.effectId === work.effectId))
+                        .toHaveLength(mode === 'quota-clock-preserved' ? 3 : 2);
                 }
                 const completed = await Promise.all([...receipts.values()].map((waiter) => waiter.promise));
                 const ackFrames = await Promise.all([...frames.values()].map((waiter) => waiter.promise));
