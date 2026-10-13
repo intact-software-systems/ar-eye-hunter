@@ -145,7 +145,7 @@ export class WebRtcRxStreamerService {
                     return await this.dispatchInboxEntry(entry, plan);
                 },
                 sendControlMessages: async (msgs) => {
-                    await this.handoffControlMessages(msgs);
+                    await this.multicast.handoffControlMessages(msgs);
                 },
                 onControlMessage: async (msg) => {
                     const admitted = await this.multicast.acceptControlMessage(msg);
@@ -162,34 +162,6 @@ export class WebRtcRxStreamerService {
                 diagnostics: dependencies.inboundDiagnostics
             }
         );
-    }
-
-    private async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
-        const results = await this.multicast.enqueueAllIfAbsent(msgs);
-        for (const result of results) {
-            this.validateControlHandoff(result);
-        }
-    }
-
-    private validateControlHandoff(result: ALOutboundEnqueueResult): void {
-        switch (result.verdict.kind) {
-            case 'pending':
-            case 'admitted':
-            case 'duplicate':
-                return;
-            case 'deferred':
-            case 'unroutable':
-            case 'storage-unavailable':
-            case 'failed':
-                throw new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
-            case 'refused':
-            case 'skipped':
-            case 'superseded':
-            case 'expired':
-                throw new NonRetryableException(
-                    result.reason ?? `RTC control admission returned ${result.verdict.kind}`
-                );
-        }
     }
 
     addPeer(peer: WebRtcConnectionService.Peer): void {

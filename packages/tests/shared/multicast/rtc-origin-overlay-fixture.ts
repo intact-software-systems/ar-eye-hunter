@@ -32,7 +32,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createPassThroughTransportFaultPort,
@@ -66,6 +66,8 @@ export interface RtcOriginOverlayFixtureInput {
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The same admission policy port production supplies; absent, the default RTC limiter. */
+    readonly rateLimiter?: RateLimiter;
     /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
     readonly stores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
@@ -117,7 +119,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         },
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
+        rateLimiter: input.rateLimiter ?? toRateLimiter(),
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });

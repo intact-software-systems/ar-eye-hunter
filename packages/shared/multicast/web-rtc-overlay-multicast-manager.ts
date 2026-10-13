@@ -59,10 +59,12 @@ import { isSessionInGroup, readGroupMemberSessionIds } from '../api/group-client
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { computeRateLimiterRetryAfterMs } from '../resilience/compute-rate-limiter-retry-after-ms.ts';
 import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
@@ -261,6 +263,26 @@ export class WebRtcOverlayMulticastManager {
     async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         const [result] = await this.enqueueAllIfAbsent([msg]);
         return result!;
+    }
+
+    /** Translates control admission into the inbound worker's exception-based handoff protocol. */
+    async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
+        const results = await this.enqueueAllIfAbsent(msgs);
+        if (
+            results.length > 0 &&
+            results.every((result) => result.verdict.kind === 'unroutable' && result.verdict.reason === 'rate-limited')
+        ) {
+            const retryAfterMs = computeRateLimiterRetryAfterMs(this.rateLimiter, Date.now());
+            if (retryAfterMs !== undefined) {
+                throw new NotReadyException(Math.max(1, retryAfterMs), results[0]!.reason);
+            }
+        }
+        for (const result of results) {
+            const error = toRtcControlHandoffError(result);
+            if (error !== undefined) {
+                throw error;
+            }
+        }
     }
 
     /**
@@ -1076,6 +1098,25 @@ export class WebRtcOverlayMulticastManager {
             ),
             repairTracking: repair
         };
+    }
+}
+
+function toRtcControlHandoffError(result: ALOutboundEnqueueResult): Error | undefined {
+    switch (result.verdict.kind) {
+        case 'pending':
+        case 'admitted':
+        case 'duplicate':
+            return;
+        case 'deferred':
+        case 'unroutable':
+        case 'storage-unavailable':
+        case 'failed':
+            return new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
+        case 'refused':
+        case 'skipped':
+        case 'superseded':
+        case 'expired':
+            return new NonRetryableException(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
     }
 }
 
