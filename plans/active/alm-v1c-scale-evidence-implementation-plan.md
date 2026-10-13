@@ -107,8 +107,9 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   complete setup, RTC readiness and START. It sent 80 of 84 shots; a required director ACK reached
   its SDK callback 18.6 seconds after the native-submission observation. Its native message callback
   entry is uncaptured, and the same actor has long command scheduling delays. Separate local send
-  refusals do not identify that ACK's cause. One bounded callback-entry observation is next; no
-  CPU, memory, database, quota or queue-task cause is established. Thirty and fifty remain gated.
+  refusals do not identify that ACK's cause. The later local callback-entry observation covers a
+  different current control family; no CPU, memory, database, quota or queue-task cause is
+  established for the hosted failure. Thirty and fifty remain gated.
 - The valid 5.40% shared-throughput comparison remains failed against the unchanged 5% allowance.
   Conditional IndexedDB scheduling benefit does not establish native or universal performance.
 - The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
@@ -125,15 +126,39 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   The latest local eleven-browser diagnostic passes all eleven recipes and all 231 native
   coordinator predicates. All sixty shots, exact leader ACKs, both complete lifecycle audiences,
   77 readings, 847 sampled budget checks and final zero admission/non-probe work storage pass.
-  Its bounded private observation is complete and identifies 29 START control handoff refusals
-  as rate-limited; the required controls recover. The current END is healthy. Those current-run
+  Its bounded private observation retains 29 START control handoff refusals as rate-limited;
+  the required controls recover. The current END is healthy. Those current-run
   verdicts cannot identify the cause of the earlier failed END, and instrumented local success
   does not replace original uninstrumented scale acceptance, benefit or memory-leak evidence.
-- Independent lane-policy review finds an unowned rejecting promise at the engine's canonical
-  task-tracking boundary. Handling the raw executor promise does not handle the distinct promise
-  returned by `finally`. Repair this concrete failure-ownership defect with meaningful rejecting
-  runnable cases and bounded retention. The public finalization type correction still requires
-  the maintainer's compatibility decision; verified repository consumers alone cannot supply it.
+- The canonical engine now owns task rejections after cleanup, joins active work during stop and
+  uses its injected clock consistently for scheduler and circuit-breaker decisions. Meaningful
+  rejecting runnable, before-stop, during-stop and clock-boundary tests pass, with independent
+  full-file specification and quality review. This repair does not establish the native ACK cause.
+- The native callback probe's custody and source-currentness repairs pass meaningful failing-first
+  cases, actual-SDK capability and independent specification/quality review. The latest local
+  fifteen-agent diagnostic still fails: all setup stages and initial barriers pass, all 84 shots
+  are sent, 83 ACK waits pass and player 12's sixth shot remains transport-accepted at its inherited
+  deadline. All 105 samples and 1,155 sampled checks pass; END, final storage and all 231 native
+  predicates remain unevaluated. Full producer/export payload reconciliation and cleanup pass.
+  The eight exact player-2 native entries reach SDK ingress within 0–1 ms; this healthy current
+  family cannot explain the earlier hosted delay or the current player-12 failure.
+- The current required ACK reaches player 7 from the director. Two actual player-7-to-player-12
+  forwarded controls repeatedly fail their individual fallback handoff; the retained evidence has
+  no matching native settlement, receiver SDK ingress or typed rejection reason. A separate
+  unvalidated rejected candidate was never committed and is not lost work. The next discriminator
+  observes this actual enqueue/handoff refusal, with same-run shot origin and required director
+  identity. The older director-origin selector excludes this shot ACK; its historical complete flag
+  also lacks renderer/retained ordinal reconciliation. Captured historical refusals remain positive
+  observations, without an exhaustive absence claim. Current receipts include WS fallback attempts,
+  so the local diagnostic is not exclusive RTC proof. No memory, CPU, quota or database cause is
+  established.
+- The changed ALM/multicast source review identifies false unattempted-send evidence after an
+  immediate native send throws, a misnamed inbound authorization boundary, a forwarding-only
+  receipt diagnostic writer and two import-grouping defects. Resolve these earned findings with
+  complete recursive closure; none identifies the fifteen-agent delay's cause.
+- The public finalization type correction and three awaitable runtime/multicast disposal methods
+  still require the maintainer's separate compatibility decisions. Verified repository consumers
+  and passing cleanup tests alone cannot supply those decisions. No legacy adapter is selected.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
@@ -142,13 +167,21 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-Use the existing private Playwright/CDP observation to timestamp the current native RTC message
-callback delegation before its first await, paired with existing submission and SDK ingress for
-current-run required director ACKs. Derive the actor, director, subject and control identities from
-that same run; preserve source admission, bounded scalar capture, currentness and cleanup. Timely
-native entry followed by late SDK ingress locates delay inside receive dispatch. Late native entry
-combines transport and browser scheduling and does not identify CPU or memory cause. Missing or
-clipped capture remains inconclusive. This diagnostic does not replace uninstrumented acceptance.
+Use the complete current failure to observe the typed enqueue/handoff rejection on the ACK's
+failing hop. Derive its origin player, required appointed director, exact subject/control family
+and actual sender/receiver from the same run. Capture only bounded closed verdict/reason fields
+and identity hashes at the existing owned rejection boundary. Distinguish returned rejection from
+an awaited enqueue failure; absent boundary capture remains inconclusive. Do not copy the older
+lifecycle-control director-origin selector into a player-shot observation.
+
+Reuse existing Playwright/CDP lifecycle and capability patterns after meaningful same-run
+selection, source/current-channel and cleanup tests. Reconcile renderer selections, retained
+records and distinct invocation ordinals; a detached session or healthy capability alone cannot
+certify complete workload capture. Independently review the exact private candidate before one
+instrumented diagnostic with the original workload and complete native retention. This next
+observation closes a specific missing reason; it is not an unchanged retry or a heap/CPU hypothesis.
+The earlier native-entry observation has answered its selected healthy current family and need
+not be repeated. Neither private diagnostic replaces original uninstrumented acceptance.
 
 Earn a meaningful failing-first repair from the observed boundary before another original
 acceptance execution. That execution retains its frozen audience, tree, six-shot cadence, lifecycle
@@ -156,15 +189,25 @@ events, exact receipts, seven samples per actor, storage and metric limits, dead
 predicates, source provenance and cleanup. Preserve original capture-off settings. Thirty and fifty
 remain gated by fifteen; comparative benefit and final whole-branch review remain open.
 
-### 2. Close owned queue-task failure handling
+### 2. Preserve truthful ALM submission evidence and direct boundaries
 
-Exercise a real registered runnable that rejects before and during engine stop. Prove that the
-exact tracked promise has a rejection owner, cleanup is joined, and the failure reaches that
-owner once without an unhandled rejection or unbounded retained failures. Repair the canonical
-task-tracking/engine boundary without another scheduler or a swallow-only catch. Preserve
-registration generation/currentness, replacement/removal, scheduling, quotas and shutdown behavior.
-Resolve the touched engine's clock/random dependency ownership through existing composition
-patterns while preserving public defaults. Do not expand this repair into unrelated queue policy.
+Complete review and publication of the failing-first real QR/ALM native-send evidence repair.
+An immediate native send throw must settle as attempted; a failure before native invocation stays
+unattempted and preserves its original error. Queued native failure retains its existing typed
+result. Use the existing prepared-send/settled-send contracts and QR settlement port; preserve the
+logical message, deadline, ordinary retry owner, exactly one attempt settlement and direct QR
+throw behavior. Keep the internal adapter's async result consistent with its verified consumer;
+no new public result, callback, scheduler, compatibility wrapper or queue registry is selected.
+Run the focused transport/observation tests, shared and test typechecks, full-file standards checks
+and affected browser consumer/bundle validation before publication. Existing callback scheduling
+may supply a demonstrated completion boundary; arbitrary settlement flushes cannot substitute for
+owned work or queue completion in the tests.
+
+Give the inbound authorization/read/observation operation a truthful owned name while preserving
+its first-refusal precedence and lazy relay read. Keep the immutable receipt projection, remove
+its forwarding-only writer and call the canonical guarded diagnostic writer at receipt admission.
+Correct the two external/local import separators. Follow verified callers and support files into
+full closure, without a compatibility alias, duplicate guard, old-path module or migration code.
 
 Keep the original acceptance workload as the priority while this independently evidenced review
 fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful

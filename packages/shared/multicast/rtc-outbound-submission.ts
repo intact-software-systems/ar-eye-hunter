@@ -10,10 +10,26 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettledSendResult
 } from '../alm/outbound/al-outbound-message-runtime.ts';
+import { toError } from '../resilience/to-error.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
 import type { QRtcDataChannel, RtcDataChannelHealth } from '../webrtc/qrtc-data-channel.ts';
 import { computeRtcBackpressure } from './compute-rtc-backpressure.ts';
 import type { WebRtcOverlayMulticastManager } from './web-rtc-overlay-multicast-manager.ts';
+
+/** The next hop a submission writes to, with the flow control its channel drops an overflowing send by. */
+interface RtcSubmissionHop {
+    readonly peerId: string;
+    readonly channel: WebRtcOverlayMulticastManager.Channel;
+    readonly flowControl: RtcDataChannelHealth['flowControl'];
+}
+
+interface ALOutboundRtcSettlementInput {
+    readonly status: QRtcDataChannel.SendSettlement['status'];
+    readonly submissionAttempted: boolean;
+    readonly reason: string | undefined;
+    readonly messageExpiresAtMs: number | undefined;
+    readonly observedAtMs: number;
+}
 
 export namespace RtcOutboundSubmission {
     export interface Dependencies {
@@ -35,7 +51,10 @@ export class RtcOutboundSubmission {
         this.dependencies = dependencies;
     }
 
-    send(msg: ALMessage, lifecycle: ALOutboundMessageRuntime.SendLifecycle): ALOutboundPreparedSendResult {
+    async send(
+        msg: ALMessage,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): Promise<ALOutboundPreparedSendResult> {
         const peerId = msg.forwarding?.nextHopPeerIds?.[0];
         if (!peerId) {
             return {
@@ -95,44 +114,60 @@ export class RtcOutboundSubmission {
         };
     }
 
-    private submitPreparedMessage(
+    private async submitPreparedMessage(
         hop: RtcSubmissionHop,
         msg: ALMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
-    ): ALOutboundPreparedSendResult {
-        // The native Promise executor initializes the callback synchronously before sendJson can invoke it.
+    ): Promise<ALOutboundPreparedSendResult> {
+        // Native Promise executors initialize their resolver before sendJson can schedule its observer.
         let resolveSettlement!: (value: QRtcDataChannel.SendSettlement) => void;
         const settled = new Promise<QRtcDataChannel.SendSettlement>((resolve) => {
             resolveSettlement = resolve;
         });
-        const onSettled = this.toSettlementObserver(msg, hop.peerId, resolveSettlement);
-        const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
-        const result = hop.channel.sendJson(msg, {
-            signal: lifecycle.signal,
-            expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
-            onSettled
+        let observedSettlement: QRtcDataChannel.SendSettlement | undefined;
+        const onSettled = this.toSettlementObserver(msg, hop.peerId, (value) => {
+            observedSettlement = value;
+            resolveSettlement(value);
         });
-        if (result.status === 'queued' || result.status === 'replaced') {
-            return {
-                status: 'queued',
-                settled: settled.then((value) =>
-                    toALOutboundRtcSettlement({
-                        status: value.status,
-                        submissionAttempted: value.submissionAttempted,
-                        reason: value.reason,
-                        messageExpiresAtMs: lifecycle.expiresAtMs,
-                        observedAtMs: this.dependencies.clock.nowMs()
-                    })
-                )
+        const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
+        let disposition: QRtcDataChannel.SendDisposition;
+        try {
+            const result = hop.channel.sendJson(msg, {
+                signal: lifecycle.signal,
+                expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
+                onSettled
+            });
+            if (result.status === 'queued' || result.status === 'replaced') {
+                return {
+                    status: 'queued',
+                    settled: settled.then((value) =>
+                        toALOutboundRtcSettlement({
+                            ...value,
+                            messageExpiresAtMs: lifecycle.expiresAtMs,
+                            observedAtMs: this.dependencies.clock.nowMs()
+                        })
+                    )
+                };
+            }
+            if (result.status === 'dropped' && computeRtcBackpressure([{ ...result, flowControl: hop.flowControl }])) {
+                return this.deferBackpressuredSend(msg, hop.peerId);
+            }
+            disposition = {
+                status: result.status,
+                submissionAttempted: result.status === 'sent',
+                reason: result.reason
             };
         }
-        if (result.status === 'dropped' && computeRtcBackpressure([{ ...result, flowControl: hop.flowControl }])) {
-            return this.deferBackpressuredSend(msg, hop.peerId);
+        catch (error) {
+            // QR schedules its terminal observer before rethrowing; reconcile that owned microtask once.
+            await Promise.resolve();
+            if (observedSettlement?.status !== 'failed' || !observedSettlement.submissionAttempted) {
+                throw error;
+            }
+            disposition = { ...observedSettlement, reason: toError(error).message };
         }
         return toALOutboundRtcSettlement({
-            status: result.status,
-            submissionAttempted: result.status === 'sent',
-            reason: result.reason,
+            ...disposition,
             messageExpiresAtMs: lifecycle.expiresAtMs,
             observedAtMs: this.dependencies.clock.nowMs()
         });
@@ -171,21 +206,6 @@ export class RtcOutboundSubmission {
         catch { /* Without a usable observer, retain the original settlement callback. */ }
         return resolveSettlement;
     }
-}
-
-/** The next hop a submission writes to, with the flow control its channel drops an overflowing send by. */
-interface RtcSubmissionHop {
-    readonly peerId: string;
-    readonly channel: WebRtcOverlayMulticastManager.Channel;
-    readonly flowControl: RtcDataChannelHealth['flowControl'];
-}
-
-interface ALOutboundRtcSettlementInput {
-    readonly status: QRtcDataChannel.SendSettlement['status'];
-    readonly submissionAttempted: boolean;
-    readonly reason: string | undefined;
-    readonly messageExpiresAtMs: number | undefined;
-    readonly observedAtMs: number;
 }
 
 function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutboundSettledSendResult {
