@@ -134,31 +134,49 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   uses its injected clock consistently for scheduler and circuit-breaker decisions. Meaningful
   rejecting runnable, before-stop, during-stop and clock-boundary tests pass, with independent
   full-file specification and quality review. This repair does not establish the native ACK cause.
-- The native callback probe's custody and source-currentness repairs pass meaningful failing-first
-  cases, actual-SDK capability and independent specification/quality review. The latest local
-  fifteen-agent diagnostic still fails: all setup stages and initial barriers pass, all 84 shots
-  are sent, 83 ACK waits pass and player 12's sixth shot remains transport-accepted at its inherited
-  deadline. All 105 samples and 1,155 sampled checks pass; END, final storage and all 231 native
-  predicates remain unevaluated. Full producer/export payload reconciliation and cleanup pass.
-  The eight exact player-2 native entries reach SDK ingress within 0–1 ms; this healthy current
-  family cannot explain the earlier hosted delay or the current player-12 failure.
-- The current required ACK reaches player 7 from the director. Two actual player-7-to-player-12
-  forwarded controls repeatedly fail their individual fallback handoff; the retained evidence has
-  no matching native settlement, receiver SDK ingress or typed rejection reason. A separate
-  unvalidated rejected candidate was never committed and is not lost work. The next discriminator
-  observes this actual enqueue/handoff refusal, with same-run shot origin and required director
-  identity. The older director-origin selector excludes this shot ACK; its historical complete flag
-  also lacks renderer/retained ordinal reconciliation. Captured historical refusals remain positive
-  observations, without an exhaustive absence claim. Current receipts include WS fallback attempts,
-  so the local diagnostic is not exclusive RTC proof. No memory, CPU, quota or database cause is
-  established.
-- The changed ALM/multicast source review identifies false unattempted-send evidence after an
-  immediate native send throws, a misnamed inbound authorization boundary, a forwarding-only
-  receipt diagnostic writer and two import-grouping defects. Resolve these earned findings with
-  complete recursive closure; none identifies the fifteen-agent delay's cause.
+- The current private handoff probe's source/context fencing, ordinal custody and cleanup pass
+  meaningful failing-first tests, actual-SDK capability and independent specification/quality
+  review. One local fifteen-agent diagnostic fails at END, but all 84 shot ACK observations
+  and explicit director receipts now pass. All 105 samples and 1,155 sampled checks pass. All
+  fourteen players complete END reads, final bounds and zero admission/non-probe work storage.
+  The director END ACK wait fails after 893 ms at its inherited workload deadline; its final
+  receipt/storage checks and all 231 native predicates remain unevaluated. Full producer/export
+  payload reconciliation and completed-producer/zero-reaped cleanup pass. This instrumented local
+  outcome does not establish original uninstrumented acceptance or repair causality.
+- Exact END predecessor joins identify six earlier controls with 36 pre-deadline throwing handoffs
+  at two intermediate relay hops. Those handoffs complete after the deadline,
+  then produce nine late final ACK controls. All fourteen player END admissions and reads precede
+  the director deadline; the final-hop owner generates its controls within 0–1 ms of predecessor
+  SDK entry. Late final-hop throws alone cannot explain the earlier expiry. The typed reason at
+  the six earlier handoffs remains uncaptured; that END reason is still an open evidence gap.
+- The reviewed director-origin probe now covers all fifteen pages and intermediate relay hops.
+  Its first native diagnostic fails before END: two players fail their sixth shot ACK observation
+  and never arrive at the shots-complete barrier. All 84 sends pass; 82 shot ACK observations,
+  72 explicit shot receipts, 105 samples and 1,155 sampled bounds pass. Both missing shots are
+  admitted and return from director dispatch before the player deadlines. Two exact terminal
+  controls are submitted before those deadlines but enter a shared relay's SDK callback afterward,
+  with 3,048 ms and 3,063 ms observed gaps. Earliest native receive entry remains uncaptured.
+  Seven complete, uncapped typed rejections join START,
+  so they cannot identify either shot failure or the earlier END cause. Complete producer/export
+  retention and reaped cleanup pass. Trace the same-run receipt and child-hop completion path
+  before selecting a repair; neither timeout wrapper counts nor dispatch return prove terminal ACK.
+- The private player-origin selector retains 787 rate-limited verdicts for successful shot ACKs,
+  with two capped pages. Exact subject/identity joins and renderer/retained ordinal reconciliation
+  preserve those positive records; total capture is incomplete. None joins END because its ACKs
+  have director origin and player logical recipients. Neither those unrelated positive verdicts
+  nor a healthy scoped zero supplies the failed END reason. Receipt histories include actual WS
+  fallback, so this is not exclusive RTC proof. No memory, CPU, quota, database, engine or network
+  cause is established for the END failure or earlier hosted delay.
+- The native-send evidence repair now preserves the existing attempted failure settlement and
+  original error detail after an immediate native send throws, with ordinary retry unchanged.
+  Focused tests, full-file reviews and affected consumer checks pass. The remaining source-review
+  findings are the inbound authorization name, forwarding-only receipt writer and import grouping;
+  resolve them with complete recursive closure. None identifies the END handoff reason.
 - The public finalization type correction and three awaitable runtime/multicast disposal methods
   still require the maintainer's separate compatibility decisions. Verified repository consumers
-  and passing cleanup tests alone cannot supply those decisions. No legacy adapter is selected.
+  and passing cleanup tests alone cannot supply those decisions. The exported WS first-refusal
+  authorization callback name is also a compatibility boundary before renaming. No legacy adapter
+  is selected.
 - Full source/support closure, whole-branch review, original scale and benefit, readiness and manual
   merge remain open. The pull request owns current source, CI, test and run outcomes; do not copy
   delivery history here.
@@ -167,21 +185,36 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-Use the complete current failure to observe the typed enqueue/handoff rejection on the ACK's
-failing hop. Derive its origin player, required appointed director, exact subject/control family
-and actual sender/receiver from the same run. Capture only bounded closed verdict/reason fields
-and identity hashes at the existing owned rejection boundary. Distinguish returned rejection from
-an awaited enqueue failure; absent boundary capture remains inconclusive. Do not copy the older
-lifecycle-control director-origin selector into a player-shot observation.
+Resolve the two current sixth-shot ACK failures from the retained native receipt and relay
+completion evidence. Their exact terminal controls converge on a late SDK callback at one relay,
+after pre-deadline submission. Local director dispatch return does not prove subtree completion.
+The next missing discriminator is the earliest owned QRtc receive entry, before raw subscribers
+and application dispatch. Reuse the existing reviewed first-guard native-entry capability for the
+current causal control family and a healthy same-run control; do not invent another observer.
+Derive current sessions and actual transport hops from the new producer, rather than transplanting
+failed-run identities or assuming the same role remains the relay. Prove the changed selection,
+negative/healthy cases, cap behavior and original caller effects, then verify the actual served
+location and compiled current SDK. Preserve source/context custody, distinct invocation ordinals,
+private projection bounds and owned cleanup. Review the exact changed private sources before one
+earned instrumented execution. Entry and SDK clocks distinguish measured boundaries; they do not
+measure wire receipt or establish a renderer, network, memory, quota or scheduler cause.
 
-Reuse existing Playwright/CDP lifecycle and capability patterns after meaningful same-run
-selection, source/current-channel and cleanup tests. Reconcile renderer selections, retained
-records and distinct invocation ordinals; a detached session or healthy capability alone cannot
-certify complete workload capture. Independently review the exact private candidate before one
-instrumented diagnostic with the original workload and complete native retention. This next
-observation closes a specific missing reason; it is not an unchanged retry or a heap/CPU hypothesis.
-The earlier native-entry observation has answered its selected healthy current family and need
-not be repeated. Neither private diagnostic replaces original uninstrumented acceptance.
+Select a meaningful production repair only when that evidence and the existing owner establish
+a violated invariant. Preserve quotas, storage, deadlines and ACK semantics. A source hypothesis
+alone does not earn a repair; incomplete or clipped capture cannot establish an absent boundary.
+
+The director-origin, frozen-player-recipient observer has completed its failing-first semantic,
+actual rendered SDK, source/currentness and independent review gates. Its first native execution
+is complete and uncapped, but captures START while traffic fails before END. Do not repeat that
+unchanged diagnostic to seek a favorable outcome. The earlier six END predecessor controls and
+their missing typed reason remain open. Reuse the reviewed observer only if an exact missing
+boundary earns a changed current-family selection; keep origin, logical receipt recipient and
+transport target distinct, include actual transit hops, and retain every source/context,
+ordinal, caller-preservation, bounded capture and cleanup gate. Distinguish returned rejection
+from awaited enqueue failure; absent capture remains inconclusive. Review the changed selector
+and its semantic negative/healthy cases before any earned instrumented execution. No new profiling
+framework or heap/CPU hypothesis is selected. Private diagnostics do not replace original
+uninstrumented acceptance.
 
 Earn a meaningful failing-first repair from the observed boundary before another original
 acceptance execution. That execution retains its frozen audience, tree, six-shot cadence, lifecycle
@@ -191,23 +224,21 @@ remain gated by fifteen; comparative benefit and final whole-branch review remai
 
 ### 2. Preserve truthful ALM submission evidence and direct boundaries
 
-Complete review and publication of the failing-first real QR/ALM native-send evidence repair.
-An immediate native send throw must settle as attempted; a failure before native invocation stays
-unattempted and preserves its original error. Queued native failure retains its existing typed
-result. Use the existing prepared-send/settled-send contracts and QR settlement port; preserve the
-logical message, deadline, ordinary retry owner, exactly one attempt settlement and direct QR
-throw behavior. Keep the internal adapter's async result consistent with its verified consumer;
-no new public result, callback, scheduler, compatibility wrapper or queue registry is selected.
-Run the focused transport/observation tests, shared and test typechecks, full-file standards checks
-and affected browser consumer/bundle validation before publication. Existing callback scheduling
-may supply a demonstrated completion boundary; arbitrary settlement flushes cannot substitute for
-owned work or queue completion in the tests.
+Preserve the reviewed native-send evidence repair: immediate native throws retain attempted
+failure facts and original detail; pre-native exceptions stay unattempted; queued failure keeps
+its existing typed result. Ordinary same-message/deadline retry, exactly one settlement, direct QR
+throw behavior and the verified async consumer remain unchanged. Its focused and affected checks
+already pass; do not repeat them solely for a plan update. Owned completion boundaries remain
+required in tests instead of arbitrary settlement flushes.
 
 Give the inbound authorization/read/observation operation a truthful owned name while preserving
 its first-refusal precedence and lazy relay read. Keep the immutable receipt projection, remove
 its forwarding-only writer and call the canonical guarded diagnostic writer at receipt admission.
 Correct the two external/local import separators. Follow verified callers and support files into
 full closure, without a compatibility alias, duplicate guard, old-path module or migration code.
+The exported WS authorization callback returns a first refusal, so its current validation name
+also needs a truthful compatibility decision before a public rename. Prepare that concrete
+decision from verified callers; independently safe receipt/import closure can proceed.
 
 Keep the original acceptance workload as the priority while this independently evidenced review
 fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful
