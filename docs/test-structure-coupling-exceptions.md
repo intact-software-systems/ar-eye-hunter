@@ -2713,36 +2713,6 @@ moved or changed test.
       "coverageRelation": "The collections are hand-written HTTP paths that nothing executes in CI, so a wrong one is invisible until an operator clicks it and receives a 404. This assertion reads the shipped OpenAPI document — the published contract, not an internal structure — and requires a served path and method for every step. No behavioural test can substitute: the collections are operator inputs, never executed by the suite."
     },
     {
-      "id": "ws-invalid-application-command-skips-authorization",
-      "domain": "WS server typed ingress admission",
-      "owner": "Shared realtime maintainers",
-      "summary": "An application validator rejection must return the typed failure before invoking authorization or writing admission state. Executable assertion: “runs a typed application validator before authorization or admission”.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission",
-      "coverageRelation": "The test installs an application validator that rejects and an authority port, then calls public acceptIncomingMessage against a valid live authenticated connection.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Installed WsServerInboundAuthorizer.authorize capability",
-        "observableEffect": "The malformed command produces no authority-provider call and leaves admission metadata empty.",
-        "requiredConstraint": "An application validator rejection must return the typed failure before invoking authorization or writing admission state.",
-        "failureRationale": "Authorization can perform asynchronous authoritative reads or side effects and must not receive application commands already rejected by the typed ingress validator."
-      }
-    },
-    {
-      "id": "ws-receipt-observer-absent-no-business-projection",
-      "domain": "Optional WS receipt observation resource cost",
-      "owner": "Rallar shared maintainers",
-      "summary": "Without a receipt observer, socket admission must skip private business-fact projection and its observation-only snapshot allocation while preserving ordinary message and ACK acceptance.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-receipt-observation.test.ts#skips the private business projector entirely when its observer is absent",
-      "coverageRelation": "The test completes real ordinary-message admission and ACK control handling with no observer before asserting absence through a spy that delegates to the real projector. With an observer installed, real admission and the emitted business decision accompany a positive spy assertion that proves the same instrumentation sees the actual producer; this supporting anchor imposes no exact enabled invocation count.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "WsQueueBoxServerService.acceptIncomingMessage private business-fact projection boundary, implemented by toWsQueueBoxServerReceiptBusinessFacts",
-        "observableEffect": "Projecting an ordinary business message allocates and freezes the scalar subject snapshot used only by private receipt observation.",
-        "requiredConstraint": "When receiptObserver is absent, socket admission must never invoke the private business projector or allocate its observation-only subject snapshot.",
-        "failureRationale": "Admitted and control results remain identical if unnecessary private projection runs without a consumer, so result and event assertions cannot detect this resource-cost regression. The enabled real-producer anchor makes the disabled absence evidence non-vacuous without prescribing enabled call topology."
-      }
-    },
-    {
       "id": "ws-native-failure-one-attempt-accounting",
       "domain": "WS outbound native attempt accounting",
       "owner": "Shared realtime maintainers",
@@ -7814,39 +7784,6 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The surviving unretained row proves the run stopped before reaching it, but only the index-read count separates a run that stopped on its page budget from one that stopped for any other reason, such as a mis-sized page or an exhausted range.",
       "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget"
-    },
-    {
-      "id": "test-structure-coupling-e057b89986e7f609",
-      "path": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ws-invalid-application-command-skips-authorization",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared realtime maintainers",
-      "rationale": "No authorization call proves validator failure short-circuits the owned external policy capability; empty admission state alone would allow unnecessary authority work.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission"
-    },
-    {
-      "id": "test-structure-coupling-c4867987a2c550db",
-      "path": "packages/tests/shared/services/ws-queue-box-server-receipt-observation.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ws-receipt-observer-absent-no-business-projection",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The disabled projector absence directly proves the no-observer projection-cost requirement after real message admission and ACK control handling. Both results could remain correct while the private projector unnecessarily allocates its observation-only snapshot, so those results alone cannot establish the required absence.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-receipt-observation.test.ts#skips the private business projector entirely when its observer is absent"
-    },
-    {
-      "id": "test-structure-coupling-c21dc7bc5b2c3e32",
-      "path": "packages/tests/shared/services/ws-queue-box-server-receipt-observation.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ws-receipt-observer-absent-no-business-projection",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The enabled positive assertion proves the delegating spy observes the actual producer, making the paired disabled absence assertion non-vacuous. Real admission and the emitted business decision corroborate that anchor. It supports the absence contract rather than an independent enabled count policy and requires no exact number of enabled projector invocations.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-receipt-observation.test.ts#skips the private business projector entirely when its observer is absent"
     },
     {
       "id": "test-structure-coupling-17044d7d640b79a9",
