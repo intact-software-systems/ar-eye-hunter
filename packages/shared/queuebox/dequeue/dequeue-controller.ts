@@ -82,8 +82,8 @@ export class DequeueController<K, V, T> {
     }
 
     withMaxNumToDequeue(maxNumDequeue: number): this {
-        if (maxNumDequeue <= 0) {
-            throw new Error(`Illegal maxNumDequeue: ${maxNumDequeue}. Must be positive.`);
+        if (!isPositiveSafeInteger(maxNumDequeue)) {
+            throw new Error(`Illegal maxNumDequeue: ${maxNumDequeue}. Must be a positive safe integer.`);
         }
         this.maxNumDequeue = maxNumDequeue;
         return this;
@@ -225,6 +225,9 @@ export class DequeueController<K, V, T> {
         if (maxNumToReserve <= 0) {
             return computed;
         }
+        if (!isPositiveSafeInteger(maxNumToReserve)) {
+            throw new TypeError('Reservation request requires a positive safe integer');
+        }
         const reserved = await this.finalizationReservator(this.typesToDequeue(), maxNumToReserve);
         const finalized = await computeDequeueBatch({
             entries: reserved,
@@ -256,6 +259,9 @@ export class DequeueController<K, V, T> {
                 );
                 if (numToReserve <= 0) {
                     return allComputed;
+                }
+                if (!isPositiveSafeInteger(numToReserve)) {
+                    throw new TypeError('Reservation request requires a positive safe integer');
                 }
                 const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
                 claimedCount += reserved.size;

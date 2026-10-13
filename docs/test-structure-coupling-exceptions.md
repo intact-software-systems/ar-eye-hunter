@@ -2406,21 +2406,6 @@ moved or changed test.
       }
     },
     {
-      "id": "shared-web-state-delta-conflict-recovery",
-      "domain": "Shared-web revision-conflict recovery",
-      "owner": "Shared Web maintainers",
-      "summary": "A revision conflict self-heals with one floored read. Executable assertion: “counts a revision conflict from the divergence oracle and self-heals with the floored pull”.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "Group-state floored HTTP read port",
-        "observableEffect": "The conflict produces one recovery request and durable state.",
-        "requiredConstraint": "Exactly one floored recovery fetch occurs for the conflict.",
-        "failureRationale": "No read leaves divergence unresolved; duplicates race self-healing."
-      }
-    },
-    {
       "id": "shared-web-state-delta-missing-session-recovery",
       "domain": "Shared-web missing-session delta recovery",
       "owner": "Shared Web maintainers",
@@ -7256,17 +7241,6 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The active-update zero-call assertion excludes unnecessary RTC mutation on a lease-only renewal whose repository update is already observable.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
-    },
-    {
-      "id": "test-structure-coupling-1b3d4d2848352f1b",
-      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-conflict-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Web maintainers",
-      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one conflict recovery fetch occurs.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull"
     },
     {
       "id": "test-structure-coupling-505ac7ff6ccdc8a1",
