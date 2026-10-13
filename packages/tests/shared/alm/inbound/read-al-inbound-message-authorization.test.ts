@@ -11,7 +11,7 @@ import {
     newALReceiptControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { toALInboundReceiver, validateALInboundMessage } from '@shared/alm/inbound/validate-al-inbound-message.ts';
+import { readALInboundMessageAuthorization, toALInboundReceiver } from '@shared/alm/inbound/read-al-inbound-message-authorization.ts';
 
 const SERVER = toALInboundReceiver(
     'server',
@@ -19,14 +19,42 @@ const SERVER = toALInboundReceiver(
 );
 
 describe('inbound control addressing', () => {
+    it.each(
+        [
+            ['forged origin', createReceiverAcknowledgement('origin'), toWsClientSource('attacker'), 'AL origin does not match the authenticated peer'],
+            ['local ACK', createReceiverAcknowledgement('server'), toWsClientSource('recipient'), undefined],
+            [
+                'nonlocal RTC ACK',
+                createReceiverAcknowledgement('origin'),
+                { kind: 'rtc-peer', peerId: 'recipient' },
+                'Direct RTC envelope is addressed to another recipient'
+            ]
+        ] as const
+    )('preserves the %s decision without reading relay authority', (_name, message, source, rejection) => {
+        const relayObservations: string[] = [];
+        const receiver = toALInboundReceiver('server', (ack) => {
+            relayObservations.push(ack.ackedMsgId);
+            return { code: 'unauthorized', message: 'Unrelated relay refusal' };
+        });
+
+        const authorization = readALInboundMessageAuthorization(message, source, receiver);
+
+        expect(authorization.left).toEqual(rejection === undefined ? undefined : { code: 'unauthorized', message: rejection });
+        expect(authorization.right).toEqual(rejection === undefined ? message : undefined);
+        expect(relayObservations).toEqual([]);
+    });
+
     it('supplies the original decoded control identity while preserving payload-only relay callers', () => {
-        const message = receiverAck('stranger');
+        const message = createReceiverAcknowledgement('stranger');
         const identities: Array<ALMessage['id'] | undefined> = [];
         const receiver = toALInboundReceiver('server', (_ack, controlIdentity) => {
             identities.push(controlIdentity);
             return { code: 'unauthorized', message: 'closed relay refusal' };
         });
-        expect(validateALInboundMessage(message, fromClient('recipient'), receiver).left).toEqual({ code: 'unauthorized', message: 'closed relay refusal' });
+        expect(readALInboundMessageAuthorization(message, toWsClientSource('recipient'), receiver).left).toEqual({
+            code: 'unauthorized',
+            message: 'closed relay refusal'
+        });
         expect(identities).toEqual([{ v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 }]);
         expect(receiver.readRelayedAckRejection({
             ackedMsgId: 'message-1',
@@ -42,15 +70,15 @@ describe('inbound control addressing', () => {
     });
 
     it('admits a receiver ACK addressed to an origin the WS server relays for', () => {
-        const validated = validateALInboundMessage(receiverAck('origin'), fromClient('recipient'), SERVER);
+        const authorization = readALInboundMessageAuthorization(createReceiverAcknowledgement('origin'), toWsClientSource('recipient'), SERVER);
 
-        expect(validated.left).toBeUndefined();
+        expect(authorization.left).toBeUndefined();
     });
 
     it('answers a receiver ACK the server cannot count with the relay rejection', () => {
-        const validated = validateALInboundMessage(receiverAck('stranger'), fromClient('recipient'), SERVER);
+        const authorization = readALInboundMessageAuthorization(createReceiverAcknowledgement('stranger'), toWsClientSource('recipient'), SERVER);
 
-        expect(validated.left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' });
+        expect(authorization.left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' });
     });
 
     it.each(['server', 'origin'])('refuses a WS session ACK to %s that speaks for another recipient', (toPeerId) => {
@@ -68,22 +96,30 @@ describe('inbound control addressing', () => {
             }
         );
 
-        expect(validateALInboundMessage(forged, fromClient('recipient'), SERVER).left).toEqual({
+        const relayObservations: string[] = [];
+        const receiver = toALInboundReceiver('server', (ack) => {
+            relayObservations.push(ack.ackedMsgId);
+            return { code: 'unauthorized', message: 'Unrelated relay refusal' };
+        });
+
+        expect(readALInboundMessageAuthorization(forged, toWsClientSource('recipient'), receiver).left).toEqual({
             code: 'unauthorized',
             message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
         });
+        expect(relayObservations).toEqual([]);
     });
 
-    it('keeps next-hop addressing for every other control and carrier', () => {
+    it('refuses a nonlocal NACK and an ACK without relay authority', () => {
         const nack = newALNackControlMessage(
             { v: 3, msgId: 'nack-1', senderId: 'recipient', ts: 1 },
             { msgId: 'message-1', fromPeerId: 'recipient', toPeerId: 'origin', reason: 'gap', observedAtEpochMs: 1 }
         );
-        const overRtc = validateALInboundMessage(receiverAck('origin'), { kind: 'rtc-peer', peerId: 'recipient' }, SERVER);
 
-        expect(validateALInboundMessage(nack, fromClient('recipient'), SERVER).left?.code).toBe('unauthorized');
-        expect(overRtc.left?.code).toBe('unauthorized');
-        expect(validateALInboundMessage(receiverAck('origin'), fromClient('recipient'), toALInboundReceiver('server', undefined)).left?.code)
+        expect(readALInboundMessageAuthorization(nack, toWsClientSource('recipient'), SERVER).left?.code).toBe('unauthorized');
+        expect(
+            readALInboundMessageAuthorization(createReceiverAcknowledgement('origin'), toWsClientSource('recipient'), toALInboundReceiver('server', undefined))
+                .left?.code
+        )
             .toBe('unauthorized');
     });
 
@@ -93,15 +129,15 @@ describe('inbound control addressing', () => {
             { kind: 'rtc-peer', peerId: 'server' }
         ] as const
     )('refuses a receipt from a $kind source as a typed rejection', (source) => {
-        const validated = validateALInboundMessage(receipt(), source, toALInboundReceiver('origin', undefined));
+        const authorization = readALInboundMessageAuthorization(createServerReceipt(), source, toALInboundReceiver('origin', undefined));
 
-        expect(validated.left).toEqual({ code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' });
+        expect(authorization.left).toEqual({ code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' });
     });
 
     it('accepts a receipt addressed to this origin from the trusted server', () => {
-        const validated = validateALInboundMessage(receipt(), { kind: 'trusted-server' }, toALInboundReceiver('origin', undefined));
+        const authorization = readALInboundMessageAuthorization(createServerReceipt(), { kind: 'trusted-server' }, toALInboundReceiver('origin', undefined));
 
-        expect(validated.left).toBeUndefined();
+        expect(authorization.left).toBeUndefined();
     });
 });
 
@@ -120,23 +156,23 @@ describe('inbound frozen room audience', () => {
     const receiver = toALInboundReceiver('receiver', undefined);
 
     it('refuses an RTC peer copy of a room multicast whose origin froze no audience', () => {
-        expect(validateALInboundMessage(multicast, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toEqual({
+        expect(readALInboundMessageAuthorization(multicast, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toEqual({
             code: 'malformed',
             message: 'RTC room multicast carries no frozen audience'
         });
     });
 
     it('admits a frozen RTC copy, and an unfrozen one from a WS session the server freezes at admission', () => {
-        expect(validateALInboundMessage(frozen, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toBeUndefined();
-        expect(validateALInboundMessage(multicast, fromClient('origin'), SERVER).left).toBeUndefined();
+        expect(readALInboundMessageAuthorization(frozen, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toBeUndefined();
+        expect(readALInboundMessageAuthorization(multicast, toWsClientSource('origin'), SERVER).left).toBeUndefined();
     });
 });
 
-function fromClient(peerId: string): ALInboundMessageRuntime.Source {
+function toWsClientSource(peerId: string): ALInboundMessageRuntime.Source {
     return { kind: 'ws-client', peerId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
 }
 
-function receiverAck(originPeerId: string): ALMessage {
+function createReceiverAcknowledgement(originPeerId: string): ALMessage {
     return newALAckControlMessage(
         { v: 3, msgId: 'ack-1', senderId: 'recipient', ts: 1 },
         {
@@ -152,7 +188,7 @@ function receiverAck(originPeerId: string): ALMessage {
     );
 }
 
-function receipt(): ALMessage {
+function createServerReceipt(): ALMessage {
     return newALReceiptControlMessage(
         { v: 3, msgId: 'receipt-1', senderId: 'server', ts: 1 },
         {

@@ -10,7 +10,10 @@ import {
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
-import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
+import {
+    readALInboundMessageAuthorization,
+    toALInboundReceiver
+} from '../../alm/inbound/read-al-inbound-message-authorization.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
@@ -51,7 +54,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly controlDelivery: WsQueueBoxServerControlDelivery;
         readonly ackRelay: WsQueueBoxServerAckRelay;
-        readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     }
@@ -119,7 +122,7 @@ export class WsQueueBoxServerInboundAuthority {
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #controlDelivery: WsQueueBoxServerControlDelivery;
     readonly #ackRelay: WsQueueBoxServerAckRelay;
-    readonly #validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+    readonly #authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     readonly #readAuthenticatedConnectionScope:
         WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     readonly #observesReceipts: boolean;
@@ -135,7 +138,7 @@ export class WsQueueBoxServerInboundAuthority {
         this.#targetResolution = dependencies.targetResolution;
         this.#controlDelivery = dependencies.controlDelivery;
         this.#ackRelay = dependencies.ackRelay;
-        this.#validateInboundMessage = dependencies.validateInboundMessage;
+        this.#authorizeInboundMessage = dependencies.authorizeInboundMessage;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
     }
 
@@ -284,7 +287,7 @@ export class WsQueueBoxServerInboundAuthority {
                 socketFacts
             };
         }
-        const protocol = validateALInboundMessage(
+        const protocolAuthorization = readALInboundMessageAuthorization(
             message,
             { kind: 'ws-client', peerId: fromPeerId, authenticatedScope: scope.authorization.proof.scope },
             toALInboundReceiver(
@@ -292,12 +295,12 @@ export class WsQueueBoxServerInboundAuthority {
                 (ack, controlIdentity) => this.readIngressProtocolAckRejection(ack, controlIdentity)
             )
         );
-        if (protocol.left) {
-            return { ...toFinishedRejection(protocol.left), socketFacts };
+        if (protocolAuthorization.left) {
+            return { ...toFinishedRejection(protocolAuthorization.left), socketFacts };
         }
-        const validation = this.#validateInboundMessage(message);
-        if (validation.left) {
-            return { ...toFinishedRejection(validation.left), socketFacts };
+        const applicationAuthorization = this.#authorizeInboundMessage(message);
+        if (applicationAuthorization.left) {
+            return { ...toFinishedRejection(applicationAuthorization.left), socketFacts };
         }
         return { kind: 'origin', value: { message, connection, fromPeerId, socketFacts } };
     }
@@ -403,8 +406,8 @@ export class WsQueueBoxServerInboundAuthority {
         if (isRoomScopedALMessage(message) && !this.#authorizer) {
             return 'completed';
         }
-        const validation = this.#validateInboundMessage(message);
-        if (validation.left) {
+        const applicationAuthorization = this.#authorizeInboundMessage(message);
+        if (applicationAuthorization.left) {
             return 'completed';
         }
         const authorization = await this.#authorizer?.authorize(message) ?? { authorized: true };

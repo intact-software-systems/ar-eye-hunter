@@ -8,6 +8,7 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
@@ -38,23 +39,35 @@ describe('WS server bounded and authorized admission', () => {
 
     it('rejects absent and expired authenticated connection scope before writing work', async () => {
         for (const proof of [undefined, { scope: { applicationId: 'app', workspaceId: 'workspace' }, expiresAtEpochMs: 0 }]) {
-            const fixture = await createServerIngressFixture(undefined, 'session-1', () => proof);
-            expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left?.code)
-                .toBe('unauthorized');
+            const fixture = await createServerIngressFixture(
+                () => {
+                    throw new Error('Scope refusal must precede application policy');
+                },
+                'session-1',
+                () => proof
+            );
+            expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left)
+                .toEqual({ code: 'unauthorized', message: 'AL message message-1 arrived without a current authenticated WS scope' });
             expect(fixture.admission.data.size).toBe(0);
             expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
         }
     });
 
     it('rejects a proven scope that differs from an explicit room target', async () => {
-        const fixture = await createServerIngressFixture(undefined, 'session-1', () => ({
-            scope: { applicationId: 'other', workspaceId: 'workspace' },
-            expiresAtEpochMs: Date.now() + 60_000
-        }));
+        const fixture = await createServerIngressFixture(
+            () => {
+                throw new Error('Foreign scope must precede application policy');
+            },
+            'session-1',
+            () => ({
+                scope: { applicationId: 'other', workspaceId: 'workspace' },
+                expiresAtEpochMs: Date.now() + 60_000
+            })
+        );
         fixture.service.authorizeInboundMessagesWith({ sendNacks: false, authorize: async () => ({ authorized: true }) });
 
-        expect((await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1')).left?.code)
-            .toBe('unauthorized');
+        expect((await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1')).left)
+            .toEqual({ code: 'unauthorized', message: 'AL message message-1 addresses app/workspace, outside its connection\'s authenticated scope' });
         expect(fixture.admission.data.size).toBe(0);
     });
 
@@ -175,15 +188,23 @@ describe('WS server bounded and authorized admission', () => {
     });
 
     it('rejects invalid envelopes and forged identities without poisoning a valid message identity', async () => {
-        const fixture = await createServerIngressFixture();
+        let applicationAllowed = false;
+        const fixture = await createServerIngressFixture((message) => {
+            if (!applicationAllowed) {
+                throw new Error('Decode and authenticated origin refusal must precede application policy');
+            }
+            return Either.ofRight(message);
+        });
         const message = createIncomingMessage();
         expect((await fixture.service.acceptIncomingMessage({}, 'session-1')).left?.code).toBe('malformed');
         const forged = { ...message, id: { ...message.id, senderId: 'victim' } };
-        expect((await fixture.service.acceptIncomingMessage(forged, 'session-1')).left?.code).toBe('unauthorized');
+        expect((await fixture.service.acceptIncomingMessage(forged, 'session-1')).left)
+            .toEqual({ code: 'unauthorized', message: 'AL origin must match an authenticated live WS connection' });
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
         expect(fixture.socket.sent).toEqual([]);
 
+        applicationAllowed = true;
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
         await expect.poll(() => fixture.delivered).toEqual([message]);
     });
@@ -492,14 +513,103 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
-    it('runs a typed application validator before authorization or admission', async () => {
+    it('preserves the application authorization refusal before room policy or admission', async () => {
         const fixture = await createServerIngressFixture(() => Either.ofLeft({ code: 'malformed', message: 'Invalid command' }));
-        const authorize = vi.fn(async () => ({ authorized: true as const }));
-        fixture.service.authorizeInboundMessagesWith({ sendNacks: true, authorize });
+        const authorizedRoomMessages: ALMessage[] = [];
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
+            authorize: async (message) => {
+                authorizedRoomMessages.push(message);
+                return { authorized: true };
+            }
+        });
 
-        expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left?.code).toBe('malformed');
-        expect(authorize).not.toHaveBeenCalled();
+        expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left)
+            .toEqual({ code: 'malformed', message: 'Invalid command' });
         expect(fixture.admission.data.size).toBe(0);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
+        expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
+        expect(authorizedRoomMessages).toEqual([]);
+    });
+
+    it('preserves the nonlocal protocol refusal before application policy', async () => {
+        const fixture = await createServerIngressFixture(() => {
+            throw new Error('Protocol refusal must precede application policy');
+        });
+        const message = newALAckControlMessage(
+            { v: 3, msgId: 'forged-ack', senderId: 'session-1', ts: 1 },
+            {
+                ackedMsgId: 'subject',
+                fromPeerId: 'session-1',
+                toPeerId: 'origin',
+                originPeerId: 'origin',
+                logicalRecipientPeerId: 'another-recipient',
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: 1
+            }
+        );
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
+        });
+        expect(fixture.admission.data.size).toBe(0);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
+        expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it('propagates the application authorization exception without admission effects', async () => {
+        const failure = new Error('Application authorization failed');
+        const fixture = await createServerIngressFixture(() => {
+            throw failure;
+        });
+
+        await expect(fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).rejects.toBe(failure);
+        expect(fixture.admission.data.size).toBe(0);
+        expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
+        expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
+    });
+
+    it('admits and delivers the original message when application policy returns a different right value', async () => {
+        const message = createIncomingMessage();
+        const replacement: ALMessage = { ...message, id: { ...message.id, msgId: 'replacement' } };
+        const fixture = await createServerIngressFixture(() => Either.ofRight(replacement));
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
+        await expect.poll(() => fixture.delivered).toEqual([message]);
+        expect((await fixture.admissionStore.readDeliverySurface({ senderId: 'session-1', msgId: 'message-1' }, Date.now()))?.msg)
+            .toEqual(message);
+        expect(await fixture.admissionStore.readDeliverySurface({ senderId: 'session-1', msgId: 'replacement' }, Date.now()))
+            .toBeUndefined();
+    });
+
+    it('rechecks changed application policy before retained room work can be admitted', async () => {
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        let applicationAllowed = true;
+        const fixture = await createServerIngressFixture((message) =>
+            applicationAllowed ? Either.ofRight(message) : Either.ofLeft({ code: 'unauthorized', message: 'Application policy changed' })
+        );
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
+            authorize: async () => ({ authorized: false, reason: 'not-yet-in-sync', logMessage: 'Waiting for room state', sendNack: false })
+        });
+        const message = { ...createRoomMessage(), constraints: { expiresAtMs: nowMs + 60_000 } };
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right).toEqual({ kind: 'pending-admission' });
+        const keys = await fixture.admission.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe('RETRY');
+        applicationAllowed = false;
+        nowMs = (await fixture.admission.workQueue.getItem(keys[0]))!.dequeueAudit.nextTs!.epochMilliseconds;
+
+        await expect.poll(async () => (await fixture.admission.workQueue.getItem(keys[0]))?.status).toBe('COMPLETED');
+        expect(fixture.admission.data.size).toBe(0);
+        expect(fixture.socket.sent).toEqual([]);
+        expect(fixture.delivered).toEqual([]);
     });
 
     it('fences an authorization result that arrives after disposal', async () => {
@@ -513,10 +623,11 @@ describe('WS server bounded and authorized admission', () => {
             }
         });
         const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
-        fixture.service.dispose();
+        const disposed = fixture.service.dispose();
         gate.resolve();
 
         expect((await receiving).right?.kind).toBe('disposed');
+        await disposed;
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
     });
@@ -533,10 +644,11 @@ describe('WS server bounded and authorized admission', () => {
         });
         const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         await started.promise;
-        fixture.service.dispose();
+        const disposed = fixture.service.dispose();
         release.resolve();
 
         expect((await receiving).right?.kind).toBe('disposed');
+        await disposed;
         expect(fixture.admission.data.size).toBe(0);
         expect(fixture.delivered).toEqual([]);
     });

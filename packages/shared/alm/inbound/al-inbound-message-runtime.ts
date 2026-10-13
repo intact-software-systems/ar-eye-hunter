@@ -32,10 +32,10 @@ import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
 import {
+    readALInboundMessageAuthorization,
     toALInboundReceiver,
-    validateALInboundMessage,
     type ALInboundReceiver
-} from './validate-al-inbound-message.ts';
+} from './read-al-inbound-message-authorization.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -295,7 +295,7 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Admission>> {
-        const validated = validateALInboundMessage(
+        const authorization = readALInboundMessageAuthorization(
             msg,
             source,
             toALInboundReceiver(
@@ -303,8 +303,8 @@ export class ALInboundMessageRuntime {
                 this.dependencies.readRelayedAckRejection
             )
         );
-        if (validated.left) {
-            return Either.ofLeft(validated.left);
+        if (authorization.left) {
+            return Either.ofLeft(authorization.left);
         }
         await this.ready();
         if (this.disposed) {

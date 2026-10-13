@@ -129,7 +129,7 @@ export namespace WsQueueBoxServerService {
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
-        readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly authorizeInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         /** A connection it proves no current scope for has every AL frame refused. */
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -180,7 +180,7 @@ export namespace WsQueueBoxServerService {
         readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
-        readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly authorizeInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
         readonly publishRelayedAck: WsServerAckRelayPublisher | undefined;
@@ -328,7 +328,7 @@ export class WsQueueBoxServerService {
             targetResolution: this.targetResolution,
             controlDelivery: this.controlDelivery,
             ackRelay: this.ackRelay,
-            validateInboundMessage: dependencies.validateInboundMessage,
+            authorizeInboundMessage: dependencies.authorizeInboundMessage,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
     }
@@ -855,7 +855,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         receiptObserver: input.receiptObserver,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
-        validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,
+        authorizeInboundMessage: input.authorizeInboundMessage ?? Either.ofRight,
         readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope,
         publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
