@@ -137,6 +137,7 @@ class RallarBlackBoxRuntimeStore {
             typeof window !== 'undefined'
         ) {
             const browserRuntime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics,
                 rallarRuntime: createSpaBrowserRallarRuntime(),
                 fetch: globalThis.fetch?.bind(globalThis),
                 webSocketFactory: createBrowserWebSocketFactory()
@@ -188,11 +189,12 @@ class RallarBlackBoxRuntimeStore {
     };
 
     updateBootstrapConfig(
-        patch: Partial<RallarBlackBoxBootstrapConfig>
+        patch: Partial<Omit<RallarBlackBoxBootstrapConfig, 'routineBrowserDiagnostics'>>
     ): void {
         this.bootstrapConfig = {
             ...this.bootstrapConfig,
-            ...patch
+            ...patch,
+            routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics
         };
         this.snapshot = {
             ...this.snapshot,

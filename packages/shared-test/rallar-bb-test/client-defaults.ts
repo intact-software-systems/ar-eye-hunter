@@ -1,5 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from './browser/browser-command-contracts.ts';
 import type { RallarBlackBoxTestConfig, RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
 import { decodeRecord } from './runtime/decode-runtime-result-values.ts';
 
@@ -9,6 +10,7 @@ export type RallarBlackBoxProviderMode = typeof RALLAR_BLACK_BOX_PROVIDER_MODES[
 
 export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     mode: 'local-workbench',
+    routineBrowserDiagnostics: 'enabled' satisfies RallarBlackBoxRoutineBrowserDiagnostics,
     providerMode: 'simulated' satisfies RallarBlackBoxProviderMode,
     controlUrl: 'ws://localhost:5180/control',
     localRunId: 'local-workbench-run',
