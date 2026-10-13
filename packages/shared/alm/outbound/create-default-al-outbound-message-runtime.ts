@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -15,26 +16,6 @@ import {
     type ALOutboundRuntimeStores,
     type ALVolatileOutboundRuntimeStores
 } from './al-outbound-message-runtime.ts';
-
-const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;
-const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
-
-/** The dequeue-admission resilience a composition without its own shared breaker gets. */
-export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilience {
-    const duration = Temporal.Duration.from({ milliseconds: DEQUEUE_CIRCUIT_OPEN_MS });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(
-            DEQUEUE_MAX_CONSECUTIVE_FAILURES,
-            duration,
-            duration,
-            duration
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
-}
 
 export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
@@ -76,6 +57,26 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
         > {
     readonly outbox: QueueBoxResourceEntryRepository;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
+}
+
+const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;
+const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
+
+/** The dequeue-admission resilience a composition without its own shared breaker gets. */
+export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilience {
+    const duration = Temporal.Duration.from({ milliseconds: DEQUEUE_CIRCUIT_OPEN_MS });
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(
+            DEQUEUE_MAX_CONSECUTIVE_FAILURES,
+            duration,
+            duration,
+            duration
+        ),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 export function createDefaultALOutboundMessageRuntime<TPrepared>(

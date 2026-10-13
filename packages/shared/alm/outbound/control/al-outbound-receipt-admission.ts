@@ -1,10 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
-import type {
-    ALOutboundMessageRuntime,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
@@ -13,11 +14,8 @@ import {
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
+import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
-import {
-    toALOutboundReceiptConfirmationDiagnostic,
-    writeALOutboundReceiptConfirmationDiagnostic
-} from './write-al-outbound-receipt-confirmation-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -87,7 +85,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const issues = validateALOutboundReceiptAdmission(candidate);
         if (issues.length > 0 || candidate.write === undefined) {
             if (diagnostics !== undefined) {
-                writeALOutboundReceiptConfirmationDiagnostic(
+                writeALOutboundRuntimeDiagnostic(
                     diagnostics,
                     toALOutboundReceiptConfirmationDiagnostic({
                         control,
@@ -121,7 +119,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             settlements(settlement);
         }
         if (confirmation !== undefined) {
-            writeALOutboundReceiptConfirmationDiagnostic(diagnostics, confirmation);
+            writeALOutboundRuntimeDiagnostic(diagnostics, confirmation);
         }
         if (settlement !== undefined) {
             return { kind: 'committed' };

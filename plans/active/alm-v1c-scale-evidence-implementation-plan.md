@@ -103,13 +103,15 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Current evidence and open facts
 
-- The original capture-off fifteen-agent run on the free GitHub runner failed in traffic after
-  complete setup, RTC readiness and START. It sent 80 of 84 shots; a required director ACK reached
-  its SDK callback 18.6 seconds after the native-submission observation. Its native message callback
-  entry is uncaptured, and the same actor has long command scheduling delays. Separate local send
-  refusals do not identify that ACK's cause. The later local callback-entry observation covers a
-  different current control family; no CPU, memory, database, quota or queue-task cause is
-  established for the hosted failure. Thirty and fifty remain gated.
+- The latest original capture-off fifteen-agent run on the free GitHub runner fails in traffic
+  after complete setup, RTC readiness and START. It sends 83 of 84 shots: 66 ACK observations pass,
+  fifteen time out and two remain unfinished. One actor misses its final shot and sample. All
+  1,144 retained sampled checks pass, but only 104 of 105 samples exist and none of the 231 native
+  coordinator predicates is judged. One failed shot reaches its issued leader by WS; the generated
+  ACK handoff completes on claim one before the deadline. Browser ACK transmission, the translated
+  complete origin receipt and subsequent SDK receipt admission remain uncaptured. No quota refusal
+  joins it. Complete producer/export retention does not establish completed work. No CPU, memory,
+  database, quota, queue-task or transport cause is established. Thirty and fifty remain gated.
 - The valid 5.40% shared-throughput comparison remains failed against the unchanged 5% allowance.
   Conditional IndexedDB scheduling benefit does not establish native or universal performance.
 - The approved guard observation remains inconclusive for a guard defect or causal repair. Partial
@@ -170,9 +172,10 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 - The native-send evidence repair now preserves the existing attempted failure settlement and
   original error detail after an immediate native send throws, with ordinary retry unchanged.
   Focused tests, full-file reviews and affected consumer checks pass. The approved inbound
-  authorization naming is implemented, with affected checks passing. The forwarding-only receipt
-  writer and import grouping still require complete recursive closure. None identifies the END
-  handoff reason; whole-branch review remains open.
+  authorization naming is implemented, with affected checks passing. The receipt boundary now calls
+  the canonical guarded diagnostic writer directly; its immutable projection and import grouping
+  have complete independent specification and quality review and affected checks. None identifies
+  the END handoff reason; remaining source closure and whole-branch review stay open.
 - The reviewed first-distinct handoff diagnostic now joins five typed `unroutable / rate-limited`
   refusals to two failed sixth-shot ACKs. All five match exact current control/session identities
   and their first claim intervals. Another 135 records join 55 acknowledged healthy subjects,
@@ -197,9 +200,10 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
   failing-first full-owner case now submits and receives its same-origin receipt on claim two at
   1,251 ms: six fewer claims and 1,780 ms less controlled policy delay. Ordinary partially admitted
   batch fallback, genuine twenty-attempt exhaustion, deadlines, independent clocks, NEW progress,
-  absent forecasts and concurrent quota admission retain their semantic coverage. Complete review
-  and affected checks are required before publication and original workload execution. This local
-  improvement does not establish original scale acceptance or the unchanged comparative benefit.
+  absent forecasts and concurrent quota admission retain their semantic coverage. Complete review,
+  affected checks and publication are complete; the subsequent original hosted workload still fails.
+  This local improvement does not establish original scale acceptance or the unchanged comparative
+  benefit.
 - The maintainer approved the public finalization type correction, three awaitable disposal
   methods and exported WS first-refusal callback rename. The callback keeps its function type,
   default and authorization behavior; verified callers and affected support enter complete
@@ -213,20 +217,23 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ### 1. Establish original capture-off fifteen-agent acceptance
 
-The first-distinct observer and controlled owner-path investigation are complete. Preserve their
-positive evidence and stop expanding or repeating that unchanged diagnostic. Complete independent
-specification and quality review of the readiness change and its whole-file support closure, then
-publish it with the affected semantic, type and browser-boundary checks. Retain the existing limiter
-and circuit defaults, durable authority, deadlines, ACK semantics, twenty genuine processing attempts
-and ordinary operational failure policy. No new observer, public error API, limiter increase or
-heap/CPU hypothesis is selected.
+The readiness change and its controlled two-claim proof are reviewed, verified and published.
+The original hosted workload has executed once and failed. Preserve its complete current evidence;
+another unchanged acceptance retry is not selected. Retain the existing limiter and circuit defaults,
+durable authority, deadlines, ACK semantics, twenty genuine processing attempts and ordinary
+operational failure policy.
 
-The meaningful failing-first case proves a concrete policy improvement through real multicast, Rx,
-inbound stores, engine, native frame submission and same-origin receipt: two claims at 1,251 ms
-instead of eight at 3,031 ms. With that reviewed change published, execute the original capture-off
-fifteen-agent workload once on the existing free GitHub runner. This is an earned acceptance test
-of changed behavior. It does not retroactively identify later native exceptions, the earlier END
-predecessor reasons or hosted native-entry delay; those remain unresolved.
+Prepare one private diagnostic at the existing Playwright/Chromium boundary. Capture closed
+WebSocket frame-event identities and times for the actor-bound leader/origin pair, joined to its
+same-subject generated ACK. Separate outbound admission, browser-reported frame sent, browser-reported
+receipt frame received and existing SDK receipt admission. The server counts the leader ACK and
+generates a new receipt; join its distinct control ID by exact subject and issued audience. Browser
+frame events do not establish physical wire latency. Preserve source custody and owned capture
+cleanup; retain no credentials or raw frames.
+Require meaningful capture/join tests and complete private support review before executing it once
+with the original workload and deadlines. A new production observer, limiter increase, speculative
+heap hunt or production fix is not selected. Earn a failing-first repair only from a positively
+located failed boundary.
 
 Retain the frozen audience, tree, six-shot cadence, lifecycle events, exact receipts, seven samples
 per actor, storage and metric limits, deadlines, all native predicates, source provenance and owned
@@ -249,12 +256,20 @@ types, omission default, original-message handling, first-refusal precedence and
 Their verified callers and affected support pass the selected semantic, type and browser-boundary
 checks. Its review and publication are complete; preserve that evidence while whole-branch closure stays open.
 
-Keep the immutable receipt projection, remove its forwarding-only writer and call the canonical
-guarded diagnostic writer at receipt admission. Correct the two external/local import separators.
-Follow every verified caller and changed support file into complete closure, without a compatibility
-alias, duplicate guard, old-path module or migration code. Preserve the maintainer-approved public
-callback contract while completing the remaining independent receipt/import work. Each remaining
-change requires its full-file review and affected validation before publication.
+Preserve the completed receipt cleanup: the immutable projection precedes external settlement,
+mandatory ACK processing precedes optional guarded observation, and receipt admission calls the
+canonical writer directly. Full-file specification and quality review, sensitivity cases, focused
+semantics, consumer types, browser boundaries and bundle checks pass. No forwarding alias, duplicate
+guard, old-path module or migration code remains.
+
+Prepare the independently identified queue-entry creation-clock closure at its real service owners.
+Preserve enqueue-time UTC timestamps and submillisecond precision; message creation time and numeric
+AL clocks are not replacements. Keep one deterministic converter with explicit owned instant input.
+Map its public contract and verified WS, RTC and AppInbox consumers before implementation; seek the
+required maintainer decision on the concrete public signature change. Include the nearby reader
+import repair and recursively affected support. Do not reopen already approved controller types or
+awaitable disposal. Each remaining change requires meaningful failing-first coverage, full-file
+review and affected validation before publication.
 
 Keep the original acceptance workload as the priority while this independently evidenced review
 fix proceeds. A failed fifteen-agent result earns exact evidence review and a meaningful
