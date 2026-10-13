@@ -1,3 +1,4 @@
+import { toBrowserDiagnosticsReceipt } from '@shared-test/rallar-bb-test/browser/diagnostic-recording/to-browser-diagnostics-receipt.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import {
@@ -287,6 +288,7 @@ export function buildLiveRtcAgentDiagnostics(
             'RTC relayPeerCount'
         ),
         details: normalizeJson({
+            browserDiagnostics: toBrowserDiagnosticsReceipt(root.browserDiagnostics) ?? null,
             sessionId: diagnostics.sessionId ?? null,
             generatedAtEpochMs: diagnostics.generatedAtEpochMs,
             status,

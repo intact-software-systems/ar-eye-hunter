@@ -1,12 +1,13 @@
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
 import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
 
 import { createRtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
 import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
-import { readRtcB06AlmSelection } from './read-rtc-b06-alm-selection.ts';
+import { readRtcB06DiagnosticSelection } from './read-rtc-b06-diagnostic-selection.ts';
 
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
@@ -27,6 +28,7 @@ export interface RtcB06LiveProducerCommandInput {
     readonly baselineId: string;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly almDiagnostics?: boolean;
+    readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly attempt: RtcBaselineAttemptLocatorDto;
 }
 
@@ -65,6 +67,8 @@ const liveRtcCommand = ['npm', 'run', 'test:rallar:full-stack:memory:live-rtc-3'
 const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
 
 const inheritedConfiguration = [
+    'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
     'RALLAR_ICE_RATE_LIMIT_REQUESTS',
@@ -91,7 +95,7 @@ export function createRtcB06ObservationDenoRuntime(
         preflight: () => preflight(input.runtime),
         readSource: () => readRtcPerformanceObservationSource(input.adapters),
         runLiveRtcProducer: async (producer) => {
-            const selection = await readRtcB06AlmSelection(store, producer.baselineId, producer.attempt);
+            const selection = await readRtcB06DiagnosticSelection(store, producer.baselineId, producer.attempt);
             if (!selection.ok) {
                 await input.producerOutput.writeStderr(encoder.encode(`${JSON.stringify(selection.issues)}\n`));
                 return { exitStatus: 1 };
@@ -100,7 +104,7 @@ export function createRtcB06ObservationDenoRuntime(
                 ...producer,
                 rtcCaptureMode,
                 repositoryRoot,
-                almDiagnostics: selection.value
+                ...selection.value
             });
         },
         readFinalizedArtifacts: (baselineId) =>
@@ -224,6 +228,7 @@ export function createRtcB06LiveProducerCommand(
         arguments: [
             ...inheritedConfiguration.flatMap((name) => ['-u', name]),
             `RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=${input.almDiagnostics ?? true}`,
+            `RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=${input.routineBrowserDiagnostics ?? 'enabled'}`,
             `RALLAR_BLACK_BOX_RTC_BASELINE_ID=${input.baselineId}`,
             `RALLAR_BLACK_BOX_RTC_CASE_ID=${input.attempt.caseId}`,
             `RALLAR_BLACK_BOX_RTC_INPUT_KEY=${input.attempt.inputKey}`,

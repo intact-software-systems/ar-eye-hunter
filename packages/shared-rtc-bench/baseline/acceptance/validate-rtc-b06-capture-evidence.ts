@@ -5,13 +5,14 @@ import {
 } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import { resolveRtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
+import { validateRtcB06BrowserRecording } from './validate-rtc-b06-browser-recording.ts';
 
 import type {
     RtcBaselineIssueDto,
     RtcBaselineJson,
     RtcBaselineResolvedConfigurationValueDto,
-    RtcBaselineSampleDto,
-    RtcBaselineSampleIdentityDto
+    RtcBaselineSampleDto
 } from '../contracts/rtc-baseline-contracts.ts';
 
 export function validateRtcB06CaptureEvidence(
@@ -45,26 +46,20 @@ export function validateRtcB06CaptureEvidence(
     if (captureIssues.length > 0) {
         return captureIssues;
     }
-    return validateAlmCapturePolicy(sample.identity, initializedConfiguration, captures);
+    const selection = resolveRtcB06DiagnosticSelection(initializedConfiguration, sample.identity);
+    if (!selection.ok) {
+        return selection.issues;
+    }
+    const almIssues = validateAlmCapturePolicy(selection.value.almDiagnostics, captures);
+    return almIssues.length > 0
+        ? almIssues
+        : validateRtcB06BrowserRecording(sample, selection.value.routineBrowserDiagnostics, captures);
 }
 
 function validateAlmCapturePolicy(
-    identity: RtcBaselineSampleIdentityDto,
-    initializedConfiguration: readonly RtcBaselineResolvedConfigurationValueDto[],
+    almDiagnostics: boolean,
     captures: readonly RtcBaselineJson[]
 ): RtcBaselineIssueDto[] {
-    const almSelections = initializedConfiguration.filter((entry) =>
-        entry.field === 'almDiagnostics' && entry.caseKey.workloadId === identity.workloadId &&
-        entry.caseKey.caseId === identity.caseId && entry.caseKey.inputKey === identity.inputKey
-    );
-    const almDiagnostics = almSelections[0]?.value;
-    if (almSelections.length !== 1 || typeof almDiagnostics !== 'boolean') {
-        return [{
-            path: '$.resolvedConfiguration',
-            code: 'missing-alm-selection',
-            message: 'New RTC-B06 samples require one initialized ALM boolean for their exact case and input.'
-        }];
-    }
     return captures.every((capture) =>
             typeof capture === 'object' && capture !== null && !Array.isArray(capture) &&
             capture.almDiagnostics === almDiagnostics

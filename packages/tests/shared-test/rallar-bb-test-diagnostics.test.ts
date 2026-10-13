@@ -45,7 +45,13 @@ describe('rallar-bb-test runtime diagnostics', () => {
             { kind: 'diagnostic', topic: 'warning', severity: 'warning', routineBrowserDiagnostic: true },
             { kind: 'diagnostic', topic: 'error', severity: 'error', routineBrowserDiagnostic: true },
             { kind: 'diagnostic', topic: 'debug', severity: 'debug', routineBrowserDiagnostic: true },
-            { kind: 'diagnostic', topic: 'explicit-info-cause', severity: 'info', routineBrowserDiagnostic: true, error: { name: 'Error', message: 'failed' } },
+            {
+                kind: 'diagnostic',
+                topic: 'explicit-info-cause',
+                severity: 'info',
+                routineBrowserDiagnostic: true,
+                error: { name: 'Error', message: 'failed', stack: undefined }
+            },
             { kind: 'diagnostic', topic: 'explicit-info-status', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'failed' } },
             { kind: 'diagnostic', topic: 'explicit-info-unavailable', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'no-peers' } },
             { kind: 'diagnostic', topic: 'ordinary-progress', data: { status: 'ready' } },

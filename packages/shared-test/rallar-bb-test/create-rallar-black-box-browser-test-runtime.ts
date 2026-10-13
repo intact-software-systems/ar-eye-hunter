@@ -32,6 +32,7 @@ import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
 import { isRoutineBrowserDiagnostic } from './browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
+import type { BrowserDiagnosticsReceipt } from './browser/diagnostic-recording/to-browser-diagnostics-receipt.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
 import { computeRallarBlackBoxDiagnosticSeverity } from './diagnostics.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
@@ -59,13 +60,6 @@ const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 const FEATURE_COMMAND_PREFIXES: readonly string[] = ['crdt.', 'director.', 'formation.'];
 
 namespace BrowserCommandAdapter {
-    /** Counts browser diagnostic admission for this adapter's lifetime, including command-level reset and close. */
-    export interface DiagnosticsReceipt {
-        readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
-        readonly omittedRoutineBrowserDiagnostics: number;
-        readonly forwardedBrowserDiagnostics: number;
-    }
-
     export interface ClosedResources {
         readonly webSocketCount: number;
         /** Absent without a page runtime, or when its close returned no result record. */
@@ -115,7 +109,7 @@ class BrowserCommandAdapter {
         return normalized;
     }
 
-    private getDiagnosticsReceipt(): BrowserCommandAdapter.DiagnosticsReceipt {
+    private getDiagnosticsReceipt(): BrowserDiagnosticsReceipt {
         return {
             routineBrowserDiagnostics: this.environment.routineBrowserDiagnostics,
             omittedRoutineBrowserDiagnostics: this.omittedRoutineBrowserDiagnostics,

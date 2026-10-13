@@ -1,0 +1,82 @@
+import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts';
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+
+import { decodeRtcBaselineEnvironment } from '../contracts/rtc-baseline-artifact-decoding.ts';
+import type {
+    RtcBaselineAttemptLocatorDto,
+    RtcBaselineCaseKeyDto,
+    RtcBaselineResolvedConfigurationValueDto,
+    RtcBaselineResult
+} from '../contracts/rtc-baseline-contracts.ts';
+import type { RtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
+
+export interface RtcB06DiagnosticSelection {
+    readonly almDiagnostics: boolean;
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
+}
+
+export function resolveRtcB06DiagnosticSelection(
+    configuration: readonly RtcBaselineResolvedConfigurationValueDto[],
+    caseKey: RtcBaselineCaseKeyDto
+): RtcBaselineResult<RtcB06DiagnosticSelection> {
+    const selected = configuration.filter((entry) =>
+        entry.caseKey.workloadId === caseKey.workloadId &&
+        entry.caseKey.caseId === caseKey.caseId && entry.caseKey.inputKey === caseKey.inputKey
+    );
+    const alm = selected.filter((entry) => entry.field === 'almDiagnostics');
+    const recording = selected.filter((entry) => entry.field === 'routineBrowserDiagnostics');
+    if (alm.length !== 1 || typeof alm[0]?.value !== 'boolean') {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'missing-alm-selection',
+                message: 'RTC-B06 requires one initialized ALM boolean for its exact case and input.'
+            }]
+        };
+    }
+    const routineBrowserDiagnostics = typeof recording[0]?.value === 'string'
+        ? toRallarBlackBoxRoutineBrowserDiagnostics(recording[0].value)
+        : undefined;
+    if (
+        recording.length !== 1 || routineBrowserDiagnostics === undefined ||
+        (caseKey.caseId !== 'retention-100' && routineBrowserDiagnostics !== 'enabled')
+    ) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-routine-recording-selection',
+                message:
+                    'RTC-B06 requires one initialized enabled/disabled recording selection; non-retention cases require enabled.'
+            }]
+        };
+    }
+    return { ok: true, value: { almDiagnostics: alm[0].value, routineBrowserDiagnostics } };
+}
+
+export async function readRtcB06DiagnosticSelection(
+    store: Pick<RtcBaselineFileStore, 'readJson'>,
+    baselineId: string,
+    attempt: RtcBaselineAttemptLocatorDto
+): Promise<RtcBaselineResult<RtcB06DiagnosticSelection>> {
+    const raw = await store.readJson(baselineId, 'environment.json');
+    if (!raw.ok) {
+        return raw;
+    }
+    const environment = decodeRtcBaselineEnvironment(raw.value);
+    if (!environment.ok) {
+        return environment;
+    }
+    if (environment.value.baselineId !== baselineId || environment.value.environmentId !== attempt.environmentId) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'missing-alm-selection',
+                message: 'RTC-B06 diagnostic selection must belong to the exact initialized baseline and environment.'
+            }]
+        };
+    }
+    return resolveRtcB06DiagnosticSelection(environment.value.observation?.resolvedConfiguration ?? [], attempt);
+}

@@ -423,7 +423,10 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts',
     'packages/shared-rtc-bench/baseline/runtime/create-rtc-baseline-runtime-observation-input.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
-    'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-alm-selection.ts',
+    'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts',
+    'tests/playwright/rallar-black-box/live-rtc-browser-recording.ts',
+    'packages/shared-test/rallar-bb-test/browser/diagnostic-recording/to-browser-diagnostics-receipt.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-capture-evidence.ts'
 ];
 
@@ -557,6 +560,14 @@ function toRtcBaselineFullStackWorkloadConfiguration(
     const { caseId, inputKey, allScenarios, retention } = input;
     const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
     return [
+        toRtcBaselineConfigurationDescriptor({
+            caseKey,
+            field: 'routineBrowserDiagnostics',
+            flag: '--routine-browser-diagnostics',
+            scalarKind: 'string',
+            defaultValue: 'enabled',
+            environment: retention ? 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS' : null
+        }),
         toRtcBaselineConfigurationDescriptor({
             caseKey,
             field: 'almDiagnostics',

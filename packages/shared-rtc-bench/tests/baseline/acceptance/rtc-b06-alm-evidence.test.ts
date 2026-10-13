@@ -6,7 +6,8 @@ import type { RtcBaselineResolvedConfigurationValueDto, RtcBaselineSampleDto } f
 const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-memory-retention-100' } as const;
 const configuration: readonly RtcBaselineResolvedConfigurationValueDto[] = [
     { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'cli' },
-    { caseKey, field: 'almDiagnostics', value: false, source: 'environment' }
+    { caseKey, field: 'almDiagnostics', value: false, source: 'environment' },
+    { caseKey, field: 'routineBrowserDiagnostics', value: 'enabled', source: 'default' }
 ];
 const capture = {
     runId: 'run',
@@ -33,7 +34,11 @@ function sample(almDiagnostics: boolean | undefined): RtcBaselineSampleDto {
         outcome: 'passed',
         evidenceClass: 'local-full-stack',
         metrics: [],
-        rawEvidence: { rtcConnectCaptures: [{ ...capture, ...(almDiagnostics === undefined ? {} : { almDiagnostics }) }] },
+        rawEvidence: {
+            rtcConnectCaptures: ['a', 'b', 'c'].map((agentId) => ({ ...capture, agentId, ...(almDiagnostics === undefined ? {} : { almDiagnostics }) })),
+            diagnostics: recordingCheckpoints(),
+            retention: { checkpoints: recordingCheckpoints() }
+        },
         rawReferences: [],
         issues: [],
         runtimeObservation: null
@@ -50,3 +55,18 @@ it.each([undefined, true])('refuses absent or contradictory applied policy %s', 
 it('refuses a missing initialized ALM selection', () => {
     expect(validateRtcB06CaptureEvidence(sample(false), configuration.slice(0, 1))).toMatchObject([{ code: 'missing-alm-selection' }]);
 });
+
+function recordingCheckpoints() {
+    const receipt = { routineBrowserDiagnostics: 'enabled', omittedRoutineBrowserDiagnostics: 0, forwardedBrowserDiagnostics: 0 };
+    return Array.from({ length: 11 }, (_, index) => ({
+        cycle: index * 10,
+        agents: ['a', 'b', 'c'].map((agentId) => ({
+            agentId,
+            details: {
+                browserDiagnostics: receipt,
+                browserDiagnosticsAdmission: { runId: 'run', agentId, commandId: `admit-${agentId}`, receipt },
+                browserDiagnosticsHealth: { runId: 'run', agentId, commandId: `health-${agentId}-${index}` }
+            }
+        }))
+    }));
+}

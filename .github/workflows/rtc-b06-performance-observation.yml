@@ -17,6 +17,14 @@ on:
         required: true
         default: true
         type: boolean
+      routine_browser_diagnostics:
+        description: Routine browser recording (retention selection; default and all-scenarios remain enabled)
+        required: true
+        default: enabled
+        type: choice
+        options:
+          - enabled
+          - disabled
       rtc_capture_mode:
         description: RTC diagnostics capture mode
         required: true
@@ -120,9 +128,11 @@ jobs:
         env:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
+          ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
         run: |
           env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
@@ -139,11 +149,13 @@ jobs:
         env:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
+          ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
           RTC_SOURCE_REF: ${{ github.ref_name }}
         run: |
           set -o pipefail
           env -u DATABASE_URL -u RALLAR_ICE_MODE -u RALLAR_BLACK_BOX_RTC_CAPTURE_MODE \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
@@ -228,6 +240,7 @@ jobs:
         env:
           RTC_CAPTURE_MODE: ${{ needs.source.outputs.rtc_capture_mode }}
           ALM_DIAGNOSTICS: ${{ inputs.alm_diagnostics }}
+          ROUTINE_BROWSER_DIAGNOSTICS: ${{ inputs.routine_browser_diagnostics }}
         run: |
           set -o pipefail
           diagnostic_status=0
@@ -240,6 +253,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true \
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled \
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/default/failure-diagnostics" \
@@ -260,6 +274,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true \
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled \
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/failure-diagnostics" \
@@ -283,6 +298,7 @@ jobs:
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS="$ALM_DIAGNOSTICS" \
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS="$ROUTINE_BROWSER_DIAGNOSTICS" \
             RALLAR_BLACK_BOX_RTC_CAPTURE_MODE="$RTC_CAPTURE_MODE" \
             RALLAR_BLACK_BOX_STORAGE_DIR="$recorder_storage" \
             RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \
