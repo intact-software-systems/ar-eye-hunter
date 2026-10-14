@@ -20,11 +20,10 @@ import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
-import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type {
     GroupPresenceSummary,
     GroupSnapshot
@@ -215,20 +214,11 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: readonly RttMeasurementInfo[] = [];
-            class RecordingTopologyService extends RallarRtcTopologyService {
-                override planGroupTopologyAt(
-                    ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
-                ): RallarRtcTopologyUpdateResult {
-                    plannedRtts = args[1];
-                    return super.planGroupTopologyAt(...args);
-                }
-            }
             // The reporting limit resolves no lower than the planning degree
             // limit, so a non-reporting pair needs both endpoints at full
             // planned degree: a four-session ring keeps every selection
             // exactly the planned hops and leaves the a-c chord outside.
-            const topologyService = new RecordingTopologyService({
+            const topologyService = new RallarRtcTopologyService({
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
@@ -266,12 +256,45 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            computeGroupTopologyFromAuthority(authority, previous, {
+            const filtered = requirePlannedTopology(computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
                 origin: 'automatic'
-            });
+            }));
 
-            assert.deepEqual(plannedRtts, []);
+            assert.equal(filtered.planningObservation?.relevantRttMeasurementCount, 0);
+            assert.equal(filtered.snapshot.state, 'active');
+            assert.equal(filtered.snapshot.topology, 'tree');
+            assert.equal(filtered.snapshot.degreeLimit, 2);
+            assert.deepEqual(filtered.snapshot.activeSessionIds, [
+                'session-a',
+                'session-b',
+                'session-c',
+                'session-d'
+            ]);
+            assert.deepEqual(filtered.snapshot.sourceGroupStateCausalRevision, group.causalRevision);
+
+            const reportingRtt = {
+                sessionIdFrom: 'session-b',
+                sessionIdTo: 'session-c',
+                rttMs: 0.01,
+                createdAtEpochMs: nowEpochMs,
+                version: 1
+            };
+            assert.equal(await rttRepository.putMeasurementIfNewer(reportingRtt), true);
+            const mixedAuthority = await service.planning.readTopologyPlanningAuthority({
+                groupRef,
+                snapshotSelection: 'prefer-current'
+            });
+            assert.deepEqual(mixedAuthority.rttMeasurements, [storedRtt, reportingRtt]);
+
+            const withReportingRtt = requirePlannedTopology(computeGroupTopologyFromAuthority(mixedAuthority, previous, {
+                intent: 'full-rebuild',
+                origin: 'automatic'
+            }));
+
+            assert.equal(withReportingRtt.planningObservation?.relevantRttMeasurementCount, 1);
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-b'].includes('session-c'));
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-c'].includes('session-b'));
         });
     }
 );
