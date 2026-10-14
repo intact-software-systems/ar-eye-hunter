@@ -11,7 +11,7 @@ import { readLiveRtcDurableJournal } from '../../../tests/playwright/rallar-blac
 import { writeLiveRtcPerformanceEvidence } from '../../../tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts';
 import { createRtcBaselineEvidenceAcceptance } from '../../shared-rtc-bench/baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import { resolveRtcBaselineAcceptedArtifactPath } from '../../shared-rtc-bench/baseline/acceptance/rtc-baseline-failure-accounting.ts';
-import type { RtcBaselineExternalAttemptDto, RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { classifyRtcBaselineArtifactPath } from '../../shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-layout.ts';
 import type { RtcBaselineExclusiveFileLock, RtcBaselineFilePort } from '../../shared-rtc-bench/baseline/evidence/rtc-baseline-file-port.ts';
 import { createRtcBaselineFinalizedArtifactVerifier } from '../../shared-rtc-bench/baseline/evidence/rtc-baseline-finalized-verification.ts';
@@ -160,184 +160,6 @@ it.each(['memory-only', 'results-only', 'symlink', 'unsupported-run', 'missing-m
         }
     }
 );
-
-interface VerifyFailedJournalArchiveInput {
-    readonly disk: Awaited<ReturnType<typeof diskFixture>>;
-    readonly attempt: RtcBaselineExternalAttemptDto;
-    readonly staged: RtcBaselineExternalAttemptDto;
-    readonly failureEvidence: RtcBaselineJson;
-}
-
-async function verifyFailedJournalArchive(verification: VerifyFailedJournalArchiveInput) {
-    const { disk, attempt, staged, failureEvidence } = verification;
-    const rootPath = join(disk.repoRoot, 'tmp/perf/rtc-baseline');
-    const baselinePath = join(rootPath, baselineId);
-    const observation = attempt.samples[0]!.runtimeObservation!;
-    const request = {
-        schema: 'rallar.rtc-baseline.capture-request.v1' as const,
-        baselineId,
-        workloadIds: ['RTC-B06'] as const,
-        environmentId: 'E3-memory' as const,
-        retainedSampleMultiplier: 1 as const,
-        repeatLink: null,
-        conditionalEnvironmentDecisions: []
-    };
-    const manifest = {
-        schema: 'rallar.rtc-baseline.manifest.v1' as const,
-        request,
-        workloadIds: request.workloadIds,
-        cases: [{ workloadId: 'RTC-B06', caseId: attempt.locator.caseId, inputKey: attempt.locator.inputKey }],
-        outerAttempts: [1, 2].map((outerOrdinal) => ({
-            workloadId: attempt.locator.workloadId,
-            caseId: attempt.locator.caseId,
-            inputKey: attempt.locator.inputKey,
-            environmentId: attempt.locator.environmentId,
-            intendedPhase: attempt.locator.intendedPhase,
-            outerOrdinal,
-            sampleIds: [outerOrdinal === 1 ? sampleId : sampleId.replace('retained-001-001', 'retained-002-001')]
-        })),
-        expectedCohorts: [{
-            cohortId: 'retention-cohort',
-            workloadId: 'RTC-B06',
-            memberSampleIds: [sampleId, sampleId.replace('retained-001-001', 'retained-002-001')]
-        }],
-        repeatLink: null
-    };
-    const evidence = createRtcBaselineDenoEvidence({
-        rootPath,
-        filePort: new FilesystemEvidencePort(),
-        writerLockRuntime: {
-            createOwnerToken: () => crypto.randomUUID(),
-            readOwnerIdentity: () => ({ hostname: 'test', processId: process.pid }),
-            now: () => new Date(),
-            readProcessLiveness: async () => 'alive'
-        },
-        observeRuntime: async () => ({ ok: true, value: observation })
-    });
-    for (const directory of ['samples', 'external-attempts', 'external-cohorts', 'failures', 'finalization-failures']) {
-        await mkdir(join(baselinePath, 'results', directory), { recursive: true });
-    }
-    await writeFile(join(baselinePath, 'manifest.json'), JSON.stringify(manifest));
-    await writeFile(
-        join(baselinePath, 'environment.json'),
-        JSON.stringify({
-            schema: 'rallar.rtc-baseline.environment.v1',
-            baselineId,
-            workloadIds: request.workloadIds,
-            environmentId: request.environmentId,
-            repeatLink: null,
-            conditionalEnvironmentDecisions: [],
-            observation
-        })
-    );
-    const acceptance = createRtcBaselineEvidenceAcceptance({
-        initializeStore: async () => {
-            throw new Error('Already initialized.');
-        },
-        readManifest: evidence.readManifest,
-        readInitializedConfiguration: async () => ({ ok: true, value: observation.resolvedConfiguration }),
-        writeAcceptedArtifact: async (id, artifact) => {
-            const path = resolveRtcBaselineAcceptedArtifactPath(artifact);
-            return path.ok ? evidence.store.writeJsonCreateNew(id, path.value, artifact) : path;
-        },
-        readStagedJson: evidence.store.readJson,
-        runFreshWorker: async () => {
-            throw new Error('External producer only.');
-        },
-        reconcileAcceptedOperation: evidence.reconcileAcceptedOperation
-    });
-    const recorded = await acceptance.recordExternalAttempt({
-        baselineId,
-        locator: {
-            workloadId: attempt.locator.workloadId,
-            caseId: attempt.locator.caseId,
-            inputKey: attempt.locator.inputKey,
-            intendedPhase: attempt.locator.intendedPhase,
-            outerOrdinal: attempt.locator.outerOrdinal
-        },
-        producerExitStatus: attempt.producerExitStatus,
-        rawResultRelativePath: attempt.locator.rawResultRelativePath
-    });
-    expect(recorded.ok).toBe(false);
-    const finalized = await createRtcBaselineDenoFinalization(evidence, sha256).finalizedEvidence.finalize({ baselineId });
-    expect(finalized.ok ? [] : finalized.issues).toEqual([]);
-    if (!finalized.ok) {
-        throw new Error('Failed evidence must finalize structurally.');
-    }
-    expect(finalized.value.metricSummaries).toEqual([]);
-    expect(finalized.value.sampleOutcomes).toMatchObject([
-        { identity: attempt.samples[0]!.identity, outcome: 'failed' },
-        { identity: { sampleId: sampleId.replace('retained-001-001', 'retained-002-001') }, outcome: 'not-run', issues: [{ code: 'causal-not-run' }] }
-    ]);
-    expect(finalized.value.cohortOutcomes).toMatchObject([{ outcome: 'failed', issues: [{ code: 'cohort-members-unavailable' }] }]);
-    expect(finalized.value.rawReferences).toEqual(staged.samples[0]!.rawReferences);
-    const originalBytes = await readFile(disk.path);
-    expect(finalized.value.rawReferences).toEqual([{
-        relativePath: disk.rawRelativePath,
-        bytes: originalBytes.length,
-        sha256: await sha256(originalBytes)
-    }]);
-    const results = await evidence.store.listArtifacts(baselineId, 'results');
-    const artifacts = await evidence.store.listArtifacts(baselineId, 'artifacts');
-    if (!results.ok || !artifacts.ok) {
-        throw new Error('Filesystem artifact listing failed.');
-    }
-    const failureEvidenceValues: RtcBaselineJson[] = [];
-    for (const entry of results.value.filter((entry) => classifyRtcBaselineArtifactPath(entry.relativePath) === 'failure-outcome')) {
-        const retained = await evidence.store.readJson(baselineId, entry.relativePath);
-        if (
-            retained.ok && retained.value && typeof retained.value === 'object' && !Array.isArray(retained.value) &&
-            retained.value.failureId === `failure-sample-${sampleId}` && retained.value.artifactKind === 'failure'
-        ) {
-            failureEvidenceValues.push(retained.value.rawEvidence!);
-        }
-    }
-    expect(failureEvidenceValues).toEqual([failureEvidence]);
-    const paths = [
-        'environment.json',
-        'manifest.json',
-        'summary.json',
-        ...results.value.map((entry) => entry.relativePath),
-        ...artifacts.value.map((entry) => entry.relativePath).filter((path) => classifyRtcBaselineArtifactPath(path) === 'raw')
-    ];
-    const verifier = createRtcBaselineFinalizedArtifactVerifier({
-        readJson: evidence.store.readJson,
-        readBytes: evidence.store.readBytes,
-        listArtifactPaths: async () => ({ ok: true, value: paths }),
-        sha256
-    });
-    expect(await verifier.readStructurallyVerifiedArtifacts(baselineId)).toMatchObject({ ok: true });
-    expect(await verifier.readVerifiedArtifacts(baselineId)).toMatchObject({ ok: false, issues: [{ code: 'non-passing-finalized-outcome' }] });
-    const primaryArtifacts = new Map<string, Uint8Array>();
-    for (const path of [...paths, 'SHA256SUMS']) {
-        primaryArtifacts.set(path, await readFile(join(baselinePath, path)));
-    }
-    const archive = await createRtcPerformanceObservationArchive({
-        observation: {
-            schema: 'rallar.rtc-b06-performance-observation.v1',
-            observationId: baselineId,
-            startedAt: observation.timing.startedAtUtc,
-            completedAt: observation.timing.endedAtUtc,
-            source: { commit: observation.git.headCommit, tree: observation.git.headTree, ref: observation.git.ref },
-            workflow: { runId: 123456789, runAttempt: 1, url: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789' },
-            primary: { outcome: 'failed', acceptedMetrics: false },
-            repeat: { decision: 'not-required', outcome: 'not-run' }
-        },
-        primaryArtifacts
-    });
-    const verifiedArchive = await verifyRtcPerformanceObservationArchive({ bytes: archive.bytes, indexEntry: archive.indexEntry });
-    expect(verifiedArchive.ok ? [] : verifiedArchive.issues).toEqual([]);
-    expect(Buffer.from(unzipSync(archive.bytes)[`primary/${baselineId}/${disk.rawRelativePath}`]!)).toEqual(originalBytes);
-    await writeFile(disk.rawPath, Buffer.concat([originalBytes, Buffer.from('tamper')]));
-    expect(await verifier.readStructurallyVerifiedArtifacts(baselineId)).toMatchObject({
-        ok: false,
-        issues: expect.arrayContaining([{
-            path: `$.${disk.rawRelativePath}`,
-            code: 'checksum-mismatch',
-            message: 'Stored bytes do not match the SHA-256 checksum.'
-        }])
-    });
-}
 
 async function sha256(bytes: Uint8Array): Promise<string> {
     return createHash('sha256').update(bytes).digest('hex');
@@ -555,13 +377,176 @@ it.each(['complete', 'failed-producer', 'producer-exit', 'receipt-failure', 'inc
         expect(staged.samples[0].rawEvidence.journal.status).toBe(unverified ? 'failed' : 'durable-prefix');
         expect(staged.samples[0].outcome).toBe(variant === 'complete' || variant === 'producer-exit' || variant === 'receipt-failure' ? 'passed' : 'failed');
         expect(await readFile(disk.rawPath)).toEqual(await readFile(disk.path));
-        if (variant !== 'complete') {
-            await verifyFailedJournalArchive({
-                disk,
-                attempt,
-                staged,
-                failureEvidence: variant === 'receipt-failure' ? staged.samples[0] : staged.samples[0].rawEvidence
-            });
+        if (variant === 'complete') {
+            return;
         }
+        const failureEvidence = variant === 'receipt-failure' ? staged.samples[0] : staged.samples[0].rawEvidence;
+        const rootPath = join(disk.repoRoot, 'tmp/perf/rtc-baseline');
+        const baselinePath = join(rootPath, baselineId);
+        const observation = sample.runtimeObservation;
+        const request = {
+            schema: 'rallar.rtc-baseline.capture-request.v1' as const,
+            baselineId,
+            workloadIds: ['RTC-B06'] as const,
+            environmentId: 'E3-memory' as const,
+            retainedSampleMultiplier: 1 as const,
+            repeatLink: null,
+            conditionalEnvironmentDecisions: []
+        };
+        const manifest = {
+            schema: 'rallar.rtc-baseline.manifest.v1' as const,
+            request,
+            workloadIds: request.workloadIds,
+            cases: [{ workloadId: 'RTC-B06', caseId: attempt.locator.caseId, inputKey: attempt.locator.inputKey }],
+            outerAttempts: [1, 2].map((outerOrdinal) => ({
+                workloadId: attempt.locator.workloadId,
+                caseId: attempt.locator.caseId,
+                inputKey: attempt.locator.inputKey,
+                environmentId: attempt.locator.environmentId,
+                intendedPhase: attempt.locator.intendedPhase,
+                outerOrdinal,
+                sampleIds: [outerOrdinal === 1 ? sampleId : sampleId.replace('retained-001-001', 'retained-002-001')]
+            })),
+            expectedCohorts: [{
+                cohortId: 'retention-cohort',
+                workloadId: 'RTC-B06',
+                memberSampleIds: [sampleId, sampleId.replace('retained-001-001', 'retained-002-001')]
+            }],
+            repeatLink: null
+        };
+        const evidence = createRtcBaselineDenoEvidence({
+            rootPath,
+            filePort: new FilesystemEvidencePort(),
+            writerLockRuntime: {
+                createOwnerToken: () => crypto.randomUUID(),
+                readOwnerIdentity: () => ({ hostname: 'test', processId: process.pid }),
+                now: () => new Date(),
+                readProcessLiveness: async () => 'alive'
+            },
+            observeRuntime: async () => ({ ok: true, value: observation })
+        });
+        for (const directory of ['samples', 'external-attempts', 'external-cohorts', 'failures', 'finalization-failures']) {
+            await mkdir(join(baselinePath, 'results', directory), { recursive: true });
+        }
+        await writeFile(join(baselinePath, 'manifest.json'), JSON.stringify(manifest));
+        await writeFile(
+            join(baselinePath, 'environment.json'),
+            JSON.stringify({
+                schema: 'rallar.rtc-baseline.environment.v1',
+                baselineId,
+                workloadIds: request.workloadIds,
+                environmentId: request.environmentId,
+                repeatLink: null,
+                conditionalEnvironmentDecisions: [],
+                observation
+            })
+        );
+        const acceptance = createRtcBaselineEvidenceAcceptance({
+            initializeStore: async () => {
+                throw new Error('Already initialized.');
+            },
+            readManifest: evidence.readManifest,
+            readInitializedConfiguration: async () => ({ ok: true, value: observation.resolvedConfiguration }),
+            writeAcceptedArtifact: async (id, artifact) => {
+                const path = resolveRtcBaselineAcceptedArtifactPath(artifact);
+                return path.ok ? evidence.store.writeJsonCreateNew(id, path.value, artifact) : path;
+            },
+            readStagedJson: evidence.store.readJson,
+            runFreshWorker: async () => {
+                throw new Error('External producer only.');
+            },
+            reconcileAcceptedOperation: evidence.reconcileAcceptedOperation
+        });
+        const recorded = await acceptance.recordExternalAttempt({
+            baselineId,
+            locator: {
+                workloadId: attempt.locator.workloadId,
+                caseId: attempt.locator.caseId,
+                inputKey: attempt.locator.inputKey,
+                intendedPhase: attempt.locator.intendedPhase,
+                outerOrdinal: attempt.locator.outerOrdinal
+            },
+            producerExitStatus: attempt.producerExitStatus,
+            rawResultRelativePath: attempt.locator.rawResultRelativePath
+        });
+        expect(recorded.ok).toBe(false);
+        const finalized = await createRtcBaselineDenoFinalization(evidence, sha256).finalizedEvidence.finalize({ baselineId });
+        expect(finalized.ok ? [] : finalized.issues).toEqual([]);
+        if (!finalized.ok) {
+            throw new Error('Failed evidence must finalize structurally.');
+        }
+        expect(finalized.value.metricSummaries).toEqual([]);
+        expect(finalized.value.sampleOutcomes).toMatchObject([
+            { identity: attempt.samples[0]!.identity, outcome: 'failed' },
+            { identity: { sampleId: sampleId.replace('retained-001-001', 'retained-002-001') }, outcome: 'not-run', issues: [{ code: 'causal-not-run' }] }
+        ]);
+        expect(finalized.value.cohortOutcomes).toMatchObject([{ outcome: 'failed', issues: [{ code: 'cohort-members-unavailable' }] }]);
+        expect(finalized.value.rawReferences).toEqual(staged.samples[0]!.rawReferences);
+        const originalBytes = await readFile(disk.path);
+        expect(finalized.value.rawReferences).toEqual([{
+            relativePath: disk.rawRelativePath,
+            bytes: originalBytes.length,
+            sha256: await sha256(originalBytes)
+        }]);
+        const results = await evidence.store.listArtifacts(baselineId, 'results');
+        const artifacts = await evidence.store.listArtifacts(baselineId, 'artifacts');
+        if (!results.ok || !artifacts.ok) {
+            throw new Error('Filesystem artifact listing failed.');
+        }
+        const failureEvidenceValues: RtcBaselineJson[] = [];
+        for (const entry of results.value.filter((entry) => classifyRtcBaselineArtifactPath(entry.relativePath) === 'failure-outcome')) {
+            const retained = await evidence.store.readJson(baselineId, entry.relativePath);
+            if (
+                retained.ok && retained.value && typeof retained.value === 'object' && !Array.isArray(retained.value) &&
+                retained.value.failureId === `failure-sample-${sampleId}` && retained.value.artifactKind === 'failure'
+            ) {
+                failureEvidenceValues.push(retained.value.rawEvidence!);
+            }
+        }
+        expect(failureEvidenceValues).toEqual([failureEvidence]);
+        const paths = [
+            'environment.json',
+            'manifest.json',
+            'summary.json',
+            ...results.value.map((entry) => entry.relativePath),
+            ...artifacts.value.map((entry) => entry.relativePath).filter((path) => classifyRtcBaselineArtifactPath(path) === 'raw')
+        ];
+        const verifier = createRtcBaselineFinalizedArtifactVerifier({
+            readJson: evidence.store.readJson,
+            readBytes: evidence.store.readBytes,
+            listArtifactPaths: async () => ({ ok: true, value: paths }),
+            sha256
+        });
+        expect(await verifier.readStructurallyVerifiedArtifacts(baselineId)).toMatchObject({ ok: true });
+        expect(await verifier.readVerifiedArtifacts(baselineId)).toMatchObject({ ok: false, issues: [{ code: 'non-passing-finalized-outcome' }] });
+        const primaryArtifacts = new Map<string, Uint8Array>();
+        for (const path of [...paths, 'SHA256SUMS']) {
+            primaryArtifacts.set(path, await readFile(join(baselinePath, path)));
+        }
+        const archive = await createRtcPerformanceObservationArchive({
+            observation: {
+                schema: 'rallar.rtc-b06-performance-observation.v1',
+                observationId: baselineId,
+                startedAt: observation.timing.startedAtUtc,
+                completedAt: observation.timing.endedAtUtc,
+                source: { commit: observation.git.headCommit, tree: observation.git.headTree, ref: observation.git.ref },
+                workflow: { runId: 123456789, runAttempt: 1, url: 'https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/123456789' },
+                primary: { outcome: 'failed', acceptedMetrics: false },
+                repeat: { decision: 'not-required', outcome: 'not-run' }
+            },
+            primaryArtifacts
+        });
+        const verifiedArchive = await verifyRtcPerformanceObservationArchive({ bytes: archive.bytes, indexEntry: archive.indexEntry });
+        expect(verifiedArchive.ok ? [] : verifiedArchive.issues).toEqual([]);
+        expect(Buffer.from(unzipSync(archive.bytes)[`primary/${baselineId}/${disk.rawRelativePath}`]!)).toEqual(originalBytes);
+        await writeFile(disk.rawPath, Buffer.concat([originalBytes, Buffer.from('tamper')]));
+        expect(await verifier.readStructurallyVerifiedArtifacts(baselineId)).toMatchObject({
+            ok: false,
+            issues: expect.arrayContaining([{
+                path: `$.${disk.rawRelativePath}`,
+                code: 'checksum-mismatch',
+                message: 'Stored bytes do not match the SHA-256 checksum.'
+            }])
+        });
     }
 );
