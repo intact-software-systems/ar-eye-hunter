@@ -1,5 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    ResourceInboxHandlerEntryError,
+    ResourceInboxHandlerFinalizedSuccess
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
@@ -93,9 +96,10 @@ export class AppInboxHandlerExecutor {
         this.options = config.options ?? {};
     }
 
+    /** Resolves with the committed entry when the handler's own transaction finalized it, so the queue releases nothing. */
     async execute<Command, Result>(
         input: AppInboxHandlerExecutor.Input<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
         const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
@@ -103,7 +107,7 @@ export class AppInboxHandlerExecutor {
             contextId: entry.key.contextId,
             data: null
         };
-        await timeRallarAsync(
+        return await timeRallarAsync(
             this.timing,
             {
                 component: 'app-inbox-handler',
@@ -143,7 +147,7 @@ export class AppInboxHandlerExecutor {
 
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
         let context: AppInboxMessageContext<Result> | undefined;
         try {
             const begun = this.beginExecution(attempt);
@@ -157,12 +161,13 @@ export class AppInboxHandlerExecutor {
             });
             const finalization = this.transactionWriter.read(begun.context);
             if (finalization.state === 'transaction-finalized') {
-                return;
+                return new ResourceInboxHandlerFinalizedSuccess(finalization.entry);
             }
             await this.writeNonTransactionalResult(attempt.registration, begun.context, result);
+            return undefined;
         }
         catch (caught) {
-            await this.finishFailedExecution({
+            return await this.finishFailedExecution({
                 ...attempt,
                 entry: caught instanceof ResourceInboxHandlerEntryError ? caught.entry : attempt.entry,
                 error: caught instanceof Error ? caught : new Error(String(caught)),
@@ -220,14 +225,14 @@ export class AppInboxHandlerExecutor {
 
     private async finishFailedExecution<Command, Result>(
         input: FailedAppInboxExecution<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess> {
         if (input.context) {
             const finalization = this.transactionWriter.read(input.context);
             if (
                 finalization.state === 'transaction-finalized' &&
-                finalization.status === EntityStatus.COMPLETED
+                finalization.entry.status === EntityStatus.COMPLETED
             ) {
-                return;
+                return new ResourceInboxHandlerFinalizedSuccess(finalization.entry);
             }
         }
         if (input.classification.kind === 'retryable') {

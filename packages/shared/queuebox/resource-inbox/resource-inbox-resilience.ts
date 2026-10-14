@@ -5,6 +5,7 @@ import {
     RateLimiter
 } from '../../resilience/Resilience.ts';
 import type { ResourceInboxWorkAdvertisementOptions } from '../queue-box-types.ts';
+import { TIMEOUT_ON_NON_RESPONSIVE_ENTRY } from '../ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '../ResourceInboxRetryPolicy.ts';
 
 export namespace ResourceInboxResilience {
@@ -20,6 +21,8 @@ export namespace ResourceInboxResilience {
         readonly checkFinalization: StatusChecks;
         readonly rateAdjuster: RateAdjuster;
         readonly retryPolicy: ResourceInboxRetryPolicy;
+        /** How long a claim may stay RESERVED before the TIMEOUT lane reclaims it from its absent owner. */
+        readonly reservationLeaseMs: number;
     }
 
     export interface DefaultConfig {
@@ -30,6 +33,7 @@ export namespace ResourceInboxResilience {
         readonly concurrencyReduceStep: number;
         readonly maxFairnessSelectionsInWindow?: number;
         readonly retryPolicy?: ResourceInboxRetryPolicy;
+        readonly reservationLeaseMs?: number;
     }
 }
 
@@ -41,6 +45,7 @@ export class ResourceInboxResilience {
     static readonly MIN_CONSECUTIVE_SUCCESSES = 10;
     static readonly RATE_ADJUST_WINDOW_MS = 15 * 60_000;
     static readonly FINALIZATION_STALE_AFTER_MS = 5 * 60_000;
+    static readonly DEFAULT_RESERVATION_LEASE_MS = TIMEOUT_ON_NON_RESPONSIVE_ENTRY.total({ unit: 'milliseconds' });
 
     readonly circuitBreaker: CircuitBreaker;
     readonly checkReserveTimeouts: ResourceInboxResilience.StatusChecks;
@@ -48,6 +53,7 @@ export class ResourceInboxResilience {
     readonly checkFinalization: ResourceInboxResilience.StatusChecks;
     readonly rateAdjuster: RateAdjuster;
     readonly retryPolicy: ResourceInboxRetryPolicy;
+    readonly reservationLeaseMs: number;
 
     constructor(dependencies: ResourceInboxResilience.Dependencies) {
         this.circuitBreaker = dependencies.circuitBreaker;
@@ -56,6 +62,7 @@ export class ResourceInboxResilience {
         this.checkFinalization = dependencies.checkFinalization;
         this.rateAdjuster = dependencies.rateAdjuster;
         this.retryPolicy = dependencies.retryPolicy;
+        this.reservationLeaseMs = dependencies.reservationLeaseMs;
     }
 
     static createDefault(config: ResourceInboxResilience.DefaultConfig): ResourceInboxResilience {
@@ -91,7 +98,8 @@ export class ResourceInboxResilience {
                     policy.adjustWindowMs
                 )
             ),
-            retryPolicy: config.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY
+            retryPolicy: config.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+            reservationLeaseMs: config.reservationLeaseMs ?? ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
         });
     }
 
@@ -101,7 +109,8 @@ export class ResourceInboxResilience {
             checkFairness: this.checkFairness.isEntryRateLimiter,
             checkFinalization: this.checkFinalization.isEntryRateLimiter,
             maxAttempts: this.retryPolicy.maxAttempts,
-            finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS
+            finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS,
+            reservationLeaseMs: this.reservationLeaseMs
         };
     }
 

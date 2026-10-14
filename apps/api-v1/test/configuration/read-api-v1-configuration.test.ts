@@ -334,6 +334,18 @@ Deno.test('ICE request input rejects malformed and nonpositive integers with saf
     }
 });
 
+Deno.test('single-process prod-in-memory polls AppInbox completion only as a five-second fallback to the same-process notice', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.deepEqual(configuration.appInbox.completionWait, {
+            maxElapsedMs: 30_000,
+            retryIntervalMs: 250,
+            maxRetryIntervalMs: profile === 'prod-in-memory' ? 5_000 : 1_000,
+            jitterRatio: 0.1
+        });
+    }
+});
+
 Deno.test('all committed profiles preserve the default finite ICE admission policy', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));

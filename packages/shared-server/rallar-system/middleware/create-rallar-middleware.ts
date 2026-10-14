@@ -17,6 +17,7 @@ export function createRallarMiddleware(
     );
     const inboxServices = createRallarMiddlewareInboxServices(options, infrastructure);
     const registeredQueue = queueRegistration.registerExactTasks({
+        nowEpochMs: Date.now,
         inboxQueueReader: infrastructure.inboxQueueReader,
         outboxQueueReader: infrastructure.outboxQueueReader,
         appInboxResilience: infrastructure.appInboxResilience,

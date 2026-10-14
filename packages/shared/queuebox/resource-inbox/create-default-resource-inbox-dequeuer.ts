@@ -103,6 +103,15 @@ export class ResourceInboxHandlerEntryError extends Error {
     }
 }
 
+/** A handler success whose own transaction already committed the terminal entry, so the queue releases nothing. */
+export class ResourceInboxHandlerFinalizedSuccess {
+    readonly entry: ResourceEntry;
+
+    constructor(entry: ResourceEntry) {
+        this.entry = entry;
+    }
+}
+
 export interface ResourceInboxDequeuerInput {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
@@ -115,6 +124,8 @@ export interface ResourceInboxDequeuerInput {
 
 export interface DequeueResourceEntryOptions {
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
+    /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
+    readonly isRetryableConflict?: (error: Error) => boolean;
     readonly jitterUnit?: () => number;
     readonly nowEpochMs?: () => number;
     readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
@@ -234,7 +245,7 @@ async function reserveResourceInboxTimeouts(
                 typeIds: types,
                 reservationInput: { maxToReserve, maxAttempts: dependencies.resilience.retryPolicy.maxAttempts },
                 timeSinceStartTs: Temporal.Duration.from({
-                    milliseconds: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS
+                    milliseconds: dependencies.resilience.reservationLeaseMs
                 })
             }),
         new Map<Resource.Key, ResourceEntry>()
@@ -333,13 +344,22 @@ async function releaseResourceInboxSuccesses<V>(
     dependencies: ResourceInboxDequeueDependencies,
     successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
 ): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
-    const released = await dependencies.repository.releaseEntries(
-        [...successes.values()].map((success) => ({
+    const reserved = [...successes.values()].filter((success) =>
+        !(success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess)
+    );
+    const released = reserved.length === 0 ? new Map<Resource.Key, ResourceEntry>() : await dependencies.repository
+        .releaseEntries(reserved.map((success) => ({
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-        }))
-    );
-    const releases = [...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes));
+        })));
+    const releases = [
+        ...[...successes.values()].flatMap((success) =>
+            success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess
+                ? [toHandlerFinalizedResourceInboxSuccess(success, success.computedValue.entry)]
+                : []
+        ),
+        ...[...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes))
+    ];
     for (const { entry } of releases) {
         publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
     }
@@ -565,6 +585,20 @@ function publishResourceInboxCompletion(
     ) {
         completionNotifications?.publish(entry.key);
     }
+}
+
+function toHandlerFinalizedResourceInboxSuccess<V>(
+    original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>,
+    entry: ResourceEntry
+): ResourceInboxReleasedSuccess<V> {
+    if (
+        !isKeysEqual(entry.key, original.key) ||
+        entry.dequeueAudit.attempts !== original.value.entry.dequeueAudit.attempts ||
+        entry.status !== EntityStatus.COMPLETED
+    ) {
+        throw new Error('Handler-finalized entry does not complete the claimed reservation');
+    }
+    return { original, entry };
 }
 
 function toReleasedResourceInboxSuccess<V>(

@@ -125,11 +125,11 @@ export function requireTopologyMutationOwners(
     };
 }
 
-export async function topologyConfigCommand(
+export function topologyConfigCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): Promise<GroupTopologyConfigMutationCommand> {
+): GroupTopologyConfigMutationCommand {
     const command = {
         operation: 'putConfig',
         aggregateRef: groupRef,
@@ -144,16 +144,16 @@ export async function topologyConfigCommand(
     } as const;
     return {
         ...command,
-        commandHash: await hashMutationCommand(command),
+        commandHash: hashMutationCommand(command),
         capturedAtEpochMs: 1_000
     };
 }
 
-export async function topologyOverrideCommand(
+export function topologyOverrideCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): Promise<GroupTopologyConfigMutationCommand> {
+): GroupTopologyConfigMutationCommand {
     const command = {
         operation: 'putOverride',
         aggregateRef: groupRef,
@@ -168,7 +168,7 @@ export async function topologyOverrideCommand(
     } as const;
     return {
         ...command,
-        commandHash: await hashMutationCommand(command),
+        commandHash: hashMutationCommand(command),
         capturedAtEpochMs: 1_000
     };
 }

@@ -44,7 +44,6 @@ import {
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
     ResourceEntryKeyString,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     toKeyAsString,
     toResourceEntryKey
 } from './ResourceEntry.ts';
@@ -442,14 +441,14 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
+        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
         const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
                 this.isAnyReservedEntryTimedOut(
                     typeIds,
-                    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
                     maxAttempts
                 ),
             false

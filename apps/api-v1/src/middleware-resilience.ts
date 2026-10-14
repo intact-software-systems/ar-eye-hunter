@@ -3,7 +3,10 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { ApiV1QueueResilienceConfiguration } from './configuration/api-v1-configuration.ts';
 
-export function createApiV1QueueResilience(configuration: ApiV1QueueResilienceConfiguration) {
+export function createApiV1QueueResilience(
+    configuration: ApiV1QueueResilienceConfiguration,
+    reservationLeaseMs: number
+): ResourceInboxResilience {
     return ResourceInboxResilience.createDefault({
         circuitBreakerPolicy: new CircuitBreakerPolicy(
             configuration.failureThreshold,
@@ -15,6 +18,7 @@ export function createApiV1QueueResilience(configuration: ApiV1QueueResilienceCo
         maxRate: configuration.maxRate,
         concurrencyIncreaseStep: configuration.increaseRate,
         concurrencyReduceStep: configuration.decreaseRate,
-        maxFairnessSelectionsInWindow: configuration.maxFairnessSelectionsPerWindow
+        maxFairnessSelectionsInWindow: configuration.maxFairnessSelectionsPerWindow,
+        reservationLeaseMs
     });
 }

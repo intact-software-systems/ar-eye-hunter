@@ -162,7 +162,7 @@ Deno.test(
                 }
             );
 
-            const first = await toTopologyAppInboxCommand({
+            const first = toTopologyAppInboxCommand({
                 actor: { principalId: authority.clientId, sessionId: authority.sessionId },
                 groupRef,
                 requestId: 'stable-topology-request',
@@ -188,7 +188,7 @@ Deno.test(
                 result: firstResult.right
             }];
 
-            const replay = await toTopologyAppInboxCommand({
+            const replay = toTopologyAppInboxCommand({
                 actor: first.actor,
                 groupRef,
                 requestId: first.requestId,
@@ -263,7 +263,7 @@ Deno.test(
                     ]
                 ] as const
             ) {
-                const command = await toTopologyAppInboxCommand({
+                const command = toTopologyAppInboxCommand({
                     actor: first.actor,
                     groupRef,
                     requestId,
@@ -298,7 +298,7 @@ Deno.test(
                     issuedAtEpochMs: authority.issuedAtEpochMs + freshProofRevision
                 };
                 await authSessions.putSession(freshAuthority);
-                const replayAfterCurrentStateChanged = await toTopologyAppInboxCommand({
+                const replayAfterCurrentStateChanged = toTopologyAppInboxCommand({
                     actor: accepted.command.actor,
                     groupRef,
                     requestId: accepted.command.requestId,
@@ -326,7 +326,7 @@ Deno.test(
                     1
                 );
 
-                const divergent = await toTopologyAppInboxCommand({
+                const divergent = toTopologyAppInboxCommand({
                     actor: accepted.command.actor,
                     groupRef,
                     requestId: accepted.command.requestId,
@@ -378,7 +378,7 @@ Deno.test(
                 requestId: string,
                 payload: TopologyAppInboxRequestPayload
             ): Promise<ProcessedTopologyCommand> => {
-                const command = await toTopologyAppInboxCommand({
+                const command = toTopologyAppInboxCommand({
                     actor: first.actor,
                     groupRef,
                     requestId,
@@ -450,7 +450,7 @@ Deno.test(
                     { operation: 'putConfig', config: { degreeLimit: 7 } }
                 )).result.right
             );
-            const clearReplay = await toTopologyAppInboxCommand({
+            const clearReplay = toTopologyAppInboxCommand({
                 actor: first.actor,
                 groupRef,
                 requestId: cleared.command.requestId,
@@ -462,7 +462,7 @@ Deno.test(
                 cleared.result.right
             );
             assert.equal((await topologyRuntimeOwners.query.readConfig(groupRef)).durable?.config.degreeLimit, 7);
-            const clearDivergent = await toTopologyAppInboxCommand({
+            const clearDivergent = toTopologyAppInboxCommand({
                 actor: first.actor,
                 groupRef,
                 requestId: cleared.command.requestId,
@@ -617,7 +617,7 @@ Deno.test(
                     accessToken: 'other-principal-token'
                 };
                 await authSessions.putSession(otherPrincipal);
-                const actorDivergent = await toTopologyAppInboxCommand({
+                const actorDivergent = toTopologyAppInboxCommand({
                     actor: {
                         principalId: otherPrincipal.clientId,
                         sessionId: otherPrincipal.sessionId
@@ -640,7 +640,7 @@ Deno.test(
                     accessToken: 'owner-second-token'
                 };
                 await authSessions.putSession(renewedAuthority);
-                const renewedSessionReplay = await toTopologyAppInboxCommand({
+                const renewedSessionReplay = toTopologyAppInboxCommand({
                     actor: {
                         principalId: renewedAuthority.clientId,
                         sessionId: renewedAuthority.sessionId
@@ -659,7 +659,7 @@ Deno.test(
                     firstResult.right
                 );
 
-                const revokedCommand = await toTopologyAppInboxCommand({
+                const revokedCommand = toTopologyAppInboxCommand({
                     actor: first.actor,
                     groupRef,
                     requestId: 'revoked-before-topology-write',

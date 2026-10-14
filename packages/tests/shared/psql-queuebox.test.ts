@@ -326,7 +326,8 @@ describe('PSqlQueueBox', () => {
                 checkFairness: RateLimiter.init(60_000, 1),
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
-                finalizationStaleAfterMs: 5 * 60 * 1000
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+                reservationLeaseMs: 5 * 60 * 1000
             }
         );
 

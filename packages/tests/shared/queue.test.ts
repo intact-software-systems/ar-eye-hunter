@@ -5,7 +5,9 @@ import {
     toResourceInboxFairnessReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
     type DequeueResourceEntryRepository,
-    type ResourceInboxRelease
+    type ResourceInboxFairnessReservationInput,
+    type ResourceInboxRelease,
+    type ResourceInboxReservationInput
 } from '@shared/queuebox/queue-box-types.ts';
 import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
@@ -16,7 +18,7 @@ import {
     NEVER_EXPIRE_TS,
     ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxFairnessTelemetry } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { EitherCollectors } from '@shared/resilience/Either.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -305,12 +307,22 @@ describe('released ResourceInbox outcomes', () => {
 });
 
 describe('resource inbox retry and fairness lanes', () => {
-    it('rejects an incomplete work advertisement before checking queue state', () => {
-        expect(() =>
-            toResourceInboxWorkAdvertisementOptions(
-                RateLimiter.init(60_000, 1)
-            )
-        ).toThrow('maxAttempts must be a positive safe integer');
+    it.each(
+        [
+            { field: 'maxAttempts', value: 1.5, message: 'maxAttempts must be a positive safe integer' },
+            { field: 'reservationLeaseMs', value: -1, message: 'reservationLeaseMs must be a non-negative safe integer' }
+        ] as const
+    )('rejects a work advertisement with an invalid $field before checking queue state', ({ field, value, message }) => {
+        const valid = {
+            checkTimeout: RateLimiter.init(60_000, 1),
+            checkFairness: RateLimiter.init(60_000, 1),
+            checkFinalization: RateLimiter.init(60_000, 1),
+            maxAttempts: 20,
+            finalizationStaleAfterMs: 300_000,
+            reservationLeaseMs: 60_000
+        };
+
+        expect(() => toResourceInboxWorkAdvertisementOptions({ ...valid, [field]: value })).toThrow(message);
     });
 
     it('uses the configured retry budget for engine work advertisement', () => {
@@ -345,7 +357,7 @@ describe('resource inbox retry and fairness lanes', () => {
     });
 
     it('threads a custom attempt budget through every reservation lane', async () => {
-        const optionsSeen: unknown[] = [];
+        const optionsSeen: Array<ResourceInboxReservationInput | ResourceInboxFairnessReservationInput> = [];
         const repository = createDequeueRepository({
             reserveEntries: async ({ reservationInput: options }) => {
                 optionsSeen.push(options);
@@ -383,7 +395,7 @@ describe('resource inbox retry and fairness lanes', () => {
     });
 
     it('derives a fairness scan budget covering every controller type', async () => {
-        const fairnessOptions: unknown[] = [];
+        const fairnessOptions: ResourceInboxFairnessReservationInput[] = [];
         const repository = createDequeueRepository({
             reserveOverdueRetryEntries: async (_types, _cutoff, options) => {
                 fairnessOptions.push(options);
@@ -509,10 +521,10 @@ describe('resource inbox retry and fairness lanes', () => {
                 nextTs: undefined
             }
         } satisfies ResourceEntry;
-        const telemetry: unknown[] = [];
+        const telemetry: ResourceInboxFairnessTelemetry[] = [];
         const fairnessCalls: Array<{
             overdueBeforeEpochMs: number;
-            options: unknown;
+            options: ResourceInboxFairnessReservationInput;
         }> = [];
         let fairnessReserved = false;
         const repository = createDequeueRepository({
@@ -534,7 +546,7 @@ describe('resource inbox retry and fairness lanes', () => {
             resilience: toTestResilience(),
             options: {
                 nowEpochMs: () => Date.now(),
-                onReservationTelemetry: (event: unknown) => telemetry.push(event)
+                onReservationTelemetry: (event) => telemetry.push(event)
             }
         })
             .withReturnDequeuedEntries(true)

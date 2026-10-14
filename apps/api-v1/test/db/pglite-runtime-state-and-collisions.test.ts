@@ -666,7 +666,7 @@ Deno.test(
                 outboxWriter
             });
             const staleOverrideRead = await baselineMutation.configMutation.read(
-                await topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
+                topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
             );
             let staleReadCount = 0;
             let delegatedReadCount = 0;
@@ -722,7 +722,7 @@ Deno.test(
                 requestId: string,
                 payload: TopologyAppInboxRequestPayload
             ) => {
-                const command = await toTopologyAppInboxCommand({
+                const command = toTopologyAppInboxCommand({
                     actor: { principalId: authority.clientId, sessionId: authority.sessionId },
                     groupRef,
                     requestId,

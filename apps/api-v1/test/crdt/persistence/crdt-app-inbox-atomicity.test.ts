@@ -130,7 +130,7 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
         const computed = await computeValidatedWrite(service, input);
         const reply = computed.outboxWrites[0]?.entry;
         assert.ok(reply);
-        const proofs = await computeCrdtOutboxProvenance(computed);
+        const proofs = computeCrdtOutboxProvenance(computed);
 
         await sql.begin(async (transaction) => {
             await writePSqlCrdtMutation(transaction, computed);
@@ -204,7 +204,7 @@ for (const scope of ['room', 'principal', 'app'] as const) {
                     document
                 });
                 const computed = await computeValidatedWrite(service, input);
-                const proofs = await computeCrdtOutboxProvenance(computed);
+                const proofs = computeCrdtOutboxProvenance(computed);
                 await sql.begin(async (transaction) => {
                     await writePSqlCrdtMutation(transaction, computed);
                     if (proofState === 'present') {

@@ -1,17 +1,16 @@
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
-import {
-    writeResourceInboxReservationFinish,
-    type ResourceInboxReservationFinish
-} from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
-import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
-import { timeRallarAsync } from '../../observability/timing.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    timeRallarAsync,
+    type RallarTimingDetails,
+    type RallarTimingSink
+} from '../../observability/timing.ts';
 import {
     AppInboxReservationConflictError,
     type AppInboxExecutionMetadata
@@ -23,8 +22,7 @@ export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
     | Readonly<{
         state: 'transaction-finalized';
-        status: ResourceInboxReservationFinish['status'];
-        result: JsonWireValue;
+        entry: ResourceEntry;
     }>;
 
 export interface AppInboxMutationTransactionWriter {
@@ -127,8 +125,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         });
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
-            status: computed.reservationFinish.status,
-            result: computed.encodedResult
+            entry: computed.finalizedEntry
         });
         this.completionNotifications?.publish(computed.finalizedEntry.key);
     }

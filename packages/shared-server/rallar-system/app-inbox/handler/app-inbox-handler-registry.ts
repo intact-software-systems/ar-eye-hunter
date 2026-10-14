@@ -43,9 +43,8 @@ export class AppInboxHandlerRegistry {
             );
         }
         this.inboxQueueReader.onInboxMessageDo(registration.type, {
-            onMessage: async (message, entry, attemptTelemetry) => {
-                await this.handlerExecutor.execute({ registration, message, entry, attemptTelemetry });
-            }
+            onMessage: async (message, entry, attemptTelemetry) =>
+                await this.handlerExecutor.execute({ registration, message, entry, attemptTelemetry })
         });
         this.registeredTypes.add(registration.type);
     }

@@ -35,7 +35,7 @@ export class RecomputeApiAdminTopology {
             requestOptions: input.request.options ?? {},
             publish: input.request.publish ?? true
         };
-        const semanticHash = await toTopologyHttpMutationSemanticHash({
+        const semanticHash = toTopologyHttpMutationSemanticHash({
             principalId: input.adminSession.clientId,
             groupRef: input.request.groupRef,
             requestId: input.requestId,
@@ -50,7 +50,7 @@ export class RecomputeApiAdminTopology {
                     groupRef: input.request.groupRef,
                     semanticHash,
                     materialize: async () =>
-                        await toTopologyAppInboxCommand({
+                        toTopologyAppInboxCommand({
                             actor: {
                                 principalId: input.adminSession.clientId,
                                 sessionId: input.adminSession.sessionId

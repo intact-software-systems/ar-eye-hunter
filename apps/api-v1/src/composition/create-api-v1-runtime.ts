@@ -146,7 +146,7 @@ export interface ApiV1RuntimeConstructionOperations {
         repository: ApiV1MutationRuntime['runtimeStateRepository']
     ): void;
     startResourceInboxExpiry(
-        repository: ApiV1MutationRuntime['resourceInboxRepository']
+        mutation: Pick<ApiV1MutationRuntime, 'resourceInboxRepository' | 'resourceInboxResultsRepository'>
     ): void;
     startRuntimeStateExpiry(input: StartRuntimeStateExpiryInput): void;
     createMiddleware(input: CreateSharedMiddlewareInput): RallarMiddlewareRuntime;
@@ -177,7 +177,7 @@ export function constructApiV1Runtime(
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
     operations.configureWsRuntimeStores(input.wsRuntimeName, mutation.runtimeStateRepository);
-    operations.startResourceInboxExpiry(mutation.resourceInboxRepository);
+    operations.startResourceInboxExpiry(mutation);
     operations.startRuntimeStateExpiry({
         database: input.database,
         nowEpochMs: input.nowEpochMs,
@@ -289,9 +289,12 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
 };
 
 function startResourceInboxExpiry(
-    repository: ApiV1MutationRuntime['resourceInboxRepository']
+    mutation: Pick<ApiV1MutationRuntime, 'resourceInboxRepository' | 'resourceInboxResultsRepository'>
 ): void {
-    void initResourceInboxExpiryEviction(repository.maintenance)
+    void initResourceInboxExpiryEviction({
+        entries: mutation.resourceInboxRepository.maintenance,
+        results: mutation.resourceInboxResultsRepository
+    })
         .catch((error) => console.error('Failed to initialise resource inbox expiry eviction:', error));
 }
 

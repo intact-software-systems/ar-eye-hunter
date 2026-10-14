@@ -7,7 +7,8 @@ import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
-    type DequeueResourceEntryOptions
+    type DequeueResourceEntryOptions,
+    type ResourceInboxHandlerFinalizedSuccess
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
@@ -16,7 +17,6 @@ import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resourc
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
-    type Key,
     type ResourceEntry
 } from '../queuebox/ResourceEntry.ts';
 
@@ -27,22 +27,32 @@ export namespace QueueBoxUtilities {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
         readonly resilience: ResourceInboxResilience;
-        readonly onDequeuedDo: (entry: ResourceEntry, attemptTelemetry: ResourceInboxAttemptTelemetry) => Promise<void>;
+        readonly onDequeuedDo: (
+            entry: ResourceEntry,
+            attemptTelemetry: ResourceInboxAttemptTelemetry
+        ) => Promise<void | ResourceInboxHandlerFinalizedSuccess>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
     }
 }
 
 export class QueueBoxUtilities {
+    /** Resolves with the number of entries this invocation claimed across every lane. */
     static async defaultDequeue(
         { qbox, typesToDequeue, resilience, onDequeuedDo, options, readLaneBudgets }: QueueBoxUtilities.DequeueInput
-    ): Promise<void> {
+    ): Promise<number> {
         if (resilience.isNotAllowedThroughToDequeue()) {
-            console.warn('Dequeue blocked {}, circuit state {}', typesToDequeue, resilience.circuitBreaker.state.get());
-            return;
+            console.warn(
+                'Dequeue blocked by an open circuit',
+                [...typesToDequeue],
+                resilience.circuitBreaker.state.get()
+            );
+            return 0;
         }
 
-        await createDefaultResourceInboxDequeuer<Key>({
+        const claimedByLane = await createDefaultResourceInboxDequeuer<
+            ResourceInboxHandlerFinalizedSuccess | undefined
+        >({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
@@ -51,12 +61,14 @@ export class QueueBoxUtilities {
             resilience: resilience,
             options: options
         })
+            .withReturnDequeuedEntries(true)
             .onFailedEntries(
                 (failures) => {
                     if (
                         [...failures.values()].some((failure) =>
                             !isNotReadyException(failure.exception) &&
-                            !(failure.exception instanceof ResourceInboxCommandRejectedError)
+                            !(failure.exception instanceof ResourceInboxCommandRejectedError) &&
+                            !(options.isRetryableConflict?.(failure.exception) ?? false)
                         )
                     ) {
                         resilience.failure();
@@ -71,11 +83,9 @@ export class QueueBoxUtilities {
                 }
             )
             .dequeueForCompute(
-                async (key, attempt) => {
-                    await onDequeuedDo(attempt.entry, attempt.telemetry);
-                    return key;
-                }
+                async (_key, attempt) => (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined
             );
+        return [...claimedByLane.values()].reduce((claimed, lane) => claimed + lane.size, 0);
     }
 
     static toResourceEntryFromMsg(

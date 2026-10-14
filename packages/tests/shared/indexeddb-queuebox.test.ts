@@ -363,7 +363,8 @@ describe('IndexedDbQueueBox', () => {
                 checkFairness: RateLimiter.init(60_000, 1),
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 20,
-                finalizationStaleAfterMs: 5 * 60 * 1000
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+                reservationLeaseMs: 5 * 60 * 1000
             }
         )).resolves.toBe(false);
     });
@@ -709,7 +710,8 @@ describe('IndexedDbQueueBox', () => {
                 checkFairness: RateLimiter.init(60_000, 1),
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
-                finalizationStaleAfterMs: 5 * 60 * 1000
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+                reservationLeaseMs: 5 * 60 * 1000
             }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY
@@ -1142,6 +1144,7 @@ function createWorkAdvertisementOptions() {
         checkFairness: RateLimiter.init(60_000, 1),
         checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
-        finalizationStaleAfterMs: 5 * 60 * 1000
+        finalizationStaleAfterMs: 5 * 60 * 1000,
+        reservationLeaseMs: 5 * 60 * 1000
     };
 }

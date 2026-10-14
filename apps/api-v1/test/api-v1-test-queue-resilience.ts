@@ -1,3 +1,4 @@
+import { APP_INBOX_RESERVATION_LEASE_MS } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 
 import { createApiV1QueueResilience } from '../src/middleware-resilience.ts';
@@ -13,5 +14,5 @@ export function createApiV1TestQueueResilience(): ResourceInboxResilience {
         increaseRate: 1,
         decreaseRate: 1,
         maxFairnessSelectionsPerWindow: 10
-    });
+    }, APP_INBOX_RESERVATION_LEASE_MS);
 }

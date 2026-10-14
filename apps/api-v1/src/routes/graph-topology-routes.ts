@@ -519,7 +519,7 @@ function topologyRequestError(message: string): Error & { status: number; } {
 async function writeTopologyAppInboxCommand(
     input: WriteTopologyAppInboxCommandInput
 ): Promise<TopologyAppInboxResult> {
-    const semanticHash = await toTopologyHttpMutationSemanticHash({
+    const semanticHash = toTopologyHttpMutationSemanticHash({
         principalId: input.authSession.clientId,
         groupRef: input.groupRef,
         requestId: input.requestId,
@@ -532,7 +532,7 @@ async function writeTopologyAppInboxCommand(
         groupRef: input.groupRef,
         semanticHash,
         materialize: async () =>
-            await toTopologyAppInboxCommand({
+            toTopologyAppInboxCommand({
                 actor: {
                     principalId: input.authSession.clientId,
                     sessionId: input.authSession.sessionId

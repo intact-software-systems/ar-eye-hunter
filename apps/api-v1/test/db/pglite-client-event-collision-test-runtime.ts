@@ -110,7 +110,7 @@ async function preparePGliteClientEvent(
     input: PreparePGliteClientEventInput
 ): Promise<ClientMutationComputedAppliedWrite> {
     const { commandInput, operation, eventId, nowEpochMs, service, authority, scope } = input;
-    const command = await toClientMutationCommand(
+    const command = toClientMutationCommand(
         commandInput,
         {
             nowEpochMs,

@@ -104,7 +104,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             publication: stalePublication,
             facts: {
                 publicationExpireAtTimestamp: 253_402_300_799_999,
-                commandHash: await hashRtcTopologyExecutionCommand(stalePublication),
+                commandHash: hashRtcTopologyExecutionCommand(stalePublication),
                 attemptCount: 1
             }
         });
@@ -113,7 +113,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             return;
         }
 
-        const delivery = await computeRtcTopologyPublicationDeliveryWrite(stalePublication, undefined);
+        const delivery = computeRtcTopologyPublicationDeliveryWrite(stalePublication, undefined);
         const { outboxWrites } = delivery;
         const logicalWorkEntry = outboxWrites[0].entry;
         const workEntry = {
@@ -192,7 +192,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
             const publisherStreamId = '00000000-0000-4000-8000-000000000013';
             const append = new PSqlRtcTopologyDeliveryRepository(sql);
             await append.registerStream({ streamId: publisherStreamId, leaseDurationMs: 60_000 });
-            const delivery = await computeRtcTopologyPublicationDeliveryWrite(candidate, publisherStreamId);
+            const delivery = computeRtcTopologyPublicationDeliveryWrite(candidate, publisherStreamId);
             const { outboxWrites } = delivery;
             assert.ok(new TextEncoder().encode(JSON.stringify(candidate.snapshot)).byteLength > 64 * 1024);
             assert.ok(outboxWrites.length > Math.ceil(candidate.recipientSessionIds.length / 256));
@@ -207,7 +207,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
                 publication: candidate,
                 facts: {
                     publicationExpireAtTimestamp: candidate.expiresAtEpochMs,
-                    commandHash: await hashRtcTopologyExecutionCommand(candidate),
+                    commandHash: hashRtcTopologyExecutionCommand(candidate),
                     attemptCount: 1
                 }
             });

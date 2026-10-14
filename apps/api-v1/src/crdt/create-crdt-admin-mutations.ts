@@ -120,7 +120,7 @@ export function createCrdtAdminMutations(
     return {
         writeCrdtAdminMutation: async (mutation) => {
             const normalized = normalizeCrdtAdminMutation(mutation);
-            const semanticHash = await hashMutationCommand(normalized.semantic);
+            const semanticHash = hashMutationCommand(normalized.semantic);
             const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion(
                 createCrdtAdminCommandReservation({
                     mutation: {
@@ -169,10 +169,10 @@ function createCrdtAdminCommandReservation(
     };
 }
 
-async function matchesStoredCrdtAdminCommand(
+function matchesStoredCrdtAdminCommand(
     input: MatchStoredCrdtAdminCommandInput
-): Promise<boolean> {
-    return await hashMutationCommand(toCrdtAdminSemanticCommand(input.command)) ===
+): boolean {
+    return hashMutationCommand(toCrdtAdminSemanticCommand(input.command)) ===
         input.semanticHash;
 }
 

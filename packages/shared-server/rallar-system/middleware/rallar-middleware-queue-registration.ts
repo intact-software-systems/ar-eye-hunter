@@ -4,6 +4,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 export interface RegisterRallarMiddlewareQueueTasksInput {
+    readonly nowEpochMs: () => number;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly appInboxResilience: ResourceInboxResilience;
@@ -11,11 +12,19 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
 }
 
 export interface RegisterApplicationQueueReaderTasksInput {
-    readonly engine: Pick<InboxOutboxEngine, 'includeTask'>;
+    readonly engine: Pick<InboxOutboxEngine, 'includeTask' | 'wake' | 'wakeAt'>;
+    readonly nowEpochMs: () => number;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly appInboxResilience: ResourceInboxResilience;
     readonly appOutboxResilience: ResourceInboxResilience;
+}
+
+interface QueueReaderTask {
+    readonly taskId: string;
+    readonly resilience: ResourceInboxResilience;
+    readonly readIsWork: () => Promise<boolean>;
+    readonly dequeue: () => Promise<number>;
 }
 
 export class RegisteredRallarMiddlewareQueueHandle {
@@ -60,6 +69,7 @@ export class RallarMiddlewareQueueRegistration {
         }
         registerApplicationQueueReaderTasks({
             engine: this.#engine,
+            nowEpochMs: input.nowEpochMs,
             inboxQueueReader: input.inboxQueueReader,
             outboxQueueReader: input.outboxQueueReader,
             appInboxResilience: input.appInboxResilience,
@@ -88,34 +98,102 @@ export function createRallarMiddlewareQueueRegistration(
 export function registerApplicationQueueReaderTasks(
     input: RegisterApplicationQueueReaderTasksInput
 ): void {
-    input.engine.includeTask(InboxQueueReader.INBOX_ENQUEUE_TYPE, {
-        name: InboxQueueReader.INBOX_ENQUEUE_TYPE,
-        maxConcurrency: () => 1,
-        isWork: () =>
+    includeQueueReaderTask(input, {
+        taskId: InboxQueueReader.INBOX_ENQUEUE_TYPE,
+        resilience: input.appInboxResilience,
+        readIsWork: () =>
             input.inboxQueueReader.inbox.isAnyEntryToLock(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 input.appInboxResilience.toWorkAdvertisementOptions()
             ),
-        runnable: () =>
+        dequeue: () =>
             input.inboxQueueReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 input.appInboxResilience
-            ),
-        ongoingTasks: []
+            )
     });
-    input.engine.includeTask(OutboxQueueReader.OUTBOX_ENQUEUE_TYPE, {
-        name: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
-        maxConcurrency: () => 1,
-        isWork: () =>
+    includeQueueReaderTask(input, {
+        taskId: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+        resilience: input.appOutboxResilience,
+        readIsWork: () =>
             input.outboxQueueReader.outbox.isAnyEntryToLock(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 input.appOutboxResilience.toWorkAdvertisementOptions()
             ),
-        runnable: () =>
+        dequeue: () =>
             input.outboxQueueReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 input.appOutboxResilience
-            ),
+            )
+    });
+}
+
+/**
+ * A batch that claimed work wakes the engine, so the next claim does not wait out the idle backoff.
+ * An open circuit or a failed batch advertises no work and wakes the task when it may run again,
+ * so neither probes storage on every pass nor holds the task's only slot while it waits.
+ */
+function includeQueueReaderTask(
+    input: RegisterApplicationQueueReaderTasksInput,
+    task: QueueReaderTask
+): void {
+    const failureBackoff = new QueueReaderFailureBackoff();
+    input.engine.includeTask(task.taskId, {
+        name: task.taskId,
+        maxConcurrency: () => 1,
+        isWork: async () => {
+            const nowMs = input.nowEpochMs();
+            const deferredUntilMs = task.resilience.isNotAllowedThroughToDequeue()
+                ? nowMs + task.resilience.toCircuitOpenBackoffMs()
+                : failureBackoff.getRetryAtMs(nowMs);
+            if (deferredUntilMs !== undefined) {
+                input.engine.wakeAt(task.taskId, deferredUntilMs);
+                return false;
+            }
+            return await task.readIsWork();
+        },
+        runnable: async () => {
+            let claimedCount: number;
+            try {
+                claimedCount = await task.dequeue();
+            }
+            catch (error) {
+                input.engine.wakeAt(task.taskId, failureBackoff.recordFailure(input.nowEpochMs()));
+                throw error;
+            }
+            failureBackoff.recordSuccess();
+            if (claimedCount > 0) {
+                input.engine.wake();
+            }
+        },
         ongoingTasks: []
     });
+}
+
+/** Consecutive failed batches wait 1, 2, 4, 8 and then 16 seconds before the task advertises work again. */
+class QueueReaderFailureBackoff {
+    static readonly BASE_DELAY_MS = 1_000;
+    static readonly MAX_DELAY_MS = 16_000;
+
+    #consecutiveFailures = 0;
+    #retryAtMs: number | undefined;
+
+    getRetryAtMs(nowMs: number): number | undefined {
+        return this.#retryAtMs !== undefined && this.#retryAtMs > nowMs ? this.#retryAtMs : undefined;
+    }
+
+    recordFailure(nowMs: number): number {
+        this.#consecutiveFailures += 1;
+        const delayMs = Math.min(
+            QueueReaderFailureBackoff.BASE_DELAY_MS * 2 ** (this.#consecutiveFailures - 1),
+            QueueReaderFailureBackoff.MAX_DELAY_MS
+        );
+        this.#retryAtMs = nowMs + delayMs;
+        return this.#retryAtMs;
+    }
+
+    recordSuccess(): void {
+        this.#consecutiveFailures = 0;
+        this.#retryAtMs = undefined;
+    }
 }

@@ -56,22 +56,11 @@ describe('DequeueController lane budgets', () => {
     );
 
     it.each([1.5, Number.NaN])('prevents malformed actual scalar reservation %s from reaching storage', async (invalid) => {
-        vi.useFakeTimers();
-        vi.setSystemTime(0);
-        try {
-            const reserve = vi.fn(async () => new Map<string, string>());
-            const controller = createScalarController({ maxNumToDequeue: 10, maxToReserve: () => invalid, reserve });
-            const draining = controller.dequeueForCompute(async () => 'unexpected');
-            await vi.runAllTimersAsync();
-            const results = await draining;
+        const reserve = vi.fn(async () => new Map<string, string>());
+        const controller = createScalarController({ maxNumToDequeue: 10, maxToReserve: () => invalid, reserve });
 
-            expect(reserve).not.toHaveBeenCalled();
-            expect(results.get(Reservator.NEW)?.size).toBe(0);
-            expect(Date.now()).toBe(31_000);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        await expect(controller.dequeueForCompute(async () => 'unexpected')).rejects.toBeInstanceOf(TypeError);
+        expect(reserve).not.toHaveBeenCalled();
     });
 
     it.each([Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, 2.5])(
@@ -136,24 +125,16 @@ describe('DequeueController lane budgets', () => {
         expect([...results.get(Reservator.FINALIZATION)!.values()].map((result) => result.right?.computedValue)).toEqual(['a', 'b', 'c']);
     });
 
-    it('recovers from malformed scalar reservation without charging an unclaimed batch', async () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(0);
-        try {
-            const maxToReserve = vi.fn().mockReturnValueOnce(Number.NaN).mockReturnValue(2);
-            const reserve = vi.fn(async () => new Map([['a', 'work'], ['b', 'work']]));
-            const controller = createScalarController({ maxNumToDequeue: 2, maxToReserve, reserve });
-            const draining = controller.dequeueForCompute(async (key) => key);
-            await vi.runAllTimersAsync();
-            const results = await draining;
+    it('leaves a malformed scalar reservation uncharged so the next invocation claims the full batch', async () => {
+        const maxToReserve = vi.fn().mockReturnValueOnce(Number.NaN).mockReturnValue(2);
+        const reserve = vi.fn(async () => new Map([['a', 'work'], ['b', 'work']]));
+        const controller = createScalarController({ maxNumToDequeue: 2, maxToReserve, reserve });
 
-            expect([...results.get(Reservator.NEW)!.values()].map((result) => result.right?.computedValue)).toEqual(['a', 'b']);
-            expect(reserve).toHaveBeenCalledWith(new Set(['APP_INBOX']), 2);
-            expect(Date.now()).toBe(1_000);
-        }
-        finally {
-            vi.useRealTimers();
-        }
+        await expect(controller.dequeueForCompute(async (key) => key)).rejects.toBeInstanceOf(TypeError);
+        const results = await controller.dequeueForCompute(async (key) => key);
+
+        expect([...results.get(Reservator.NEW)!.values()].map((result) => result.right?.computedValue)).toEqual(['a', 'b']);
+        expect(reserve).toHaveBeenCalledWith(new Set(['APP_INBOX']), 2);
     });
 
     it('keeps numeric limits per lane when no budget callback is configured', async () => {
@@ -302,7 +283,6 @@ describe('DequeueController lane budgets', () => {
     it.each(['release', 'completion', 'preprocessing'] as const)(
         'keeps a successful claim charged when %s fails',
         async (failurePhase) => {
-            vi.useFakeTimers();
             try {
                 const queue = new InMemoryQueueBox();
                 const reader = new InboxQueueReader(queue);
@@ -337,12 +317,10 @@ describe('DequeueController lane budgets', () => {
                     });
                 }
 
-                const draining = controller.dequeueForCompute(async (key) => {
+                await expect(controller.dequeueForCompute(async (key) => {
                     computed.push(key.resourceId);
                     return key.resourceId;
-                });
-                await vi.runAllTimersAsync();
-                await draining;
+                })).rejects.toBe(failure);
 
                 expect(await queue.getItem(trailing.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
                 expect(computed).toEqual(failurePhase === 'preprocessing' ? [] : ['first']);
@@ -353,7 +331,6 @@ describe('DequeueController lane budgets', () => {
             }
             finally {
                 vi.restoreAllMocks();
-                vi.useRealTimers();
             }
         }
     );

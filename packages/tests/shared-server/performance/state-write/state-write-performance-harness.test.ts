@@ -44,7 +44,7 @@ import {
 } from './test-support/state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
-    it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', async () => {
+    it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', () => {
         const requestId = 'state-write:config:7';
         const actorPrincipalId = 'client-7';
         const groupRef = {
@@ -75,9 +75,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 requestId
             }
         });
-        const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
+        const commandId = toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = await hashMutationCommand(decodeJsonWireValue(semanticCommand));
+        const commandHash = hashMutationCommand(decodeJsonWireValue(semanticCommand));
         const command = {
             ...semanticCommand,
             commandId
@@ -122,19 +122,19 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             actorPrincipalId
         };
 
-        await expect(readScopedGroupCommandIdentity(row, expectation)).resolves.toEqual({
+        expect(readScopedGroupCommandIdentity(row, expectation)).toEqual({
             requestId,
             commandId,
             commandHash
         });
-        await expect(readScopedGroupCommandIdentity(row, {
+        expect(readScopedGroupCommandIdentity(row, {
             ...expectation,
             groupRef: { ...groupRef, workspaceId: 'wrong-workspace' }
-        })).resolves.toBeUndefined();
-        await expect(readScopedGroupCommandIdentity(row, {
+        })).toBeUndefined();
+        expect(readScopedGroupCommandIdentity(row, {
             ...expectation,
             actorPrincipalId: 'wrong-actor'
-        })).resolves.toBeUndefined();
+        })).toBeUndefined();
 
         const sparseDescriptorResource = JSON.parse(resource);
         const sparseDescriptor = JSON.parse(sparseDescriptorResource.payload.resource).authority.descriptor;
@@ -147,10 +147,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 descriptor: sparseDescriptor
             }
         });
-        await expect(readScopedGroupCommandIdentity({
+        expect(readScopedGroupCommandIdentity({
             ...row,
             ri_resource: JSON.stringify(sparseDescriptorResource)
-        }, expectation)).resolves.toBeUndefined();
+        }, expectation)).toBeUndefined();
 
         const mismatchedDescriptorResource = JSON.parse(resource);
         const mismatchedDescriptor = JSON.parse(
@@ -164,10 +164,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 descriptor: mismatchedDescriptor
             }
         });
-        await expect(readScopedGroupCommandIdentity({
+        expect(readScopedGroupCommandIdentity({
             ...row,
             ri_resource: JSON.stringify(mismatchedDescriptorResource)
-        }, expectation)).resolves.toBeUndefined();
+        }, expectation)).toBeUndefined();
 
         const changedHashResource = JSON.parse(resource);
         changedHashResource.payload.resource = JSON.stringify({
@@ -177,10 +177,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 facts: { commandHash: `sha256:${'f'.repeat(64)}` }
             }
         });
-        await expect(readScopedGroupCommandIdentity({
+        expect(readScopedGroupCommandIdentity({
             ...row,
             ri_resource: JSON.stringify(changedHashResource)
-        }, expectation)).resolves.toBeUndefined();
+        }, expectation)).toBeUndefined();
 
         const wrongTopicId = AppInboxType.GROUP_MEMBER_UPSERT;
         const wrongTopicKey = toAppQueueKey({
@@ -188,7 +188,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             topicId: wrongTopicId,
             contextId: logicalContextId
         });
-        await expect(readScopedGroupCommandIdentity({
+        expect(readScopedGroupCommandIdentity({
             ...row,
             ri_resource_id: wrongTopicKey.resourceId,
             ri_topic_id: wrongTopicKey.topicId,
@@ -197,7 +197,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         }, {
             ...expectation,
             topicId: wrongTopicId
-        })).resolves.toBeUndefined();
+        })).toBeUndefined();
 
         const scopedCommand = { requestId, commandId, commandHash };
         const record = groupIdempotencyRecord(scopedCommand, groupRef);
@@ -220,7 +220,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         })).toBeUndefined();
     });
 
-    it('uses production presence target identities when validating a scoped group command', async () => {
+    it('uses production presence target identities when validating a scoped group command', () => {
         const requestId = 'state-write:presence-connect:8';
         const actorPrincipalId = 'client-8';
         const sessionId = 'state-write:client-8:session-8';
@@ -250,9 +250,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             targetPrincipalId: actorPrincipalId,
             sessionId
         });
-        const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
+        const commandId = toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = await hashMutationCommand(decodeJsonWireValue(semanticCommand));
+        const commandHash = hashMutationCommand(decodeJsonWireValue(semanticCommand));
         const command = { ...semanticCommand, commandId };
         const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
         const row = {
@@ -287,13 +287,13 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             })
         };
 
-        await expect(readScopedGroupCommandIdentity(row, {
+        expect(readScopedGroupCommandIdentity(row, {
             requestId,
             topicId,
             logicalContextId,
             groupRef,
             actorPrincipalId
-        })).resolves.toEqual({ requestId, commandId, commandHash });
+        })).toEqual({ requestId, commandId, commandHash });
     });
 
     it('links an AppInbox attempt only through its exact production physical tuple', () => {

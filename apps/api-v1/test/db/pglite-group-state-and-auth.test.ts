@@ -724,7 +724,7 @@ Deno.test(
                     },
                     defaultCommandId: commandId
                 });
-                const command = await toClientMutationCommand(
+                const command = toClientMutationCommand(
                     input,
                     {
                         nowEpochMs: 2_000,
