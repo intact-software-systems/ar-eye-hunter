@@ -1,0 +1,72 @@
+name: V1c private native setup observation
+
+on:
+  push:
+    branches:
+      - codex/v1c-native-setup-diagnostic-1f3
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/v1c-native-setup-diagnostic-1f3' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+    steps:
+      - name: Checkout exact diagnostic commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify production scope and artifact safety
+        shell: bash
+        run: |
+          node --test scripts/native-setup-observation/safe-native-observation-artifacts.test.mjs
+          git diff --quiet 1f3dc1d962d8000506023bb6606bfc27e2ee5424 HEAD -- . \
+            ':!apps/api-v1/test/db/native-session-test-fixture.ts' \
+            ':!.github/workflows/v1c-native-setup-diagnostic.yml' \
+            ':!scripts/native-setup-observation/write-safe-native-observation-artifacts.mjs' \
+            ':!scripts/native-setup-observation/safe-native-observation-artifacts.test.mjs'
+
+      - name: Set up unchanged Deno release lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          save-deno-cache: 'false'
+
+      - name: Capture original full Deno command privately
+        shell: bash
+        run: |
+          capture_directory="$RUNNER_TEMP/native-setup-observation"
+          mkdir -p "$capture_directory/raw"
+          node --version > "$capture_directory/raw/node-version"
+          deno --version > "$capture_directory/raw/deno-version"
+          set +e
+          npm run test:deno > "$capture_directory/raw/stdout.log" 2> "$capture_directory/raw/stderr.log"
+          original_exit=$?
+          set -e
+          printf '%s\n' "$original_exit" > "$capture_directory/raw/exit-code"
+          exit "$original_exit"
+
+      - name: Project allowlisted diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          node scripts/native-setup-observation/write-safe-native-observation-artifacts.mjs \
+            "$RUNNER_TEMP/native-setup-observation/raw" "$RUNNER_TEMP/native-setup-observation/safe"
+
+      - name: Upload safe observation only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: v1c-native-setup-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/native-setup-observation/safe/summary.json
+            ${{ runner.temp }}/native-setup-observation/safe/observations.jsonl
+          if-no-files-found: warn
+          retention-days: 7

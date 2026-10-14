@@ -45,6 +45,17 @@ export interface NativeGroupSessionFlow {
     readonly index: number;
 }
 
+interface NativeHttpObservation {
+    readonly requestId: string;
+    readonly processId: number;
+    readonly startedAt: number;
+    readonly nowEpochMs: () => number;
+    readonly nowMonotonicMs: () => number;
+    readonly report: (line: string) => void;
+}
+
+type NativeHttpObservationStage = 'fetch-start' | 'fetch-return' | 'body-decoded' | 'fetch-rejected';
+
 const PRINCIPAL_REF = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
@@ -104,7 +115,7 @@ export class NativeSessionTestFixture {
 export async function createNativeSessionTestFixture(): Promise<NativeSessionTestFixture> {
     const configuration = decodeApiV1Configuration({
         ...validDecodeApiV1ConfigurationInput(),
-        defaultsSource: defaults
+        defaultsSource: { ...defaults, appInbox: { ...defaults.appInbox, phaseTiming: true } }
     });
     const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const backgroundProducersStopped = Promise.withResolvers<void>();
@@ -205,6 +216,14 @@ export async function writeNativeGroupRequest(request: NativeGroupRequest): Prom
     const startedAt = performance.now();
     const { requestId, ...body } = request.command.request;
     assertApiMutationRequestId(requestId);
+    const observation: NativeHttpObservation = {
+        requestId,
+        processId: Deno.pid,
+        startedAt,
+        nowEpochMs: Date.now,
+        nowMonotonicMs: () => performance.now(),
+        report: console.log
+    };
     const response = await fetch(new URL(request.path, request.baseUrl), {
         method: request.method,
         headers: {
@@ -213,11 +232,14 @@ export async function writeNativeGroupRequest(request: NativeGroupRequest): Prom
             'x-client-id': request.command.authSession.clientId
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(5_000)
+        signal: observeNativeFetchStart(AbortSignal.timeout(5_000), observation)
     }).catch((cause) => {
+        recordNativeHttpObservation(observation, 'fetch-rejected', null);
         throw new Error(`${requestId} failed inside its 5000 ms HTTP allowance`, { cause });
     });
+    recordNativeHttpObservation(observation, 'fetch-return', response.status);
     const decoded = decodeJsonWireValue(await response.json(), `HTTP response for ${requestId}`);
+    recordNativeHttpObservation(observation, 'body-decoded', response.status);
     const elapsedMs = performance.now() - startedAt;
     assert.ok(elapsedMs < 5_000, `${requestId} exceeded 5000 ms HTTP allowance`);
     console.log(JSON.stringify({ requestId, status: response.status, elapsedMs }));
@@ -325,4 +347,32 @@ async function waitForSessionDisconnects(runtime: ApiV1Runtime): Promise<void> {
     }
     while (performance.now() < deadline);
     throw new Error('Automatic AppInbox queues did not complete owned session disconnects within 45000 ms');
+}
+
+function observeNativeFetchStart(signal: AbortSignal, observation: NativeHttpObservation): AbortSignal {
+    recordNativeHttpObservation(observation, 'fetch-start', null);
+    return signal;
+}
+
+function recordNativeHttpObservation(
+    observation: NativeHttpObservation,
+    stage: NativeHttpObservationStage,
+    status: number | null
+): void {
+    try {
+        const monotonicMs = observation.nowMonotonicMs();
+        observation.report(JSON.stringify({
+            type: 'native.http.phase',
+            stage,
+            requestId: observation.requestId,
+            processId: observation.processId,
+            atEpochMs: observation.nowEpochMs(),
+            monotonicMs,
+            elapsedMs: monotonicMs - observation.startedAt,
+            status
+        }));
+    }
+    catch {
+        // Observation failure must preserve the original HTTP result or rejection.
+    }
 }
