@@ -4,10 +4,34 @@ import {
     createDefaultRallarBlackBoxTestRuntime,
     createRallarBlackBoxRtcProvider,
     getRallarBlackBoxCommandHistory,
+    type ControlClientIdentity,
     type RallarBlackBoxTestCommand
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 
 describe('rallar-bb runtime facade', () => {
+    it.each(['typed', 'untyped'] as const)('preserves %s two-argument control-address cache scope', async (caller) => {
+        let execution = 0;
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: async () => ({ status: 'ok', value: { execution: ++execution } })
+        });
+        const command = { kind: 'health', commandId: 'same-command' } as const;
+        const first = { runId: 'A', agentId: 'agent' };
+        const second = { runId: 'B', agentId: 'agent' };
+        const execute = (identity: ControlClientIdentity) =>
+            caller === 'typed'
+                ? runtime.execute(command, identity)
+                : Reflect.apply(runtime.execute, runtime, [command, identity]);
+        const original = await execute(first);
+        const replay = await execute(first);
+        const successor = await execute(second);
+        expect(original.value).toEqual({ execution: 1 });
+        expect(replay.value).toEqual({ execution: 1 });
+        expect(replay.replayed).toBe(true);
+        expect(successor.replayed).not.toBe(true);
+        expect(successor.value).toEqual({ execution: 2 });
+        expect(runtime.state().events.at(-1)?.control).toMatchObject({ runId: 'B', agentId: 'agent' });
+    });
+
     it.each([false, true])('settling reset preserves the current assignment; reassigned=%s', async (reassigned) => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();

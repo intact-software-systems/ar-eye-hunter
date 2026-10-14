@@ -1,4 +1,5 @@
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from './runtime/event-history.ts';
 
 import type { RallarBlackBoxDistributedGroupAssertion } from './distributed/group-assertions.ts';
 import type {
@@ -236,6 +237,7 @@ export type RallarBlackBoxDistributedRunManifest =
     | RallarBlackBoxDistributedScheduledRunManifest;
 
 export interface RallarBlackBoxDistributedRunManifestFields {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly schemaVersion: 1;
     readonly distributedRunId: string;
     readonly controlRunId: string;

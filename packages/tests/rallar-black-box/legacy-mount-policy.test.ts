@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
 import {
@@ -245,7 +246,14 @@ async function flushLazyMount(): Promise<void> {
 
 function advancedProps(): Omit<ComponentProps<AdvancedPanel>, 'active'> {
     return {
-        state: { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} },
+        state: {
+            ...createRuntimeStateFixture([]),
+            status: 'idle',
+            commandHistory: [],
+            events: [],
+            failures: [],
+            resultCache: {}
+        },
         bootstrap: resolveRallarBlackBoxBootstrapConfig('?provider=simulated', {}, ''),
         control: { state: 'idle', reconnectAttempt: 0, sentCount: 0, receivedCount: 0 },
         globalValues: { apiBaseUrl: '', applicationId: '', workspaceId: '', clientId: '', sessionId: '', roomId: '' },

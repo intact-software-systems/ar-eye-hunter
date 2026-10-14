@@ -4152,6 +4152,36 @@ moved or changed test.
         "requiredConstraint": "An incompatible HOST capture request performs zero setDefaults calls.",
         "failureRationale": "The compatibility error can be returned after a write, so the typed error alone does not prove refusal occurred before mutation."
       }
+    },
+    {
+      "id": "agent-leading-reload-admitted-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An admitted leading reload requests exactly one physical page replacement. Executable assertion: “admits configured inheritance before a leading reload replaces the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "One physical page replacement follows the admitted leading reload before the successor is constructed.",
+        "requiredConstraint": "An admitted leading reload requests exactly one physical page replacement.",
+        "failureRationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement."
+      }
+    },
+    {
+      "id": "agent-unowned-reload-before-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An unowned reload continuation must not request physical page replacement. Executable assertion: “refuses an unowned reload continuation before replacing the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "Refusing an unowned continuation leaves the current page intact.",
+        "requiredConstraint": "An unowned reload continuation must not request physical page replacement.",
+        "failureRationale": "An error result or missing session record does not independently prove that the page destruction effect was absent."
+      }
     }
   ],
   "entries": [
@@ -9236,6 +9266,28 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "The absence assertion independently protects the capture-refusal boundary; it permits equivalent compatibility implementations without binding the test to their helper topology.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse"
+    },
+    {
+      "id": "test-structure-coupling-5cb6cc2126d09443",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-leading-reload-admitted-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page"
+    },
+    {
+      "id": "test-structure-coupling-646b3a6e3d89a52f",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-unowned-reload-before-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "An error result or missing session record does not independently prove that the page destruction effect was absent.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page"
     }
   ]
 }

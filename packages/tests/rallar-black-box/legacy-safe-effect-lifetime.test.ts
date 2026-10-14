@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
 import {
@@ -497,6 +498,7 @@ describe('legacy safe-surface effect lifetime', () => {
 
 function baseState(): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture([]),
         status: 'idle',
         commandHistory: [],
         events: [],

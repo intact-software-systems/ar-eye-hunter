@@ -13,6 +13,7 @@ function createPollingRuntime(): Readonly<{
     let sequence = 1;
     const sleptDurations: number[] = [];
     const runtime = createRallarBlackBoxTestRuntime({
+        eventHistory: { mode: 'full' },
         now: () => now++,
         idFactory: (prefix) => `${prefix}-${sequence++}`,
         sleep: async (ms) => {

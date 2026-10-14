@@ -1,19 +1,28 @@
 import { assert, assertEquals } from '@std/assert';
 
 import {
+    decodeControlBarrierEnvelope,
     RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC,
     type ControlBarrierEnvelope
 } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import {
+    parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope,
+    type ControlClientIdentity,
     type ControlCommandEnvelope,
     type ControlEventEnvelope,
     type ControlResultEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
+import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
 import {
@@ -30,6 +39,7 @@ import {
     toRegisterEnvelope,
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
+import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
 
 const AGENTS = ['controller-01', 'controller-02'] as const;
 /** A held durable send drains and probes about every 50 ms on the sender, 37 to 57 records a second. */
@@ -55,7 +65,7 @@ Deno.test('diagnostics during a held send leave the combined ALM dispatch plan e
 
     const receipts = Array.from({ length: HELD_SEND_DIAGNOSTICS }, (_, index) => {
         clock.now += HELD_SEND_DIAGNOSTIC_INTERVAL_MS;
-        return service.receiveClientEnvelope(toAlmDiagnostic(runId, AGENTS[index % 2], index, clock.now));
+        return service.receiveClientEnvelope(toAlmDiagnostic({ runId, agentId: AGENTS[index % 2], index, atEpochMs: clock.now }));
     });
 
     assertEquals(
@@ -122,7 +132,7 @@ Deno.test('a registration and a barrier arrival are answered on the socket at on
         assertEquals(queued.status, 202);
         await queued.json();
         await waitForSocketOpen(socket);
-        const frames = collectFrames(socket);
+        const frames = collectFrames(socket, { runId: 'run-1', agentId: 'agent-1' });
         socket.send(JSON.stringify(toRegisterEnvelope({ identity: toUnconfiguredAgentIdentity('agent-1', Date.now()) })));
         assertEquals((await frames.nextCommand()).commandId, 'queued-before-register');
 
@@ -149,7 +159,7 @@ Deno.test('an expired reload readiness is judged at the next heartbeat, never at
     const server = await startControlServer();
     const socket = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     try {
-        const frames = collectFrames(socket);
+        const frames = collectFrames(socket, { runId: 'run-1', agentId: 'agent-1' });
         const response = await fetch(server.baseUrl + '/runs/run-1/agents/agent-1/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -174,10 +184,10 @@ Deno.test('an expired reload readiness is judged at the next heartbeat, never at
         assertEquals(response.status, 202);
         await response.json();
         const prefix = await frames.nextCommand();
-        socket.send(JSON.stringify(toSocketResult(prefix)));
+        socket.send(JSON.stringify(await executeSocketCommand(prefix)));
         const reload = await frames.nextCommand();
         assertEquals(reload.command.kind, 'agent.reload', 'a result dispatches the next segment at once');
-        socket.send(JSON.stringify(toSocketResult(reload)));
+        socket.send(JSON.stringify(await executeSocketCommand(reload)));
         await new Promise((resolve) => setTimeout(resolve, SILENCE_MS * 2));
 
         // A run read judges pending reloads itself, so this test reads the persisted snapshot, which does not.
@@ -234,7 +244,14 @@ function toReloadPlans(
     );
 }
 
-function toAlmDiagnostic(runId: string, agentId: string, index: number, atEpochMs: number): ControlEventEnvelope {
+interface AlmDiagnosticInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly index: number;
+    readonly atEpochMs: number;
+}
+
+function toAlmDiagnostic({ runId, agentId, index, atEpochMs }: AlmDiagnosticInput): ControlEventEnvelope {
     return {
         ...toEvent('diagnostic', 'rallar.browser.alm.outbound_diagnostics'),
         runId,
@@ -296,35 +313,18 @@ function toAgentIdentity(agentId: string): RallarBlackBoxControlAgentIdentity {
     return toUnconfiguredAgentIdentity(agentId, Date.now());
 }
 
-function toSocketResult(command: ControlCommandEnvelope): ControlResultEnvelope {
-    const timestamp = Date.now();
-    const result = {
-        commandId: command.commandId,
-        kind: command.command.kind,
-        status: 'ok' as const,
-        ok: true,
-        startedAtEpochMs: timestamp,
-        endedAtEpochMs: timestamp,
-        durationMs: 0
-    };
-    const value = command.command.kind === 'recipe.run'
-        ? {
-            recipeId: command.command.recipe!.recipeId,
-            results: command.command.recipe!.commands.map((child) => ({
-                ...result,
-                commandId: child.commandId,
-                kind: child.kind
-            }))
-        }
-        : { reloading: true };
+async function executeSocketCommand(command: ControlCommandEnvelope): Promise<ControlResultEnvelope> {
+    const result = command.command.kind === 'agent.reload'
+        ? toAgentReloadResult({ commandId: command.commandId, readyTimeoutMs: command.command.readyTimeoutMs, written: 'written', atEpochMs: Date.now() })
+        : await executeControlRuntimeCommand(createDefaultRallarBlackBoxTestRuntime(), command);
     return {
         kind: 'result',
         protocolVersion: 1,
         runId: command.runId,
         agentId: command.agentId!,
         commandId: command.commandId,
-        ok: true,
-        result: { ...result, value }
+        ok: result.ok,
+        result
     };
 }
 
@@ -336,12 +336,22 @@ interface SocketFrames {
     expectSilence(): Promise<void>;
 }
 
+function decodeSocketFrame(raw: string, identity: ControlClientIdentity): ServerFrame {
+    const barrier = decodeControlBarrierEnvelope(raw, identity);
+    if (barrier.right !== undefined) {
+        return barrier.right;
+    }
+    const parsed = parseControlServerMessage(raw, identity);
+    assert(parsed.ok, 'expected a validated command or barrier frame');
+    return parsed.envelope;
+}
+
 /** Buffers every server frame, so a frame sent before a reader asks for it is never lost. */
-function collectFrames(socket: WebSocket): SocketFrames {
+function collectFrames(socket: WebSocket, identity: ControlClientIdentity): SocketFrames {
     const frames: ServerFrame[] = [];
     const waiters: ((frame: ServerFrame) => void)[] = [];
     socket.addEventListener('message', (event) => {
-        const frame = JSON.parse(String(event.data)) as ServerFrame;
+        const frame = decodeSocketFrame(String(event.data), identity);
         const waiter = waiters.shift();
         if (waiter) {
             waiter(frame);
@@ -408,13 +418,23 @@ async function waitForPersistedRun(
 }
 
 async function readPersistedRun(storageDir: string): Promise<ControlRunSnapshot | undefined> {
+    let raw: string;
     try {
-        const file = JSON.parse(await Deno.readTextFile(`${storageDir}/control-snapshot.json`)) as Readonly<{
-            snapshot: ControlServerSnapshot;
-        }>;
-        return file.snapshot.runs.find((run) => run.runId === 'run-1');
+        raw = await Deno.readTextFile(`${storageDir}/control-snapshot.json`);
     }
-    catch {
+    catch (error) {
+        if (error instanceof Deno.errors.NotFound) {
+            return undefined;
+        }
+        throw toError(error);
+    }
+    const snapshot = decodeRecord(JSON.parse(raw)).snapshot;
+    assert(isJsonRecordValue(snapshot) && Array.isArray(snapshot.runs));
+    const run = snapshot.runs.find((candidate) => isJsonRecordValue(candidate) && candidate.runId === 'run-1');
+    if (run === undefined) {
         return undefined;
     }
+    const decoded = decodeControlRunSnapshot(run);
+    assert(decoded.right !== undefined, decoded.left);
+    return decoded.right;
 }

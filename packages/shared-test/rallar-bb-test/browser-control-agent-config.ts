@@ -23,7 +23,10 @@ import {
 } from './client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
 
+import { validateEventHistoryPolicy, type RallarBlackBoxEventHistoryPolicy } from './runtime/event-history.ts';
+
 export interface RallarBlackBoxBootstrapConfig {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly mode: 'local-workbench' | 'control-agent';
     readonly autoConnect: boolean;
     readonly providerMode: RallarBlackBoxProviderMode;
@@ -121,6 +124,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
         routineBrowserDiagnostics: launch.settings.routineBrowserDiagnostics ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics,
         rtcCaptureMode: launch.settings.rtcCaptureMode,
+        eventHistory: launch.settings.eventHistory ?? { mode: 'full' },
         ...resolveRallarAuthBootstrap(sources, launch.settings, fragment),
         ...resolveFleetBootstrap(sources, launch.settings),
         runnerAgentPrefix: resolveLaunchText(sources, 'runnerAgentPrefix'),
@@ -132,9 +136,11 @@ export function resolveRallarBlackBoxBootstrapConfig(
 
 /** Absent when the launch reads as its settings; otherwise the failure an agent reports when it refuses to start. */
 export function toRallarBlackBoxBootstrapRefusal(bootstrap: RallarBlackBoxBootstrapConfig): string | undefined {
-    return bootstrap.issues.length === 0
-        ? undefined
-        : `The agent launch cannot be read: ${bootstrap.issues.map((issue) => issue.message).join(' ')}`;
+    const issues = [
+        ...bootstrap.issues.map((issue) => issue.message),
+        ...validateEventHistoryPolicy(bootstrap.eventHistory)
+    ];
+    return issues.length === 0 ? undefined : `The agent launch cannot be read: ${issues.join(' ')}`;
 }
 
 function resolveControlTargetBootstrap(

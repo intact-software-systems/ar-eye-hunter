@@ -48,9 +48,11 @@ import type {
     RallarBlackBoxTestRuntimeEventInput
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from './runtime/event-history.ts';
 import { sleepWithAbort } from './runtime/sleep-with-abort.ts';
 
 export interface CreateRallarBlackBoxBrowserTestRuntimeInput extends BrowserCommandEnvironment {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
     readonly idFactory: (prefix: string) => string;
@@ -268,6 +270,7 @@ export function createDefaultRallarBlackBoxBrowserTestRuntime(
 ): RallarBlackBoxBrowserTestRuntime {
     let sequence = 1;
     return createRallarBlackBoxBrowserTestRuntime({
+        eventHistory: options.eventHistory ?? { mode: 'full' },
         routineBrowserDiagnostics: options.routineBrowserDiagnostics ?? 'enabled',
         rallarRuntime: options.rallarRuntime,
         fetch: options.fetch ?? globalThis.fetch?.bind(globalThis),
@@ -278,7 +281,8 @@ export function createDefaultRallarBlackBoxBrowserTestRuntime(
         readSession: options.readSession ?? readOptionalBrowserSession,
         requestId: options.requestId ?? (() => crypto.randomUUID()),
         sleep: options.sleep ?? sleepWithAbort,
-        idFactory: options.idFactory ?? ((prefix) => `${prefix}-${sequence++}`)
+        idFactory: options.idFactory ??
+            ((prefix) => prefix === 'runtime-instance' ? crypto.randomUUID() : `${prefix}-${sequence++}`)
     });
 }
 
@@ -289,6 +293,7 @@ export function createRallarBlackBoxBrowserTestRuntime(
     const adapter = new BrowserCommandAdapter(dependencies);
     const rallarRuntime = dependencies.rallarRuntime;
     const runtime = createRallarBlackBoxTestRuntime({
+        eventHistory: dependencies.eventHistory,
         now: dependencies.now,
         sleep: dependencies.sleep,
         idFactory: dependencies.idFactory,

@@ -12,6 +12,8 @@ import {
     type RallarBlackBoxProviderMode
 } from '../client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from '../distributed-run.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '../runtime/event-history.ts';
+import { parseEventHistoryLaunch } from './parse-event-history-launch.ts';
 import {
     resolveLaunchValue,
     type BootstrapLaunchSources,
@@ -36,6 +38,7 @@ export type RallarBlackBoxBootstrapRegister = boolean | typeof REGISTER_IF_NEEDE
  * workbench shares the mode key with its own workspace routing, and every mode other than control names it.
  */
 export interface RallarBlackBoxBootstrapLaunchSettings {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy | undefined;
     readonly providerMode: RallarBlackBoxProviderMode | undefined;
     readonly autoConnect: boolean | undefined;
     readonly heartbeatIntervalMs: number | undefined;
@@ -117,6 +120,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
     sources: BootstrapLaunchSources
 ): RallarBlackBoxBootstrapLaunchComputed {
     const readings = {
+        eventHistory: toEventHistoryLaunchReading(sources),
         providerMode: toLaunchSettingReading(sources, PROVIDER_READER),
         autoConnect: toLaunchSettingReading(sources, toBooleanReader('autoConnect')),
         heartbeatIntervalMs: toLaunchSettingReading(sources, toIntervalReader('heartbeatIntervalMs')),
@@ -135,6 +139,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
     };
     return {
         settings: {
+            eventHistory: readings.eventHistory.value,
             providerMode: readings.providerMode.value,
             autoConnect: readings.autoConnect.value,
             heartbeatIntervalMs: readings.heartbeatIntervalMs.value,
@@ -242,4 +247,26 @@ function toLaunchCoordinate(text: string, limit: number): number | undefined {
     }
     const coordinate = Number(text);
     return Number.isFinite(coordinate) && coordinate >= -limit && coordinate <= limit ? coordinate : undefined;
+}
+
+function toEventHistoryLaunchReading(
+    sources: BootstrapLaunchSources
+): LaunchSettingReading<RallarBlackBoxEventHistoryPolicy> {
+    const mode = resolveLaunchValue(sources, 'eventHistory');
+    const bound = resolveLaunchValue(
+        mode?.launchKey === 'eventHistory' ? { params: sources.params, env: {} } : sources,
+        'eventHistoryMaxEvents'
+    );
+    return parseEventHistoryLaunch(mode?.text, bound?.text).fold<
+        LaunchSettingReading<RallarBlackBoxEventHistoryPolicy>
+    >(
+        (issues) => ({
+            value: undefined,
+            issues: issues.map((message) => ({
+                launchKey: mode?.launchKey ?? bound?.launchKey ?? 'eventHistory',
+                message
+            }))
+        }),
+        (parsed) => ({ value: parsed.policy, issues: [] })
+    );
 }

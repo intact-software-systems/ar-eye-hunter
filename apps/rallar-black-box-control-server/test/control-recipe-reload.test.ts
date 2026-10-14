@@ -1,3 +1,4 @@
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -25,7 +26,7 @@ const RELOAD_RECIPE: RallarBlackBoxTestRecipe = {
     ]
 };
 
-Deno.test('ALM reload dispatches only the prefix before replacing the page', () => {
+Deno.test('ALM reload dispatches only the prefix before replacing the page', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope());
     assertRight(
@@ -35,7 +36,14 @@ Deno.test('ALM reload dispatches only the prefix before replacing the page', () 
     const dispatched = service.takeDispatchableCommands('run-1', 'agent-1');
     assertEquals(dispatched.length, 1);
     assert(dispatched[0].command.kind === 'recipe.run');
-    assertEquals(dispatched[0].command.recipe?.commands, [RELOAD_RECIPE.commands[0]]);
+    assertEquals(dispatched[0].command.recipe?.commands, RELOAD_RECIPE.commands);
+    assertEquals(dispatched[0].recipeExecution?.segment, { start: 0, end: 1, first: true });
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const prefix = await runtime.execute(dispatched[0].command, undefined, { recipeExecution: dispatched[0].recipeExecution });
+    assertEquals(prefix.status, 'ok');
+    assertEquals(runtime.state().resultCache['original-send']?.status, 'ok');
+    assertEquals(runtime.state().resultCache['replace-page'], undefined);
+    assertEquals(runtime.state().resultCache['restore-session'], undefined);
     assert(dispatched[0].commandId !== 'logical-root');
     assertEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
 });
@@ -60,7 +68,8 @@ Deno.test('ALM reload waits for actual successful results and a later resumed co
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
     const [suffix] = service.takeDispatchableCommands('run-1', 'agent-1');
     assert(suffix.command.kind === 'recipe.run');
-    assertEquals(suffix.command.recipe?.commands, [RELOAD_RECIPE.commands[2]]);
+    assertEquals(suffix.command.recipe?.commands, RELOAD_RECIPE.commands);
+    assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
     service.receiveClientEnvelope(toSuccessfulResult(suffix));
     const root = service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'root');
     assertEquals(root?.ok, true);
@@ -105,7 +114,7 @@ Deno.test('pending reload evidence survives low runtime and persistence bounds a
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [reload.commandId] }));
     const [suffix] = service.takeDispatchableCommands('run-1', 'agent-1');
     assert(suffix.command.kind === 'recipe.run');
-    assertEquals(suffix.command.recipe?.commands.map((command) => command.kind), ['rtc.connect']);
+    assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
     service.receiveClientEnvelope(toSuccessfulResult(suffix));
     assertEquals(service.snapshotRun('run-1')?.commands.length, 1);
     assertEquals(service.snapshotRun('run-1')?.results.length, 1);
@@ -265,7 +274,7 @@ Deno.test('a queued suffix is restored without replaying its preceding business 
     const commands = restored.takeDispatchableCommands('run-1', 'agent-1');
     assertEquals(commands.length, 1);
     assert(commands[0].command.kind === 'recipe.run');
-    assertEquals(commands[0].command.recipe?.commands, [RELOAD_RECIPE.commands[2]]);
+    assertEquals(commands[0].recipeExecution?.segment, { start: 2, end: 3, first: false });
 });
 
 Deno.test('an ordinary hosted inline reload preserves its logical distributed link', () => {
@@ -303,8 +312,8 @@ Deno.test('an ordinary hosted inline reload preserves its logical distributed li
     const logicalSender = started.commandLinks.find((link) => link.phase === 'start' && link.role === 'sender')!;
     const [prefix] = service.takeDispatchableCommands('run-1', logicalSender.agentId);
     assert(prefix.command.kind === 'recipe.run');
-    assertEquals(prefix.command.recipe?.commands.at(-1)?.commandId, 'original-send');
-    assertEquals(prefix.command.recipe?.commands.some((command) => command.kind === 'agent.reload'), false);
+    assertEquals(prefix.recipeExecution?.segment, { start: 0, end: 1, first: true });
+    assertEquals(prefix.command.recipe?.commands[0].commandId, 'original-send');
     assert(prefix.commandId !== logicalSender.commandId);
     const prefixResult = toSuccessfulResult(prefix);
     service.receiveClientEnvelope(prefixResult);
@@ -431,6 +440,9 @@ Deno.test('terminal reload completes the logical root at the later resume time',
             recipe: { ...RELOAD_RECIPE, commands: [RELOAD_RECIPE.commands[1]] }
         }
     }));
+    const [admission] = service.takeDispatchableCommands('run-1', 'agent-1');
+    assertEquals(admission.recipeExecution?.segment, { start: 0, end: 0, first: true });
+    assertEquals(service.receiveClientEnvelope(toSuccessfulResult(admission)).accepted, true);
     const [reload] = service.takeDispatchableCommands('run-1', 'agent-1');
     now = 1_010;
     service.receiveClientEnvelope(toSuccessfulResult(reload));
@@ -505,7 +517,11 @@ function toSuccessfulResult(command: ControlCommandEnvelope): ControlResultEnvel
     const value = command.command.kind === 'recipe.run'
         ? {
             recipeId: command.command.recipe!.recipeId,
-            results: command.command.recipe!.commands.map((child, index) => ({
+            invocation: { eventHistory: { mode: 'full' }, segment: command.recipeExecution?.segment },
+            results: command.command.recipe!.commands.slice(command.recipeExecution?.segment?.start, command.recipeExecution?.segment?.end).map((
+                child,
+                index
+            ) => ({
                 commandId: child.commandId!,
                 kind: child.kind,
                 status: 'ok',

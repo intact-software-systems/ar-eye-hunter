@@ -6,6 +6,7 @@ import {
     expect,
     it
 } from 'vitest';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 import {
     createHetznerDistributedManifestCatalog,
@@ -1317,7 +1318,9 @@ function toControlEvent({ runId, agentId, commandId, topic, atEpochMs }: Control
 
 function toEmptySpaState(): RallarBlackBoxTestState {
     const events: readonly RallarBlackBoxTestEvent[] = [];
+    const runtimeState = createRuntimeStateFixture(events);
     return {
+        ...runtimeState,
         status: 'completed',
         currentConfig: {
             runId: 'local',
@@ -1339,6 +1342,7 @@ function toEmptySpaState(): RallarBlackBoxTestState {
         failures: [],
         resultCache: {},
         latestStats: {
+            eventHistory: runtimeState.eventHistory,
             atEpochMs: 1,
             status: 'completed',
             counters: {

@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { renderHeadlessStatus } from '../../../apps/rallar-black-box-headless/src/status-view.ts';
 import type { RallarBlackBoxBrowserControlAgentSnapshot } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
     return {
@@ -11,6 +17,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
         runState: 'waiting',
         lastAction: 'Remote control agent configured; connecting',
         bootstrap: {
+            eventHistory: { mode: 'full' },
             mode: 'control-agent',
             routineBrowserDiagnostics: 'enabled',
             autoConnect: true,
@@ -39,6 +46,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
         },
         control: controlSnapshot(),
         state: {
+            ...createRuntimeStateFixture([]),
             status: 'configured',
             commandHistory: [],
             events: [],

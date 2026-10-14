@@ -4,6 +4,7 @@ import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-te
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { AuthCommandCenterTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
@@ -41,7 +42,14 @@ vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const state: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const authSession: AuthSession = { clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test-token', expiresAtEpochMs: 100_000 };
 const input: UseQuickRallarTestControllerInput = {
     state,

@@ -13,6 +13,7 @@ import type {
     DistributedRecipeCatalogProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { projectControlOperationError, type ControlOperationError } from '../control/control-operation-error.ts';
@@ -90,7 +91,9 @@ export interface ExecuteWorkflow extends
     readonly agentLaunch: ExecuteAgentLaunchModel;
     readonly nextAction: ExecuteNextAction;
     readonly selectionLocked: boolean;
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy | undefined;
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
+    readonly setEventHistory: Dispatch<SetStateAction<RallarBlackBoxEventHistoryPolicy | undefined>>;
     readonly setRtcCaptureMode: Dispatch<SetStateAction<RtcSignalingDiagnostics.CaptureMode | undefined>>;
     readonly safeTargetLabel: string;
     readonly setQuery: Dispatch<SetStateAction<string>>;
@@ -133,7 +136,9 @@ interface ExecuteManifestIntent {
     readonly configurationIssue: string | undefined;
     readonly recipeSelection: ExecuteRecipeSelection;
     readonly workflowIssue: string | undefined;
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy | undefined;
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
+    readonly setEventHistory: Dispatch<SetStateAction<RallarBlackBoxEventHistoryPolicy | undefined>>;
     readonly setRtcCaptureMode: Dispatch<SetStateAction<RtcSignalingDiagnostics.CaptureMode | undefined>>;
     readonly setResolution: Dispatch<SetStateAction<BoundExecuteResolution | undefined>>;
 }
@@ -149,6 +154,7 @@ interface ExecuteRunActions {
 interface ExecuteManifestRead {
     readonly draft: ReturnType<typeof useExecuteDraft>;
     readonly recipeSelection: ExecuteRecipeSelection;
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy | undefined;
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
     readonly resolution: BoundExecuteResolution | undefined;
 }
@@ -187,6 +193,8 @@ export function useExecuteWorkflow(workflowInput: ExecuteWorkflowInput): Execute
         nextAction: actions.nextAction,
         busyAction: operations.busyAction,
         selectionLocked: actions.selectionLocked,
+        eventHistory: intent.eventHistory,
+        setEventHistory: intent.setEventHistory,
         rtcCaptureMode: intent.rtcCaptureMode,
         setRtcCaptureMode: intent.setRtcCaptureMode,
         startOpen: operations.startOpen,
@@ -318,6 +326,7 @@ function useExecuteManifestIntent(
     truth: ExecuteRunTruth,
     recipeSelection: ExecuteRecipeSelection
 ): ExecuteManifestIntent {
+    const [eventHistory, setEventHistory] = useState<RallarBlackBoxEventHistoryPolicy | undefined>();
     const [rtcCaptureMode, setRtcCaptureMode] = useState<RtcSignalingDiagnostics.CaptureMode | undefined>();
     const [resolution, setResolution] = useState<BoundExecuteResolution>();
     const { run, truthContextKey } = truth;
@@ -334,9 +343,19 @@ function useExecuteManifestIntent(
         draft,
         recipeSelection,
         rtcCaptureMode,
+        eventHistory,
         resolution
     });
-    return { ...computed, draft, recipeSelection, rtcCaptureMode, setRtcCaptureMode, setResolution };
+    return {
+        ...computed,
+        draft,
+        recipeSelection,
+        rtcCaptureMode,
+        setRtcCaptureMode,
+        eventHistory,
+        setEventHistory,
+        setResolution
+    };
 }
 
 function computeExecuteManifestState(
@@ -345,7 +364,7 @@ function computeExecuteManifestState(
     read: ExecuteManifestRead
 ): ExecuteManifestComputed {
     const { run, truthContextKey } = truth;
-    const { draft, recipeSelection, rtcCaptureMode, resolution } = read;
+    const { draft, recipeSelection, rtcCaptureMode, eventHistory, resolution } = read;
     const group = workflowInput.selection.groupContext.group;
     const distributedRunId = workflowInput.urlState.distributedRunId ??
         draft.draftDistributedRunId;
@@ -358,7 +377,8 @@ function computeExecuteManifestState(
             group,
             selectedRecipe: recipeSelection.selected,
             selectedAgentIds,
-            rtcCaptureMode
+            rtcCaptureMode,
+            eventHistory
         })
         : undefined;
     const requestedManifest = run ? toExecuteManifestDraft(run.manifest) : generatedManifest;

@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -11,7 +12,14 @@ import type { RallarBrowserStatusSummary } from '../../../apps/rallar-black-box/
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const state: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const authSession: AuthSession = { clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'view-secret-token', expiresAtEpochMs: 100_000 };
 const browserStatus: RallarBrowserStatusSummary = {
     signalingLabel: 'open',
@@ -44,6 +52,46 @@ const values: WebSocketCommandCenterValues = {
     closeReason: 'operator close'
 };
 
+const DIAGNOSTICS: WebSocketCommandCenterViewModel['diagnostics'] = {
+    readyState: 'OPEN',
+    status: 'open',
+    statusLabel: 'open',
+    inboundCount: 2,
+    outboundCount: 1,
+    errorCount: 0,
+    closeCode: 1000,
+    closeReason: 'done',
+    recentEvents: [{
+        eventId: 'event-a',
+        kind: 'message',
+        topic: 'rallar.direct.ws.message',
+        atEpochMs: 2_000,
+        severity: 'info',
+        payload: { token: 'view-secret-token' }
+    }],
+    receivedMessages: [{
+        eventId: 'received-a',
+        atEpochMs: 2_000,
+        senderId: 'remote',
+        roomId: 'room-a',
+        typeId: 'room.manual.message',
+        topicId: 'room.chat',
+        contextId: 'room-a',
+        resourceId: 'resource-a',
+        payload: { text: 'received payload' }
+    }]
+};
+
+const ROUTE_PREVIEW: WebSocketCommandCenterViewModel['routePreview'] = {
+    destination: 'Group room-a',
+    destinationDetail: 'Application app / workspace workspace',
+    selector: 'room.chat / room.manual.message',
+    selectorDetail: 'selector detail',
+    transport: 'Rallar app WS',
+    transportDetail: 'Uses open Rallar signaling for rallarApi',
+    sendLabel: 'Send JSON to group'
+};
+
 function createViewModel(invoked: string[], overrides: Partial<WebSocketCommandCenterViewModel>): WebSocketCommandCenterViewModel {
     const record = (name: string) => async () => {
         invoked.push(name);
@@ -58,46 +106,10 @@ function createViewModel(invoked: string[], overrides: Partial<WebSocketCommandC
         waitStatus: 'subscribed',
         ticket: { expiresAtEpochMs: 60_000 },
         subscription: { label: 'room.chat / room.manual.message', groupId: 'room-a', subscribedAtEpochMs: 1_000 },
-        diagnostics: {
-            readyState: 'OPEN',
-            status: 'open',
-            statusLabel: 'open',
-            inboundCount: 2,
-            outboundCount: 1,
-            errorCount: 0,
-            closeCode: 1000,
-            closeReason: 'done',
-            recentEvents: [{
-                eventId: 'event-a',
-                kind: 'message',
-                topic: 'rallar.direct.ws.message',
-                atEpochMs: 2_000,
-                severity: 'info',
-                payload: { token: 'view-secret-token' }
-            }],
-            receivedMessages: [{
-                eventId: 'received-a',
-                atEpochMs: 2_000,
-                senderId: 'remote',
-                roomId: 'room-a',
-                typeId: 'room.manual.message',
-                topicId: 'room.chat',
-                contextId: 'room-a',
-                resourceId: 'resource-a',
-                payload: { text: 'received payload' }
-            }]
-        },
+        diagnostics: DIAGNOSTICS,
         activePreset: { label: 'Group Message - current group', description: 'Broadcast payload.' },
         canSendViaRallarSignaling: true,
-        routePreview: {
-            destination: 'Group room-a',
-            destinationDetail: 'Application app / workspace workspace',
-            selector: 'room.chat / room.manual.message',
-            selectorDetail: 'selector detail',
-            transport: 'Rallar app WS',
-            transportDetail: 'Uses open Rallar signaling for rallarApi',
-            sendLabel: 'Send JSON to group'
-        },
+        routePreview: ROUTE_PREVIEW,
         subscriptionStatusLabel: 'listening',
         subscriptionStatusTone: 'good',
         receiveStatusText: 'Listening for room.chat / room.manual.message at Group room-a.',

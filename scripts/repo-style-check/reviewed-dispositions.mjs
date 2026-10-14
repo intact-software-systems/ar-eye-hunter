@@ -5,6 +5,14 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: JavaScript construction/Configure input
+    // is untrusted until mode, legal keys and the positive safe-integer limit
+    // are checked; only issue strings leave this boundary, never raw policy.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateEventHistoryPolicy'
+    }),
     // Agent whole-owner review: these guarded readiness boundaries consume raw
     // HTTP JSON, validate every field used, and return void/readiness only. Raw
     // JSON never supplies fixture policy or a command. Independent review pending.

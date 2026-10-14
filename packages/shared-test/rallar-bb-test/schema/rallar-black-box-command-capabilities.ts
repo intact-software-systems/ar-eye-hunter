@@ -1,9 +1,35 @@
 import { RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES } from '../alm/rallar-black-box-alm-command-capabilities.ts';
-import type { RallarBlackBoxCommandCapability } from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS,
     RALLAR_BLACK_BOX_COMMAND_FIELDS
 } from './rallar-black-box-command-fields.ts';
+
+export type RallarBlackBoxCommandProviderMode =
+    | 'simulated'
+    | 'browser-rallar'
+    | 'rallar-browser'
+    | 'rallar-remote-browser'
+    | 'rallar-memory'
+    | 'rallar-server'
+    | 'mixed';
+export type RallarBlackBoxCommandRuntimeSurface =
+    | 'spa-local'
+    | 'control-agent'
+    | 'control-server'
+    | 'black-box-runner-adapter';
+export interface RallarBlackBoxCommandCapability {
+    readonly kind: RallarBlackBoxTestCommand['kind'];
+    readonly title: string;
+    readonly description: string;
+    readonly requiredFields: readonly string[];
+    readonly optionalFields: readonly string[];
+    readonly supportedProviderModes: readonly RallarBlackBoxCommandProviderMode[];
+    readonly runtimeSurfaces: readonly RallarBlackBoxCommandRuntimeSurface[];
+    readonly liveServiceRequirements: readonly string[];
+    readonly artifactExpectations: readonly string[];
+    readonly example: RallarBlackBoxTestCommand;
+}
 
 type CommandCapabilityWithoutFields = Omit<RallarBlackBoxCommandCapability, 'requiredFields' | 'optionalFields'>;
 

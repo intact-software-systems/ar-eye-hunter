@@ -20,7 +20,68 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-09:** Optional HOST capture and operator RUN forwarding have
+**Current checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
+is merged into `codex/rtc-baseline-refresh`; this is not evidence of a direct merge to `main`.
+Configurable routine browser diagnostic recording is published in draft
+[PR659](https://github.com/intact-software-systems/ar-eye-hunter/pull/659), stacked on
+`codex/e3-volatile-inbound-retention`. Its source correctness checks pass; RTC observation
+integrity is skipped, and ordinary CI supplies no E3 acceptance. The current profiling branch,
+`codex/e3-disabled-heap-retainers`, carries the measured finding and the approved retention
+implementation in progress. The measured source is `9ec3e5347885a1b81afe30d5616ec63730356b87`.
+
+**Accepted E3 cohorts: zero.** The governed diagnostics-disabled primary,
+`20261013T120035793Z-9ec3e5347885-e3-memory-local`, completed all three warmups and
+eleven retained attempts. Every producer and canonical sample passed;
+only the heap cohort failed. All three retained 100-cycle members breached the unchanged
+heap rule, with aggregate post-GC growth of 45.680, 47.746 and 45.643 MiB. Settled peer,
+lane and connection-timer state did not drift. The failed primary requires no repeat;
+no repeat was launched. Actual retention receipts show RTC applied/off, ALM false and
+routine browser diagnostics disabled. Default and all-scenario cases preserve their
+separate enabled-diagnostics configurations.
+
+A separate instrumented recapture, `20261013T141047668Z-9ec3e5347885-e3-memory-local`,
+completed one 100-cycle retention attempt with all eleven original checkpoints and
+six coherent cycle-0/cycle-100 heap snapshots across the
+same three browser pages. Its full manifest remains incomplete and unfinalized; it is
+diagnostic evidence, not a primary, repeat or accepted cohort. Sequential snapshots perturb
+GC and timing. Earlier damaged inputs and invalid cross-snapshot ID comparisons remain
+preserved and excluded; original failed analysis is preserved. Independent runtime and findings
+reviews approve the qualified ownership evidence: the canonical browser runtime appends
+all admitted events to unbounded `currentState.events`, and a React memoized projection
+retains many of the same records. Unique event field-data grows by approximately 5.2–5.7 MiB
+per page. This identifies an owner; it proves neither reclaimable bytes nor optimization
+savings, and exact compiled React component ownership remains unproven.
+
+The human approved configurable event retention for all black-box recipes. E3 selects a
+64-event recent window with diagnostics disabled; ordinary recipes default to full history.
+Historical event waits, absence proofs, assertions, barrier single-use and offline unsent
+replay are verified consumer requirements. The complete durable journal and cumulative
+counters remain intact, and queries outside retained coverage fail explicitly. The next
+two source slices are the canonical runtime policy with truthful coverage and TDD, then
+general recipe/run/operator configuration, browser launch and complete connected journal
+preservation with TDD. The human now requests preparing the source branches for main,
+with E3-specific admission, journal acceptance and acquisition continuing in a separate
+session after integration. Section 11 owns this horizon; no E3 acceptance requirement is waived.
+
+Black-box harness, utilities and SPA memory are a separate optimization concern from
+Rallar production RTC/ALM code. The measured history owner belongs to the harness. The
+combined heap gate remains unchanged; current observations do not prove isolated product
+acceptance. Remeasure after the harness correction and attribute any remaining growth before
+selecting a production optimization.
+
+The source stack is #654 → #658 → #659 → #660. Prepare reviewed source, required release
+checks and selected distributed validation in that dependency order. Native E3 is deferred;
+do not launch a further cohort during main preparation.
+
+The full B01–B06 baseline, deployed HOST/RUN and actual Actions application, remaining
+Task65 outcomes and successful E3 acceptance remain required. B07 remains held. Preserve
+the original workloads, environments, sample counts, deadlines, heap/drift criteria,
+conditional repeat, zero retries and every failed attempt. E3 uses serialized repository
+work on its frozen host/load; E1's quiet-host requirement is separate. The user's wait
+instruction still protects the foreign processes and Claude checkout from termination.
+The records below describe earlier source checkpoints and do not supersede this status.
+
+**Historical checkpoint, 2026-10-09:** Optional HOST capture and operator RUN forwarding have
 independent specification and complete quality acceptance. The canonical parser,
 manifest/control/artifact admission and existing RUN > STEP > RECIPE > HOST > default precedence
 remain authoritative. Omission preserves authored settings; malformed selections fail before launch
@@ -2587,6 +2648,54 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
+The diagnostics-disabled primary is complete and heap-failed; accepted E3 cohorts remain
+zero. The independently reviewed six-snapshot diagnostic locates the unbounded canonical
+runtime event history and a concurrent React projection, but does not prove savings or
+close the heap gate. Configurable retention for all black-box recipes is approved, with
+recent/64 and diagnostics disabled selected for E3. Preserve the complete durable journal,
+cumulative counters and explicit refusal of queries outside retained coverage.
+
+The human requests main preparation now and E3 completion in a separate session after code
+integration. Keep only these next two useful implementation slices concrete:
+
+1. **Complete generic retention source and semantic TDD:** implement the approved bounded
+   recent view in the existing runtime owner, with truthful history coverage and cumulative
+   counters. Prove retained ordering, uncovered-history refusal, absence witnesses,
+   cancellation, barrier identity and current connection facts at their owned boundaries.
+   Preserve verified ordinary full-history wait/assert/reconnect behavior. Do not equate
+   diagnostic-recording selection with history retention or replace row growth with a
+   duplicated unbounded buffer. Close independent review findings, including small-window
+   barrier observation, capture reassignment and supported connection stats. Carry the
+   selection through recipe/run/manifest settings, visible operator controls, reload
+   segmentation and real browser construction roots and expose attributable Health/final
+   evidence. Prove complete connected journal preservation and irreversible
+   incomplete-capture reporting for a publication or offline gap, including reset and
+   assignment ownership. Complete recursive touched-file closure, affected browser/app/package
+   validation and independent specification/quality review.
+2. **Prepare the source stack for main:** publish the coherent reviewed code, update the
+   semantic PR descriptions, complete whole-stack review, exact-source Branch Release Gate
+   and selected distributed-manifest validation, then prepare dependency-ordered native
+   review and integration. Preserve isolated child diffs when a parent actually lands;
+   mergeable BEHIND alone creates no refresh work. Stop each PR when GitHub reports it merged.
+
+The separate E3 session must first bind recent/64 and diagnostics disabled to actual three-page
+policy/instance/generation/capture receipts and verify the complete durable journal with bounded
+streaming acceptance through a known Health boundary. Missing, duplicate, malformed, out-of-order
+or incomplete capture fails; preview suffixes, local socket success and memory fallback do not
+certify durability. Then acquire an exact frozen source/configuration using the unchanged E3
+primary and conditional repeat. Preserve the same three pages, 100 cycles, eleven checkpoints,
+original assertions and deadlines. Do not overlap native measurement with
+agents, tests, builds, downloads or artifact analysis. Neither semantic tests, normal CI
+nor an instrumented diagnostic accepts E3. Later outcomes remain successful E3 and all
+remaining B01–B06, deployed HOST/RUN, actual Actions and Task65 gates; B07 stays held.
+Retention implementation is underway; no post-change memory saving or E3 acceptance is
+claimed. Harness optimization and production optimization remain separate findings.
+
+### Earlier implementation horizon (historical)
+
+The following source checkpoints and intended actions retain their original evidence
+scope. Their then-current work ordering does not replace the two slices above.
+
 Tasks 29–39 are complete at their distinct accepted scopes. Task 35 is independently
 reviewed, published at 62f067706 and accepted through required current hosted
 correctness. Task 36 preserves a failed diagnostic and finite observations; it
@@ -2663,7 +2772,7 @@ Task58's initial application/currentness checkpoint is published at
 accepted. Its unpublished acquired-send successor has witnessed semantic RED/GREEN.
 The review's unreachable live/tab resources finding is corrected and independently closed;
 quality remains unaccepted for the separate public encrypted-output typing decision.
-The next two useful implementation actions are:
+The intended implementation actions at that historical checkpoint were:
 
 1. **Repair the real parent conflicts:** combine current main's canonical exclusive-audience
    routing with the parent's capture/acquisition and final admission guards. Establish the

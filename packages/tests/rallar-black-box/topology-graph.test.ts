@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { computeRallarTopologyGraph, toVisibleTopologyCounts } from '../../../apps/rallar-black-box/src/topology-graph.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 function baseState(events: readonly RallarBlackBoxTestEvent[]): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture(events),
         status: 'completed',
         currentConfig: {
             runId: 'run-1',

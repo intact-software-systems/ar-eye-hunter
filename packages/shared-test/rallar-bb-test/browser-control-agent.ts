@@ -1,7 +1,7 @@
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
+import { takeAgentResumeRecord, type AgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import {
     resolveRallarBlackBoxBootstrapConfig,
     toRallarBlackBoxBootstrapRefusal,
@@ -183,7 +183,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         }
         return configured.flatMap(
             (failure) => this.recordBootstrapFailure(failure),
-            () => Either.ofRight(this.connectConfiguredAgent(completedCommandIds))
+            () => Either.ofRight(this.connectConfiguredAgent(completedCommandIds, resumeRecord))
         );
     }
 
@@ -230,7 +230,10 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         return configError ? Either.ofLeft(configError.message) : Either.ofRight(config);
     }
 
-    private connectConfiguredAgent(completedCommandIds: readonly string[]): BrowserControlAgentStartOutcome {
+    private connectConfiguredAgent(
+        completedCommandIds: readonly string[],
+        resumeRecord: AgentResumeRecord | undefined
+    ): BrowserControlAgentStartOutcome {
         this.setSnapshot({
             bootstrapping: false,
             busy: false,
@@ -250,7 +253,8 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
             agentId: this.bootstrap.agentId,
             token: this.bootstrap.controlToken,
             finalReportUploadUrl: this.bootstrap.finalReportUploadUrl,
-            completedCommandIds
+            completedCommandIds,
+            recipeExecutions: resumeRecord?.recipeExecutions
         });
         return 'connecting';
     }
@@ -274,11 +278,12 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
 
 function createDefaultBrowserControlAgentRuntime(bootstrap: RallarBlackBoxBootstrapConfig): BrowserControlAgentRuntime {
     if (bootstrap.providerMode === 'simulated') {
-        return { runtime: createDefaultRallarBlackBoxTestRuntime() };
+        return { runtime: createDefaultRallarBlackBoxTestRuntime({ eventHistory: bootstrap.eventHistory }) };
     }
 
     const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
         routineBrowserDiagnostics: bootstrap.routineBrowserDiagnostics,
+        eventHistory: bootstrap.eventHistory,
         rallarRuntime: createSpaBrowserRallarRuntime(),
         fetch: (request, init) => globalThis.fetch(request, init),
         webSocketFactory: createBrowserWebSocketFactory()

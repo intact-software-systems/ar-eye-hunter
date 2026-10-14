@@ -110,7 +110,9 @@ describe('runtime assignment during synchronous admission callbacks', () => {
         const replacements: Promise<RallarBlackBoxTestResult>[] = [];
         onDispatch = () => {
             onDispatch = () => {};
-            replacements.push(runtime.execute({ kind: 'configure', commandId: 'new-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT));
+            replacements.push(
+                runtime.execute({ kind: 'configure', commandId: 'new-config', config: { rallar: { rtcCaptureMode: 'native' } } }, REPLACEMENT)
+            );
         };
         const original = await runtime.execute({ kind: 'health', commandId: 'old-health' }, ORIGINAL);
         await Promise.all(replacements);

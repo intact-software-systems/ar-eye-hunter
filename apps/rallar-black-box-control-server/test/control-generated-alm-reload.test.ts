@@ -34,6 +34,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
 
 for (const replacesDocument of [true, false]) {
     Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
@@ -101,7 +102,8 @@ for (const replacesDocument of [true, false]) {
             );
             const [suffix] = service.takeDispatchableCommands(runId, agents[0]);
             assert(suffix.command.kind === 'recipe.run');
-            assertEquals(suffix.command.recipe?.commands.at(-1)?.commandId, checkpoint.senderSuffixEnd);
+            assert(suffix.recipeExecution?.segment);
+            assertEquals(suffix.command.recipe?.commands[suffix.recipeExecution.segment.end - 1]?.commandId, checkpoint.senderSuffixEnd);
             await executeSegment(service, ports.sender, suffix);
             const [recovery] = service.takeDispatchableCommands(runId, agents[1]);
             await executeSegment(service, ports.receiver, recovery);
@@ -491,7 +493,7 @@ function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestComman
 
 async function executeSegment(service: RallarBlackBoxControlService, runtime: RallarBlackBoxTestRuntime, envelope: ControlCommandEnvelope): Promise<void> {
     assert(envelope, 'expected an actual control dispatch');
-    const result = await runtime.execute({ ...envelope.command, deadlineEpochMs: envelope.deadlineEpochMs });
+    const result = await executeControlRuntimeCommand(runtime, envelope);
     assertEquals(result.ok, true, JSON.stringify(result));
     recordResult(service, envelope, result);
 }

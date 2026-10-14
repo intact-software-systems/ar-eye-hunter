@@ -8,6 +8,7 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
 } from '../rallar-black-box-test-contracts.ts';
+import { toEventHistoryUnavailableOutcome } from '../runtime/event-history.ts';
 import { decodePayloadPathValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
 import {
     isAssertOperatorSatisfied,
@@ -60,6 +61,9 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
         });
     }
 
+    if (!isAssertHistoryCovered(command.source, state)) {
+        return toEventHistoryUnavailableOutcome(state.eventHistory);
+    }
     const source = resolveAssertSource(command.source, toAssertSourceRoots(evidence));
     const passed = isAssertOperatorSatisfied(source, command.operator, command.expected);
     const value = toAssertResultValue(command, source, passed);
@@ -146,4 +150,21 @@ function toInvalidAssertOutcome(
         error: { code: 'RALLAR_BLACK_BOX_ASSERT_INVALID', message, details },
         nextStatus: 'failed'
     };
+}
+
+function isAssertHistoryCovered(source: string, state: RallarBlackBoxTestState): boolean {
+    if (state.eventHistory.evictedEvents === 0) {
+        return true;
+    }
+    const parts = source.trim().split('.').filter((part) => part.length > 0);
+    const root = parts[0] === 'state' ? parts[1] : parts[0];
+    if (root === undefined || ['events', 'messages', 'diagnostics', 'reports'].includes(root)) {
+        return false;
+    }
+    if (root === 'recentEvents') {
+        return state.events.length >= Math.min(RECENT_ASSERT_SOURCE_LIMIT, state.eventHistory.totalEvents);
+    }
+    const kind = root === 'recentMessages' ? 'message' : root === 'recentDiagnostics' ? 'diagnostic' : undefined;
+    return kind === undefined || state.events.filter((event) => event.kind === kind).length >=
+            Math.min(RECENT_ASSERT_SOURCE_LIMIT, state.eventHistory.countsByKind[kind]);
 }
