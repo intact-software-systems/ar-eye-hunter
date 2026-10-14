@@ -127,6 +127,7 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
     outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
+            nowEpochMs: now,
             outboxQueueReader,
             database: sql,
             topologyPlanning: topologyManagement.planning,
