@@ -6,7 +6,6 @@ import {
 
 import { toError } from '@shared/resilience/to-error.ts';
 
-import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
@@ -39,11 +38,11 @@ import {
 } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import {
-    buildLiveRtcExternalAttempt,
     captureLiveRtcPostGcHeap,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
     toLiveRtcNativeAcquisitionFailureDiagnostic,
+    writeLiveRtcPerformanceAttempt,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcDiagnosticsCheckpoint,
     type LiveRtcNackFailureDiagnostic,
@@ -53,7 +52,6 @@ import {
     type LiveRtcPerformanceTiming,
     type LiveRtcRetentionCheckpoint
 } from './live-rtc-performance-evidence.ts';
-import { writeLiveRtcPerformanceEvidence } from './write-live-rtc-performance-evidence.ts';
 
 const messagesRtcTypeId = firstEnvValue('VITE_RALLAR_MESSAGES_RTC_TYPE_ID', 'VITE_RALLAR_TYPE_ID') ??
     'manual.type';
@@ -363,35 +361,11 @@ async function writeAttemptEvidence(
     if (!input.context) {
         return;
     }
-    const productionServing = input.context.locator.environmentId === 'E3-memory'
-        ? (await readFullStackRtcAttemptServingProof(input.context)).fold(
-            (failure) => {
-                throw new Error(failure.message);
-            },
-            (proof) => proof
-        )
-        : null;
-    const rawEvidence = {
-        ...toLiveRtcRawEvidence({
-            ...input,
-            context: input.context,
-            attemptFailure
-        }),
-        productionServing
-    };
-    const attempt = buildLiveRtcExternalAttempt({
-        locator: input.context.locator,
-        sampleIdentity: input.context.sampleIdentity,
-        producerExitStatus: input.producerExitStatus,
-        runtimeObservation: input.context.runtimeObservation,
-        rawEvidence
-    });
-    await writeLiveRtcPerformanceEvidence({
-        repoRoot: input.context.repoRoot,
-        baselineId: input.context.baselineId,
-        relativePath: input.context.locator.rawResultRelativePath,
+    await writeLiveRtcPerformanceAttempt({
+        context: input.context,
         runId: input.runId,
-        evidence: attempt
+        producerExitStatus: input.producerExitStatus,
+        rawEvidence: toLiveRtcRawEvidence({ ...input, context: input.context, attemptFailure })
     });
     await writeLiveRtcRetentionCohortIfComplete(input.context);
 }

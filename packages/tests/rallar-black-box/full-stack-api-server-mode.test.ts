@@ -456,11 +456,20 @@ describe('rallar-black-box full-stack API server mode', () => {
         await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Live RTC evidence|OUTER_ORDINAL/);
     });
 
-    it('rejects config loading for historical E3 admission without production binding', {
+    it.each([
+        { recorder: 'owned', refusal: /Production/ },
+        { recorder: 'missing', refusal: /exact current-attempt recorder directory/ }
+    ])('rejects historical E3 config with $recorder recorder at its intended guard', {
         timeout: CONFIG_LOADER_TEST_TIMEOUT_MS
-    }, async () => {
+    }, async ({ recorder, refusal }) => {
+        const selection = await createPredeclaredSelection('retention-100');
+        const recorderRoot = join(process.cwd(), 'tmp/perf/rtc-b06-recorder', selection.RALLAR_BLACK_BOX_RTC_BASELINE_ID!);
+        const recorderDirectory = join(recorderRoot, 'retention-100/retained-1');
+        onTestFinished(() => rm(recorderRoot, { recursive: true, force: true }));
+        await mkdir(recorderDirectory, { recursive: true });
         const environment = {
-            ...await createPredeclaredSelection('retention-100'),
+            ...selection,
+            RALLAR_BLACK_BOX_STORAGE_DIR: recorder === 'owned' ? recorderDirectory : undefined,
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
             RALLAR_ICE_RATE_LIMIT_REQUESTS: '101'
@@ -476,7 +485,7 @@ describe('rallar-black-box full-stack API server mode', () => {
             vi.stubEnv(name, value);
         }
         vi.resetModules();
-        await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(/Production/);
+        await expect(import('../../../apps/rallar-black-box/playwright.full-stack.config.ts')).rejects.toThrow(refusal);
     });
 
     it('allows CI configs to disable existing web server reuse', () => {

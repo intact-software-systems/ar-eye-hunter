@@ -101,20 +101,23 @@ function isBenchmarkPackageSpecifier(specifier: string): boolean {
     return specifier === benchmarkPackageName || specifier.startsWith(`${benchmarkPackageName}/`);
 }
 
+function isForbiddenBenchmarkImport(file: string, specifier: string): boolean {
+    const repositoryPath = path.relative(repoRoot, file).split(path.sep).join('/');
+    if (repositoryPath.startsWith('packages/tests/') && /\.test\.[cm]?[jt]s$/.test(repositoryPath)) {
+        return false;
+    }
+    if (isBenchmarkPackageSpecifier(specifier)) {
+        return true;
+    }
+    if (!specifier.startsWith('.')) {
+        return false;
+    }
+    const relativeTarget = path.relative(packageRoot, path.resolve(path.dirname(file), specifier));
+    return relativeTarget === '' || (!relativeTarget.startsWith('..') && !path.isAbsolute(relativeTarget));
+}
+
 function readBenchmarkPackageUsage(file: string): boolean {
-    return parseImportSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => {
-        if (isBenchmarkPackageSpecifier(specifier)) {
-            return true;
-        }
-        if (!specifier.startsWith('.')) {
-            return false;
-        }
-        const relativeTarget = path.relative(packageRoot, path.resolve(path.dirname(file), specifier));
-        return (
-            relativeTarget === '' ||
-            (!relativeTarget.startsWith('..') && !path.isAbsolute(relativeTarget))
-        );
-    });
+    return parseImportSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => isForbiddenBenchmarkImport(file, specifier));
 }
 
 describe('shared RTC benchmark package boundaries', () => {
@@ -238,13 +241,34 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(oldSources, `old RTC/WebRTC performance sources:\n${oldSources.join('\n')}`).toEqual([]);
     });
 
+    it('allows test integration while rejecting product and misleading test-prefix consumers', () => {
+        const testFile = path.join(repoRoot, 'packages/tests/rallar-black-box/live-rtc-durable-journal.test.ts');
+        const owner = path.join(packageRoot, 'baseline/evidence/rtc-baseline-file-port.ts');
+        expect(isForbiddenBenchmarkImport(testFile, path.relative(path.dirname(testFile), owner))).toBe(false);
+        expect(isForbiddenBenchmarkImport(testFile, `${benchmarkPackageName}/baseline/evidence`)).toBe(false);
+        for (
+            const productPath of [
+                'packages/shared-web/browser/product.ts',
+                'apps/rallar-black-box/src/product.ts',
+                'packages/tests-other/product.test.ts',
+                'packages/shared-rtc-bench-other/product.ts',
+                'packages/tests/product.ts'
+            ]
+        ) {
+            const productFile = path.join(repoRoot, productPath);
+            expect(isForbiddenBenchmarkImport(productFile, path.relative(path.dirname(productFile), owner))).toBe(true);
+            expect(isForbiddenBenchmarkImport(productFile, `${benchmarkPackageName}/baseline/evidence`)).toBe(true);
+            expect(isForbiddenBenchmarkImport(productFile, `${benchmarkPackageName}-other/baseline/evidence`)).toBe(false);
+        }
+    });
+
     it('has no prohibited package imports or reverse product imports', () => {
         const packageViolations = [...readFilesBelow(packageRoot), ...readRtcPerformanceScriptSources()]
             .filter((file) => /\.[cm]?[jt]s$/.test(file))
             .flatMap(readUnapprovedImports);
         const reverseImports = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')]
             .flatMap(readFilesBelow)
-            .filter((file) => !file.startsWith(packageRoot) && /\.[cm]?[jt]s$/.test(file))
+            .filter((file) => !file.startsWith(`${packageRoot}${path.sep}`) && /\.[cm]?[jt]s$/.test(file))
             .filter(readBenchmarkPackageUsage)
             .map((file) => path.relative(repoRoot, file));
         expect([...packageViolations, ...reverseImports]).toEqual([]);

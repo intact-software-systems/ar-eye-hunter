@@ -1,16 +1,38 @@
 import { unzipSync } from 'fflate';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+    lstat,
+    mkdir,
+    mkdtemp,
+    open,
+    readdir,
+    readFile,
+    realpath,
+    rm,
+    symlink,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { expect, it, onTestFinished } from 'vitest';
+import {
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { toRunDirectoryName } from '../../../apps/rallar-black-box-control-server/src/control-artifact-recorder.ts';
+import {
+    buildLiveRtcExternalAttempt,
+    writeLiveRtcPerformanceAttempt,
+    type LiveRtcPerformanceRawEvidence
+} from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
 import { readGovernedLiveRtcControlServer } from '../../../tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts';
 import { readLiveRtcDurableJournal } from '../../../tests/playwright/rallar-black-box/read-live-rtc-durable-journal.ts';
 import { writeLiveRtcPerformanceEvidence } from '../../../tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts';
 import { createRtcBaselineEvidenceAcceptance } from '../../shared-rtc-bench/baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import { resolveRtcBaselineAcceptedArtifactPath } from '../../shared-rtc-bench/baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import type { RtcB06BrowserRecordingReading } from '../../shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts';
+import { validateRtcBaselineSample } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-validation.ts';
 import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { classifyRtcBaselineArtifactPath } from '../../shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-layout.ts';
 import type { RtcBaselineExclusiveFileLock, RtcBaselineFilePort } from '../../shared-rtc-bench/baseline/evidence/rtc-baseline-file-port.ts';
@@ -26,7 +48,18 @@ const baselineId = '20260829T081500Z-aaaaaaaaaaaa-e3-memory-gh123456789-a1';
 const runId = 'rallar-live-three-browser-retention-live3-retention-100-abc';
 const sampleId = 'rtc-b06-retention-100-e3-memory-retention-100-retained-001-001';
 
-async function diskFixture() {
+interface JournalDiskFixture {
+    repoRoot: string;
+    storageDirectory: string;
+    rawRelativePath: string;
+    rawPath: string;
+    runId: string;
+    boundaries: RtcB06BrowserRecordingReading[];
+    bytes: Buffer;
+    path: string;
+}
+
+async function diskFixture(): Promise<JournalDiskFixture> {
     const repoRoot = await realpath(await mkdtemp(join(tmpdir(), 'rtc-journal-')));
     onTestFinished(() => rm(repoRoot, { recursive: true, force: true }));
     const storageDirectory = join(repoRoot, 'tmp/perf/rtc-b06-recorder', baselineId, 'retention-100/retained-1');
@@ -73,7 +106,7 @@ async function diskFixture() {
     return { repoRoot, storageDirectory, rawRelativePath, rawPath, runId, boundaries, bytes, path };
 }
 
-function createJournalBoundaries() {
+function createJournalBoundaries(): RtcB06BrowserRecordingReading[] {
     const counts = { event: 1, diagnostic: 0, message: 0, stats: 0, report: 0, result: 0, state: 0 };
     const receipt = { routineBrowserDiagnostics: 'disabled' as const, omittedRoutineBrowserDiagnostics: 1, forwardedBrowserDiagnostics: 1 };
     return ['a', 'b', 'c'].map((agentId) => {
@@ -120,7 +153,7 @@ it('preserves exact original disk prefix bytes and hash through events markers, 
 
 it('preserves the owned run bytes as failed evidence when Health identifies a different run', async () => {
     const disk = await diskFixture();
-    disk.boundaries[0]!.runId = 'foreign-run';
+    disk.boundaries[0] = { ...disk.boundaries[0]!, runId: 'foreign-run' };
     const result = await readLiveRtcDurableJournal(disk);
     expect(result.left).toEqual({
         reason: 'journal-run-identity-mismatch',
@@ -261,13 +294,28 @@ it('requires the current recorder path and refuses control process reuse before 
     );
 });
 
-it.each(['complete', 'failed-producer', 'producer-exit', 'receipt-failure', 'incomplete-journal', 'preterminal', 'malformed-health'] as const)(
+it.each(
+    [
+        'complete',
+        'failed-producer',
+        'producer-exit',
+        'receipt-failure',
+        'incomplete-journal',
+        'preterminal',
+        'malformed-health',
+        'partial-startup',
+        'missing-serving-proof'
+    ] as const
+)(
     'preserves %s journal bytes and failed admission accounting',
     async (variant) => {
         const disk = await diskFixture();
         const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-memory-retention-100' } as const;
         const identity = { ...caseKey, sampleId, intendedPhase: 'retained', outerOrdinal: 1, innerOrdinal: 1 } as const;
         const policy = [
+            ...(['partial-startup', 'missing-serving-proof'].includes(variant)
+                ? [{ caseKey, field: 'appServingMode', value: 'production', source: 'default' as const }]
+                : []),
             { caseKey, field: 'eventHistoryMode', value: 'recent', source: 'default' as const },
             { caseKey, field: 'eventHistoryMaxEvents', value: 64, source: 'default' as const },
             { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'default' as const },
@@ -276,6 +324,13 @@ it.each(['complete', 'failed-producer', 'producer-exit', 'receipt-failure', 'inc
         ];
         const agents = disk.boundaries.map((boundary) => ({
             agentId: boundary.agentId,
+            settledPeerIds: [],
+            readyPeerIds: [],
+            laneStates: [],
+            connectionTimerActive: false,
+            peerCount: 0,
+            connectedPeerCount: 0,
+            relayPeerCount: 0,
             details: {
                 browserDiagnostics: boundary.current,
                 eventHistory: boundary.currentHistory,
@@ -335,7 +390,8 @@ it.each(['complete', 'failed-producer', 'producer-exit', 'receipt-failure', 'inc
         const attempt = {
             schema: 'rallar.rtc-baseline.external-attempt.v1' as const,
             locator,
-            producerExitStatus: variant === 'failed-producer' || variant === 'producer-exit' ? 1 : 0,
+            producerExitStatus:
+                variant === 'failed-producer' || variant === 'producer-exit' || variant === 'partial-startup' || variant === 'missing-serving-proof' ? 1 : 0,
             producerFacts: {
                 databaseUrl: 'absent' as const,
                 allScenariosRaw: null,
@@ -361,19 +417,121 @@ it.each(['complete', 'failed-producer', 'producer-exit', 'receipt-failure', 'inc
         if (variant === 'malformed-health') {
             sample.rawEvidence.retention.checkpoints[0].agents[0].details.eventHistory = null;
         }
-        const path = await writeLiveRtcPerformanceEvidence({
-            repoRoot: disk.repoRoot,
-            baselineId,
-            relativePath: locator.rawResultRelativePath,
-            runId,
-            evidence: attempt
-        });
+        const partialStartupEvidence: LiveRtcPerformanceRawEvidence = {
+            identity: { ...identity, environmentId: 'E3-memory' },
+            producer: {
+                provider: 'browser-rallar',
+                browserCount: 3,
+                auth: { A: 'login', B: 'login', C: 'login' },
+                databaseProvider: 'memory',
+                databaseUrl: 'absent',
+                iceMode: 'repository-default',
+                allScenariosRaw: null,
+                retentionSoakRaw: '1',
+                retentionCyclesRaw: '100',
+                iceModeRaw: null,
+                transports: ['realtime', 'messages.rtc']
+            },
+            runtime: sample.runtimeObservation.runtime,
+            timings: [],
+            diagnostics: [],
+            failureDiagnostics: [],
+            rtcConnectCaptures: [],
+            nativeAcquisitions: [],
+            nativeAcquisitionFailures: [],
+            attemptFailure: { kind: 'control-result-failures', runCaptureSucceeded: true, failedResults: [], messageFailures: [] },
+            retention: { cycles: 100, checkpoints: [], settledStateReturned: false },
+            assertions: { matrixPassed: false, artifactBundlePassed: false, unexpectedDeliveryCount: 0, reconnectPassed: false }
+        };
+        if (variant === 'partial-startup') {
+            const firstAgentRows = Buffer.from(disk.bytes.toString('utf8').split('\n').slice(0, 3).join('\n') + '\n');
+            await writeFile(disk.path, firstAgentRows);
+        }
+        if (variant === 'missing-serving-proof') {
+            const completedAgents = agents.map((agent) => ({ ...agent, details: JSON.parse(JSON.stringify(agent.details)) }));
+            const checkpoints = Array.from({ length: 11 }, (_, index) => ({ cycle: index * 10, postGcHeapBytes: 100, agents: completedAgents }));
+            const completedEvidence: LiveRtcPerformanceRawEvidence = {
+                ...partialStartupEvidence,
+                attemptFailure: null,
+                timings: [{ kind: 'reconnect-ready', transport: 'messages.rtc', senderAgentId: 'a', receiverAgentIds: ['b'], durationMs: 42 }],
+                diagnostics: checkpoints.map((checkpoint) => ({ label: `cycle-${checkpoint.cycle}`, cycle: checkpoint.cycle, agents: checkpoint.agents })),
+                retention: { cycles: 100, checkpoints, settledStateReturned: true },
+                assertions: { matrixPassed: true, artifactBundlePassed: true, unexpectedDeliveryCount: 0, reconnectPassed: true }
+            };
+            await expect(writeLiveRtcPerformanceAttempt({
+                context: { repoRoot: disk.repoRoot, baselineId, locator, sampleIdentity: identity, runtimeObservation: sample.runtimeObservation },
+                runId,
+                producerExitStatus: 0,
+                rawEvidence: completedEvidence
+            })).rejects.toThrow('Original production serving and browser entry bytes could not be verified.');
+        }
+        const path = variant === 'missing-serving-proof'
+            ? join(disk.repoRoot, 'tmp/perf/rtc-baseline', baselineId, locator.rawResultRelativePath)
+            : variant === 'partial-startup'
+            ? await writeLiveRtcPerformanceAttempt({
+                context: { repoRoot: disk.repoRoot, baselineId, locator, sampleIdentity: identity, runtimeObservation: sample.runtimeObservation },
+                runId,
+                producerExitStatus: 1,
+                rawEvidence: partialStartupEvidence
+            })
+            : await writeLiveRtcPerformanceEvidence({
+                repoRoot: disk.repoRoot,
+                baselineId,
+                relativePath: locator.rawResultRelativePath,
+                runId,
+                evidence: attempt
+            });
         const staged = JSON.parse(await readFile(path, 'utf8'));
         expect(staged.samples[0].rawReferences[0]).toMatchObject({
             relativePath: `artifacts/journals/${sampleId}.jsonl`,
             bytes: (await readFile(disk.path)).length
         });
-        const unverified = ['incomplete-journal', 'preterminal', 'malformed-health'].includes(variant);
+        if (variant === 'missing-serving-proof') {
+            expect(staged.producerExitStatus).toBe(1);
+            expect(staged.samples[0].metrics).toEqual([]);
+            expect(staged.samples[0].rawEvidence.productionServing).toBeNull();
+            expect(staged.samples[0].issues).toEqual([{
+                path: '$.producerExitStatus',
+                code: 'producer-failed',
+                message: 'The live RTC producer exited with status 1.'
+            }]);
+        }
+        if (variant === 'partial-startup') {
+            const failedWithTimings = {
+                ...partialStartupEvidence,
+                productionServing: null,
+                timings: [{ kind: 'reconnect-ready' as const, transport: 'messages.rtc' as const, senderAgentId: 'a', receiverAgentIds: ['b'], durationMs: 42 }]
+            };
+            expect(
+                buildLiveRtcExternalAttempt({
+                    locator,
+                    sampleIdentity: identity,
+                    producerExitStatus: 1,
+                    runtimeObservation: sample.runtimeObservation,
+                    rawEvidence: failedWithTimings
+                }).samples[0]!.metrics
+            ).toEqual([]);
+            expect(staged.samples[0].metrics).toEqual([]);
+            expect(validateRtcBaselineSample(staged.samples[0])).toEqual([]);
+            for (
+                const inadmissible of [
+                    { ...staged.samples[0], outcome: 'passed', issues: [] },
+                    { ...staged.samples[0], metrics: [{ metric: 'durationMs', unit: 'ms', value: 42 }] },
+                    { ...staged.samples[0], issues: [] },
+                    { ...staged.samples[0], rawEvidence: { ...staged.samples[0].rawEvidence, productionServing: { entries: [] } } }
+                ]
+            ) {
+                expect(validateRtcBaselineSample(inadmissible)).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ code: 'production-serving-proof-invalid' })])
+                );
+            }
+            expect(staged.samples[0].rawEvidence.productionServing).toBeNull();
+            expect(staged.samples[0].issues).toEqual(
+                expect.arrayContaining([{ path: '$.producerExitStatus', code: 'producer-failed', message: 'The live RTC producer exited with status 1.' }])
+            );
+            expect(staged.samples[0].rawEvidence.attemptFailure).toEqual(partialStartupEvidence.attemptFailure);
+        }
+        const unverified = ['incomplete-journal', 'preterminal', 'malformed-health', 'partial-startup'].includes(variant);
         expect(staged.samples[0].rawEvidence.journal.status).toBe(unverified ? 'failed' : 'durable-prefix');
         expect(staged.samples[0].outcome).toBe(variant === 'complete' || variant === 'producer-exit' || variant === 'receipt-failure' ? 'passed' : 'failed');
         expect(await readFile(disk.rawPath)).toEqual(await readFile(disk.path));

@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
+import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -303,6 +305,13 @@ export interface BuildLiveRtcExternalAttemptInput {
     rawEvidence: LiveRtcPerformanceRawEvidence;
 }
 
+export interface WriteLiveRtcPerformanceAttemptInput {
+    readonly context: LiveRtcPerformanceAttemptContext;
+    readonly runId: string;
+    readonly producerExitStatus: number;
+    readonly rawEvidence: LiveRtcPerformanceRawEvidence;
+}
+
 export interface BuildLiveRtcRetentionCohortInput {
     identity: RtcBaselineCohortIdentityDto;
     attempts: readonly RtcBaselineExternalAttemptDto[];
@@ -471,7 +480,7 @@ export function buildLiveRtcExternalAttempt(
         identity: input.sampleIdentity,
         outcome: issues.length === 0 ? 'passed' : 'failed',
         evidenceClass: 'local-full-stack',
-        metrics: performanceMetrics(input.rawEvidence),
+        metrics: issues.length === 0 ? performanceMetrics(input.rawEvidence) : [],
         rawEvidence: normalizeJson(input.rawEvidence),
         rawReferences: [],
         issues,
@@ -618,6 +627,40 @@ export async function writeLiveRtcRetentionCohortIfComplete(
         relativePath: `artifacts/staging/${identity.cohortId}.json`,
         evidence: cohort
     });
+}
+
+export async function writeLiveRtcPerformanceAttempt(
+    input: WriteLiveRtcPerformanceAttemptInput
+): Promise<string> {
+    let servingFailure: Error | null = null;
+    const productionServing = input.context.locator.environmentId === 'E3-memory'
+        ? (await readFullStackRtcAttemptServingProof(input.context)).fold(
+            (failure) => {
+                servingFailure = new Error(failure.message);
+                return null;
+            },
+            (proof) => proof
+        )
+        : null;
+    const rawEvidence = { ...input.rawEvidence, productionServing };
+    const attempt = buildLiveRtcExternalAttempt({
+        locator: input.context.locator,
+        sampleIdentity: input.context.sampleIdentity,
+        producerExitStatus: servingFailure && input.producerExitStatus === 0 ? 1 : input.producerExitStatus,
+        runtimeObservation: input.context.runtimeObservation,
+        rawEvidence
+    });
+    const path = await writeLiveRtcPerformanceEvidence({
+        repoRoot: input.context.repoRoot,
+        baselineId: input.context.baselineId,
+        relativePath: input.context.locator.rawResultRelativePath,
+        runId: input.runId,
+        evidence: attempt
+    });
+    if (servingFailure && input.producerExitStatus === 0) {
+        throw servingFailure;
+    }
+    return path;
 }
 
 export async function captureLiveRtcPostGcHeap(
