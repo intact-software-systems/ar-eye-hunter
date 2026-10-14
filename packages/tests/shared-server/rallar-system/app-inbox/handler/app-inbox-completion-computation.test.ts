@@ -15,6 +15,24 @@ import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { createAtomicHarness } from '../test-support/app-inbox-transaction-test-runtime.ts';
 
 describe('AppInbox successful completion computation', () => {
+    it('returns an issue for a forged completion Date before transaction entry', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql, nowEpochMs: () => 1_000 }, { serviceId: 'server-1' });
+        const input = {
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted' }
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        const completedAt: Date = Object.create(Date.prototype);
+        const candidate = { ...computed, reservationFinish: { ...computed.reservationFinish, completedAt } };
+
+        expect(validateAppInboxCompletion(input, candidate)).toEqual([
+            expect.objectContaining({ path: 'computed.reservationFinish.completedAt', cause: expect.any(TypeError) })
+        ]);
+        expect(harness.database.beginCalls).toBe(0);
+    });
+
     it('validates captured completion facts without inspecting the durable result', () => {
         const harness = createAtomicHarness();
         let propertyReads = 0;

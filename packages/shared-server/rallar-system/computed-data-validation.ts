@@ -87,7 +87,7 @@ function validateComputedDataValue<Value>(
     if (value === null || typeof value !== 'object') {
         return;
     }
-    if (types.isProxy(value)) {
+    if (hasProxyInPrototypeChain(value)) {
         state.issues.push(toComputedDataValidationIssue(path, 'must be inert data'));
         return;
     }
@@ -99,8 +99,8 @@ function validateComputedDataValue<Value>(
         state.issues.push(toComputedDataValidationIssue(path, 'must not contain a cycle'));
         return;
     }
-    if (isAtomicComputedDataObject(value)) {
-        return;
+    if (!hasReadableAtomicComputedDataValue(value)) {
+        state.issues.push(toComputedDataValidationIssue(path, 'must have a readable atomic data value'));
     }
 
     state.ancestors.add(value);
@@ -186,11 +186,46 @@ function compareComputedDataProperties(
 function isSupportedComputedDataObject(value: object): boolean {
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null ||
-        Array.isArray(value) || ArrayBuffer.isView(value) ||
-        prototype === Date.prototype ||
-        prototype === Temporal.Instant.prototype ||
-        prototype === Temporal.PlainDateTime.prototype ||
-        prototype === Temporal.PlainTime.prototype;
+        Array.isArray(value) || isAtomicComputedDataObject(value);
+}
+
+function hasProxyInPrototypeChain(value: object): boolean {
+    let current: object | null = value;
+    while (current !== null) {
+        if (types.isProxy(current)) {
+            return true;
+        }
+        current = Object.getPrototypeOf(current);
+    }
+    return false;
+}
+
+function hasReadableAtomicComputedDataValue(value: object): boolean {
+    // Intrinsic receivers reject forged brands without consulting candidate properties.
+    try {
+        if (ArrayBuffer.isView(value)) {
+            toBytes(value);
+            return true;
+        }
+        switch (Object.getPrototypeOf(value)) {
+            case Date.prototype:
+                Date.prototype.getTime.call(value);
+                break;
+            case Temporal.Instant.prototype:
+                Reflect.get(Temporal.Instant.prototype, 'epochNanoseconds', value);
+                break;
+            case Temporal.PlainDateTime.prototype:
+                Reflect.get(Temporal.PlainDateTime.prototype, 'calendarId', value);
+                break;
+            case Temporal.PlainTime.prototype:
+                Reflect.get(Temporal.PlainTime.prototype, 'hour', value);
+                break;
+        }
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 
 function hasSameComputedDataShape(expected: object, candidate: object): boolean {
@@ -200,17 +235,18 @@ function hasSameComputedDataShape(expected: object, candidate: object): boolean 
 }
 
 function hasSameAtomicComputedDataValue(expected: object, candidate: object): boolean {
-    if (expected instanceof Date && candidate instanceof Date) {
-        return Date.prototype.getTime.call(expected) === Date.prototype.getTime.call(candidate);
-    }
-    if (expected instanceof Temporal.Instant && candidate instanceof Temporal.Instant) {
-        return Temporal.Instant.compare(expected, candidate) === 0;
-    }
-    if (expected instanceof Temporal.PlainDateTime && candidate instanceof Temporal.PlainDateTime) {
-        return Temporal.PlainDateTime.compare(expected, candidate) === 0;
-    }
-    if (expected instanceof Temporal.PlainTime && candidate instanceof Temporal.PlainTime) {
-        return Temporal.PlainTime.compare(expected, candidate) === 0;
+    switch (Object.getPrototypeOf(expected)) {
+        case Date.prototype:
+            return Date.prototype.getTime.call(expected) === Date.prototype.getTime.call(candidate);
+        case Temporal.Instant.prototype:
+            return Temporal.Instant.compare(expected as Temporal.Instant, candidate as Temporal.Instant) === 0;
+        case Temporal.PlainDateTime.prototype:
+            return Temporal.PlainDateTime.compare(
+                expected as Temporal.PlainDateTime,
+                candidate as Temporal.PlainDateTime
+            ) === 0;
+        case Temporal.PlainTime.prototype:
+            return Temporal.PlainTime.compare(expected as Temporal.PlainTime, candidate as Temporal.PlainTime) === 0;
     }
     if (ArrayBuffer.isView(expected) && ArrayBuffer.isView(candidate)) {
         const expectedBytes = toBytes(expected);
@@ -222,15 +258,21 @@ function hasSameAtomicComputedDataValue(expected: object, candidate: object): bo
 }
 
 function toBytes(value: ArrayBufferView): Uint8Array {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const prototype = types.isDataView(value) ? DataView.prototype : Object.getPrototypeOf(Uint8Array.prototype);
+    return new Uint8Array(
+        Reflect.get(prototype, 'buffer', value),
+        Reflect.get(prototype, 'byteOffset', value),
+        Reflect.get(prototype, 'byteLength', value)
+    );
 }
 
 function isAtomicComputedDataObject(value: object): boolean {
+    const prototype = Object.getPrototypeOf(value);
     return ArrayBuffer.isView(value) ||
-        value instanceof Date ||
-        value instanceof Temporal.Instant ||
-        value instanceof Temporal.PlainDateTime ||
-        value instanceof Temporal.PlainTime;
+        prototype === Date.prototype ||
+        prototype === Temporal.Instant.prototype ||
+        prototype === Temporal.PlainDateTime.prototype ||
+        prototype === Temporal.PlainTime.prototype;
 }
 
 function toComputedDataValidationIssue(
