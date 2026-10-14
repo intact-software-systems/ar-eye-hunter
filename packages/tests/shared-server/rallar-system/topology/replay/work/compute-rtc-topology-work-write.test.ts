@@ -35,6 +35,87 @@ import {
 import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology complete write computation', () => {
+    it.each(['left', 'right'] as const)('rejects an accessor-backed %s envelope field without evaluating it', async (field) => {
+        const input = createCompleteWorkInput();
+        const computed = await computeRtcTopologyWork(input);
+        const expectedValue = computed[field];
+        let propertyReads = 0;
+        Object.defineProperty(computed, field, {
+            get() {
+                propertyReads += 1;
+                return expectedValue;
+            }
+        });
+
+        const issues = await validateRtcTopologyWork(input, computed);
+
+        expect.soft(issues).toEqual(expect.arrayContaining([expect.objectContaining({ path: `computed.${field}` })]));
+        expect(propertyReads).toBe(0);
+    });
+
+    it('reports a throwing envelope getter as validation issues without invoking it', async () => {
+        const input = createCompleteWorkInput();
+        const computed = await computeRtcTopologyWork(input);
+        let propertyReads = 0;
+        Object.defineProperty(computed, 'right', {
+            get() {
+                propertyReads += 1;
+                throw new Error('Envelope getter must not execute');
+            }
+        });
+
+        await expect.soft(validateRtcTopologyWork(input, computed)).resolves.toEqual(
+            expect.arrayContaining([expect.objectContaining({ path: 'computed.right' })])
+        );
+        expect(propertyReads).toBe(0);
+    });
+
+    it('rejects a proxy envelope without invoking value or reflection traps', async () => {
+        const input = createCompleteWorkInput();
+        const computed = await computeRtcTopologyWork(input);
+        let traps = 0;
+        const trap = () => {
+            traps += 1;
+            throw new Error('Envelope proxy trap must not execute');
+        };
+        const candidate = new Proxy(computed, {
+            get: trap,
+            getPrototypeOf: trap,
+            ownKeys: trap,
+            getOwnPropertyDescriptor: trap
+        });
+
+        await expect.soft(validateRtcTopologyWork(input, candidate)).resolves.toEqual(
+            expect.arrayContaining([expect.objectContaining({ path: 'computed' })])
+        );
+        expect(traps).toBe(0);
+    });
+
+    it('rejects an envelope with a foreign prototype even when its branch contents match', async () => {
+        const input = createCompleteWorkInput();
+        const computed = await computeRtcTopologyWork(input);
+        Object.setPrototypeOf(computed, { unrelatedClass: true });
+
+        expect(await validateRtcTopologyWork(input, computed)).toEqual(
+            expect.arrayContaining([expect.objectContaining({ path: 'computed' })])
+        );
+    });
+
+    it('rejects missing or additional own envelope fields', async () => {
+        const input = createCompleteWorkInput();
+        const missing = await computeRtcTopologyWork(input);
+        Reflect.deleteProperty(missing, 'left');
+        const extra = await computeRtcTopologyWork(input);
+        Object.defineProperty(extra, 'unvalidated', { value: 'must not be ignored' });
+
+        expect(await validateRtcTopologyWork(input, missing)).toEqual(
+            expect.arrayContaining([expect.objectContaining({ path: 'computed.left' })])
+        );
+        expect(await validateRtcTopologyWork(input, extra)).toEqual(
+            expect.arrayContaining([expect.objectContaining({ path: 'computed.unvalidated' })])
+        );
+    });
+
     it('returns an incomparable causal tuple as a typed retry that validates without throwing', async () => {
         const fixture = createCompleteWorkInput();
         const work = fixture.facts.workEnvelope.data;

@@ -1,6 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { types } from 'node:util';
 
+import { Either } from '@shared/resilience/Either.ts';
+
 export interface ComputedDataValidationIssue {
     readonly path: string;
     readonly message: string;
@@ -49,6 +51,28 @@ export function validateComputedProjection<Expected, Candidate>(
     };
     compareComputedProjection({ expected, candidate, path }, state);
     return state.issues;
+}
+
+/** Preserves envelope descriptors until inert-data validation has rejected executable fields. */
+export function validateComputedEitherProjection<Left, Right>(
+    expected: Either<Left, Right>,
+    candidate: Either<Left, Right>,
+    path: string
+): readonly ComputedDataValidationIssue[] {
+    if (typeof candidate !== 'object' || candidate === null) {
+        return [toComputedDataValidationIssue(path, 'must be an Either result')];
+    }
+    if (types.isProxy(candidate)) {
+        return [toComputedDataValidationIssue(path, 'must be inert data')];
+    }
+    if (Object.getPrototypeOf(candidate) !== Either.prototype) {
+        return [toComputedDataValidationIssue(path, 'must be an Either result')];
+    }
+    return validateComputedProjection(
+        { left: expected.left, right: expected.right },
+        Object.defineProperties({}, Object.getOwnPropertyDescriptors(candidate)),
+        path
+    );
 }
 
 function validateComputedDataValue<Value>(

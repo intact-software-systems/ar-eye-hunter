@@ -8,7 +8,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import { validateComputedProjection } from '../../../computed-data-validation.ts';
+import { validateComputedEitherProjection } from '../../../computed-data-validation.ts';
 import { GroupTopologyValidationError } from '../../group-topology-errors.ts';
 import {
     computeTopologyMutation,
@@ -117,8 +117,7 @@ export async function validateRtcTopologyWork(
 ): Promise<readonly RtcTopologyWorkValidationIssue[]> {
     const expected = await computeRtcTopologyWork(input);
     return [
-        ...validateComputedProjection(expected.left, computed.left, 'computed.left'),
-        ...validateComputedProjection(expected.right, computed.right, 'computed.right'),
+        ...validateComputedEitherProjection(expected, computed, 'computed'),
         ...(expected.right === undefined ? [] : validateAcceptedTopologyDecision(expected.right.accepted))
     ];
 }
