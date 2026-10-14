@@ -7,6 +7,14 @@ import {
     vi
 } from 'vitest';
 
+import {
+    createBlackBoxRallarRuntime,
+    type BlackBoxRallarRuntimeInstallationTarget
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import type { RallarBlackBoxBrowserRallarEvent } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 
 import {
@@ -23,6 +31,74 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.unstubAllGlobals();
+});
+
+it.each(['success', 'failure'] as const)('certifies only no-data connect progress on a real %s attempt', async (outcome) => {
+    if (outcome === 'failure') {
+        facade.behavior.login.mockRejectedValue(new Error('bad credentials'));
+    }
+    const recorder = createDefaultRallarBlackBoxBrowserTestRuntime({ routineBrowserDiagnostics: 'disabled' });
+    const published: RallarBlackBoxBrowserRallarEvent[] = [];
+    const target: BlackBoxRallarRuntimeInstallationTarget = {};
+    vi.stubGlobal('window', target);
+    const restoreBridge = installSpaBrowserRallarEventBridge({
+        receiveRallarBrowserEvent: (event) => {
+            published.push(event);
+            recorder.receiveRallarBrowserEvent(event);
+        }
+    });
+    const page = createBlackBoxRallarRuntime({
+        facade: facade.rallar,
+        volatileLimits: new BlackBoxRallarVolatileLimits(),
+        targetWindow: target,
+        clock: { now: Date.now },
+        readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),
+        delay: async () => undefined
+    });
+    onTestFinished(async () => {
+        try {
+            await page.close();
+        }
+        finally {
+            restoreBridge();
+        }
+    });
+    const attempt = page.connect({
+        connection: 'certified-progress',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret', almDiagnostics: false }
+    });
+    if (outcome === 'failure') {
+        await expect(attempt).rejects.toThrow('bad credentials');
+    }
+    else {
+        await expect(attempt).resolves.toMatchObject({ status: 'connected', almDiagnostics: false });
+    }
+
+    expect(published.filter((event) => event.routineBrowserDiagnostic === true).map((event) => event.topic))
+        .toEqual(['rallar.browser.connect_started']);
+    const health = await recorder.execute({ kind: 'health' });
+    expect(health.value).toMatchObject({
+        browserDiagnostics: { routineBrowserDiagnostics: 'disabled', omittedRoutineBrowserDiagnostics: 1 },
+        stats: { rallar: { connected: outcome === 'success' } }
+    });
+    if (outcome === 'success') {
+        expect(recorder.state().events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                topic: 'rallar.browser.connect_completed',
+                payload: expect.objectContaining({ data: expect.objectContaining({ status: 'connected' }) })
+            }),
+            expect.objectContaining({
+                topic: 'rallar.browser.connect.phase_completed',
+                payload: expect.objectContaining({ data: expect.objectContaining({ phase: 'rallar-connect', almDiagnostics: false }) })
+            })
+        ]));
+    }
+    else {
+        expect(recorder.state().events).toEqual(expect.arrayContaining([
+            expect.objectContaining({ topic: 'rallar.browser.auth.login_failed', severity: 'error' }),
+            expect.objectContaining({ topic: 'rallar.browser.connect_failed', severity: 'error' })
+        ]));
+    }
 });
 
 it('emits auth restore failure diagnostics when no session or credentials exist', async () => {

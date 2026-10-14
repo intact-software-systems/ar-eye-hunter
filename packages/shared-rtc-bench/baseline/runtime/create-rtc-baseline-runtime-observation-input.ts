@@ -1,3 +1,4 @@
+import { toRallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../catalog/rtc-baseline-workload-catalog.ts';
 import type {
     RtcBaselineCaptureRequestDto,
@@ -10,6 +11,7 @@ import type {
     RtcBaselineWorkerCommandDto
 } from '../contracts/rtc-baseline-contracts.ts';
 import { resolveRtcBaselineConfiguration } from '../contracts/rtc-baseline-validation.ts';
+import { resolveRtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
 import {
     resolveRtcBaselineCaptureAdmission,
     RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
@@ -61,7 +63,7 @@ function resolveObservationConfiguration(
     environment: Readonly<Record<string, string>>,
     admission: RtcBaselineObservationAdmission
 ): RtcBaselineResult<RtcBaselineObservationConfiguration> {
-    const almIssues = validateAlmSelection(descriptors, environment, admission.initialized);
+    const almIssues = validateDiagnosticSelection(descriptors, environment, admission.initialized);
     if (almIssues.length > 0) {
         return { ok: false, issues: almIssues };
     }
@@ -80,7 +82,8 @@ function resolveObservationConfiguration(
             entry.field === descriptor.field && JSON.stringify(entry.caseKey) === JSON.stringify(descriptor.caseKey)
         );
         const environmentName = descriptor.allowlistedEnvironmentVariable;
-        const resolved = descriptor.field === 'almDiagnostics' && initialized !== undefined
+        const resolved = (descriptor.field === 'almDiagnostics' || descriptor.field === 'routineBrowserDiagnostics') &&
+                initialized !== undefined
             ? { ok: true as const, value: initialized }
             : descriptor.field === 'rtcCaptureMode'
             ? resolveCaptureDescriptor(descriptor, initialized, selectedCapture.value)
@@ -129,7 +132,7 @@ export function createRtcBaselineRuntimeObservationInput(
                 workerCommand: inventory.workerCommand,
                 deviations: [],
                 allowlistedEnvironment: redactPersistedEnvironment(
-                    resolveInitializedAlmEnvironment(allowlistedEnvironment, admission.initialized)
+                    resolveInitializedDiagnosticEnvironment(allowlistedEnvironment, admission.initialized)
                 )
             }
         }
@@ -183,19 +186,30 @@ function resolveCaptureDescriptor(
     };
 }
 
-function resolveInitializedAlmEnvironment(
+function resolveInitializedDiagnosticEnvironment(
     environment: Readonly<Record<string, string>>,
     initialized: RtcBaselineRuntimeObservationDto | undefined
 ): Readonly<Record<string, string>> {
     if (initialized === undefined) {
         return environment;
     }
-    const { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: _ambientAlm, ...current } = environment;
-    const selected = initialized.allowlistedEnvironment.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS;
-    return selected === undefined ? current : { ...current, RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: selected };
+    const {
+        RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: _ambientAlm,
+        RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: _ambientRecording,
+        ...current
+    } = environment;
+    const selected = Object.fromEntries(
+        ['RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS']
+            .flatMap((name) =>
+                initialized.allowlistedEnvironment[name] === undefined
+                    ? []
+                    : [[name, initialized.allowlistedEnvironment[name]]]
+            )
+    );
+    return { ...current, ...selected };
 }
 
-function validateAlmSelection(
+function validateDiagnosticSelection(
     descriptors: readonly RtcBaselineConfigurationFieldDescriptorDto[],
     environment: Readonly<Record<string, string>>,
     initialized: RtcBaselineRuntimeObservationDto | undefined
@@ -205,20 +219,18 @@ function validateAlmSelection(
         return [];
     }
     if (initialized !== undefined) {
-        const complete = almDescriptors.every((descriptor) => {
-            const values = initialized.resolvedConfiguration.filter((entry) =>
-                entry.field === descriptor.field && JSON.stringify(entry.caseKey) === JSON.stringify(descriptor.caseKey)
-            );
-            return values.length === 1 && typeof values[0]?.value === 'boolean';
+        return almDescriptors.flatMap((descriptor) => {
+            const selected = resolveRtcB06DiagnosticSelection(initialized.resolvedConfiguration, descriptor.caseKey);
+            return selected.ok ? [] : selected.issues;
         });
-        return complete
-            ? []
-            : [{
-                path: '$.resolvedConfiguration',
-                code: 'missing-alm-selection',
-                message:
-                    'Initialized B06 configuration must include its frozen ALM boolean for every exact case and input.'
-            }];
+    }
+    const recording = environment.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS;
+    if (recording !== undefined && toRallarBlackBoxRoutineBrowserDiagnostics(recording) === undefined) {
+        return [{
+            path: '$.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+            code: 'invalid-environment-value',
+            message: 'Routine browser diagnostics must be enabled or disabled.'
+        }];
     }
     const value = environment.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS;
     return value === undefined || value === 'true' || value === 'false'

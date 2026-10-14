@@ -178,6 +178,8 @@ export interface BlackBoxRallarSendInput {
 
 export interface BlackBoxRallarEvent {
     readonly kind: 'diagnostic' | 'message' | 'close';
+    /** Producer-certified routine progress with no failure or functional evidence; absence is unclassified. */
+    readonly routineBrowserDiagnostic?: true;
     readonly topic: string;
     readonly atEpochMs: number;
     readonly connection?: string;

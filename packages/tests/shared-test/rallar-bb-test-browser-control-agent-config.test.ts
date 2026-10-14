@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
     toRallarBlackBoxFleetConfig,
@@ -9,6 +14,30 @@ import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-t
 import { decodeRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
+    it.each([
+        { search: '', env: {}, mode: 'enabled' },
+        { search: '?routineBrowserDiagnostics=enabled', env: {}, mode: 'enabled' },
+        { search: '?routineBrowserDiagnostics=disabled', env: {}, mode: 'disabled' },
+        { search: '', env: { VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS: 'disabled' }, mode: 'disabled' },
+        { search: '?routineBrowserDiagnostics=enabled', env: { VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS: 'disabled' }, mode: 'enabled' },
+        { search: '?routineBrowserDiagnostics=disabled', env: { VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS: 'invalid' }, mode: 'disabled' }
+    ])('resolves recording selection from $search and environment', ({ search, env, mode }) => {
+        expect(resolveRallarBlackBoxBootstrapConfig(search, env, '')).toMatchObject({ routineBrowserDiagnostics: mode, issues: [] });
+    });
+
+    it.each(['off', 'on', 'false', 'true', 'DISABLED', 'unknown'])('reports malformed recording input %s from either launch boundary', (value) => {
+        for (
+            const [search, env, launchKey] of [
+                [`?routineBrowserDiagnostics=${value}`, {}, 'routineBrowserDiagnostics'],
+                ['', { VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS: value }, 'VITE_RALLAR_ROUTINE_BROWSER_DIAGNOSTICS']
+            ] as const
+        ) {
+            expect(resolveRallarBlackBoxBootstrapConfig(search, env, '').issues).toEqual([
+                { launchKey, message: expect.stringContaining('enabled, disabled') }
+            ]);
+        }
+    });
+
     it('parses URL params into a browser-rallar control-agent bootstrap config', () => {
         const config = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&autoConnect=1&provider=browser-rallar&controlUrl=wss%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-1&agentId=agent-1&apiBaseUrl=https%3A%2F%2Fapi.example.test&roomId=room-1&rallarUsername=alice&rallarPassword=secret&rallarRegister=1&fleetTags=canary%2Crtc',

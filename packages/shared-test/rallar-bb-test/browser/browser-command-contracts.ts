@@ -4,6 +4,7 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type {
     RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestCommand,
@@ -99,6 +100,8 @@ export interface RallarBlackBoxBrowserRallarRuntime {
 /** Each field appears only when the forwarded page event carries it. */
 export interface RallarBlackBoxBrowserRallarEvent {
     readonly kind?: 'diagnostic' | 'message' | 'close';
+    /** Producer-certified routine progress with no failure or functional evidence; absence is unclassified. */
+    readonly routineBrowserDiagnostic?: true;
     readonly topic?: string;
     readonly connection?: string;
     readonly actor?: string;
@@ -167,6 +170,8 @@ export type CreateRallarBlackBoxBrowserTestRuntimeOptions =
         'commandExecutor' | 'cleanup' | 'readAlmUsage' | 'readCongestionCounters'
     >
     & Readonly<{
+        /** Omission records all diagnostics; the resolved selection is fixed for the adapter lifetime. */
+        routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
         rallarRuntime?: RallarBlackBoxBrowserRallarRuntime;
         fetch?: typeof fetch;
         webSocketFactory?: RallarBlackBoxBrowserWebSocketFactory;

@@ -1,3 +1,8 @@
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -38,6 +43,7 @@ export interface HeadlessWorkerConfig {
     readonly applicationId?: string;
     readonly workspaceId?: string;
     readonly transport: HeadlessWorkerTransport;
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     /** Absent when the worker inherits the SDK host capture default. */
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly statsIntervalMs?: number;
@@ -84,6 +90,7 @@ export interface HeadlessWorkerConfigInput {
 export type HeadlessWorkerAgentUrlInput =
     & Omit<
         HeadlessWorkerConfig,
+        | 'routineBrowserDiagnostics'
         | 'agents'
         | 'agentCredentials'
         | 'browserLogLevel'
@@ -95,7 +102,8 @@ export type HeadlessWorkerAgentUrlInput =
         | 'idleExitMs'
         | 'distributedPollIntervalMs'
     >
-    & Omit<HeadlessWorkerAgentConfig, 'url'>;
+    & Omit<HeadlessWorkerAgentConfig, 'url'>
+    & Readonly<{ routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics; }>;
 
 interface OptionalCoordinateEnvInput {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -274,6 +282,7 @@ function readHeadlessWorkerPageEnvironment(
     | 'applicationId'
     | 'workspaceId'
     | 'transport'
+    | 'routineBrowserDiagnostics'
     | 'rtcCaptureMode'
     | 'statsIntervalMs'
     | 'heartbeatIntervalMs'
@@ -291,6 +300,7 @@ function readHeadlessWorkerPageEnvironment(
         workspaceId: envValue(env, 'RALLAR_WORKSPACE_ID') ??
             envValue(env, 'RALLAR_BLACK_BOX_WORKSPACE_ID'),
         transport: transportEnv(env, 'RALLAR_BLACK_BOX_TRANSPORT', DEFAULT_TRANSPORT),
+        routineBrowserDiagnostics: readHeadlessWorkerRoutineBrowserDiagnostics(env),
         rtcCaptureMode: parseRtcCaptureMode(envValue(env, 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE')).fold(
             (issues) => {
                 throw new Error(`RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${issues[0].message}`);
@@ -300,6 +310,19 @@ function readHeadlessWorkerPageEnvironment(
         statsIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_STATS_INTERVAL_MS'),
         heartbeatIntervalMs: optionalPositiveIntegerEnv(env, 'RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS')
     };
+}
+
+function readHeadlessWorkerRoutineBrowserDiagnostics(
+    env: Readonly<Record<string, string | undefined>>
+): RallarBlackBoxRoutineBrowserDiagnostics {
+    const value = env.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS;
+    const mode = value === undefined
+        ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics
+        : toRallarBlackBoxRoutineBrowserDiagnostics(value);
+    if (mode === undefined) {
+        throw new Error('Routine browser diagnostics environment selection must be enabled or disabled.');
+    }
+    return mode;
 }
 
 function readHeadlessWorkerFleetReportingEnvironment(
@@ -423,6 +446,10 @@ function applyHeadlessWorkerRallarLaunchParams(params: URLSearchParams, input: H
     params.set('actor', input.actor);
     params.set('sessionId', input.sessionId);
     params.set('transport', input.transport);
+    params.set(
+        'routineBrowserDiagnostics',
+        input.routineBrowserDiagnostics ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics
+    );
     params.set('rallarUsername', input.credentials.username);
     params.set('rallarPassword', input.credentials.password);
     params.set('rallarLeaveRoomOnClose', input.leaveRoomOnClose ? '1' : '0');

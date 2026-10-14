@@ -198,7 +198,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
-            ...(selection === undefined ? {} : { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: selection })
+            ...(selection === undefined
+                ? {}
+                : { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: selection, RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: selection === 'true' ? 'enabled' : 'disabled' })
         };
         adapters.environment.readAllowlisted = (names) =>
             Object.fromEntries(
@@ -230,6 +232,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 expect(await evidence.reconcileAcceptedOperation(operation, { baselineId: request.baselineId })).toEqual([]);
             }
             environment.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS = 'invalid-after-initialization';
+            environment.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS = 'invalid-after-initialization';
             for (const initialized of [first.value, undefined]) {
                 const later = await observe({ ...request, baselineId: request.baselineId + '-repeat' }, initialized);
                 expect(later).toMatchObject({
@@ -244,7 +247,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 ...first.value,
                 resolvedConfiguration: first.value.resolvedConfiguration.filter((entry) => entry.field !== 'almDiagnostics')
             });
-            expect(missing).toMatchObject({ ok: false, issues: [{ code: 'missing-alm-selection' }] });
+            expect(missing).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ code: 'missing-alm-selection' })]) });
         }
         finally {
             await rm(rootPath, { force: true, recursive: true });
@@ -442,7 +445,9 @@ describe('RTC baseline Deno runtime observation binding', () => {
             const admitted = {
                 ...initialized.value,
                 resolvedConfiguration: [
-                    ...initialized.value.resolvedConfiguration.filter((entry) => entry.field === 'almDiagnostics'),
+                    ...initialized.value.resolvedConfiguration.filter((entry) =>
+                        entry.field === 'almDiagnostics' || entry.field === 'routineBrowserDiagnostics'
+                    ),
                     ...['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
                         caseKey: { workloadId: 'RTC-B06' as const, caseId, inputKey: `e3-memory-${caseId}` },
                         field: 'rtcCaptureMode',
@@ -512,7 +517,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 'packages/shared-web/browser/connection/rallar-diagnostics-ports.ts',
                 'packages/shared-web/browser/connection/initialise-browser-middleware.ts',
                 'packages/shared-rtc-bench/baseline/runtime/create-rtc-baseline-runtime-observation-input.ts',
-                'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-alm-selection.ts',
+                'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
                 '.github/workflows/rtc-b06-performance-observation.yml'
             ]));
             expect(hashedPaths).not.toContain('apps/rallar-black-box/playwright.config.ts');

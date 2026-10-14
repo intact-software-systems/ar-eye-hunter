@@ -1,6 +1,10 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '../../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
 import {
     isRallarBlackBoxProviderMode,
@@ -37,6 +41,7 @@ export interface RallarBlackBoxBootstrapLaunchSettings {
     readonly heartbeatIntervalMs: number | undefined;
     readonly statsIntervalMs: number | undefined;
     readonly transport: RallarBlackBoxBootstrapTransport | undefined;
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics | undefined;
     readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined;
     readonly rallarRegister: RallarBlackBoxBootstrapRegister | undefined;
     readonly rallarAuthStorage: AuthSessionStorageKind | undefined;
@@ -80,6 +85,11 @@ const PROVIDER_READER: LaunchSettingReader<RallarBlackBoxProviderMode> = {
     expectation: `one of ${RALLAR_BLACK_BOX_PROVIDER_MODES.join(', ')}`,
     toValue: (text) => isRallarBlackBoxProviderMode(text) ? text : undefined
 };
+const ROUTINE_BROWSER_DIAGNOSTICS_READER: LaunchSettingReader<RallarBlackBoxRoutineBrowserDiagnostics> = {
+    setting: 'routineBrowserDiagnostics',
+    expectation: 'one of enabled, disabled',
+    toValue: toRallarBlackBoxRoutineBrowserDiagnostics
+};
 const TRANSPORT_READER: LaunchSettingReader<RallarBlackBoxBootstrapTransport> = {
     setting: 'transport',
     expectation: `one of ${RALLAR_BLACK_BOX_BOOTSTRAP_TRANSPORTS.join(', ')}`,
@@ -112,6 +122,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
         heartbeatIntervalMs: toLaunchSettingReading(sources, toIntervalReader('heartbeatIntervalMs')),
         statsIntervalMs: toLaunchSettingReading(sources, toIntervalReader('statsIntervalMs')),
         transport: toLaunchSettingReading(sources, TRANSPORT_READER),
+        routineBrowserDiagnostics: toLaunchSettingReading(sources, ROUTINE_BROWSER_DIAGNOSTICS_READER),
         rtcCaptureMode: toCaptureModeLaunchReading(sources),
         rallarRegister: toLaunchSettingReading(sources, REGISTER_READER),
         rallarAuthStorage: toLaunchSettingReading(sources, AUTH_STORAGE_READER),
@@ -129,6 +140,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
             heartbeatIntervalMs: readings.heartbeatIntervalMs.value,
             statsIntervalMs: readings.statsIntervalMs.value,
             transport: readings.transport.value,
+            routineBrowserDiagnostics: readings.routineBrowserDiagnostics.value,
             rtcCaptureMode: readings.rtcCaptureMode.value,
             rallarRegister: readings.rallarRegister.value,
             rallarAuthStorage: readings.rallarAuthStorage.value,

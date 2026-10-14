@@ -766,12 +766,17 @@ function initializedProducerEnvironment() {
             sourceHashes: [],
             configurationInputs: [{ name: 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', value: 'false', secret: false }],
             controllerInputs: [],
-            resolvedConfiguration: ['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
+            resolvedConfiguration: ['default', 'all-scenarios', 'retention-100'].flatMap((caseId) => [{
                 caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
                 field: 'almDiagnostics',
                 value: caseId !== 'retention-100',
                 source: caseId === 'retention-100' ? 'environment' : 'default'
-            })),
+            }, {
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'routineBrowserDiagnostics',
+                value: caseId === 'retention-100' ? 'disabled' : 'enabled',
+                source: 'default'
+            }]),
             workerCommand: { redactedArgv: { executable: 'npm', arguments: [] }, projection: { fixedWorkerFlags: [], configurationFlags: [] } },
             allowlistedEnvironment: { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'false' }
         }

@@ -1,6 +1,8 @@
-import { readDefaultFullStackRtcServedBuild } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
-import { loadLiveRtcPerformanceAttempt } from './live-rtc-performance-evidence.ts';
-
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
@@ -9,6 +11,7 @@ import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
+import { readDefaultFullStackRtcServedBuild } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import {
     closeLiveRtcBrowserAgentContexts,
     openLiveRtcBrowserAgent,
@@ -17,6 +20,7 @@ import {
 } from './live-rtc-browser-agents.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
+import { loadLiveRtcPerformanceAttempt } from './live-rtc-performance-evidence.ts';
 
 export interface OpenAgentTrioInput {
     readonly runId: string;
@@ -39,6 +43,9 @@ export const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 export const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
 export const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
 export const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
+export const routineBrowserDiagnostics = readLiveRtcRoutineBrowserDiagnostics(
+    process.env.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS
+);
 export const almDiagnostics = toAlmDiagnostics(process.env.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS);
 
 export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = parseRtcCaptureMode(
@@ -121,16 +128,6 @@ export function firstEnvValue(...keys: readonly string[]): string | undefined {
     return undefined;
 }
 
-function toAlmDiagnostics(value: string | undefined): boolean {
-    if (value === undefined || value === 'true') {
-        return true;
-    }
-    if (value === 'false') {
-        return false;
-    }
-    throw new Error('ALM diagnostics environment selection must be true or false.');
-}
-
 export function booleanEnv(key: string): boolean {
     const normalized = envValue(key)?.toLowerCase();
     return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
@@ -208,6 +205,7 @@ export function actorFor(prefix: AgentPrefix, suffix: string): string {
 
 export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
     return {
+        routineBrowserDiagnostics,
         productionBuild,
         spaBaseUrl: SPA_BASE_URL,
         controlWsUrl: CONTROL_WS_URL,
@@ -252,4 +250,24 @@ export async function openAgentTrio(
         await closeLiveRtcBrowserAgentContexts(handles);
         throw toError(error);
     }
+}
+
+function readLiveRtcRoutineBrowserDiagnostics(value: string | undefined): RallarBlackBoxRoutineBrowserDiagnostics {
+    const mode = value === undefined
+        ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics
+        : toRallarBlackBoxRoutineBrowserDiagnostics(value);
+    if (mode === undefined) {
+        throw new Error('Routine browser diagnostics environment selection must be enabled or disabled.');
+    }
+    return mode;
+}
+
+function toAlmDiagnostics(value: string | undefined): boolean {
+    if (value === undefined || value === 'true') {
+        return true;
+    }
+    if (value === 'false') {
+        return false;
+    }
+    throw new Error('ALM diagnostics environment selection must be true or false.');
 }

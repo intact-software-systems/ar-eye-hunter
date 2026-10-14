@@ -4048,6 +4048,14 @@ moved or changed test.
       "coverageRelation": "The architecture test admits the exact canonical fixture import, rejects the neighboring runner runtime import, and reads the actual admitted fixture to verify that it imports no modules. The source read proves dependency isolation rather than a private helper name or incidental file layout."
     },
     {
+      "id": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "domain": "Shared RTC benchmark package dependency isolation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The benchmark package may consume the canonical portable browser recording protocol contract with only its shared JSON type dependency, while browser control and shared-test runner execution remain outside its approved dependency boundary.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency",
+      "coverageRelation": "The architecture test admits the exact canonical relative contract import and reads that actual module to assert its sole dependency is the canonical shared ApiJsonValue module. Independent negative controls reject the former browser owners, browser and runner runtimes, another fixture, and a shared-test alias. The source read supplies the dependency list needed to prove that an admitted contract cannot transitively reopen the excluded runtime boundary."
+    },
+    {
       "id": "rtc-b06-current-configuration-source-provenance",
       "domain": "RTC-B06 observation configuration and source provenance",
       "owner": "Shared RTC benchmark maintainers",
@@ -9118,6 +9126,17 @@ moved or changed test.
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "Reading the admitted canonical fixture is necessary to reject an import-bearing module that would pull runner execution into the approved data-only benchmark dependency. The exact allowlist and neighboring runner rejection keep this architecture boundary narrow; dependency-free implementations pass without pinning fixture values or internal symbols.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports"
+    },
+    {
+      "id": "test-structure-coupling-241b363ddfbea8ec",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reading the admitted protocol owner is necessary to detect a browser or runner dependency hidden behind an otherwise permitted import. The assertion permits only its canonical shared JSON type dependency and separately rejects excluded consumers and neighboring modules; receipt semantics alone cannot prove package dependency isolation. It does not pin parser bodies, receipt values, or internal helper symbols.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency"
     },
     {
       "id": "test-structure-coupling-ac5e6841bb61346d",

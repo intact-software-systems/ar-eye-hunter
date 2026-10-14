@@ -1,5 +1,11 @@
 import * as timers from 'node:timers/promises';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeBrowserCommandRecord } from '../../../shared-test/rallar-bb-test/browser/browser-command-values.ts';
 import {
     createDefaultRallarBlackBoxBrowserTestRuntime,
@@ -785,6 +791,7 @@ it('capture dependency fix1 consumes explicit browser session, request ID, clock
     const opened: string[] = [];
     let sequence = 1;
     const input = {
+        routineBrowserDiagnostics: 'enabled' as const,
         rallarRuntime: undefined,
         fetch: async (request: RequestInfo | URL, init?: RequestInit) => {
             fetchCalls.push({ input: request, init });
@@ -838,6 +845,7 @@ it('capture dependency fix1 keeps explicit unavailable fetch unavailable despite
     });
     vi.stubGlobal('fetch', ambientFetch);
     const input = {
+        routineBrowserDiagnostics: 'enabled' as const,
         rallarRuntime: undefined,
         fetch: undefined,
         webSocketFactory: undefined,

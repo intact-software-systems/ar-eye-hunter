@@ -12,6 +12,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
         lastAction: 'Remote control agent configured; connecting',
         bootstrap: {
             mode: 'control-agent',
+            routineBrowserDiagnostics: 'enabled',
             autoConnect: true,
             providerMode: 'browser-rallar',
             controlUrl: 'wss://control.example.test/control',
@@ -36,30 +37,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             source: 'url',
             issues: []
         },
-        control: {
-            state: 'registered',
-            url: 'wss://control.example.test/control',
-            runId: 'run-1',
-            agentId: 'agent-1',
-            lastHeartbeatAtEpochMs: 2_000,
-            reconnectAttempt: 0,
-            sentCount: 3,
-            receivedCount: 1,
-            identity: {
-                principalId: 'agent-1',
-                clientId: 'agent-1',
-                sessionId: 'agent-1',
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'room-1',
-                region: 'eu-north',
-                provider: 'hetzner',
-                datacenter: 'fsn1',
-                hostId: 'host-1',
-                sessionLabel: 'agent-1:agent-1',
-                updatedAtEpochMs: 1_000
-            }
-        },
+        control: controlSnapshot(),
         state: {
             status: 'configured',
             commandHistory: [],
@@ -135,3 +113,30 @@ describe('headless status view', () => {
         );
     });
 });
+
+function controlSnapshot(): RallarBlackBoxBrowserControlAgentSnapshot['control'] {
+    return {
+        state: 'registered',
+        url: 'wss://control.example.test/control',
+        runId: 'run-1',
+        agentId: 'agent-1',
+        lastHeartbeatAtEpochMs: 2_000,
+        reconnectAttempt: 0,
+        sentCount: 3,
+        receivedCount: 1,
+        identity: {
+            principalId: 'agent-1',
+            clientId: 'agent-1',
+            sessionId: 'agent-1',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'room-1',
+            region: 'eu-north',
+            provider: 'hetzner',
+            datacenter: 'fsn1',
+            hostId: 'host-1',
+            sessionLabel: 'agent-1:agent-1',
+            updatedAtEpochMs: 1_000
+        }
+    };
+}

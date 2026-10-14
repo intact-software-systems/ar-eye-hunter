@@ -121,3 +121,33 @@ describe('live RTC ALM recording selection', () => {
         await expect(import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts')).rejects.toThrow(/ALM diagnostics/);
     });
 });
+
+describe('live RTC routine browser recording selection', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.stubEnv('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE', 'signaling');
+        vi.stubEnv('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', 'false');
+        vi.stubEnv('RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS', undefined);
+        vi.stubEnv('VITE_RALLAR_API_BASE_URL', 'http://localhost:18080');
+        onTestFinished(() => {
+            vi.unstubAllEnvs();
+            vi.resetModules();
+        });
+    });
+    it.each([[undefined, 'enabled'], ['enabled', 'enabled'], ['disabled', 'disabled']] as const)(
+        'freezes %s independently of capture and ALM',
+        async (value, mode) => {
+            vi.stubEnv('RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS', value);
+            const environment = await import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts');
+            expect(environment).toHaveProperty('routineBrowserDiagnostics', mode);
+            expect(environment.liveRtcAgentConfig()).toHaveProperty('routineBrowserDiagnostics', mode);
+            expect(environment).toMatchObject({ almDiagnostics: false, rtcCaptureMode: 'signaling' });
+            vi.stubEnv('RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS', 'invalid');
+            expect(environment.liveRtcAgentConfig()).toHaveProperty('routineBrowserDiagnostics', mode);
+        }
+    );
+    it.each(['', ' ', ' disabled ', 'DISABLED', 'on', 'off', 'false'])('refuses %s before browser allocation', async (value) => {
+        vi.stubEnv('RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS', value);
+        await expect(import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts')).rejects.toThrow(/routine browser diagnostics/i);
+    });
+});

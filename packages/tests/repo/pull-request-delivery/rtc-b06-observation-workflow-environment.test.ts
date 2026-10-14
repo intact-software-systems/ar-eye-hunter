@@ -22,6 +22,7 @@ import {
 interface RtcB06WorkflowSelection {
     readonly captureMode: string | undefined;
     readonly almDiagnostics: string;
+    readonly routineBrowserDiagnostics: string;
 }
 
 interface RtcB06SourceAdmission {
@@ -46,6 +47,7 @@ const captureRecorderScript = `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs');
 const names = [
     'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
@@ -84,7 +86,11 @@ describe('RTC-B06 observation workflow environment', () => {
             encoding: 'utf8',
             env: {
                 ...process.env,
-                ...readSelectedCaptureEnvironment(baseline.env, fixtureRoot, { captureMode: 'signaling', almDiagnostics: selection }),
+                ...readSelectedCaptureEnvironment(baseline.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: selection,
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -105,7 +111,11 @@ describe('RTC-B06 observation workflow environment', () => {
             encoding: 'utf8',
             env: {
                 ...process.env,
-                ...readSelectedCaptureEnvironment(diagnostic.env, fixtureRoot, { captureMode: 'signaling', almDiagnostics: selection }),
+                ...readSelectedCaptureEnvironment(diagnostic.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: selection,
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -115,6 +125,12 @@ describe('RTC-B06 observation workflow environment', () => {
         });
         expect(diagnosticResult).toMatchObject({ status: 0, stderr: '' });
         expect(readEnvironmentRecords(fixtureRoot).slice(1).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual(['true', 'true', selection]);
+        expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS)).toEqual([
+            selection === 'true' ? 'disabled' : 'enabled',
+            'enabled',
+            'enabled',
+            selection === 'true' ? 'disabled' : 'enabled'
+        ]);
     });
 
     it.each([['disabled', 'off'], ['signaling', 'signaling'], ['native', 'native'], [undefined, 'signaling']])(
@@ -128,7 +144,11 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
-                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, { captureMode: selection, almDiagnostics: 'true' }),
+                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                        captureMode: selection,
+                        almDiagnostics: 'true',
+                        routineBrowserDiagnostics: 'enabled'
+                    }),
                     PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                     RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
                     RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -162,7 +182,11 @@ describe('RTC-B06 observation workflow environment', () => {
                 env: {
                     ...process.env,
                     RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
-                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, { captureMode: selection, almDiagnostics: 'true' }),
+                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                        captureMode: selection,
+                        almDiagnostics: 'true',
+                        routineBrowserDiagnostics: 'enabled'
+                    }),
                     PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                     RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
                     RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -189,7 +213,11 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
-                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, { captureMode: selection, almDiagnostics: 'true' }),
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: selection,
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
@@ -285,7 +313,11 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
-                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, { captureMode: 'native', almDiagnostics: 'true' }),
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: 'native',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
@@ -317,7 +349,11 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
-                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, { captureMode: 'signaling', almDiagnostics: 'true' }),
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 DATABASE_URL: 'postgres://inherited.invalid/database',
                 RALLAR_ICE_MODE: 'inherited-ice-mode',
@@ -338,6 +374,7 @@ describe('RTC-B06 observation workflow environment', () => {
             {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -360,7 +397,11 @@ describe('RTC-B06 observation workflow environment', () => {
             env: {
                 ...process.env,
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
-                ...readSelectedCaptureEnvironment(diagnosticStep.env, fixtureRoot, { captureMode: 'signaling', almDiagnostics: 'true' }),
+                ...readSelectedCaptureEnvironment(diagnosticStep.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_FAKE_EXIT_STATUS: '23',
                 RTC_DIAGNOSTIC_OUTPUT: outputDirectory,
@@ -380,6 +421,7 @@ describe('RTC-B06 observation workflow environment', () => {
             {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -393,6 +435,7 @@ describe('RTC-B06 observation workflow environment', () => {
             {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -406,6 +449,7 @@ describe('RTC-B06 observation workflow environment', () => {
             {
                 DATABASE_URL: null,
                 RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -510,6 +554,7 @@ function readSelectedCaptureEnvironment(
         ...consumerOutputs,
         '${{ inputs.rtc_capture_mode }}': selection.captureMode ?? defaultMode,
         '${{ inputs.alm_diagnostics }}': selection.almDiagnostics,
+        '${{ inputs.routine_browser_diagnostics }}': selection.routineBrowserDiagnostics,
         '${{ github.ref_name }}': 'codex/rtc-baseline-refresh'
     });
 }

@@ -1,11 +1,12 @@
-import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
-
 import {
     expect,
     test,
     type TestInfo
 } from '@playwright/test';
+
 import { toError } from '@shared/resilience/to-error.ts';
+
+import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
@@ -22,6 +23,7 @@ import {
     rawEnvironmentValue,
     readLiveRtcClusterApiOrigins,
     roomSeed,
+    routineBrowserDiagnostics,
     rtcCaptureMode,
     workspaceId,
     type LiveRtcAgentTrio
@@ -452,6 +454,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             allHandles.push(...realtimeAgents);
             openHandles.push(...realtimeAgents);
             commandIds.push(
+                ...await control.browserRecording.admit({
+                    runId,
+                    agents: realtimeAgents,
+                    mode: routineBrowserDiagnostics
+                })
+            );
+            commandIds.push(
                 ...(await liveRtcDeliveryOperations.setupGroupMembership({
                     control,
                     runId,
@@ -520,6 +529,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             const messageAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-messages' });
             allHandles.push(...messageAgents);
             openHandles.push(...messageAgents);
+            commandIds.push(
+                ...await control.browserRecording.admit({
+                    runId,
+                    agents: messageAgents,
+                    mode: routineBrowserDiagnostics
+                })
+            );
             const messages = await liveRtcDeliveryOperations.runDeliveryMatrix({
                 control,
                 nativeAcquisition,
@@ -733,6 +749,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             allHandles.push(...realtimeAgents);
             openHandles.push(...realtimeAgents);
             commandIds.push(
+                ...await control.browserRecording.admit({
+                    runId,
+                    agents: realtimeAgents,
+                    mode: routineBrowserDiagnostics
+                })
+            );
+            commandIds.push(
                 ...(await liveRtcDeliveryOperations.setupGroupMembership({
                     control,
                     runId,
@@ -789,6 +812,9 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             allHandles.push(...wsAgents);
             openHandles.push(...wsAgents);
             commandIds.push(
+                ...await control.browserRecording.admit({ runId, agents: wsAgents, mode: routineBrowserDiagnostics })
+            );
+            commandIds.push(
                 ...(await liveRtcDeliveryOperations.runWebSocketOpenSendCloseMatrix({
                     control,
                     runId,
@@ -811,6 +837,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             const messageAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-all-messages' });
             allHandles.push(...messageAgents);
             openHandles.push(...messageAgents);
+            commandIds.push(
+                ...await control.browserRecording.admit({
+                    runId,
+                    agents: messageAgents,
+                    mode: routineBrowserDiagnostics
+                })
+            );
             const messages = await liveRtcDeliveryOperations.runAllDeliveryPermutations({
                 control,
                 nativeAcquisition,
@@ -1113,6 +1146,13 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         label: 'live-retention'
                     });
                     openHandles.push(...openedAgents);
+                    commandIds.push(
+                        ...await control.browserRecording.admit({
+                            runId,
+                            agents: openedAgents,
+                            mode: routineBrowserDiagnostics
+                        })
+                    );
                     return openedAgents;
                 }
             );

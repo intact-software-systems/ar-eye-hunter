@@ -1,5 +1,7 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import {
     computeRallarBlackBoxBootstrapLaunch,
     type RallarBlackBoxBootstrapIssue,
@@ -42,6 +44,7 @@ export interface RallarBlackBoxBootstrapConfig {
     readonly actor: string;
     readonly sessionId: string;
     readonly roomId: string;
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly transport: RallarBlackBoxBootstrapTransport;
     /** Absent when the launch inherits the SDK host capture default. */
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
@@ -115,6 +118,8 @@ export function resolveRallarBlackBoxBootstrapConfig(
         ...resolveControlTargetBootstrap(sources, launch.settings),
         ...resolveControlReportingBootstrap(sources, launch.settings, fragment),
         ...resolveRallarScopeBootstrap(sources, launch.settings),
+        routineBrowserDiagnostics: launch.settings.routineBrowserDiagnostics ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics,
         rtcCaptureMode: launch.settings.rtcCaptureMode,
         ...resolveRallarAuthBootstrap(sources, launch.settings, fragment),
         ...resolveFleetBootstrap(sources, launch.settings),

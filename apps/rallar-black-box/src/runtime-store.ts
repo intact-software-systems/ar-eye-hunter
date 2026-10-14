@@ -137,6 +137,7 @@ class RallarBlackBoxRuntimeStore {
             typeof window !== 'undefined'
         ) {
             const browserRuntime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics,
                 rallarRuntime: createSpaBrowserRallarRuntime(),
                 fetch: globalThis.fetch?.bind(globalThis),
                 webSocketFactory: createBrowserWebSocketFactory()
@@ -188,11 +189,12 @@ class RallarBlackBoxRuntimeStore {
     };
 
     updateBootstrapConfig(
-        patch: Partial<RallarBlackBoxBootstrapConfig>
+        patch: Partial<Omit<RallarBlackBoxBootstrapConfig, 'routineBrowserDiagnostics'>>
     ): void {
         this.bootstrapConfig = {
             ...this.bootstrapConfig,
-            ...patch
+            ...patch,
+            routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics
         };
         this.snapshot = {
             ...this.snapshot,
@@ -283,6 +285,12 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async configureLocalWorkbenchOnly(): Promise<void> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            this.setLocalWorkbenchConfigurationFailure(refusal);
+            return;
+        }
+
         try {
             const runNumber = this.runSequence++;
             this.snapshot = {
@@ -569,6 +577,11 @@ class RallarBlackBoxRuntimeStore {
     private async resetForRun(
         lastAction: string
     ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            return Either.ofLeft(refusal);
+        }
+
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,

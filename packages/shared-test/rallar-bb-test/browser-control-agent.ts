@@ -16,7 +16,6 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
-import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
     type RallarBlackBoxAgentControlClient,
@@ -95,7 +94,7 @@ export function createDefaultRallarBlackBoxBrowserControlAgent(
     input: CreateDefaultRallarBlackBoxBrowserControlAgentInput
 ): RallarBlackBoxBrowserControlAgent {
     const bootstrap = resolveRallarBlackBoxBootstrapConfig(input.search, input.env, input.hash);
-    const agentRuntime = createDefaultBrowserControlAgentRuntime(bootstrap.providerMode);
+    const agentRuntime = createDefaultBrowserControlAgentRuntime(bootstrap);
     const controlClient = createDefaultRallarBlackBoxControlClient({
         runtime: agentRuntime.runtime,
         heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
@@ -273,12 +272,13 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
     }
 }
 
-function createDefaultBrowserControlAgentRuntime(providerMode: RallarBlackBoxProviderMode): BrowserControlAgentRuntime {
-    if (providerMode === 'simulated') {
+function createDefaultBrowserControlAgentRuntime(bootstrap: RallarBlackBoxBootstrapConfig): BrowserControlAgentRuntime {
+    if (bootstrap.providerMode === 'simulated') {
         return { runtime: createDefaultRallarBlackBoxTestRuntime() };
     }
 
     const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+        routineBrowserDiagnostics: bootstrap.routineBrowserDiagnostics,
         rallarRuntime: createSpaBrowserRallarRuntime(),
         fetch: (request, init) => globalThis.fetch(request, init),
         webSocketFactory: createBrowserWebSocketFactory()

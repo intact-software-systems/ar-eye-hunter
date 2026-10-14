@@ -3,6 +3,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import type {
+    BrowserDiagnosticsReceipt,
+    RallarBlackBoxRoutineBrowserDiagnostics
+} from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import {
     dispatchAlmBrowserCommand,
     type RallarBlackBoxAlmBrowserPort,
@@ -30,7 +34,9 @@ import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-c
 import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
+import { isRoutineBrowserDiagnostic } from './browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
+import { computeRallarBlackBoxDiagnosticSeverity } from './diagnostics.ts';
 import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -38,12 +44,14 @@ import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
-    RallarBlackBoxTestRecord
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRuntimeEventInput
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 import { sleepWithAbort } from './runtime/sleep-with-abort.ts';
 
 export interface CreateRallarBlackBoxBrowserTestRuntimeInput extends BrowserCommandEnvironment {
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
     readonly idFactory: (prefix: string) => string;
 }
@@ -68,6 +76,8 @@ class BrowserCommandAdapter {
     private readonly http: BrowserHttpRequests;
     private readonly rtc: BrowserRtcCommands;
     private readonly features: BrowserRallarFeatureCommands;
+    private omittedRoutineBrowserDiagnostics = 0;
+    private forwardedBrowserDiagnostics = 0;
 
     constructor(environment: CreateRallarBlackBoxBrowserTestRuntimeInput) {
         this.environment = environment;
@@ -75,6 +85,38 @@ class BrowserCommandAdapter {
         this.http = new BrowserHttpRequests(environment);
         this.rtc = new BrowserRtcCommands(environment);
         this.features = new BrowserRallarFeatureCommands(environment);
+    }
+
+    receiveRallarBrowserEvent(
+        event: RallarBlackBoxBrowserRallarEvent
+    ): RallarBlackBoxTestRuntimeEventInput | undefined {
+        const normalized = toRallarBrowserEventInput(event);
+        // Check raw detail: normalization can replace absent data with event metadata.
+        const omit = this.environment.routineBrowserDiagnostics === 'disabled' &&
+            event.kind === 'diagnostic' && event.routineBrowserDiagnostic === true &&
+            isRoutineBrowserDiagnostic(normalized.topic, event.data) &&
+            normalized.kind === 'diagnostic' && normalized.severity === 'info' &&
+            computeRallarBlackBoxDiagnosticSeverity({
+                    topic: normalized.topic,
+                    error: normalized.payload.error,
+                    detail: normalized.payload.data
+                }) === 'info';
+        if (omit) {
+            this.omittedRoutineBrowserDiagnostics++;
+            return undefined;
+        }
+        if (normalized.kind === 'diagnostic') {
+            this.forwardedBrowserDiagnostics++;
+        }
+        return normalized;
+    }
+
+    private getDiagnosticsReceipt(): BrowserDiagnosticsReceipt {
+        return {
+            routineBrowserDiagnostics: this.environment.routineBrowserDiagnostics,
+            omittedRoutineBrowserDiagnostics: this.omittedRoutineBrowserDiagnostics,
+            forwardedBrowserDiagnostics: this.forwardedBrowserDiagnostics
+        };
     }
 
     async dispatch(
@@ -150,6 +192,7 @@ class BrowserCommandAdapter {
                             includeRtcDiagnostics: command.includeRtcDiagnostics === true
                         }),
                         stats: await context.updateStats(command.commandId),
+                        browserDiagnostics: this.getDiagnosticsReceipt(),
                         webSockets: this.sockets.connectionNames()
                     },
                     nextStatus: context.state().status
@@ -225,6 +268,7 @@ export function createDefaultRallarBlackBoxBrowserTestRuntime(
 ): RallarBlackBoxBrowserTestRuntime {
     let sequence = 1;
     return createRallarBlackBoxBrowserTestRuntime({
+        routineBrowserDiagnostics: options.routineBrowserDiagnostics ?? 'enabled',
         rallarRuntime: options.rallarRuntime,
         fetch: options.fetch ?? globalThis.fetch?.bind(globalThis),
         webSocketFactory: options.webSocketFactory ?? createDefaultBrowserWebSocketFactory(),
@@ -264,7 +308,10 @@ export function createRallarBlackBoxBrowserTestRuntime(
     });
     return Object.assign(runtime, {
         receiveRallarBrowserEvent(event: RallarBlackBoxBrowserRallarEvent): void {
-            runtime.recordEvent(toRallarBrowserEventInput(event));
+            const admitted = adapter.receiveRallarBrowserEvent(event);
+            if (admitted) {
+                runtime.recordEvent(admitted);
+            }
         }
     });
 }

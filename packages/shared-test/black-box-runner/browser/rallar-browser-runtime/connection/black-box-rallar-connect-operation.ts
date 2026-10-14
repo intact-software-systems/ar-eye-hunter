@@ -142,7 +142,7 @@ export class BlackBoxRallarConnectOperation {
         if (!config.rallar.apiBaseUrl) {
             throw new Error('rallar.apiBaseUrl is required.');
         }
-        diagnostics.emitDiagnostic(config, 'rallar.browser.connect_started');
+        diagnostics.emitRoutineDiagnostic(config, 'rallar.browser.connect_started');
         attempt.unsubscribeConsoleDiagnostics = this.#input.consoleDiagnostics.install(config);
         this.#prepareConnection(attempt);
         attempt.phase = 'auth';
@@ -363,11 +363,11 @@ export class BlackBoxRallarConnectOperation {
         return {
             ...(roomRef ? { unsubscribeFormationDiagnostics: formation.installDiagnostics(roomRef) } : {}),
             unsubscribeWsLifecycle: rallar.ws.onLifecycle(
-                (event) => diagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
+                (event) => diagnostics.emitLifecycleDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
                 { emitCurrent: true }
             ),
             unsubscribeRtcLifecycle: rallar.rtc.onLifecycle(
-                (event) => diagnostics.emitDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
+                (event) => diagnostics.emitLifecycleDiagnostic(config, 'rallar.browser.rtc.lifecycle', event),
                 { emitCurrent: true }
             )
         };
