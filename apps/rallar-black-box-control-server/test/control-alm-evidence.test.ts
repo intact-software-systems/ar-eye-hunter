@@ -21,6 +21,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 for (const scheduled of [false, true]) {
     Deno.test(`generated full ALM ${scheduled ? 'scheduled' : 'manual'} start preserves paired recovery connections and execution budget`, () => {
@@ -44,7 +45,7 @@ for (const scheduled of [false, true]) {
         // Only configuration and the existing fleet barrier are acknowledged here; no ALM outcome is invented.
         for (const phase of ['stage', 'barrier']) {
             for (const agentId of agents) {
-                const commands = service.takeDispatchableCommands(runId, agentId);
+                const commands = takeAgentDispatchableCommands(service, runId, agentId);
                 assert(commands.length > 0, `${phase} must reach ${agentId}`);
                 for (const command of commands) {
                     service.receiveClientEnvelope(resultEnvelope(command));
@@ -54,15 +55,15 @@ for (const scheduled of [false, true]) {
         assertRight(service.startDistributedRun(manifest.distributedRunId));
         if (scheduled) {
             for (const agentId of agents) {
-                assertEquals(service.takeDispatchableCommands(runId, agentId), [], 'scheduled start remains a not-before gate');
+                assertEquals(takeAgentDispatchableCommands(service, runId, agentId), [], 'scheduled start remains a not-before gate');
             }
             assertEquals(service.snapshotDistributedRun(manifest.distributedRunId)?.state, 'ready');
             now = 2_000;
             assertEquals(service.snapshotDistributedRun(manifest.distributedRunId)?.state, 'running');
         }
         const queuedAt = now;
-        const [senderPrefix] = service.takeDispatchableCommands(runId, agents[0]);
-        const [receiverReady] = service.takeDispatchableCommands(runId, agents[1]);
+        const [senderPrefix] = takeAgentDispatchableCommands(service, runId, agents[0]);
+        const [receiverReady] = takeAgentDispatchableCommands(service, runId, agents[1]);
         assert(senderPrefix?.command.kind === 'recipe.run' && senderPrefix.command.recipe);
         assert(receiverReady?.command.kind === 'recipe.run' && receiverReady.command.recipe);
         assertEquals(senderPrefix.command.recipe.recipeId, 'alm-conformance-sender');
@@ -94,7 +95,7 @@ for (const scheduled of [false, true]) {
         assert(receiverReady.recipeExecution?.segment);
         assertEquals(receiverReady.command.recipe.commands[receiverReady.recipeExecution.segment.end - 1]?.commandId, pair.checkpoints[0].receiverReadyEnd);
         assertEquals(receiverReady.command.recipe, receiver.command.recipe);
-        assertEquals(service.takeDispatchableCommands(runId, agents[1]), [], 'absence cannot execute before sender prefix receipt');
+        assertEquals(takeAgentDispatchableCommands(service, runId, agents[1]), [], 'absence cannot execute before sender prefix receipt');
 
         let prefixStart = 0;
         const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
@@ -120,16 +121,16 @@ for (const scheduled of [false, true]) {
             assertEquals(suffix.filter((command) => command.kind === 'messages.send'), [], 'recovery must not resend the original');
             prefixStart = suffixEnd + 1;
         }
-        assertEquals(service.takeDispatchableCommands(runId, agents[0]), [], 'no reload while the initial prefix is incomplete');
+        assertEquals(takeAgentDispatchableCommands(service, runId, agents[0]), [], 'no reload while the initial prefix is incomplete');
         now = queuedAt + 1_799_999;
-        service.takeDispatchableCommands(runId, agents[0]);
+        takeAgentDispatchableCommands(service, runId, agents[0]);
         assertEquals(
             service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId),
             undefined,
             'the actual root remains pending within its original execution budget'
         );
         now = queuedAt + 1_800_000;
-        service.takeDispatchableCommands(runId, agents[0]);
+        takeAgentDispatchableCommands(service, runId, agents[0]);
         const expired = service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId);
         assertEquals(expired?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT', 'dispatch does not reset or extend the original queued budget');
     });
@@ -162,7 +163,7 @@ for (const invalid of ['budget', 'peer'] as const) {
         assertRight(service.createDistributedRun(manifest));
         assertRight(service.stageDistributedRun(manifest.distributedRunId));
         for (const agentId of ['controller-01', 'controller-02']) {
-            for (const stage of service.takeDispatchableCommands(manifest.controlRunId, agentId)) {
+            for (const stage of takeAgentDispatchableCommands(service, manifest.controlRunId, agentId)) {
                 service.receiveClientEnvelope(resultEnvelope(stage));
             }
         }
@@ -193,18 +194,18 @@ for (const wrongIdentity of [false, true]) {
         assertRight(service.createDistributedRun(manifest));
         assertRight(service.stageDistributedRun(manifest.distributedRunId));
         for (const agentId of agents) {
-            for (const command of service.takeDispatchableCommands(runId, agentId)) {
+            for (const command of takeAgentDispatchableCommands(service, runId, agentId)) {
                 service.receiveClientEnvelope(resultEnvelope(command));
             }
         }
         for (const agentId of agents) {
-            for (const command of service.takeDispatchableCommands(runId, agentId)) {
+            for (const command of takeAgentDispatchableCommands(service, runId, agentId)) {
                 service.receiveClientEnvelope(resultEnvelope(command));
             }
         }
         assertRight(service.startDistributedRun(manifest.distributedRunId));
-        const sender = service.takeDispatchableCommands(runId, agents[0])[0];
-        const receiver = service.takeDispatchableCommands(runId, agents[1])[0];
+        const sender = takeAgentDispatchableCommands(service, runId, agents[0])[0];
+        const receiver = takeAgentDispatchableCommands(service, runId, agents[1])[0];
         assert(sender && receiver);
         const senderRecipe = manifest.recipes.find((selection) => selection.recipe?.recipeId === 'alm-conformance-sender')!.recipe!;
         const receiverRecipe = manifest.recipes.find((selection) => selection.recipe?.recipeId === 'alm-conformance-receiver')!.recipe!;
@@ -234,13 +235,13 @@ Deno.test('independent local ALM roots keep actual child evidence only within no
     service.receiveClientEnvelope(toRegisterEnvelope());
     const recipe = toLifecycleManifest().recipes[0].recipe!;
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'local', command: { kind: 'recipe.run', recipe } }));
-    const root = service.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const root = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0];
     service.receiveClientEnvelope(resultEnvelope(root, recipe));
     const recorded = service.snapshotRun('run-1')!.results[0].result?.value;
     assert(isJsonRecordValue(recorded) && Array.isArray(recorded.results));
     assertEquals(recorded.results.length, recipe.commands.length);
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'next', command: { kind: 'health' } }));
-    service.receiveClientEnvelope(resultEnvelope(service.takeDispatchableCommands('run-1', 'agent-1')[0]));
+    service.receiveClientEnvelope(resultEnvelope(takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0]));
     assertEquals(service.snapshotRun('run-1')!.results.map((result) => result.commandId), ['next']);
 });
 
@@ -291,13 +292,13 @@ function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined): Life
     assertRight(service.createDistributedRun(manifest));
     assertRight(service.stageDistributedRun(manifest.distributedRunId));
     const acknowledgeDispatched = () =>
-        agents.flatMap((agentId) => service.takeDispatchableCommands(runId, agentId))
+        agents.flatMap((agentId) => takeAgentDispatchableCommands(service, runId, agentId))
             .forEach((command) => service.receiveClientEnvelope(resultEnvelope(command)));
     acknowledgeDispatched();
     acknowledgeDispatched();
     assertRight(service.startDistributedRun(manifest.distributedRunId));
     agents.forEach((agentId) => {
-        const [root] = service.takeDispatchableCommands(runId, agentId);
+        const [root] = takeAgentDispatchableCommands(service, runId, agentId);
         assert(root?.command.kind === 'recipe.run' && root.command.recipe, `${agentId} must start its role recipe`);
         const recipe = root.command.recipe;
         service.receiveClientEnvelope(resultEnvelope(root, agentId === malformedAgentId ? { ...recipe, commands: [] } : recipe));

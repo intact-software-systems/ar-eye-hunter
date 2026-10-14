@@ -210,10 +210,14 @@ An ACK is `al.control.ack.v2`
 sender and receiver it names the acknowledged message's origin
 (`originPeerId`, the message's `senderId`) and the recipient it speaks for
 (`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
-re-originates each child ACK it admits as a `forwarded` ACK for the recipient
-that ACK names, and ends with its own terminal ACK (below). The relay refuses a
-child's ACK as a duplicate only when both its sender and its logical recipient
-repeat, so a child relay's ACKs for different recipients are each admitted. The origin is never copied from a child: the relay names its own
+re-originates a child ACK it admits as a `forwarded` ACK for the recipient
+that ACK names, once per recipient and, under `receiver` and `leader`, only for
+a member of the frozen audience, the only recipients the origin counts; it ends
+with its own terminal ACK (below). The relay refuses a child's ACK as a
+duplicate only when its sender, its logical recipient and whether it completes
+the child's hop all repeat, so a child relay's ACKs for different recipients are
+each admitted, and so is a recipient relay's terminal ACK after its `accepted`
+one. The origin is never copied from a child: the relay names its own
 message-owner row's sender, and both the relay's inbound control admission
 and the origin's outbound control admission refuse an ACK whose
 `originPeerId` names another origin. An
@@ -237,17 +241,24 @@ member of the frozen audience. Every other such ACK is refused at ingress as
 a typed value, except on an instance that holds no aggregate for it: with a
 cluster relay channel, an ACK that speaks for its own sender, is addressed
 to the origin it names and names a message the shared inbound store froze to
-that sender is handed to the instance that holds the aggregate instead, at most 60 relays per session per 60 s
-(D106; outbound README, "Server receipts on WS").
+that sender is handed to the instance that holds the aggregate instead, at most 8 relays per session per
+admitted message per 60 s; a session whose ACKs fail that proof 60 times in 60 s has its unowned ACKs refused
+unread. A notice that cannot be published is admitted where it arrived, where it counts nothing; the origin's
+ACK-timeout retry recovers it (D106; outbound README, "Server receipts on WS").
 
 The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
 content, not a key segment, because message ids are origin-unique and no
 group exists at every key site (R-S2c-i-2, amending D40; see the outbound
 README). A relay's inbound `pending` row tracks the child hops it forwarded
-to (S2c-ii). Every child ACK it admits is relayed upward at once as a
-`forwarded` ACK for the recipient it names, so a far recipient is never lost
-behind a relay whose row already completed. A child hop completes only on its
+to (S2c-ii). A child ACK it admits is relayed upward at once as a
+`forwarded` ACK for the recipient it names, when the origin counts that
+recipient and no earlier child ACK named it, so a far recipient is never lost
+behind a relay whose row already completed. Under `receiver` and `leader` a
+relay that is itself a logical recipient confirms itself at once with
+`accepted` beside its row, when it delivers or when an ordering gap releases its
+buffered copy: its confirmation never waits on its subtree, and `accepted`
+completes no hop. A child hop completes only on its
 own `delivered` ACK (a leaf) or its `subtree-complete` terminal ACK (a relay).
 Once this peer is ready and every child hop completed, the relay sends its
 own terminal `subtree-complete` ACK, naming itself, last; the parent reads it
@@ -732,9 +743,10 @@ reads the surface for itself.
 A batch runs the page's claims in rank order rather than page order:
 [`computeALInboundClaimOrder`](./read-al-inbound-work-selection.ts) puts `dispatch-local` and
 `release-buffered` first, then admission replays and rows whose kind the page never decoded,
-then `send-control` and `forward-message` last. Page order is key order, and an ACK's key can
-sort before the dispatch it acknowledges; running deliveries first keeps such an ACK from
-committing ahead of the delivery it is only useful after. The sort reads the kind from the map
+then `forward-message`. Where `send-control` runs depends on the lane: on the volatile lane it
+runs first, since an ACK confirms admission, never the handler, and must not wait behind a page
+of deliveries; on the durable lane it runs last beside `forward-message`, so its commits never
+delay a delivery (D19). The sort reads the kind from the map
 the eligibility read already filled, so it costs no operation and opens no transaction, and it
 is stable within a rank, so page order still decides among equals.
 

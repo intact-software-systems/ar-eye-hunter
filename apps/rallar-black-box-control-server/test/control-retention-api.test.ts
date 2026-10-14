@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForPathMissing, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
@@ -112,7 +113,6 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
     const beforePreview = await Deno.readTextFile(snapshotPath);
     const server = await startControlServer({
         RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
-        RALLAR_BLACK_BOX_MAX_REQUEST_BYTES: '8',
         RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '1',
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir
     });
@@ -171,7 +171,7 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
             {
                 method: 'POST',
                 headers: adminHeaders(),
-                body: '{ malformed and intentionally larger than the request body limit'
+                body: `{ malformed and intentionally larger than the request body limit ${'x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES)}`
             }
         );
         assertEquals(previewResponse.status, 200);

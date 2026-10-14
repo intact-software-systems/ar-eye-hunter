@@ -9,6 +9,7 @@ import {
     toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import { PacedEmit } from '@shared-test/rallar-bb-test/browser-control-agent/paced-emit.ts';
 import { readBrowserAuthSessionPresence } from '@shared-test/rallar-bb-test/browser-control-agent/read-browser-auth-session-presence.ts';
 import {
     toRallarBlackBoxFleetConfig,
@@ -58,7 +59,6 @@ import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-import { PacedEmit } from './app/paced-emit.ts';
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type StoreListener = () => void;

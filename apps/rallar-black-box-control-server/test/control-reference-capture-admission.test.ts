@@ -7,6 +7,7 @@ import {
     toControlServiceInput,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 for (const selection of ['recipe', 'step', 'omitted'] as const) {
     for (const bodyId of ['acknowledged', 'unowned', undefined]) {
@@ -20,7 +21,7 @@ for (const selection of ['recipe', 'step', 'omitted'] as const) {
                 commands: [{ kind: 'rtc.connect', commandId: 'connect', ...(selection === 'step' ? { rallar: { rtcCaptureMode: 'native' as const } } : {}) }]
             };
             assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'load', command: { kind: 'recipe.load', recipe } }));
-            service.takeDispatchableCommands('run-1', 'agent-1');
+            takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
             assertEquals(
                 service.receiveClientEnvelope({
                     kind: 'result',
@@ -43,7 +44,7 @@ for (const selection of ['recipe', 'step', 'omitted'] as const) {
                 true
             );
             assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'reference', command: { kind: 'recipe.run' } }));
-            const dispatch = service.takeDispatchableCommands('run-1', 'agent-1');
+            const dispatch = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
             assertEquals(
                 dispatch[0].command.kind === 'recipe.run' && dispatch[0].command.expectedRecipeBodyId,
                 selection === 'omitted' ? undefined : 'acknowledged'
@@ -96,7 +97,7 @@ for (const bodyId of ['acknowledged', 'unowned', undefined]) {
             commands: [{ kind: 'rtc.connect', commandId: 'connect' }]
         };
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'load', command: { kind: 'recipe.load', recipe } }));
-        service.takeDispatchableCommands('run-1', 'agent-1');
+        takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
         assertEquals(
             service.receiveClientEnvelope({
                 kind: 'result',
@@ -119,7 +120,7 @@ for (const bodyId of ['acknowledged', 'unowned', undefined]) {
             true
         );
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'reference', command: { kind: 'recipe.run' } }));
-        service.takeDispatchableCommands('run-1', 'agent-1');
+        takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
         assertEquals(
             service.receiveClientEnvelope({
                 kind: 'result',

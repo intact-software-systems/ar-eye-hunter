@@ -20,6 +20,7 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 import { SimulatedWebSocket } from '../../shared/native-websocket-fixture.ts';
 import { createBrowserTestStorage } from '../browser-test-storage.ts';
 
+import { takeAgentDispatchableCommands } from '../../../../apps/rallar-black-box-control-server/test/support/take-agent-dispatchable-commands.ts';
 import {
     createCaptureApplicationRuntime,
     createCaptureController,
@@ -60,7 +61,7 @@ describe('controller accepted recipe execution intent', () => {
         if (mutated) {
             expected.items[0].value = 5;
         }
-        const [dispatch] = service.takeDispatchableCommands('match-intent', 'match-agent');
+        const [dispatch] = takeAgentDispatchableCommands(service, 'match-intent', 'match-agent');
         const accepted = dispatch.command;
         let matched: boolean;
         if (accepted.kind === 'wait') {
@@ -124,7 +125,7 @@ describe('controller accepted recipe execution intent', () => {
                 expected[0] = 0;
                 expected[1] = 10;
             }
-            const [dispatch] = service.takeDispatchableCommands('assert-intent', 'assert-agent');
+            const [dispatch] = takeAgentDispatchableCommands(service, 'assert-intent', 'assert-agent');
             const { result, envelope } = await executeSerializedControllerCommand(runtime, dispatch);
             const admitted = service.receiveClientEnvelope(envelope);
             const effects = events.filter((event) => event.topic === 'rallar.browser.connect_completed');
@@ -169,7 +170,7 @@ describe('controller accepted recipe execution intent', () => {
                     command: { kind: 'recipe.load', recipe }
                 }).left
             ).toBeUndefined();
-            const [load] = service.takeDispatchableCommands('accepted-body-run', 'accepted-body-agent');
+            const [load] = takeAgentDispatchableCommands(service, 'accepted-body-run', 'accepted-body-agent');
             const { result: loadResult, envelope: loadEnvelope } = await executeSerializedControllerCommand(runtime, load);
             expect(loadResult).toMatchObject({ ok: true, value: { recipeBodyId: expect.any(String) } });
             expect(service.receiveClientEnvelope(loadEnvelope).accepted).toBe(true);
@@ -196,7 +197,7 @@ describe('controller accepted recipe execution intent', () => {
                     command: { kind: 'recipe.run', rtcCaptureMode: 'off' }
                 }).left
             ).toBeUndefined();
-            const [run] = service.takeDispatchableCommands('accepted-body-run', 'accepted-body-agent');
+            const [run] = takeAgentDispatchableCommands(service, 'accepted-body-run', 'accepted-body-agent');
             const { result, envelope } = await executeSerializedControllerCommand(runtime, run);
             const admitted = service.receiveClientEnvelope(envelope);
             const effects = events.filter((event) => event.topic === 'rallar.browser.connect_completed').map((event) => event.connection);
@@ -306,7 +307,7 @@ describe('controller accepted recipe execution intent', () => {
                 expect(service.createDistributedRun(manifest).left).toBeUndefined();
                 if (scenario !== 'direct inline') {
                     expect(service.stageDistributedRun('inline-intent').left).toBeUndefined();
-                    const [stage] = service.takeDispatchableCommands('inline-intent-run', 'inline-agent');
+                    const [stage] = takeAgentDispatchableCommands(service, 'inline-intent-run', 'inline-agent');
                     const { envelope } = await executeSerializedControllerCommand(runtime, stage);
                     expect(service.receiveClientEnvelope(envelope).accepted).toBe(true);
                 }
@@ -329,7 +330,7 @@ describe('controller accepted recipe execution intent', () => {
                     expect(events.filter((event) => event.topic === 'rallar.browser.connect_completed')).toEqual([]);
                     return;
                 }
-                const [start] = service.takeDispatchableCommands('inline-intent-run', 'inline-agent');
+                const [start] = takeAgentDispatchableCommands(service, 'inline-intent-run', 'inline-agent');
                 const { result, envelope } = await executeSerializedControllerCommand(runtime, start);
                 const admitted = service.receiveClientEnvelope(envelope);
                 if (scenario === 'mutated caller defaults') {
@@ -490,7 +491,7 @@ describe('SDK recipe execution across actual control consumers', () => {
                     }
                 }).left
             ).toBeUndefined();
-            const [dispatch] = service.takeDispatchableCommands('owned-progress', 'progress-agent');
+            const [dispatch] = takeAgentDispatchableCommands(service, 'owned-progress', 'progress-agent');
             await socket.receive(JSON.stringify(dispatch));
             await vi.waitFor(() => expect(runtime.state().activeCommand?.kind).toBe('wait'));
             const child = runtime.state().commandHistory.find((result) => result.kind === 'rtc.connect');
@@ -606,14 +607,14 @@ describe('SDK recipe execution across actual control consumers', () => {
                             JSON.stringify({ address, registration: registration, queued, relabeled, effects })
                         );
                         expect(queued.left?.code).toBe('command-payload-conflict');
-                        expect(service.takeDispatchableCommands(address.runId, address.agentId)).toEqual([]);
+                        expect(takeAgentDispatchableCommands(service, address.runId, address.agentId)).toEqual([]);
                         expect(effects).toEqual(['assignment-A']);
                         expect.soft(relabeled).toBeUndefined();
                         store.disconnectControl();
                         continue;
                     }
                     expect(queued.left).toBeUndefined();
-                    const [dispatch] = service.takeDispatchableCommands(address.runId, address.agentId);
+                    const [dispatch] = takeAgentDispatchableCommands(service, address.runId, address.agentId);
                     const envelope = dispatch === undefined ? readSocketResult(socket, rootCommandId) : await executeSocketCommand(socket, dispatch);
                     if (envelope === undefined) {
                         throw new Error('Interactive consumer did not return its recipe result.');
@@ -717,7 +718,7 @@ describe('SDK recipe execution across actual control consumers', () => {
                     }
                 }).left
             ).toBeUndefined();
-            const [original] = service.takeDispatchableCommands('settling-A', 'settling-agent');
+            const [original] = takeAgentDispatchableCommands(service, 'settling-A', 'settling-agent');
             await first.receive(JSON.stringify(original));
             await entered.promise;
             store.connectControl('ws://interactive.test/control', 'settling-B', 'settling-agent');
@@ -762,7 +763,7 @@ describe('SDK recipe execution across actual control consumers', () => {
                     }
                 }).left
             ).toBeUndefined();
-            const [next] = service.takeDispatchableCommands('settling-B', 'settling-agent');
+            const [next] = takeAgentDispatchableCommands(service, 'settling-B', 'settling-agent');
             expect.soft(next).toBeDefined();
             if (next !== undefined) {
                 const result = await executeSocketCommand(resumed, next);
@@ -851,17 +852,17 @@ describe('SDK recipe execution across actual control consumers', () => {
                         }
                     }).left
                 ).toBeUndefined();
-                const [prefix] = service.takeDispatchableCommands('sdk-reload', 'reload-agent');
+                const [prefix] = takeAgentDispatchableCommands(service, 'sdk-reload', 'reload-agent');
                 expect(prefix.deadlineEpochMs).toBe(deadlineEpochMs);
                 const prefixResult = await executeSocketCommand(prefixSocket, prefix);
                 expect(service.receiveClientEnvelope(prefixResult).accepted).toBe(true);
-                const [reload] = service.takeDispatchableCommands('sdk-reload', 'reload-agent');
+                const [reload] = takeAgentDispatchableCommands(service, 'sdk-reload', 'reload-agent');
                 expect(reload.command.kind).toBe('agent.reload');
                 expect(reload.deadlineEpochMs).toBe(deadlineEpochMs);
                 const reloadResult = await executeSocketCommand(prefixSocket, reload);
                 await vi.waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
                 expect(service.receiveClientEnvelope(reloadResult).accepted).toBe(true);
-                expect(service.takeDispatchableCommands('sdk-reload', 'reload-agent')).toEqual([]);
+                expect(takeAgentDispatchableCommands(service, 'sdk-reload', 'reload-agent')).toEqual([]);
                 agent.dispose();
                 await first.page.close();
                 service.markAgentDisconnected('sdk-reload', 'reload-agent');
@@ -878,7 +879,7 @@ describe('SDK recipe execution across actual control consumers', () => {
                 });
                 expect(service.receiveClientEnvelope(resumed).accepted).toBe(true);
                 expect(sessionStorage.getItem('rallar-bb-agent-resume')).toBeNull();
-                const [suffix] = service.takeDispatchableCommands('sdk-reload', 'reload-agent');
+                const [suffix] = takeAgentDispatchableCommands(service, 'sdk-reload', 'reload-agent');
                 expect(suffix.deadlineEpochMs).toBe(deadlineEpochMs);
                 const suffixResult = await executeSocketCommand(suffixSocket, suffix);
                 const admitted = service.receiveClientEnvelope(suffixResult);

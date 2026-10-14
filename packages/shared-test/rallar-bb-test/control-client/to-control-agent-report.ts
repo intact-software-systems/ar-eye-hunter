@@ -59,6 +59,8 @@ export interface ControlOwnedReportFacts {
     readonly state: RallarBlackBoxTestState;
     readonly admittedCommandIds: ReadonlySet<string>;
     readonly completedResults: WeakSet<RallarBlackBoxTestResult>;
+    /** A completed result whose frame was too large, mapped to the bounded failed result sent in its place. */
+    readonly frameLimitedResults: WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>;
     readonly publishedEvents: WeakSet<RallarBlackBoxTestEvent>;
     readonly publishedHistory: RallarBlackBoxEventHistory | undefined;
 }
@@ -66,7 +68,9 @@ export interface ControlOwnedReportFacts {
 /** Project only actually admitted/completed/published facts; cumulative runtime diagnostics remain local. */
 export function toControlOwnedReportState(facts: ControlOwnedReportFacts): RallarBlackBoxTestState {
     const { state } = facts;
-    const commandHistory = Object.values(state.resultCache).filter((result) => facts.completedResults.has(result));
+    const commandHistory = Object.values(state.resultCache)
+        .filter((result) => facts.completedResults.has(result))
+        .map((result) => facts.frameLimitedResults.get(result) ?? result);
     const activeCommand = facts.admittedCommandIds.has(state.activeCommand?.commandId ?? '')
         ? state.activeCommand
         : undefined;

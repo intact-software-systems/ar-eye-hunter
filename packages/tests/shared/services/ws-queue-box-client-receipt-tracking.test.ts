@@ -548,15 +548,34 @@ describe('WS client receipt admission edges', () => {
                 expect.objectContaining({ attempt, commitOutcome: 'conflict', pendingBefore: expect.objectContaining({ ackedPeerIds: [] }), settlement: null })
             )
         );
+        // The conflicted receipt is now retained work whose replay may take this outcome before the redelivery does.
         commit.mockResolvedValueOnce('expired');
         await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
-        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation').at(-1)).toMatchObject({
-            attempt: 1,
-            commitOutcome: 'expired',
-            settlement: null
-        });
+        expect(fixture.diagnostics.filter((event) => event.kind === 'receipt-confirmation')).toContainEqual(
+            expect.objectContaining({ commitOutcome: 'expired', settlement: null })
+        );
         expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: [] });
         expect(fixture.settlements.filter((event) => event.kind === 'acknowledgement' && event.complete)).toEqual([]);
+    });
+
+    it('acknowledges the handle once a receipt that kept conflicting is replayed as retained work', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        const store = fixture.outboundStores.admissionStore;
+        vi.spyOn(store, 'commitBundle')
+            .mockResolvedValueOnce('conflict')
+            .mockResolvedValueOnce('conflict')
+            .mockResolvedValueOnce('conflict');
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+
+        await expect.poll(() => fixture.settlements.filter((event) => event.kind === 'acknowledgement').at(-1)).toMatchObject({
+            msgId: 'room-message-1',
+            confirmedRecipientPeerIds: ['b', 'c'],
+            complete: true
+        });
+        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
     });
 
     it.each(['absent', 'throwing'] as const)('preserves receipt writes and settlements with an $0 diagnostics sink', async (sink) => {

@@ -35,6 +35,7 @@ import {
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 for (const replacesDocument of [true, false]) {
     Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
@@ -57,7 +58,7 @@ for (const replacesDocument of [true, false]) {
         assertRight(service.stageDistributedRun(manifest.distributedRunId));
         for (const _phase of ['stage', 'barrier']) {
             for (const [index, agentId] of agents.entries()) {
-                for (const command of service.takeDispatchableCommands(runId, agentId)) {
+                for (const command of takeAgentDispatchableCommands(service, runId, agentId)) {
                     await executeSegment(service, index === 0 ? ports.sender : ports.receiver, command);
                 }
             }
@@ -68,16 +69,16 @@ for (const replacesDocument of [true, false]) {
         const pair = toAlmReloadPair(root.command)!;
         assertEquals(pair.checkpoints.length, 3);
         for (const checkpoint of pair.checkpoints) {
-            const [prefix] = service.takeDispatchableCommands(runId, agents[0]);
-            const [ready] = service.takeDispatchableCommands(runId, agents[1]);
+            const [prefix] = takeAgentDispatchableCommands(service, runId, agents[0]);
+            const [ready] = takeAgentDispatchableCommands(service, runId, agents[1]);
             await executeSegment(service, ports.receiver, ready);
             await executeSegment(service, ports.sender, prefix);
             const entered = ports.beginAbsence();
-            const [absence] = service.takeDispatchableCommands(runId, agents[1]);
+            const [absence] = takeAgentDispatchableCommands(service, runId, agents[1]);
             const pending = executeSegment(service, ports.receiver, absence);
             await entered;
             try {
-                assertEquals(service.takeDispatchableCommands(runId, agents[0]), [], 'an unfinished real absence wait cannot authorize page replacement');
+                assertEquals(takeAgentDispatchableCommands(service, runId, agents[0]), [], 'an unfinished real absence wait cannot authorize page replacement');
             }
             finally {
                 ports.finishAbsence();
@@ -85,7 +86,7 @@ for (const replacesDocument of [true, false]) {
             }
             const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 });
             assert(snapshot.runs[0].results.some((result) => result.commandId === prefix.commandId), 'pending actual prefix evidence survives low bounds');
-            const [reload] = service.takeDispatchableCommands(runId, agents[0]);
+            const [reload] = takeAgentDispatchableCommands(service, runId, agents[0]);
             assertEquals(reload.command.kind, 'agent.reload');
             assert(reload.command.kind === 'agent.reload');
             const result = toAgentReloadResult({
@@ -100,12 +101,12 @@ for (const replacesDocument of [true, false]) {
             service.receiveClientEnvelope(
                 toRegisterEnvelope({ runId, agentId: agents[0], completedCommandIds: [reload.commandId], identity: toFleetIdentity(agents[0], manifest.group) })
             );
-            const [suffix] = service.takeDispatchableCommands(runId, agents[0]);
+            const [suffix] = takeAgentDispatchableCommands(service, runId, agents[0]);
             assert(suffix.command.kind === 'recipe.run');
             assert(suffix.recipeExecution?.segment);
             assertEquals(suffix.command.recipe?.commands[suffix.recipeExecution.segment.end - 1]?.commandId, checkpoint.senderSuffixEnd);
             await executeSegment(service, ports.sender, suffix);
-            const [recovery] = service.takeDispatchableCommands(runId, agents[1]);
+            const [recovery] = takeAgentDispatchableCommands(service, runId, agents[1]);
             await executeSegment(service, ports.receiver, recovery);
         }
         // The receiver's original generation is fenced until all recovery checkpoints have completed.
@@ -113,7 +114,7 @@ for (const replacesDocument of [true, false]) {
         service = createRallarBlackBoxControlService(input);
         service.restoreSnapshot(pending);
         register();
-        const [senderTrailing] = service.takeDispatchableCommands(runId, agents[0]);
+        const [senderTrailing] = takeAgentDispatchableCommands(service, runId, agents[0]);
         await executeSegment(service, ports.sender, senderTrailing);
         const senderCompleted = service.snapshotForPersistence({ commands: 1, results: 1 });
         assert(senderCompleted.runs[0].results.some((result) => result.commandId === senderRoot), 'real sender root survives until receiver assessment');
@@ -127,7 +128,7 @@ for (const replacesDocument of [true, false]) {
         service = createRallarBlackBoxControlService(input);
         service.restoreSnapshot(senderCompleted);
         register();
-        const [receiverTrailing] = service.takeDispatchableCommands(runId, agents[1]);
+        const [receiverTrailing] = takeAgentDispatchableCommands(service, runId, agents[1]);
         await executeSegment(service, ports.receiver, receiverTrailing);
         const completed = service.snapshotDistributedRun(manifest.distributedRunId);
         assertEquals(completed?.state, replacesDocument ? 'passed' : 'failed', JSON.stringify(completed?.rollup));

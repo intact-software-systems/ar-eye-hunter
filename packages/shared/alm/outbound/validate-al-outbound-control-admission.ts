@@ -1,11 +1,15 @@
-import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
+import {
+    isALHopCompletionAck,
+    type ALAckPayload,
+    type ALNackPayload,
+    type ALRepairPayload
+} from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
-import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALControlAdmissionCandidate, ALControlAdmissionRead } from './compute-al-outbound-control-admission.ts';
 import { resolveALOutboundRelayRejection } from './control/resolve-al-outbound-relay-rejection.ts';
-import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
+import { toALOutboundAckedPeerId, toALOutboundCompletedHopPeerIds } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
@@ -40,7 +44,7 @@ export function validateALOutboundControlAdmission(
         if (read.sent.reference.expiresAtMs <= read.nowMs) {
             issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
         }
-        return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
+        return [...issues, ...validateAcknowledgedReceipt(read, payload)];
     }
     const payload = read.parsed.payload;
     if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read, payload.fromPeerId)) {
@@ -57,12 +61,12 @@ export function validateALOutboundControlAdmission(
 
 /**
  * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
- * would move nothing is refused rather than committed, so it costs no write and no version bump.
+ * would move nothing is refused rather than committed, so it costs no write and no version bump. The
+ * exception is the terminal ACK of a recipient relay whose `accepted` ACK the receipt already counted:
+ * it completes that next hop, which the hop view records, so a retry never resends into its subtree.
  */
-function validateAcknowledgedReceipt(
-    pending: ALOutboundPendingAckSnapshot | undefined,
-    ack: ALAckPayload
-): readonly ALMessageRejection[] {
+function validateAcknowledgedReceipt(read: ALControlAdmissionRead, ack: ALAckPayload): readonly ALMessageRejection[] {
+    const pending = read.pending;
     const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
     if (!pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId)) {
         return [{
@@ -70,9 +74,18 @@ function validateAcknowledgedReceipt(
             message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
         }];
     }
-    return pending.ackedPeerIds.includes(countedPeerId)
+    return pending.ackedPeerIds.includes(countedPeerId) && !isOpenNextHopCompletion(read, ack)
         ? [{ code: 'unauthorized', message: 'AL acknowledgement confirms a peer the receipt already counted' }]
         : [];
+}
+
+function isOpenNextHopCompletion(read: ALControlAdmissionRead, ack: ALAckPayload): boolean {
+    const completedHopPeerIds = toALOutboundCompletedHopPeerIds(
+        read.history.kind === 'acks' ? read.history.values : []
+    );
+    return isALHopCompletionAck(ack) &&
+        read.sent?.policy.ackTracking?.nextHopPeerIds.includes(ack.fromPeerId) === true &&
+        !completedHopPeerIds.includes(ack.fromPeerId);
 }
 
 function isDuplicateControl(read: ALControlAdmissionRead): boolean {

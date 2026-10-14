@@ -12,7 +12,10 @@ import {
     GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
     GROUP_ASSERTION_CONFORMANCE_RECIPE_ID
 } from '@shared-test/rallar-bb-test/conformance/group-assertion-conformance.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRecipeResult,
+    RallarBlackBoxDistributedRunManifest
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-assertions-aggregates.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import type { DistributedGroupAssertionRecipeEvidence } from '@shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
@@ -115,6 +118,16 @@ function toRecipeEvidence(
         recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
         hasResult: true,
         resultValue: { results: [rootResult] }
+    };
+}
+
+function toPassedRecipeResult(agentId: string): RallarBlackBoxDistributedRecipeResult {
+    return {
+        recipeKey: `${agentId}:${GROUP_ASSERTION_CONFORMANCE_RECIPE_ID}`,
+        recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+        agentId,
+        state: 'passed',
+        ok: true
     };
 }
 
@@ -259,6 +272,87 @@ describe('rallar-bb-test group assertion conformance', () => {
         ]);
         expect(result?.error?.code).toBe('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING');
         expect(result?.error?.message).toContain('from: agent-b (undecodable), agent-c (undecodable).');
+    });
+
+    it('reads each agent recipe result tree once however many assertions address it', () => {
+        const agentIds = Array.from({ length: 12 }, (_, index) => `agent-${index + 1}`);
+        const readTreesFor = (assertionCount: number): number => {
+            let reads = 0;
+            const manifest = toGroupAssertionManifest();
+            const results = computeDistributedGroupAssertionResults({
+                manifest: {
+                    ...manifest,
+                    groupAssertions: Array.from({ length: assertionCount }, (_, index) => ({
+                        ...manifest.groupAssertions[0],
+                        groupAssertionId: `probe-${index}`
+                    }))
+                },
+                participants: agentIds.map((agentId) => ({ agentId, roles: [] })),
+                recipeResults: agentIds.map((agentId) => toPassedRecipeResult(agentId)),
+                recipeEvidence: agentIds.map((agentId) => {
+                    const rootResults = [toProbeResult(GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, 7)];
+                    return {
+                        agentId,
+                        recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+                        hasResult: true,
+                        resultValue: Object.defineProperty({}, 'results', {
+                            enumerable: true,
+                            get: () => {
+                                reads += 1;
+                                return rootResults;
+                            }
+                        })
+                    };
+                })
+            });
+            expect(results?.map((result) => result.ok)).toEqual(Array.from({ length: assertionCount }, () => true));
+            return reads;
+        };
+
+        expect(readTreesFor(10)).toBe(readTreesFor(1));
+    });
+
+    it('resolves every row of a many-agent evidence set from that agent and recipe alone', () => {
+        const agentIds = Array.from({ length: 30 }, (_, index) => `agent-${String(index).padStart(2, '0')}`);
+        const probe = toProbeResult(GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, 7);
+        const evidenceFor = (agentId: string, index: number): DistributedGroupAssertionRecipeEvidence[] => {
+            const otherRecipe = { ...toRecipeEvidence(agentId, probe), recipeId: 'other-recipe' };
+            switch (index % 5) {
+                case 0:
+                    return [otherRecipe, toRecipeEvidence(agentId, probe)];
+                case 1:
+                    return [otherRecipe, { agentId, recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID, hasResult: false }];
+                case 2:
+                    return [toRecipeEvidence(agentId, probe), toRecipeEvidence(agentId, probe)];
+                case 3:
+                    return [toProbeLoopEvidence(agentId, [
+                        toProbeLoopChild(GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, 0),
+                        toProbeLoopChild(GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, 1)
+                    ])];
+                default:
+                    return [otherRecipe];
+            }
+        };
+        const expectedRowFor = (agentId: string, index: number) => {
+            switch (index % 5) {
+                case 0:
+                    return { agentId, evidence: 'resolved', verdict: 'matching', value: 7 };
+                case 2:
+                case 3:
+                    return { agentId, evidence: 'duplicate' };
+                default:
+                    return { agentId, evidence: 'missing' };
+            }
+        };
+
+        const results = computeDistributedGroupAssertionResults({
+            manifest: toGroupAssertionManifest(),
+            participants: agentIds.map((agentId) => ({ agentId, roles: [] })),
+            recipeResults: agentIds.map((agentId) => toPassedRecipeResult(agentId)),
+            recipeEvidence: agentIds.flatMap(evidenceFor)
+        });
+
+        expect(results?.[0].perAgent).toEqual(agentIds.map(expectedRowFor));
     });
 
     it('redacts sensitive values in per-agent tables and error details', () => {

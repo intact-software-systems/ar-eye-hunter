@@ -132,6 +132,16 @@ the disposable test user. Override with `--register-before-login false` only
 when the target API already has persistent pre-provisioned users. The raw
 workflow input still defaults to `false` for manual compatibility.
 
+Headless agents on the controller VM register and log in from one IP. The API
+default of 20 registrations and 30 logins per IP per minute refuses cohorts
+above 20 agents, so `02-deploy-controller.sh` sets
+`RALLAR_REGISTRATION_IP_RATE_LIMIT` and `RALLAR_LOGIN_IP_RATE_LIMIT` to 200 in
+`/etc/rallar/api-v1.env`, and `08-rollout-controller.sh` keeps them; a
+controller deployed before that change needs a redeploy. A refused sign-in
+fails an `operator-spa` agent at start with the refusal text; the default
+`headless` entry registers at the recipe's first connection, where a refused
+registration still reports the following login's 401.
+
 For faster iteration after a successful deploy of the same ref, skip rollout,
 Playwright install, and `npm ci`:
 

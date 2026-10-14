@@ -1,4 +1,7 @@
 import { chromium, firefox, webkit, type Browser, type BrowserContext, type BrowserType, type Page } from 'playwright';
+
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     controlRunSnapshotUrlFromControlUrl,
     readHeadlessWorkerConfig,
@@ -9,8 +12,8 @@ import {
 import {
     attachHeadlessWorkerPageLogging,
     createHeadlessWorkerLogger,
-    headlessWorkerLogSecretsFromEnv,
     logHeadlessWorkerUiConfirmationFailure,
+    toHeadlessWorkerLogSecrets,
     waitForDistributedRunTerminal,
     waitForHeadlessWorkerAgentRegistration,
     waitForHeadlessWorkerExit,
@@ -18,21 +21,35 @@ import {
     type HeadlessWorkerRegistrationSnapshot
 } from '../src/headless-worker-runtime.ts';
 
-type RunningAgent = Readonly<{
-    agent: HeadlessWorkerAgentConfig;
-    context: BrowserContext;
-    page: Page;
-}>;
+interface RunningAgent {
+    readonly agent: HeadlessWorkerAgentConfig;
+    readonly context: BrowserContext;
+    readonly page: Page;
+}
 
-type ShutdownSignal = Readonly<{
-    signal: AbortSignal;
+interface ShutdownSignal {
+    readonly signal: AbortSignal;
     wait(signal?: AbortSignal): Promise<void>;
     dispose(): void;
-}>;
+}
+
+interface WaitForShutdownOrAbortInput {
+    readonly shutdown: Promise<void>;
+    readonly signal: AbortSignal;
+    readonly dispose: () => void;
+}
+
+interface OpenAgentInput {
+    readonly browser: Browser;
+    readonly agent: HeadlessWorkerAgentConfig;
+    readonly config: HeadlessWorkerConfig;
+    readonly signal: AbortSignal;
+}
 
 class HeadlessWorkerSignalShutdownError extends Error {}
 
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
+const SIGN_IN_REFUSAL_SELECTOR = '.auth-panel .workbench-error[role="status"]';
 const browserTypes = {
     chromium,
     firefox,
@@ -42,7 +59,7 @@ const browserTypes = {
 let browser: Browser | undefined;
 let runningAgents: readonly RunningAgent[] = [];
 let shutdown: ShutdownSignal | undefined;
-const bootstrapLogSecrets = headlessWorkerLogSecretsFromEnv(process.env);
+const bootstrapLogSecrets = toHeadlessWorkerLogSecrets(process.env);
 let logger = createWorkerLogger(bootstrapLogSecrets);
 
 try {
@@ -62,13 +79,16 @@ try {
             `engine=${config.browserEngine} ` +
             `spa=${config.spaUrl} control=${config.controlUrl}`
     );
-    browser = await browserTypes[config.browserEngine].launch({
+    const launchedBrowser = await browserTypes[config.browserEngine].launch({
         headless: config.headless,
         timeout: config.launchTimeoutMs
     });
+    browser = launchedBrowser;
 
     runningAgents = await Promise.all(
-        config.agents.map((agent) => openAgent(browser!, agent, config, activeShutdown.signal))
+        config.agents.map((agent) =>
+            openAgent({ browser: launchedBrowser, agent, config, signal: activeShutdown.signal })
+        )
     );
 
     log(
@@ -79,7 +99,7 @@ try {
 }
 catch (error) {
     if (!(error instanceof HeadlessWorkerSignalShutdownError)) {
-        logger.error(error);
+        logger.error(toError(error));
         process.exitCode = 1;
     }
 }
@@ -90,14 +110,10 @@ finally {
     log('Rallar black-box headless worker stopped.');
 }
 
-async function openAgent(
-    browser: Browser,
-    agent: HeadlessWorkerAgentConfig,
-    config: HeadlessWorkerConfig,
-    signal: AbortSignal
-): Promise<RunningAgent> {
+async function openAgent(input: OpenAgentInput): Promise<RunningAgent> {
+    const { agent, config } = input;
     log(`Opening agent ${agent.agentId} url=${agent.url}`);
-    const context = await browser.newContext();
+    const context = await input.browser.newContext();
     const page = await context.newPage();
     attachHeadlessWorkerPageLogging({
         agentId: agent.agentId,
@@ -112,12 +128,12 @@ async function openAgent(
     });
 
     await signInIfLoginGateIsVisible(page, agent, config);
-    await waitForAgentRegistration({ page, agent, config, signal });
+    await waitForAgentRegistration({ page, agent, config, signal: input.signal });
     log(`Agent ${agent.agentId} registered in control server`);
     void confirmAgentRegistrationUi(page, agent, config).catch((error) => {
         logHeadlessWorkerUiConfirmationFailure({
             agentId: agent.agentId,
-            error,
+            error: toError(error),
             logger
         });
     });
@@ -172,6 +188,7 @@ async function waitForAgentRegistration(input: WaitForAgentRegistrationInput): P
         signal: input.signal,
         fetchSnapshot: (signal) => readControlRunSnapshot(config, signal),
         readAgentPageStatus: () => readAgentPageStatus(page),
+        readSignInRefusal: () => readSignInRefusal(page),
         sleep: delay,
         now: Date.now
     });
@@ -186,6 +203,11 @@ async function readAgentPageStatus(page: Page): Promise<string | undefined> {
     );
     const status = parts.filter((part) => part !== null && part !== undefined && part !== '').join(' | ');
     return status === '' ? undefined : status;
+}
+
+async function readSignInRefusal(page: Page): Promise<string> {
+    const refusals = await page.locator(SIGN_IN_REFUSAL_SELECTOR).allTextContents();
+    return refusals.join(' ').trim();
 }
 
 async function confirmWorkbenchRegistrationUi(
@@ -372,10 +394,9 @@ async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
 
 function createShutdownSignal(): ShutdownSignal {
     const shutdownController = new AbortController();
-    let resolve!: () => void;
-    let settled = false;
-    const waitPromise = new Promise<void>((innerResolve) => {
-        resolve = innerResolve;
+    const settledController = new AbortController();
+    const waitPromise = new Promise<void>((resolve) => {
+        settledController.signal.addEventListener('abort', () => resolve(), { once: true });
     });
     const onSigint = () => stop('SIGINT');
     const onSigterm = () => stop('SIGTERM');
@@ -388,55 +409,48 @@ function createShutdownSignal(): ShutdownSignal {
         if (!shutdownController.signal.aborted) {
             shutdownController.abort(new Error('Headless worker shutdown disposed'));
         }
-        if (!settled) {
-            settled = true;
-            resolve();
-        }
+        settledController.abort();
     };
     const stop = (signal: string) => {
-        if (settled) {
+        if (settledController.signal.aborted) {
             return;
         }
-        settled = true;
         removeListeners();
         log(`Received ${signal}; shutting down`);
-        shutdownController.abort(
-            new HeadlessWorkerSignalShutdownError(
-                `Received ${signal}; shutting down`
-            )
-        );
-        resolve();
+        shutdownController.abort(new HeadlessWorkerSignalShutdownError(`Received ${signal}; shutting down`));
+        settledController.abort();
     };
 
     process.once('SIGINT', onSigint);
     process.once('SIGTERM', onSigterm);
     return {
         signal: shutdownController.signal,
-        wait: (signal) => {
-            if (!signal) {
-                return waitPromise;
-            }
-            return new Promise<void>((innerResolve, reject) => {
-                const cleanup = () => signal.removeEventListener('abort', onAbort);
-                const onAbort = () => {
-                    cleanup();
-                    dispose();
-                    reject(signal.reason ?? new Error('Operation aborted'));
-                };
-
-                if (signal.aborted) {
-                    onAbort();
-                    return;
-                }
-                signal.addEventListener('abort', onAbort, { once: true });
-                waitPromise.then(() => {
-                    cleanup();
-                    innerResolve();
-                });
-            });
-        },
+        wait: (signal) =>
+            signal === undefined ? waitPromise : waitForShutdownOrAbort({ shutdown: waitPromise, signal, dispose }),
         dispose
     };
+}
+
+function waitForShutdownOrAbort(input: WaitForShutdownOrAbortInput): Promise<void> {
+    const { signal } = input;
+    return new Promise<void>((resolve, reject) => {
+        const cleanup = () => signal.removeEventListener('abort', onAbort);
+        const onAbort = () => {
+            cleanup();
+            input.dispose();
+            reject(signal.reason ?? new Error('Operation aborted'));
+        };
+
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+        void input.shutdown.then(() => {
+            cleanup();
+            resolve();
+        });
+    });
 }
 
 function log(message: string): void {

@@ -1,12 +1,81 @@
 import { describe, expect, it } from 'vitest';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { decodeRecord } from '../../shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { createEventHistory, type RallarBlackBoxEventHistory } from '../../shared-test/rallar-bb-test/runtime/event-history.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { waitForEvent } from '../../shared-test/rallar-bb-test/wait/wait-for-event.ts';
 
 function sleepMs(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface CountedEventSource {
+    readonly events: () => readonly RallarBlackBoxTestEvent[];
+    readonly history: () => RallarBlackBoxEventHistory;
+    readonly reads: () => number;
+    readonly append: (event: RallarBlackBoxTestEvent) => void;
+    readonly subscribe: (
+        listener: (events: readonly RallarBlackBoxTestEvent[], history: RallarBlackBoxEventHistory) => void
+    ) => () => void;
+}
+
+/** Counts every indexed read of the retained events a wait is handed, the matching work an event costs it. */
+function createCountedEventSource(retainedCount: number): CountedEventSource {
+    let reads = 0;
+    let retained = Array.from({ length: retainedCount }, (_, index) => toNoiseEvent(index));
+    const listeners = new Set<(events: readonly RallarBlackBoxTestEvent[], history: RallarBlackBoxEventHistory) => void>();
+    const counted = (events: RallarBlackBoxTestEvent[]): readonly RallarBlackBoxTestEvent[] =>
+        new Proxy(events, {
+            get: (target, key, receiver) => {
+                if (typeof key === 'string' && /^\d+$/.test(key)) {
+                    reads += 1;
+                }
+                return Reflect.get(target, key, receiver);
+            }
+        });
+    const history = (): RallarBlackBoxEventHistory => ({
+        ...createEventHistory({ mode: 'full' }, { runtimeId: 'runtime-1', generation: 1 }, { status: 'unattached' }),
+        totalEvents: retained.length,
+        retainedEvents: retained.length
+    });
+    return {
+        events: () => counted(retained),
+        history,
+        reads: () => reads,
+        append: (event) => {
+            retained = [...retained, event];
+            listeners.forEach((listener) => listener(counted(retained), history()));
+        },
+        subscribe: (listener) => {
+            listeners.add(listener);
+            listener(counted(retained), history());
+            return () => listeners.delete(listener);
+        }
+    };
+}
+
+function toNoiseEvent(index: number): RallarBlackBoxTestEvent {
+    return { eventId: `noise-${index}`, kind: 'diagnostic', topic: 'rallar.browser.noise', atEpochMs: 1_000 + index, severity: 'info' };
+}
+
+function startCountedWait(source: CountedEventSource, command: RallarBlackBoxTestWaitCommand & { commandId: string; }) {
+    const cancellation = new AbortController();
+    const outcome = waitForEvent({
+        command,
+        now: () => 1_000,
+        sleep: (_ms, signal) => new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+        cancellationSignal: cancellation.signal,
+        cancelRequested: () => cancellation.signal.aborted,
+        currentStatus: () => 'running',
+        currentEvents: source.events,
+        currentEventHistory: source.history,
+        resultCache: {},
+        subscribe: source.subscribe
+    });
+    return { outcome, cancel: () => cancellation.abort() };
 }
 
 describe('rallar-bb-test wait absence', () => {
@@ -231,6 +300,33 @@ describe('rallar-bb-test wait absence', () => {
         expect(result.value).toHaveProperty('cancelled', true);
         expect(result.value).toHaveProperty('absent', true);
         expect(result.value).toHaveProperty('matched', false);
+    });
+
+    it('examines only the newly admitted event in each live wait, however many events are retained', async () => {
+        const source = createCountedEventSource(2_000);
+        const absent = startCountedWait(source, {
+            kind: 'wait',
+            commandId: 'absent-forbidden',
+            absent: true,
+            timeoutMs: 60_000,
+            match: { kind: 'message', topic: 'room.forbidden-topic' }
+        });
+        const present = startCountedWait(source, {
+            kind: 'wait',
+            commandId: 'present-ready',
+            timeoutMs: 60_000,
+            match: { kind: 'message', topic: 'room.ready', payloadPath: 'marker', contains: 'go' }
+        });
+        await Promise.resolve();
+        const readsBeforeEvent = source.reads();
+
+        source.append({ ...toNoiseEvent(2_000), topic: 'rallar.browser.other-noise' });
+
+        expect(source.reads() - readsBeforeEvent).toBeLessThanOrEqual(4);
+        source.append({ eventId: 'ready', kind: 'message', topic: 'room.ready', atEpochMs: 4_000, severity: 'info', payload: { marker: 'go' } });
+        expect((await present.outcome).status).toBe('ok');
+        absent.cancel();
+        expect((await absent.outcome).status).toBe('cancelled');
     });
 
     it('rejects absent values other than true at the runtime boundary', async () => {

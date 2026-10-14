@@ -13,6 +13,7 @@ import { assert, assertThrows } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 function identity(agentId: string): RallarBlackBoxControlAgentIdentity {
     return {
@@ -157,12 +158,12 @@ function runGroupAssertionDistributedRun(
     service.createDistributedRun(groupAssertionManifest(groupAssertions));
     service.stageDistributedRun('dist-ga-1');
     for (const agentId of agentIds) {
-        const stageCommand = service.takeDispatchableCommands('run-1', agentId)[0];
+        const stageCommand = takeAgentDispatchableCommands(service, 'run-1', agentId)[0];
         service.receiveClientEnvelope(stageResultEnvelope(agentId, stageCommand.commandId));
     }
     service.startDistributedRun('dist-ga-1');
     for (const agentId of agentIds) {
-        const startCommand = service.takeDispatchableCommands('run-1', agentId)[0];
+        const startCommand = takeAgentDispatchableCommands(service, 'run-1', agentId)[0];
         service.receiveClientEnvelope(
             recipeResultEnvelope(agentId, startCommand.commandId, probeValueByAgentId[agentId])
         );
@@ -270,7 +271,7 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
         command: { kind: 'recipe.run', recipe: ordinaryRecipe }
     });
     assert(ordinaryCommand.right);
-    assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-1').map((command) => command.commandId), ['ordinary-result']);
+    assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.commandId), ['ordinary-result']);
     assertJsonEquals(
         service.receiveClientEnvelope(
             recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } })

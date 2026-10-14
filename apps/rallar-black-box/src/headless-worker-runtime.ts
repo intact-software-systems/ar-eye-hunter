@@ -1,30 +1,27 @@
-import { toError } from '@shared/resilience/to-error.ts';
 import type { ConsoleMessage, Page, Request } from 'playwright';
 
-type DistributedRunSnapshot = Readonly<{
-    state?: string;
-}>;
+import { toError } from '@shared/resilience/to-error.ts';
 
-type DistributedRunResponse = Readonly<{
-    status: number;
-    ok: boolean;
-    body?: Readonly<{ cancel(): Promise<void>; }> | null;
+interface DistributedRunResponse {
+    readonly status: number;
+    readonly ok: boolean;
+    readonly body?: Readonly<{ cancel(): Promise<void>; }> | null;
     json(): Promise<unknown>;
-}>;
+}
 
-export type HeadlessWorkerRegistrationSnapshot = Readonly<{
-    agents?: readonly Readonly<{
+export interface HeadlessWorkerRegistrationSnapshot {
+    readonly agents?: readonly Readonly<{
         agentId?: string;
         connected?: boolean;
         status?: string;
     }>[];
-}>;
+}
 
-export type WaitForHeadlessWorkerAgentRegistrationInput = Readonly<{
-    agentId: string;
-    timeoutMs: number;
-    pollIntervalMs: number;
-    signal?: AbortSignal;
+export interface WaitForHeadlessWorkerAgentRegistrationInput {
+    readonly agentId: string;
+    readonly timeoutMs: number;
+    readonly pollIntervalMs: number;
+    readonly signal?: AbortSignal;
     fetchSnapshot(
         signal: AbortSignal
     ): Promise<HeadlessWorkerRegistrationSnapshot>;
@@ -35,52 +32,111 @@ export type WaitForHeadlessWorkerAgentRegistrationInput = Readonly<{
      * run snapshot, so its reason is only on the page.
      */
     readAgentPageStatus(): Promise<string | undefined>;
-}>;
+    /** Why the API refused the agent page's sign-in; such an agent never registers in the control run. */
+    readSignInRefusal(): Promise<string | undefined>;
+}
 
-export type WaitForDistributedRunTerminalInput = Readonly<{
-    runId: string;
-    url: string;
-    headers?: HeadersInit;
-    deadline: number | undefined;
-    timeoutMs: number | undefined;
-    pollIntervalMs: number;
-    signal?: AbortSignal;
-    fetch: (
+export interface WaitForDistributedRunTerminalInput {
+    readonly runId: string;
+    readonly url: string;
+    readonly headers?: HeadersInit;
+    readonly deadline: number | undefined;
+    readonly timeoutMs: number | undefined;
+    readonly pollIntervalMs: number;
+    readonly signal?: AbortSignal;
+    readonly fetch: (
         url: string,
         init?: RequestInit
     ) => Promise<DistributedRunResponse>;
-    sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
-    now: () => number;
-    log: (message: string) => void;
-}>;
+    readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+    readonly now: () => number;
+    readonly log: (message: string) => void;
+}
 
-export type WaitForHeadlessWorkerExitInput = Readonly<{
+export interface WaitForHeadlessWorkerExitInput {
     waitForShutdown(signal: AbortSignal): Promise<void>;
     waitForCompletion(signal: AbortSignal): Promise<void>;
-}>;
+}
 
-export type HeadlessWorkerLogger = Readonly<{
+export interface HeadlessWorkerLogger {
     log(message: string): void;
-    error(error: unknown): void;
-}>;
+    error(error: Error): void;
+}
 
-export type CreateHeadlessWorkerLoggerInput = Readonly<{
-    secrets: readonly (string | undefined)[];
-    now: () => Date;
-    writeLog: (message: string) => void;
-    writeError: (message: string) => void;
-}>;
+export interface CreateHeadlessWorkerLoggerInput {
+    readonly secrets: readonly (string | undefined)[];
+    readonly now: () => Date;
+    readonly writeLog: (message: string) => void;
+    readonly writeError: (message: string) => void;
+}
 
-export type AttachHeadlessWorkerPageLoggingInput = Readonly<{
-    agentId: string;
-    browserLogLevel: string;
-    page: Pick<Page, 'on'>;
-    logger: HeadlessWorkerLogger;
-}>;
+export interface AttachHeadlessWorkerPageLoggingInput {
+    readonly agentId: string;
+    readonly browserLogLevel: string;
+    readonly page: Pick<Page, 'on'>;
+    readonly logger: HeadlessWorkerLogger;
+}
+
+export interface LogHeadlessWorkerUiConfirmationFailureInput {
+    readonly agentId: string;
+    readonly error: Error;
+    readonly logger: HeadlessWorkerLogger;
+}
+
+type HeadlessWorkerRegistrationObservation =
+    | Readonly<{ kind: 'snapshot'; snapshot: HeadlessWorkerRegistrationSnapshot; }>
+    | Readonly<{ kind: 'unavailable'; failure: string; }>;
+
+type HeadlessWorkerAgentRegistrationState =
+    | Readonly<{ kind: 'registered'; }>
+    | Readonly<{ kind: 'pending'; lastState: string; }>
+    | Readonly<{ kind: 'failed'; failure: string; }>;
+
+type PromiseObservation<T> =
+    | Readonly<{ status: 'fulfilled'; value: T; }>
+    | Readonly<{ status: 'rejected'; reason: Error; }>;
+
+interface HeadlessWorkerAbortScope {
+    readonly signal: AbortSignal;
+    abort(reason: Error): void;
+    cleanup(): void;
+}
+
+type DistributedRunPoll =
+    | Readonly<{ kind: 'state' | 'retry'; state: string; message: string; }>
+    | Readonly<{ kind: 'malformed'; }>;
+
+interface CreateAbortScopeInput {
+    readonly parentSignal: AbortSignal | undefined;
+    readonly deadline: number | undefined;
+    readonly now: () => number;
+    readonly timeoutError: () => Error;
+}
+
+interface EnsureDeadlineActiveInput {
+    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly deadline: number;
+    readonly now: () => number;
+    readonly timeoutError: () => Error;
+}
+
+interface EnsureDistributedRunPollingActiveInput {
+    readonly polling: WaitForDistributedRunTerminalInput;
+    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly timeoutError: () => Error;
+    readonly response: DistributedRunResponse | undefined;
+}
+
+interface ReadDistributedRunPollInput {
+    readonly polling: WaitForDistributedRunTerminalInput;
+    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly ensureActive: (response?: DistributedRunResponse) => void;
+}
 
 const HEADLESS_WORKER_SECRET_ENV_KEY =
     /^RALLAR_BLACK_BOX_(?:PASSWORD|CONTROL_TOKEN|CONTROL_READ_TOKEN|AGENT_\d+_(?:PASSWORD|CONTROL_TOKEN))$/;
 
+const MALFORMED_DISTRIBUTED_RUN_POLL_LIMIT = 3;
 const TERMINAL_DISTRIBUTED_RUN_STATES = new Set([
     'passed',
     'failed',
@@ -105,7 +161,7 @@ export function redactHeadlessWorkerLogText(
     );
 }
 
-export function headlessWorkerLogSecretsFromEnv(
+export function toHeadlessWorkerLogSecrets(
     env: Readonly<Record<string, string | undefined>>
 ): readonly string[] {
     return Object.entries(env)
@@ -127,7 +183,7 @@ export function createHeadlessWorkerLogger(
         },
         error: (error) => {
             input.writeError(
-                `[rallar-black-box-worker] ${redact(headlessWorkerErrorMessage(error))}`
+                `[rallar-black-box-worker] ${redact(toHeadlessWorkerErrorMessage(error))}`
             );
         }
     };
@@ -160,16 +216,10 @@ export function attachHeadlessWorkerPageLogging(
     }
 }
 
-export function logHeadlessWorkerUiConfirmationFailure(
-    input: Readonly<{
-        agentId: string;
-        error: unknown;
-        logger: HeadlessWorkerLogger;
-    }>
-): void {
+export function logHeadlessWorkerUiConfirmationFailure(input: LogHeadlessWorkerUiConfirmationFailureInput): void {
     input.logger.log(
         `Agent ${input.agentId} registered in control server; UI confirmation skipped: ${
-            headlessWorkerErrorMessage(input.error)
+            toHeadlessWorkerErrorMessage(input.error)
         }`
     );
 }
@@ -213,19 +263,19 @@ export async function waitForHeadlessWorkerAgentRegistration(
         await pollForHeadlessWorkerAgentRegistration(input);
     }
     catch (error) {
-        throw await toAgentRegistrationFailure(error, input);
+        throw await toAgentRegistrationFailure(toError(error), input);
     }
 }
 
 /** The wait's own failure, named together with whatever the agent page says about itself. */
 async function toAgentRegistrationFailure(
-    error: unknown,
+    error: Error,
     input: WaitForHeadlessWorkerAgentRegistrationInput
 ): Promise<Error> {
     const pageStatus = await input.readAgentPageStatus().catch(() => undefined);
     return pageStatus === undefined || pageStatus === ''
-        ? toError(error)
-        : new Error(`${toError(error).message} Agent page status: ${pageStatus}`);
+        ? error
+        : new Error(`${error.message} Agent page status: ${pageStatus}`);
 }
 
 async function pollForHeadlessWorkerAgentRegistration(
@@ -238,56 +288,28 @@ async function pollForHeadlessWorkerAgentRegistration(
             `Timed out waiting ${input.timeoutMs}ms for agent ${input.agentId} ` +
                 `to register in control server snapshot. Last state: ${lastState}`
         );
-    const abortScope = createAbortScope({
-        parentSignal: input.signal,
-        deadline,
-        now: input.now,
-        timeoutError
-    });
-    const ensureActive = () => {
-        ensureDeadlineActive({
-            abortScope,
-            deadline,
-            now: input.now,
-            timeoutError
-        });
-    };
+    const abortScope = createAbortScope({ parentSignal: input.signal, deadline, now: input.now, timeoutError });
+    const ensureActive = () => ensureDeadlineActive({ abortScope, deadline, now: input.now, timeoutError });
 
     try {
         ensureActive();
         while (true) {
-            let snapshot: HeadlessWorkerRegistrationSnapshot;
-            try {
-                snapshot = await raceWithAbort(
-                    Promise.resolve().then(() => input.fetchSnapshot(abortScope.signal)),
-                    abortScope.signal
-                );
-                ensureActive();
-            }
-            catch (error) {
-                if (abortScope.signal.aborted) {
-                    throw abortReason(abortScope.signal);
-                }
-                ensureActive();
-                lastState = headlessWorkerErrorMessage(error);
-                await registrationSleepWithAbort(input, abortScope.signal);
-                ensureActive();
-                continue;
-            }
-
-            const registeredAgent = snapshot.agents?.find((candidate) => candidate.agentId === input.agentId);
-            if (registeredAgent?.connected) {
-                if (registeredAgent.status === 'failed') {
-                    throw new Error(
-                        `Agent ${input.agentId} registered with failed runtime status.`
-                    );
-                }
+            const observation = await readRegistrationObservation(input, abortScope.signal);
+            ensureActive();
+            const registration = toAgentRegistrationState(observation, input.agentId);
+            if (registration.kind === 'registered') {
                 return;
             }
-            lastState = registeredAgent
-                ? `connected=${registeredAgent.connected} status=${registeredAgent.status ?? 'unknown'}`
-                : 'not in run snapshot';
-            await registrationSleepWithAbort(input, abortScope.signal);
+            if (registration.kind === 'failed') {
+                throw new Error(registration.failure);
+            }
+            lastState = registration.lastState;
+
+            const signInRefusal = await readSignInRefusalWithAbort(input, abortScope.signal);
+            if (signInRefusal !== undefined) {
+                throw new Error(`Agent ${input.agentId} sign-in refused: ${signInRefusal}`);
+            }
+            await sleepWithAbort(input, abortScope.signal);
             ensureActive();
         }
     }
@@ -296,132 +318,86 @@ async function pollForHeadlessWorkerAgentRegistration(
     }
 }
 
-export async function waitForDistributedRunTerminal(
-    input: WaitForDistributedRunTerminalInput
-): Promise<void> {
-    if (input.deadline !== undefined && input.timeoutMs === undefined) {
-        throw new Error(
-            'timeoutMs is required when a polling deadline is configured'
+async function readRegistrationObservation(
+    input: WaitForHeadlessWorkerAgentRegistrationInput,
+    signal: AbortSignal
+): Promise<HeadlessWorkerRegistrationObservation> {
+    try {
+        const snapshot = await raceWithAbort(
+            Promise.resolve().then(() => input.fetchSnapshot(signal)),
+            signal
         );
+        return { kind: 'snapshot', snapshot };
+    }
+    catch (error) {
+        throwIfAborted(signal);
+        return { kind: 'unavailable', failure: toHeadlessWorkerErrorMessage(toError(error)) };
+    }
+}
+
+async function readSignInRefusalWithAbort(
+    input: WaitForHeadlessWorkerAgentRegistrationInput,
+    signal: AbortSignal
+): Promise<string | undefined> {
+    const refusal = await raceWithAbort(
+        Promise.resolve().then(() => input.readSignInRefusal()),
+        signal
+    );
+    return refusal === '' ? undefined : refusal;
+}
+
+function toAgentRegistrationState(
+    observation: HeadlessWorkerRegistrationObservation,
+    agentId: string
+): HeadlessWorkerAgentRegistrationState {
+    if (observation.kind === 'unavailable') {
+        return { kind: 'pending', lastState: observation.failure };
+    }
+    const registeredAgent = observation.snapshot.agents?.find((candidate) => candidate.agentId === agentId);
+    if (registeredAgent === undefined) {
+        return { kind: 'pending', lastState: 'not in run snapshot' };
+    }
+    if (!registeredAgent.connected) {
+        return {
+            kind: 'pending',
+            lastState: `connected=${registeredAgent.connected} status=${registeredAgent.status ?? 'unknown'}`
+        };
+    }
+    return registeredAgent.status === 'failed'
+        ? { kind: 'failed', failure: `Agent ${agentId} registered with failed runtime status.` }
+        : { kind: 'registered' };
+}
+
+export async function waitForDistributedRunTerminal(input: WaitForDistributedRunTerminalInput): Promise<void> {
+    if (input.deadline !== undefined && input.timeoutMs === undefined) {
+        throw new Error('timeoutMs is required when a polling deadline is configured');
     }
 
-    const timeoutError = () =>
-        new Error(
-            `Timed out after ${input.timeoutMs}ms waiting for distributed run ${input.runId} to become terminal at ${
-                redactHeadlessWorkerLogText(input.url, [])
-            }.`
-        );
+    const timeoutError = () => toDistributedRunTimeoutError(input);
     const abortScope = createAbortScope({
         parentSignal: input.signal,
         deadline: input.deadline,
         now: input.now,
         timeoutError
     });
-    const ensureActive = (response?: DistributedRunResponse) => {
-        ensurePollingActive(
-            input,
-            abortScope,
-            timeoutError,
-            response
-        );
-    };
+    const ensureActive = (response?: DistributedRunResponse) =>
+        ensureDistributedRunPollingActive({ polling: input, abortScope, timeoutError, response });
     let lastObservedState = '';
     let malformedJsonCount = 0;
 
     try {
         ensureActive();
         while (true) {
-            let response: DistributedRunResponse;
-            try {
-                response = await fetchWithAbort(input, abortScope.signal);
-                ensureActive(response);
+            const poll = await readDistributedRunPoll({ polling: input, abortScope, ensureActive });
+            malformedJsonCount = poll.kind === 'malformed' ? malformedJsonCount + 1 : 0;
+            if (malformedJsonCount >= MALFORMED_DISTRIBUTED_RUN_POLL_LIMIT) {
+                throw toMalformedDistributedRunError(input, malformedJsonCount);
             }
-            catch (error) {
-                if (abortScope.signal.aborted) {
-                    throw abortReason(abortScope.signal);
-                }
-                ensureActive();
-                const state = 'network-error';
-                if (lastObservedState !== state) {
-                    input.log(`Distributed run ${input.runId} state=${state}`);
-                    lastObservedState = state;
-                }
-                malformedJsonCount = 0;
-                await sleepWithAbort(input, abortScope.signal);
-                ensureActive();
-                continue;
+            if (poll.kind !== 'malformed' && lastObservedState !== poll.state) {
+                input.log(poll.message);
+                lastObservedState = poll.state;
             }
-            if (response.status === 404) {
-                cancelResponseBodyBestEffort(response);
-                ensureActive();
-                const state = 'not-created';
-                if (lastObservedState !== state) {
-                    input.log(`Distributed run ${input.runId} is not created yet.`);
-                    lastObservedState = state;
-                }
-                malformedJsonCount = 0;
-                await sleepWithAbort(input, abortScope.signal);
-                ensureActive();
-                continue;
-            }
-
-            if (response.status === 401 || response.status === 403) {
-                cancelResponseBodyBestEffort(response);
-                ensureActive();
-                throw new Error(
-                    `Distributed run ${input.runId} returned HTTP ${response.status}; ` +
-                        `check GitHub/operator control token configuration for ${
-                            redactHeadlessWorkerLogText(input.url, [])
-                        }.`
-                );
-            }
-
-            if (!response.ok) {
-                cancelResponseBodyBestEffort(response);
-                ensureActive();
-                const state = `http-${response.status}`;
-                if (lastObservedState !== state) {
-                    input.log(
-                        `Distributed run ${input.runId} returned HTTP ${response.status}; retrying.`
-                    );
-                    lastObservedState = state;
-                }
-                malformedJsonCount = 0;
-                await sleepWithAbort(input, abortScope.signal);
-                ensureActive();
-                continue;
-            }
-
-            let snapshot: DistributedRunSnapshot;
-            try {
-                snapshot = await raceWithAbort(
-                    Promise.resolve().then(() => response.json()),
-                    abortScope.signal
-                ) as DistributedRunSnapshot;
-            }
-            catch (error) {
-                ensureActive(response);
-                malformedJsonCount += 1;
-                if (malformedJsonCount >= 3) {
-                    throw new Error(
-                        `Distributed run ${input.runId} returned malformed JSON from ${
-                            redactHeadlessWorkerLogText(input.url, [])
-                        } for ${malformedJsonCount} consecutive polls.`
-                    );
-                }
-                await sleepWithAbort(input, abortScope.signal);
-                ensureActive();
-                continue;
-            }
-            ensureActive(response);
-
-            malformedJsonCount = 0;
-            const state = snapshot.state ?? 'unknown';
-            if (lastObservedState !== state) {
-                input.log(`Distributed run ${input.runId} state=${state}`);
-                lastObservedState = state;
-            }
-            if (TERMINAL_DISTRIBUTED_RUN_STATES.has(state)) {
+            if (poll.kind === 'state' && TERMINAL_DISTRIBUTED_RUN_STATES.has(poll.state)) {
                 return;
             }
             await sleepWithAbort(input, abortScope.signal);
@@ -433,52 +409,117 @@ export async function waitForDistributedRunTerminal(
     }
 }
 
-type PromiseObservation<T> =
-    | Readonly<{ status: 'fulfilled'; value: T; }>
-    | Readonly<{ status: 'rejected'; reason: unknown; }>;
+async function readDistributedRunPoll(input: ReadDistributedRunPollInput): Promise<DistributedRunPoll> {
+    const { polling, abortScope, ensureActive } = input;
+    let response: DistributedRunResponse;
+    try {
+        response = await fetchWithAbort(polling, abortScope.signal);
+        ensureActive(response);
+    }
+    catch {
+        throwIfAborted(abortScope.signal);
+        ensureActive();
+        return {
+            kind: 'retry',
+            state: 'network-error',
+            message: `Distributed run ${polling.runId} state=network-error`
+        };
+    }
+
+    if (!response.ok) {
+        cancelResponseBodyBestEffort(response);
+        ensureActive();
+        if (response.status === 401 || response.status === 403) {
+            throw new Error(
+                `Distributed run ${polling.runId} returned HTTP ${response.status}; ` +
+                    `check GitHub/operator control token configuration for ${
+                        redactHeadlessWorkerLogText(polling.url, [])
+                    }.`
+            );
+        }
+        return toDistributedRunRetryPoll(polling, response.status);
+    }
+
+    const state = await raceWithAbort(Promise.resolve().then(() => response.json()), abortScope.signal).then(
+        decodeDistributedRunState,
+        () => undefined
+    );
+    ensureActive(response);
+    return state === undefined
+        ? { kind: 'malformed' }
+        : { kind: 'state', state, message: `Distributed run ${polling.runId} state=${state}` };
+}
+
+function toDistributedRunTimeoutError(polling: WaitForDistributedRunTerminalInput): Error {
+    return new Error(
+        `Timed out after ${polling.timeoutMs}ms waiting for distributed run ${polling.runId} to become terminal at ${
+            redactHeadlessWorkerLogText(polling.url, [])
+        }.`
+    );
+}
+
+function toMalformedDistributedRunError(
+    polling: WaitForDistributedRunTerminalInput,
+    malformedJsonCount: number
+): Error {
+    return new Error(
+        `Distributed run ${polling.runId} returned malformed JSON from ${
+            redactHeadlessWorkerLogText(polling.url, [])
+        } for ${malformedJsonCount} consecutive polls.`
+    );
+}
+
+function toDistributedRunRetryPoll(polling: WaitForDistributedRunTerminalInput, status: number): DistributedRunPoll {
+    return status === 404
+        ? { kind: 'retry', state: 'not-created', message: `Distributed run ${polling.runId} is not created yet.` }
+        : {
+            kind: 'retry',
+            state: `http-${status}`,
+            message: `Distributed run ${polling.runId} returned HTTP ${status}; retrying.`
+        };
+}
+
+function decodeDistributedRunState(value: unknown): string {
+    if (typeof value !== 'object' || value === null || !('state' in value)) {
+        return 'unknown';
+    }
+    return typeof value.state === 'string' ? value.state : 'unknown';
+}
 
 function observePromise<T>(promise: Promise<T>): Promise<PromiseObservation<T>> {
     return promise.then(
         (value) => ({ status: 'fulfilled', value }),
-        (reason: unknown) => ({ status: 'rejected', reason })
+        (reason) => ({ status: 'rejected', reason: toError(reason) })
     );
 }
 
-function createAbortScope(
-    input: Readonly<{
-        parentSignal?: AbortSignal;
-        deadline: number | undefined;
-        now: () => number;
-        timeoutError: () => Error;
-    }>
-): Readonly<{
-    signal: AbortSignal;
-    abort(reason: unknown): void;
-    cleanup(): void;
-}> {
+function createAbortScope(input: CreateAbortScopeInput): HeadlessWorkerAbortScope {
+    const { parentSignal } = input;
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const abort = (reason: unknown) => {
+    const abort = (reason: Error) => {
         if (!controller.signal.aborted) {
             controller.abort(reason);
         }
     };
     const abortFromParent = () => {
-        abort(abortReason(input.parentSignal!));
+        if (parentSignal !== undefined) {
+            abort(abortReason(parentSignal));
+        }
     };
     const cleanup = () => {
         if (timeout !== undefined) {
             clearTimeout(timeout);
             timeout = undefined;
         }
-        input.parentSignal?.removeEventListener('abort', abortFromParent);
+        parentSignal?.removeEventListener('abort', abortFromParent);
     };
 
-    if (input.parentSignal?.aborted) {
+    if (parentSignal?.aborted) {
         abortFromParent();
     }
     else {
-        input.parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+        parentSignal?.addEventListener('abort', abortFromParent, { once: true });
     }
     if (input.deadline !== undefined && !controller.signal.aborted) {
         timeout = setTimeout(() => {
@@ -489,17 +530,7 @@ function createAbortScope(
     return { signal: controller.signal, abort, cleanup };
 }
 
-function ensureDeadlineActive(
-    input: Readonly<{
-        abortScope: Readonly<{
-            signal: AbortSignal;
-            abort(reason: unknown): void;
-        }>;
-        deadline: number;
-        now(): number;
-        timeoutError(): Error;
-    }>
-): void {
+function ensureDeadlineActive(input: EnsureDeadlineActiveInput): void {
     if (input.abortScope.signal.aborted) {
         throw abortReason(input.abortScope.signal);
     }
@@ -510,24 +541,14 @@ function ensureDeadlineActive(
     }
 }
 
-function ensurePollingActive(
-    input: WaitForDistributedRunTerminalInput,
-    abortScope: Readonly<{
-        signal: AbortSignal;
-        abort(reason: unknown): void;
-    }>,
-    timeoutError: () => Error,
-    response?: DistributedRunResponse
-): void {
-    let reason: unknown;
+function ensureDistributedRunPollingActive(input: EnsureDistributedRunPollingActiveInput): void {
+    const { abortScope, polling, response } = input;
+    let reason: Error;
     if (abortScope.signal.aborted) {
         reason = abortReason(abortScope.signal);
     }
-    else if (
-        input.deadline !== undefined &&
-        input.now() >= input.deadline
-    ) {
-        reason = timeoutError();
+    else if (polling.deadline !== undefined && polling.now() >= polling.deadline) {
+        reason = input.timeoutError();
         abortScope.abort(reason);
     }
     else {
@@ -558,18 +579,7 @@ async function fetchWithAbort(
 }
 
 async function sleepWithAbort(
-    input: WaitForDistributedRunTerminalInput,
-    signal: AbortSignal
-): Promise<void> {
-    throwIfAborted(signal);
-    await raceWithAbort(
-        Promise.resolve().then(() => input.sleep(input.pollIntervalMs, signal)),
-        signal
-    );
-}
-
-async function registrationSleepWithAbort(
-    input: WaitForHeadlessWorkerAgentRegistrationInput,
+    input: Pick<WaitForDistributedRunTerminalInput, 'pollIntervalMs' | 'sleep'>,
     signal: AbortSignal
 ): Promise<void> {
     throwIfAborted(signal);
@@ -594,28 +604,17 @@ function cancelResponseBodyBestEffort(
 }
 
 function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = (callback: () => void): void => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            signal.removeEventListener('abort', onAbort);
-            callback();
-        };
-        const onAbort = (): void => finish(() => reject(abortReason(signal)));
-
-        Promise.resolve(value).then(
-            (result) => finish(() => resolve(result)),
-            (error) => finish(() => reject(error))
-        );
-
+    return new Promise<T>((resolve, reject) => {
+        const rejectWithAbortReason = () => reject(abortReason(signal));
         if (signal.aborted) {
-            onAbort();
-            return;
+            rejectWithAbortReason();
         }
-        signal.addEventListener('abort', onAbort, { once: true });
+        else {
+            signal.addEventListener('abort', rejectWithAbortReason, { once: true });
+        }
+        void Promise.resolve(value)
+            .then(resolve, reject)
+            .finally(() => signal.removeEventListener('abort', rejectWithAbortReason));
     });
 }
 
@@ -625,8 +624,8 @@ function throwIfAborted(signal: AbortSignal): void {
     }
 }
 
-function abortReason(signal: AbortSignal): unknown {
-    return signal.reason ?? new Error('Operation aborted');
+function abortReason(signal: AbortSignal): Error {
+    return toError(signal.reason ?? new Error('Operation aborted'));
 }
 
 function shouldLogHeadlessWorkerBrowserConsole(
@@ -642,6 +641,6 @@ function shouldLogHeadlessWorkerBrowserConsole(
     return type === 'error' || type === 'warning';
 }
 
-function headlessWorkerErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.stack ?? error.message : String(error);
+function toHeadlessWorkerErrorMessage(error: Error): string {
+    return error.stack ?? error.message;
 }

@@ -293,6 +293,7 @@ async function waitForWorkerAgent(
             return await response.json();
         },
         readAgentPageStatus: async () => worker.getOutput(),
+        readSignInRefusal: async () => undefined,
         sleep: async (ms) => await new Promise((resolve) => setTimeout(resolve, ms)),
         now: Date.now
     });

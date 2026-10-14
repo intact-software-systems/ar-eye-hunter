@@ -90,7 +90,7 @@ async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBla
         return toWaitTimedOutOutcome(command, deadlineEpochMs);
     }
     return await new Promise<RallarBlackBoxTestCommandOutcome>((resolve) => {
-        new WaitEventSubscription(input, deadlineEpochMs, resolve).start();
+        new WaitEventSubscription({ input, deadlineEpochMs, latestMatch: immediate }, resolve).start();
     });
 }
 
@@ -105,25 +105,44 @@ export function computeWaitDeadlineEpochMs(window: RallarBlackBoxTestWaitWindow,
         : Math.min(timeoutDeadlineEpochMs, window.deadlineEpochMs);
 }
 
-/** Owns one pending wait: its timeout, abort listener and event subscription end together on the first outcome. */
+declare namespace WaitEventSubscription {
+    interface Start {
+        readonly input: WaitForEventInput;
+        readonly deadlineEpochMs: number;
+        /** The latest match among the events retained when the wait starts; absent when none matched. */
+        readonly latestMatch: RallarBlackBoxTestEvent | undefined;
+    }
+}
+
+/**
+ * Owns one pending wait: its timeout, abort listener and event subscription end together on the first outcome.
+ * Each notification examines only the events appended since the previous one, so the latest match stays exact.
+ */
 class WaitEventSubscription {
     private readonly input: WaitForEventInput;
     private readonly deadlineEpochMs: number;
     private readonly onOutcome: WaitOutcomeListener;
+    private latestMatch: RallarBlackBoxTestEvent | undefined;
     private offending: RallarBlackBoxTestEvent | undefined;
     private readonly historyGeneration: number;
+    private examinedGeneration: number;
+    private examinedTotalEvents: number;
     private historyChanged = false;
     private settled = false;
     private timeout: ReturnType<typeof setTimeout> | undefined;
     private unsubscribe: (() => void) | undefined;
     private unsubscribeOnceSubscribed = false;
 
-    constructor(input: WaitForEventInput, deadlineEpochMs: number, onOutcome: WaitOutcomeListener) {
-        this.input = input;
-        this.deadlineEpochMs = deadlineEpochMs;
+    constructor(start: WaitEventSubscription.Start, onOutcome: WaitOutcomeListener) {
+        const history = start.input.currentEventHistory();
+        this.input = start.input;
+        this.deadlineEpochMs = start.deadlineEpochMs;
         this.onOutcome = onOutcome;
-        this.historyGeneration = input.currentEventHistory().generation;
-        this.offending = resolveLatestWaitEvent(toWaitEvents(input, input.currentEvents()), input.command.match);
+        this.historyGeneration = history.generation;
+        this.examinedGeneration = history.generation;
+        this.examinedTotalEvents = history.totalEvents;
+        this.latestMatch = start.latestMatch;
+        this.offending = start.latestMatch;
     }
 
     private readonly onAbort = (): void => {
@@ -139,7 +158,7 @@ class WaitEventSubscription {
             this.stopWithOutcome(toWaitCancelledOutcome(command));
             return;
         }
-        const matched = resolveLatestWaitEvent(toWaitEvents(this.input, events), command.match);
+        const matched = this.resolveLatestMatch(events, history);
         if (command.absent === true) {
             this.offending = matched ?? this.offending;
             this.historyChanged ||= history.generation !== this.historyGeneration;
@@ -153,6 +172,24 @@ class WaitEventSubscription {
             this.stopWithOutcome(toWaitTimedOutOutcome(command, this.deadlineEpochMs));
         }
     };
+
+    /** A new history generation replaces the retained events, so its matches are resolved over all of them. */
+    private resolveLatestMatch(
+        events: readonly RallarBlackBoxTestEvent[],
+        history: RallarBlackBoxEventHistory
+    ): RallarBlackBoxTestEvent | undefined {
+        if (history.generation !== this.examinedGeneration) {
+            this.examinedGeneration = history.generation;
+            this.examinedTotalEvents = 0;
+            this.latestMatch = undefined;
+        }
+        const appendedCount = Math.min(events.length, history.totalEvents - this.examinedTotalEvents);
+        const appended = appendedCount > 0 ? events.slice(events.length - appendedCount) : [];
+        this.examinedTotalEvents = history.totalEvents;
+        this.latestMatch = resolveLatestWaitEvent(toWaitEvents(this.input, appended), this.input.command.match) ??
+            this.latestMatch;
+        return this.latestMatch;
+    }
 
     start(): void {
         const { command, cancellationSignal } = this.input;

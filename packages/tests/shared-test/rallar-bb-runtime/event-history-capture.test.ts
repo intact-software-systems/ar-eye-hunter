@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { RallarBlackBoxControlClient } from '../../../shared-test/rallar-bb-test/control-client.ts';
-import { parseControlClientMessage } from '../../../shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    parseControlClientMessage,
+    RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+} from '../../../shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestRuntime } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { FakeControlSocket } from './fake-control-socket.ts';
@@ -15,7 +18,8 @@ function createClient(runtime: RallarBlackBoxTestRuntime, socket: FakeControlSoc
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 0,
         reconnectBaseMs: 60_000,
-        reconnectMaxMs: 60_000
+        reconnectMaxMs: 60_000,
+        maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
     });
 }
 

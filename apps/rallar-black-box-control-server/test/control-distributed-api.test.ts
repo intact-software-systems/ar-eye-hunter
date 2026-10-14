@@ -153,7 +153,7 @@ Deno.test('distributed HTTP admission retains explicit Off through actual result
             finally {
                 clearTimeout(timeout);
             }
-            await waitForPersistedSnapshot(storageDir, '"state": "passed"');
+            await waitForPersistedSnapshot(storageDir, '"state":"passed"');
             const run = await getJson<unknown>(server.baseUrl, '/distributed-runs/api-capture-run');
             assert(isJsonRecordValue(run));
             assertEquals(run.state, 'passed');
@@ -399,7 +399,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
             await waitForPersistedSnapshot(storageDir, 'api-dist-1');
             agentSocket.close();
             agentSocket = undefined;
-            await waitForPersistedSnapshot(storageDir, '"state": "failed"');
+            await waitForPersistedSnapshot(storageDir, '"state":"failed"');
         }
         finally {
             try {

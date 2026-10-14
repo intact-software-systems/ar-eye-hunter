@@ -1,6 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { ControlServiceFailure } from '../control-service.ts';
+import type { ControlServiceFailure } from '../control-service-failure.ts';
 import type { ControlHttpRejection } from '../http/control-http-responses.ts';
 
 export const ADMIN_TOKEN_REJECTION: ControlHttpRejection = {

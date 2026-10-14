@@ -2,10 +2,14 @@ import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-bo
 
 import { ControlAgentSockets } from './control-agent-sockets.ts';
 import { ControlArtifactRecorder } from './control-artifact-recorder.ts';
-import { readBlackBoxControlServerConfiguration } from './control-server-configuration.ts';
+import {
+    readBlackBoxControlServerConfiguration,
+    validateBlackBoxControlServerConfiguration
+} from './control-server-configuration.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
 import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins } from './cors.ts';
+import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
 import { createControlHttpResponses } from './http/control-http-responses.ts';
 import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
@@ -17,6 +21,10 @@ const DEFAULT_PORT = 5180;
 assertBlackBoxControlProductionEnv(Deno.env);
 
 const security = readBlackBoxControlServerConfiguration(Deno.env);
+const configurationIssues = validateBlackBoxControlServerConfiguration(security);
+if (configurationIssues.length > 0) {
+    throw new Error(`Invalid black-box control server configuration: ${configurationIssues.join(' ')}`);
+}
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 
@@ -24,7 +32,8 @@ const controlService = createRallarBlackBoxControlService({
     dependencies: {
         now: () => Date.now(),
         createCommandId: () => crypto.randomUUID(),
-        createRunToken: () => crypto.randomUUID()
+        createRunToken: () => crypto.randomUUID(),
+        toDistributedRunRollup
     },
     config: {
         redaction: undefined,

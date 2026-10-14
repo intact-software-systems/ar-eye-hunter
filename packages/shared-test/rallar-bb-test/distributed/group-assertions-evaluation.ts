@@ -12,8 +12,10 @@ import {
 } from './group-assertions-aggregates.ts';
 import {
     computeGroupAssertionEvidenceRows,
+    toGroupAssertionEvidenceIndex,
     type DistributedGroupAssertionParticipant,
     type DistributedGroupAssertionRecipeEvidence,
+    type GroupAssertionEvidenceIndex,
     type GroupAssertionEvidenceRow,
     type ResolvedGroupAssertionEvidenceRow
 } from './group-assertions-evidence.ts';
@@ -85,15 +87,17 @@ export function computeDistributedGroupAssertionResults(
     if (!complete) {
         return undefined;
     }
-    return groupAssertions.map((assertion) => computeGroupAssertionResult(assertion, input));
+    const evidenceIndex = toGroupAssertionEvidenceIndex(input.recipeEvidence);
+    return groupAssertions.map((assertion) => computeGroupAssertionResult(assertion, input, evidenceIndex));
 }
 
 function computeGroupAssertionResult(
     assertion: RallarBlackBoxDistributedGroupAssertion,
-    input: ComputeDistributedGroupAssertionResultsInput
+    input: ComputeDistributedGroupAssertionResultsInput,
+    evidenceIndex: GroupAssertionEvidenceIndex
 ): RallarBlackBoxDistributedGroupAssertionResult {
     if (assertion.aggregate === 'sameUniqueStringSetAsRole') {
-        return computeRoleSetGroupAssertionResult(assertion, input);
+        return computeRoleSetGroupAssertionResult(assertion, input, evidenceIndex);
     }
     const scopeRole = assertion.scope?.role;
     const scopedParticipants = scopeRole === undefined
@@ -106,7 +110,7 @@ function computeGroupAssertionResult(
     const rows = computeGroupAssertionEvidenceRows({
         source: assertion.source,
         participants: scopedParticipants,
-        recipeEvidence: input.recipeEvidence
+        evidenceIndex
     });
     const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
@@ -134,7 +138,8 @@ function computeGroupAssertionResult(
 
 function computeRoleSetGroupAssertionResult(
     assertion: Extract<RallarBlackBoxDistributedGroupAssertion, { aggregate: 'sameUniqueStringSetAsRole'; }>,
-    input: ComputeDistributedGroupAssertionResultsInput
+    input: ComputeDistributedGroupAssertionResultsInput,
+    evidenceIndex: GroupAssertionEvidenceIndex
 ): RallarBlackBoxDistributedGroupAssertionResult {
     const senders = input.participants.filter((participant) => participant.roles.includes(assertion.scope.role));
     if (senders.length === 0) {
@@ -144,12 +149,12 @@ function computeRoleSetGroupAssertionResult(
     const senderRows = computeGroupAssertionEvidenceRows({
         source: assertion.source,
         participants: senders,
-        recipeEvidence: input.recipeEvidence
+        evidenceIndex
     });
     const receiverRows = computeGroupAssertionEvidenceRows({
         source: assertion.comparison.source,
         participants: receivers,
-        recipeEvidence: input.recipeEvidence
+        evidenceIndex
     });
     const rows = [...senderRows, ...receiverRows];
     const senderAgentIds = new Set(senders.map((participant) => participant.agentId));

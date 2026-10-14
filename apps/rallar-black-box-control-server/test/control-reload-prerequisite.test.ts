@@ -19,6 +19,7 @@ import {
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 const PAIR = {
     runId: 'run-1',
@@ -68,12 +69,12 @@ Deno.test('paired reload cannot dispatch before its exact receiver absence resul
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const receiverRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
     const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    const [ready] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, receiverRuntime, ready);
-    assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
-    const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+    const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, prefix);
-    const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     assert(absence.command.kind === 'recipe.run');
     assertEquals(absence.command.recipe, RECEIVER);
     assertEquals(absence.recipeExecution?.segment, { start: 1, end: 2, first: false });
@@ -86,11 +87,11 @@ Deno.test('paired reload cannot dispatch before its exact receiver absence resul
     const receiverResult = runSegment(service, receiverRuntime, absence);
     await absenceStarted.promise;
     try {
-        assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
         await receiverResult;
-        const [reload] = service.takeDispatchableCommands('run-1', 'sender');
+        const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         assertEquals(reload.command.kind, 'agent.reload');
-        assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
     }
     finally {
         await receiverResult;
@@ -103,7 +104,7 @@ Deno.test('paired reload waits for both exact logical roots before dispatching e
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
 
-    assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
 });
 
 function toPairedRoot(role: 'sender' | 'receiver', recipe: RallarBlackBoxTestRecipe): EnqueueControlCommandInput {
@@ -149,12 +150,12 @@ Deno.test('missing paired peer consumes the original queued deadline across rest
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     now = 1_500;
-    assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(service.snapshotForPersistence());
     restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
     now = 2_001;
-    assertEquals(restored.takeDispatchableCommands('run-1', 'sender'), []);
+    assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'sender'), []);
     const root = restored.snapshotRun('run-1')?.results.find((result) => result.commandId === 'sender-root');
     assertEquals(root?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT');
 });
@@ -165,7 +166,7 @@ Deno.test('malformed pair metadata cannot fall back to ordinary recipe dispatch'
         const root = toPairedRoot('receiver', RECEIVER);
         const outcome = service.enqueueCommand({ ...root, command: { ...root.command, metadata: { almReloadPair } } });
         assertEquals(outcome.left?.code, 'command-payload-conflict');
-        assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
     }
 });
 
@@ -175,12 +176,12 @@ Deno.test('receiver reconnect cannot reuse a ready result to authorize reload', 
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
-    const [ready] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), ready);
     service.markAgentDisconnected('run-1', 'receiver');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
-    assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
     const roots = service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId));
     assertEquals(roots?.map((result) => result.ok), [false, false]);
 });
@@ -195,10 +196,10 @@ for (const bounds of [1, 1_000]) {
         assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
         assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
         const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-        await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
+        await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
         const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-        await runSegment(service, senderRuntime, service.takeDispatchableCommands('run-1', 'sender')[0]);
-        const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+        await runSegment(service, senderRuntime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
+        const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
         const entered = Promise.withResolvers<void>();
         const unsubscribe = runtime.subscribe((state) => {
             if (state.activeCommand?.commandId === 'receiver-absence') {
@@ -209,7 +210,7 @@ for (const bounds of [1, 1_000]) {
         await entered.promise;
         try {
             assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'sender', commandId: 'stop-pair', command: { kind: 'recipe.cancel' } }));
-            const [cleanup] = service.takeDispatchableCommands('run-1', 'receiver');
+            const [cleanup] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
             assert(cleanup.command.kind === 'recipe.cancel');
             assertEquals(cleanup.command.targetCommandId, absence.commandId);
             const cancellation = await executeControlRuntimeCommand(runtime, cleanup);
@@ -227,8 +228,8 @@ for (const bounds of [1, 1_000]) {
                 }).accepted,
                 true
             );
-            assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
-            const senderCleanup = service.takeDispatchableCommands('run-1', 'sender');
+            assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
+            const senderCleanup = takeAgentDispatchableCommands(service, 'run-1', 'sender');
             assertEquals(senderCleanup.map((command) => command.command.kind), ['recipe.cancel', 'close']);
             for (const command of senderCleanup) {
                 await runSegment(service, senderRuntime, command);
@@ -257,12 +258,12 @@ Deno.test('completed receiver proof remains full under retention pressure while 
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    const [ready] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, runtime, ready);
-    await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), service.takeDispatchableCommands('run-1', 'sender')[0]);
-    const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+    await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
+    const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, runtime, absence);
-    const [recovery] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [recovery] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, runtime, recovery);
     const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 });
     assertEquals(snapshot.runs[0].results.find((result) => result.commandId === 'receiver-root')?.ok, true);
@@ -274,7 +275,7 @@ Deno.test('completed receiver proof remains full under retention pressure while 
     const restored = createRallarBlackBoxControlService(input);
     restored.restoreSnapshot(snapshot);
     restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
-    const [reload] = restored.takeDispatchableCommands('run-1', 'sender');
+    const [reload] = takeAgentDispatchableCommands(restored, 'run-1', 'sender');
     assertEquals(reload.command.kind, 'agent.reload');
     const restoredProof = restored.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.find((result) => result.commandId === absence.commandId);
     assertEquals(restoredProof?.result?.value, retained.find((result) => result.commandId === absence.commandId)?.result?.value);
@@ -289,10 +290,10 @@ for (const phase of ['ready', 'absence-pending', 'absence-completed'] as const) 
         assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
         assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
         const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-        await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
+        await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
         if (phase !== 'ready') {
-            await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'sender')[0]);
-            const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+            await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
+            const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
             if (phase === 'absence-completed') {
                 await runSegment(service, runtime, absence);
             }
@@ -301,8 +302,8 @@ for (const phase of ['ready', 'absence-pending', 'absence-completed'] as const) 
         restored.restoreSnapshot(service.snapshotForPersistence());
         restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
         restored.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-        assertEquals(restored.takeDispatchableCommands('run-1', 'sender'), []);
-        assertEquals(restored.takeDispatchableCommands('run-1', 'receiver'), []);
+        assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(restored, 'run-1', 'receiver'), []);
         const roots = restored.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId));
         assertEquals(roots?.length, 2);
         assert(roots?.every((root) => root.ok === false));
@@ -316,18 +317,18 @@ Deno.test('queued cleanup is refused after receiver generation changes and never
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
-    await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'sender')[0]);
-    const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+    await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
+    await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
+    const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     assert(absence.command.kind === 'recipe.run');
     assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'sender', commandId: 'stop', command: { kind: 'recipe.cancel' } }));
     service.markAgentDisconnected('run-1', 'receiver');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
     const refused = service.snapshotRun('run-1')?.results.find((result) => result.result?.error?.code === 'RALLAR_BLACK_BOX_RELOAD_CLEANUP_TARGET_UNAVAILABLE');
     assertEquals(refused?.result?.value, { cancelRequested: false, targetCommandId: absence.commandId });
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
-    assertEquals(service.takeDispatchableCommands('run-1', 'receiver'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver'), []);
 });
 
 Deno.test('only the exact complete receiver absence result unlocks sender reload', async () => {
@@ -337,9 +338,9 @@ Deno.test('only the exact complete receiver absence result unlocks sender reload
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
-    await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'sender')[0]);
-    const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+    await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
+    await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
+    const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     const result = await executeControlRuntimeCommand(runtime, absence);
     assertEquals(result.ok, true);
     const actual = {
@@ -359,10 +360,10 @@ Deno.test('only the exact complete receiver absence result unlocks sender reload
         ]
     ) {
         assertEquals(service.receiveClientEnvelope(invalid).accepted, false);
-        assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
     }
     assertEquals(service.receiveClientEnvelope(actual).accepted, true);
-    assertEquals(service.takeDispatchableCommands('run-1', 'sender').map((command) => command.command.kind), ['agent.reload']);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender').map((command) => command.command.kind), ['agent.reload']);
 });
 
 for (const restrictedBy of ['allowlist', 'rate'] as const) {
@@ -396,7 +397,7 @@ for (const restrictedBy of ['allowlist', 'rate'] as const) {
         assertRight(service.enqueueCommand(toPairedRoot('receiver', receiver)));
         const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
         const receiverRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-        const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+        const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         const entered = Promise.withResolvers<void>();
         const unsubscribe = senderRuntime.subscribe((state) => {
             if (state.activeCommand?.commandId === 'sender-prefix') {
@@ -407,7 +408,7 @@ for (const restrictedBy of ['allowlist', 'rate'] as const) {
         await entered.promise;
         try {
             receiverRuntime.recordEvent({ kind: 'event', topic: 'unexpected' });
-            const [ready] = service.takeDispatchableCommands('run-1', 'receiver');
+            const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
             const failure = await executeControlRuntimeCommand(receiverRuntime, ready);
             assertEquals(failure.ok, false);
             assertEquals(
@@ -422,7 +423,7 @@ for (const restrictedBy of ['allowlist', 'rate'] as const) {
                 }).accepted,
                 true
             );
-            assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+            assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
             const root = service.snapshotRun('run-1')?.results.find((result) => result.commandId === 'sender-root');
             assertEquals(root?.result?.error?.details, {
                 cleanupFailure: restrictedBy === 'allowlist'
@@ -447,10 +448,10 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
     const receiverRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    await runSegment(service, receiverRuntime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
-    const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+    await runSegment(service, receiverRuntime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
+    const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, prefix);
-    const [absence] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [absence] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     receiverRuntime.recordEvent({ kind: 'event', topic: 'original' });
     const failure = await executeControlRuntimeCommand(receiverRuntime, absence);
     assertEquals(failure.ok, false);
@@ -466,7 +467,7 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
         }).accepted,
         true
     );
-    const [cleanup] = service.takeDispatchableCommands('run-1', 'sender');
+    const [cleanup] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     assert(cleanup.command.kind === 'close');
     assertEquals(cleanup.command.targetCommandId, prefix.commandId);
     const closed = await executeControlRuntimeCommand(senderRuntime, cleanup);
@@ -483,7 +484,7 @@ Deno.test('failed actual receiver absence closes the successful sender prefix in
         }).accepted,
         true
     );
-    assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
 });
 
 Deno.test('actual finish between cancel queue and execution permits exactly one guarded close successor', async () => {
@@ -501,7 +502,7 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
     assertRight(service.enqueueCommand(toPairedRoot('sender', sender)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+    const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     const entered = Promise.withResolvers<void>();
     const unsubscribe = runtime.subscribe((state) => {
         if (state.activeCommand?.commandId === 'sender-prefix') {
@@ -512,7 +513,7 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
     await entered.promise;
     try {
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'receiver', commandId: 'stop', command: { kind: 'recipe.cancel' } }));
-        const [cancellation] = service.takeDispatchableCommands('run-1', 'sender');
+        const [cancellation] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         assert(cancellation.command.kind === 'recipe.cancel');
         runtime.recordEvent({ kind: 'event', topic: 'finish-prefix' });
         const finished = await running;
@@ -544,7 +545,7 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
         const pending = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
         assert(pending.commands.some((command) => command.envelope.commandId === prefix.commandId));
         assert(pending.results.some((result) => result.commandId === cancellation.commandId));
-        const [close] = service.takeDispatchableCommands('run-1', 'sender');
+        const [close] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         assert(close.command.kind === 'close');
         assertEquals(close.command.targetCommandId, prefix.commandId);
         assertEquals(close.deadlineEpochMs, cancellation.deadlineEpochMs);
@@ -563,7 +564,7 @@ Deno.test('actual finish between cancel queue and execution permits exactly one 
             }).accepted,
             true
         );
-        assertEquals(service.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'sender'), []);
         assertEquals(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length, 1);
     }
     finally {
@@ -579,7 +580,7 @@ Deno.test('authored checkpoints cannot silently become an ordinary unpaired reci
         const root = toRootEnvelope(role, role === 'sender' ? SENDER : RECEIVER);
         const outcome = service.enqueueCommand({ ...root, agentId: PAIR[role].agentId });
         assertEquals(outcome.left?.code, 'command-payload-conflict');
-        assertEquals(service.takeDispatchableCommands('run-1', PAIR[role].agentId), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', PAIR[role].agentId), []);
     }
 });
 
@@ -591,11 +592,11 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const senderRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
     const receiverRuntime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    await runSegment(service, receiverRuntime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
-    const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+    await runSegment(service, receiverRuntime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
+    const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, prefix);
-    await runSegment(service, receiverRuntime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
-    const [reload] = service.takeDispatchableCommands('run-1', 'sender');
+    await runSegment(service, receiverRuntime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
+    const [reload] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     assert(reload.command.kind === 'agent.reload');
     // This acknowledgement is a control-client protocol input, not evidence of native document replacement.
     const acknowledgement = toAgentReloadResult({
@@ -630,7 +631,7 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
     );
     service.markAgentDisconnected('run-1', 'sender');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender', completedCommandIds: [reload.commandId] }));
-    const [suffix] = service.takeDispatchableCommands('run-1', 'sender');
+    const [suffix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     await runSegment(service, senderRuntime, suffix);
     const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
     assertEquals(snapshot.results.find((result) => result.commandId === 'sender-root')?.ok, true);
@@ -643,7 +644,7 @@ Deno.test('completed sender proof remains full until actual receiver recovery co
         const result = snapshot.results.find((result) => result.commandId === id);
         assert(typeof result?.result?.value === 'object' && result.result.value !== null && 'results' in result.result.value);
     }
-    await runSegment(service, receiverRuntime, service.takeDispatchableCommands('run-1', 'receiver')[0]);
+    await runSegment(service, receiverRuntime, takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]);
     const terminal = service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
     assertEquals(terminal.results.length, 1);
     assertEquals(terminal.commands.length, 1);
@@ -656,7 +657,7 @@ Deno.test('a stale targeted external cancellation cannot terminalize the current
     assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
     assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
     const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 });
-    await runSegment(service, runtime, service.takeDispatchableCommands('run-1', 'sender')[0]);
+    await runSegment(service, runtime, takeAgentDispatchableCommands(service, 'run-1', 'sender')[0]);
     assertRight(
         service.enqueueCommand({
             runId: 'run-1',
@@ -665,7 +666,7 @@ Deno.test('a stale targeted external cancellation cannot terminalize the current
             command: { kind: 'recipe.cancel', targetCommandId: 'old-unrelated-root' }
         })
     );
-    const [cancel] = service.takeDispatchableCommands('run-1', 'sender');
+    const [cancel] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
     const refusal = await executeControlRuntimeCommand(runtime, cancel);
     assertEquals(refusal.value, { cancelRequested: false, targetCommandId: 'old-unrelated-root', reason: 'target-not-exclusively-active' });
     service.receiveClientEnvelope({
@@ -678,9 +679,9 @@ Deno.test('a stale targeted external cancellation cannot terminalize the current
         result: refusal
     });
     assertEquals(service.snapshotRun('run-1')?.results.filter((result) => ['sender-root', 'receiver-root'].includes(result.commandId)), []);
-    const [ready] = service.takeDispatchableCommands('run-1', 'receiver');
+    const [ready] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
     await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => 1_000 }), ready);
-    assertEquals(service.takeDispatchableCommands('run-1', 'receiver')[0]?.command.kind, 'recipe.run');
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'receiver')[0]?.command.kind, 'recipe.run');
 });
 
 for (const restore of [false, true]) {
@@ -692,19 +693,19 @@ for (const restore of [false, true]) {
         service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'receiver' }));
         assertRight(service.enqueueCommand(toPairedRoot('sender', SENDER)));
         assertRight(service.enqueueCommand(toPairedRoot('receiver', RECEIVER)));
-        const [prefix] = service.takeDispatchableCommands('run-1', 'sender');
+        const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         await runSegment(service, createDefaultRallarBlackBoxTestRuntime({ now: () => now }), prefix);
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'receiver', commandId: 'stop', command: { kind: 'recipe.cancel' } }));
-        const [cleanup] = service.takeDispatchableCommands('run-1', 'sender');
+        const [cleanup] = takeAgentDispatchableCommands(service, 'run-1', 'sender');
         assert(cleanup.command.kind === 'close');
         const current = restore ? createRallarBlackBoxControlService(input) : service;
         if (restore) {
             current.restoreSnapshot(service.snapshotForPersistence({ commands: 1, results: 1 }));
             current.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'sender' }));
         }
-        assertEquals(current.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(current, 'run-1', 'sender'), []);
         now = 2_001;
-        assertEquals(current.takeDispatchableCommands('run-1', 'sender'), []);
+        assertEquals(takeAgentDispatchableCommands(current, 'run-1', 'sender'), []);
         const snapshot = current.snapshotForPersistence({ commands: 1, results: 1 }).runs[0];
         const failure = snapshot.results.find((result) => result.commandId === cleanup.commandId);
         assertEquals(failure?.ok, false);

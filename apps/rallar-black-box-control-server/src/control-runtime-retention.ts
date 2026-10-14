@@ -22,10 +22,10 @@ export function trimControlRunEvidence(
     }
     trimMapByInsertion(run.commands, bounds.commands, protectedCommandIds);
     trimMapByInsertion(run.results, bounds.results, protectedCommandIds);
-    run.events = [...toBoundedTail(run.events, bounds.events)];
-    run.stats = [...toBoundedTail(run.stats, bounds.stats)];
-    run.reports = [...toBoundedTail(run.reports, bounds.reports)];
-    run.heartbeats = [...toBoundedTail(run.heartbeats, bounds.heartbeats)];
+    trimArrayToTail(run.events, bounds.events);
+    trimArrayToTail(run.stats, bounds.stats);
+    trimArrayToTail(run.reports, bounds.reports);
+    trimArrayToTail(run.heartbeats, bounds.heartbeats);
 }
 
 export function trimControlReportDedupeKeys(run: ControlRunState): void {
@@ -37,11 +37,10 @@ export function trimControlReportDedupeKeys(run: ControlRunState): void {
     }
 }
 
+/** A bounded tail is always a copy, so trimming the retained array in place never reaches a handed-out snapshot. */
 export function toBoundedTail<T>(values: readonly T[], limit: number | undefined): readonly T[] {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
-        return values;
-    }
-    return values.slice(Math.max(0, values.length - Math.floor(limit)));
+    const trimCount = computeTailTrimCount(values.length, limit);
+    return trimCount === undefined ? values : values.slice(trimCount);
 }
 
 export function toProtectedRuntimeCommandIds(
@@ -58,21 +57,38 @@ export function toProtectedRuntimeCommandIds(
     return commandIds;
 }
 
+function trimArrayToTail<T>(values: T[], limit: number | undefined): void {
+    const trimCount = computeTailTrimCount(values.length, limit);
+    if (trimCount !== undefined && trimCount > 0) {
+        values.splice(0, trimCount);
+    }
+}
+
 function trimMapByInsertion<T>(
     values: Map<string, T>,
     limit: number | undefined,
     protectedKeys: ReadonlySet<string>
 ): void {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0 || values.size <= limit) {
+    const trimCount = computeTailTrimCount(values.size, limit);
+    if (trimCount === undefined || trimCount === 0) {
         return;
     }
 
+    const retainedSize = values.size - trimCount;
     for (const key of values.keys()) {
-        if (values.size <= limit) {
+        if (values.size <= retainedSize) {
             return;
         }
         if (!protectedKeys.has(key)) {
             values.delete(key);
         }
     }
+}
+
+/** Undefined when the limit leaves the collection unbounded. */
+function computeTailTrimCount(size: number, limit: number | undefined): number | undefined {
+    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
+        return undefined;
+    }
+    return Math.max(0, size - Math.floor(limit));
 }

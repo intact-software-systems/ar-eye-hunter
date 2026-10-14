@@ -50,6 +50,9 @@ import {
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 
+/** The work index's largest page: a sweep reads every page it needs, this many keys at a time. */
+const INDEX_PAGE_SIZE = 256;
+
 export namespace InMemoryQueueBox {
     export interface ReservationRead {
         readonly entry: ResourceEntry;
@@ -417,16 +420,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             return new Map();
         }
         const now = this.now();
-        const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
-        const candidates = [...this.data.entries()].filter(([, entry]) =>
-            typeIds.has(entry.typeId) &&
-            entry.status === EntityStatus.RESERVED &&
-            !isExpiredResourceEntry(entry, now) &&
-            entry.dequeueAudit.attempts >= options.processingAttempts &&
-            entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
-            entry.dequeueAudit.startTs !== undefined &&
-            Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
-        ).slice(0, options.maxToReserve);
+        const candidates: [ResourceEntryKeyString, ResourceEntry][] = [];
+        for (const candidate of this.getRetryExhaustionCandidates(typeIds, options, now)) {
+            if (candidates.length >= options.maxToReserve) {
+                break;
+            }
+            candidates.push(candidate);
+        }
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         for (const [key, entry] of candidates) {
             const selectedDueTs = entry.dequeueAudit.startTs!;
@@ -488,17 +488,55 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         if (!typeIds.has(EnqueuedType.APP_INBOX)) {
             return false;
         }
-        const now = this.now();
-        const staleBefore = now.subtract({ milliseconds: staleAfterMs });
-        return [...this.data.values()].some((entry) =>
-            entry.typeId === EnqueuedType.APP_INBOX &&
-            entry.status === EntityStatus.RESERVED &&
-            !isExpiredResourceEntry(entry, now) &&
-            entry.dequeueAudit.attempts >= processingAttempts &&
-            entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
-            entry.dequeueAudit.startTs !== undefined &&
-            Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
+        const candidates = this.getRetryExhaustionCandidates(
+            new Set([EnqueuedType.APP_INBOX]),
+            { processingAttempts, staleAfterMs },
+            this.now()
         );
+        return candidates.next().done === false;
+    }
+
+    /**
+     * The live stale exhausted reservations of these types, lazily, read through the work index: a sweep visits
+     * the RESERVED rows alone, never the completed rows an owner retains until they expire.
+     */
+    private *getRetryExhaustionCandidates(
+        typeIds: ReadonlySet<string>,
+        criteria: Pick<ResourceInboxFinalizationReservationOptions, 'processingAttempts' | 'staleAfterMs'>,
+        now: Temporal.Instant
+    ): Generator<[ResourceEntryKeyString, ResourceEntry]> {
+        const staleBefore = now.subtract({ milliseconds: criteria.staleAfterMs });
+        for (const [key, entry] of this.getIndexedEntries(typeIds, EntityStatus.RESERVED)) {
+            if (
+                !isExpiredResourceEntry(entry, now) &&
+                entry.dequeueAudit.attempts >= criteria.processingAttempts &&
+                entry.dequeueAudit.attempts < Number.MAX_SAFE_INTEGER &&
+                entry.dequeueAudit.startTs !== undefined &&
+                Temporal.Instant.compare(entry.dequeueAudit.startTs, staleBefore) <= 0
+            ) {
+                yield [key, entry];
+            }
+        }
+    }
+
+    private *getIndexedEntries(
+        typeIds: ReadonlySet<string>,
+        status: EntityStatus
+    ): Generator<[ResourceEntryKeyString, ResourceEntry]> {
+        for (const typeId of typeIds) {
+            let cursor: ResourceInboxWorkPage.Cursor | null = null;
+            do {
+                const page = this.workIndex.read({ typeId, status, maxToRead: INDEX_PAGE_SIZE, cursor });
+                for (const key of page.keys) {
+                    const entry = this.data.get(key);
+                    if (entry !== undefined) {
+                        yield [key, entry];
+                    }
+                }
+                cursor = page.nextCursor;
+            }
+            while (cursor !== null);
+        }
     }
 
     private isAnyToLock(

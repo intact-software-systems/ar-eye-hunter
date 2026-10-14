@@ -1,103 +1,162 @@
 import type { RallarBlackBoxBrowserControlAgentSnapshot } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
+import { PacedEmit } from '@shared-test/rallar-bb-test/browser-control-agent/paced-emit.ts';
 
-function text(value: unknown): string {
-    return value === undefined || value === null || value === '' ? '-' : String(value);
+type HeadlessStatusValue = string | number | undefined;
+
+const STATUS_RENDER_INTERVAL_MS = 100;
+const FLEET_IDENTITY_WARNING =
+    'Missing global fleet identity; this browser may not be targetable by world-fleet recipes.';
+const STATUS_ROWS = [
+    { label: 'Agent', attribute: 'data-agent-id' },
+    { label: 'Run', attribute: 'data-run-id' },
+    { label: 'Control', attribute: 'data-control-state' },
+    { label: 'Runtime', attribute: 'data-runtime-state' },
+    { label: 'Application', attribute: 'data-application-id' },
+    { label: 'Workspace', attribute: 'data-workspace-id' },
+    { label: 'Group', attribute: 'data-group-id' },
+    { label: 'Principal', attribute: 'data-principal-id' },
+    { label: 'Client', attribute: 'data-client-id' },
+    { label: 'Session', attribute: 'data-session-id' },
+    { label: 'Region', attribute: 'data-fleet-region' },
+    { label: 'Fleet provider', attribute: 'data-fleet-provider' },
+    { label: 'Datacenter', attribute: 'data-fleet-datacenter' },
+    { label: 'Host', attribute: 'data-fleet-host' },
+    { label: 'Last heartbeat', attribute: 'data-last-heartbeat' },
+    { label: 'Reconnect count', attribute: 'data-reconnect-count' },
+    { label: 'Provider', attribute: 'data-provider' },
+    { label: 'Transport', attribute: 'data-transport' },
+    { label: 'Room', attribute: 'data-room-id' },
+    { label: 'Sent', attribute: 'data-sent-count' },
+    { label: 'Received', attribute: 'data-received-count' },
+    { label: 'Latest command', attribute: 'data-latest-command-id' },
+    { label: 'Latest event', attribute: 'data-latest-event-topic' }
+] as const;
+
+type HeadlessStatusRowAttribute = typeof STATUS_ROWS[number]['attribute'];
+
+export class HeadlessStatusView {
+    private readonly readSnapshot: () => RallarBlackBoxBrowserControlAgentSnapshot;
+    private readonly pacedRender = new PacedEmit(STATUS_RENDER_INTERVAL_MS, () => this.render());
+    private readonly header = document.createElement('header');
+    private readonly list = document.createElement('dl');
+    private readonly lastAction: HTMLElement;
+    private readonly lastError: HTMLElement;
+    private readonly fleetIdentityWarning: HTMLElement;
+    private readonly rowValues = new Map<HeadlessStatusRowAttribute, HTMLElement>();
+
+    constructor(root: HTMLElement, readSnapshot: () => RallarBlackBoxBrowserControlAgentSnapshot) {
+        this.readSnapshot = readSnapshot;
+        const section = document.createElement('section');
+        section.className = 'agent-shell';
+        section.setAttribute('aria-label', 'Headless agent status');
+
+        this.lastAction = toTextElement('p', '-', 'data-last-action');
+        this.header.append(toTextElement('h1', 'Rallar Black Box Headless Agent'), this.lastAction);
+        this.lastError = toTextElement('p', '-', 'data-last-error');
+        this.lastError.className = 'error';
+        this.fleetIdentityWarning = toTextElement('p', FLEET_IDENTITY_WARNING, 'data-fleet-identity-warning');
+        this.fleetIdentityWarning.className = 'warning';
+
+        for (const row of STATUS_ROWS) {
+            const term = document.createElement('dt');
+            term.textContent = row.label;
+            const value = toTextElement('dd', '-', row.attribute);
+            this.rowValues.set(row.attribute, value);
+            this.list.append(term, value);
+        }
+        section.append(this.header, this.list);
+        root.replaceChildren(section);
+    }
+
+    requestRender(): void {
+        this.pacedRender.request();
+    }
+
+    render(): void {
+        const snapshot = this.readSnapshot();
+        setText(this.lastAction, snapshot.lastAction);
+        setText(this.lastError, snapshot.lastError);
+        const values = toStatusRowValues(snapshot);
+        for (const [attribute, value] of this.rowValues) {
+            setText(value, values[attribute]);
+        }
+        showLine(this.lastError, Boolean(snapshot.lastError), () => this.header.after(this.lastError));
+        showLine(
+            this.fleetIdentityWarning,
+            !hasFleetIdentity(values),
+            () => this.list.before(this.fleetIdentityWarning)
+        );
+    }
 }
 
-function appendText(
-    parent: HTMLElement,
-    tagName: 'h1' | 'p',
-    value: unknown,
-    attr?: string
-): HTMLElement {
+function toStatusRowValues(
+    snapshot: RallarBlackBoxBrowserControlAgentSnapshot
+): Readonly<Record<HeadlessStatusRowAttribute, HeadlessStatusValue>> {
+    const { bootstrap, control, state } = snapshot;
+    const identity = control.identity;
+    return {
+        'data-agent-id': bootstrap.agentId,
+        'data-run-id': bootstrap.runId,
+        'data-control-state': control.state,
+        'data-runtime-state': state.status,
+        'data-application-id': identity?.applicationId ?? bootstrap.applicationId,
+        'data-workspace-id': identity?.workspaceId ?? bootstrap.workspaceId,
+        'data-group-id': identity?.groupId ?? bootstrap.roomId,
+        'data-principal-id': identity?.principalId ?? bootstrap.actor,
+        'data-client-id': identity?.clientId ?? bootstrap.actor,
+        'data-session-id': identity?.sessionId ?? bootstrap.sessionId,
+        'data-fleet-region': identity?.region ?? bootstrap.fleetRegion,
+        'data-fleet-provider': identity?.provider ?? bootstrap.fleetProvider,
+        'data-fleet-datacenter': identity?.datacenter ?? bootstrap.fleetDatacenter,
+        'data-fleet-host': identity?.hostId ?? bootstrap.fleetHostId,
+        'data-last-heartbeat': control.lastHeartbeatAtEpochMs,
+        'data-reconnect-count': control.reconnectAttempt,
+        'data-provider': bootstrap.providerMode,
+        'data-transport': bootstrap.transport,
+        'data-room-id': bootstrap.roomId,
+        'data-sent-count': control.sentCount,
+        'data-received-count': control.receivedCount,
+        'data-latest-command-id': state.commandHistory.at(-1)?.commandId,
+        'data-latest-event-topic': state.events.at(-1)?.topic
+    };
+}
+
+function hasFleetIdentity(values: Readonly<Record<HeadlessStatusRowAttribute, HeadlessStatusValue>>): boolean {
+    return [
+        values['data-application-id'],
+        values['data-workspace-id'],
+        values['data-group-id'],
+        values['data-fleet-region'],
+        values['data-fleet-provider']
+    ].every(Boolean);
+}
+
+function toText(value: HeadlessStatusValue): string {
+    return value === undefined || value === '' ? '-' : String(value);
+}
+
+function toTextElement(tagName: 'h1' | 'p' | 'dd', value: string, attribute?: string): HTMLElement {
     const element = document.createElement(tagName);
-    element.textContent = text(value);
-    if (attr) {
-        element.setAttribute(attr, '');
+    element.textContent = value;
+    if (attribute) {
+        element.setAttribute(attribute, '');
     }
-    parent.append(element);
     return element;
 }
 
-function appendRow(
-    list: HTMLDListElement,
-    label: string,
-    value: unknown,
-    attr: string
-): void {
-    const term = document.createElement('dt');
-    term.textContent = label;
-
-    const details = document.createElement('dd');
-    details.textContent = text(value);
-    details.setAttribute(attr, '');
-
-    list.append(term, details);
+function setText(element: HTMLElement, value: HeadlessStatusValue): void {
+    const text = toText(value);
+    if (element.textContent !== text) {
+        element.textContent = text;
+    }
 }
 
-export function renderHeadlessStatus(
-    root: HTMLElement,
-    snapshot: RallarBlackBoxBrowserControlAgentSnapshot
-): void {
-    const latestCommand = snapshot.state.commandHistory.at(-1);
-    const latestEvent = snapshot.state.events.at(-1);
-    const identity = snapshot.control.identity;
-    const applicationId = identity?.applicationId ?? snapshot.bootstrap.applicationId;
-    const workspaceId = identity?.workspaceId ?? snapshot.bootstrap.workspaceId;
-    const groupId = identity?.groupId ?? snapshot.bootstrap.roomId;
-    const region = identity?.region ?? snapshot.bootstrap.fleetRegion;
-    const provider = identity?.provider ?? snapshot.bootstrap.fleetProvider;
-
-    root.replaceChildren();
-
-    const section = document.createElement('section');
-    section.className = 'agent-shell';
-    section.setAttribute('aria-label', 'Headless agent status');
-
-    const header = document.createElement('header');
-    appendText(header, 'h1', 'Rallar Black Box Headless Agent');
-    appendText(header, 'p', snapshot.lastAction, 'data-last-action');
-    section.append(header);
-
-    if (snapshot.lastError) {
-        const error = appendText(section, 'p', snapshot.lastError, 'data-last-error');
-        error.className = 'error';
+/** The error and the fleet warning sit between the header and the list only while they apply. */
+function showLine(line: HTMLElement, shown: boolean, insert: () => void): void {
+    if (!shown) {
+        line.remove();
     }
-    if (!applicationId || !workspaceId || !groupId || !region || !provider) {
-        const warning = appendText(
-            section,
-            'p',
-            'Missing global fleet identity; this browser may not be targetable by world-fleet recipes.',
-            'data-fleet-identity-warning'
-        );
-        warning.className = 'warning';
+    else if (line.parentElement === null) {
+        insert();
     }
-
-    const list = document.createElement('dl');
-    appendRow(list, 'Agent', snapshot.bootstrap.agentId, 'data-agent-id');
-    appendRow(list, 'Run', snapshot.bootstrap.runId, 'data-run-id');
-    appendRow(list, 'Control', snapshot.control.state, 'data-control-state');
-    appendRow(list, 'Runtime', snapshot.state.status, 'data-runtime-state');
-    appendRow(list, 'Application', applicationId, 'data-application-id');
-    appendRow(list, 'Workspace', workspaceId, 'data-workspace-id');
-    appendRow(list, 'Group', groupId, 'data-group-id');
-    appendRow(list, 'Principal', identity?.principalId ?? snapshot.bootstrap.actor, 'data-principal-id');
-    appendRow(list, 'Client', identity?.clientId ?? snapshot.bootstrap.actor, 'data-client-id');
-    appendRow(list, 'Session', identity?.sessionId ?? snapshot.bootstrap.sessionId, 'data-session-id');
-    appendRow(list, 'Region', region, 'data-fleet-region');
-    appendRow(list, 'Fleet provider', provider, 'data-fleet-provider');
-    appendRow(list, 'Datacenter', identity?.datacenter ?? snapshot.bootstrap.fleetDatacenter, 'data-fleet-datacenter');
-    appendRow(list, 'Host', identity?.hostId ?? snapshot.bootstrap.fleetHostId, 'data-fleet-host');
-    appendRow(list, 'Last heartbeat', snapshot.control.lastHeartbeatAtEpochMs, 'data-last-heartbeat');
-    appendRow(list, 'Reconnect count', snapshot.control.reconnectAttempt, 'data-reconnect-count');
-    appendRow(list, 'Provider', snapshot.bootstrap.providerMode, 'data-provider');
-    appendRow(list, 'Transport', snapshot.bootstrap.transport, 'data-transport');
-    appendRow(list, 'Room', snapshot.bootstrap.roomId, 'data-room-id');
-    appendRow(list, 'Sent', snapshot.control.sentCount, 'data-sent-count');
-    appendRow(list, 'Received', snapshot.control.receivedCount, 'data-received-count');
-    appendRow(list, 'Latest command', latestCommand?.commandId, 'data-latest-command-id');
-    appendRow(list, 'Latest event', latestEvent?.topic, 'data-latest-event-topic');
-    section.append(list);
-
-    root.append(section);
 }

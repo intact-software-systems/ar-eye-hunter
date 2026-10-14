@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+
+import { toError } from '@shared/resilience/to-error.ts';
+
 import {
     attachHeadlessWorkerPageLogging,
     createHeadlessWorkerLogger,
-    headlessWorkerLogSecretsFromEnv,
     logHeadlessWorkerUiConfirmationFailure,
     redactHeadlessWorkerLogText,
+    toHeadlessWorkerLogSecrets,
     waitForDistributedRunTerminal,
     waitForHeadlessWorkerAgentRegistration,
     waitForHeadlessWorkerExit,
@@ -13,27 +16,21 @@ import {
 
 type PromiseOutcome =
     | Readonly<{ state: 'resolved'; }>
-    | Readonly<{ state: 'rejected'; error: unknown; }>
+    | Readonly<{ state: 'rejected'; error: Error; }>
     | Readonly<{ state: 'pending'; }>;
 
 function deferred<T>(): Readonly<{
     promise: Promise<T>;
     resolve(value: T): void;
-    reject(error: unknown): void;
+    reject(error: Error): void;
 }> {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
-    });
-    return { promise, resolve, reject };
+    return Promise.withResolvers<T>();
 }
 
 function observe(promise: Promise<void>): Promise<PromiseOutcome> {
     return promise.then(
         () => ({ state: 'resolved' }),
-        (error: unknown) => ({ state: 'rejected', error })
+        (error) => ({ state: 'rejected', error: toError(error) })
     );
 }
 
@@ -55,13 +52,13 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 class FakePageEvents {
-    #listeners = new Map<string, ((value: unknown) => void)[]>();
+    #listeners = new Map<string, ((value: object) => void)[]>();
 
-    on(event: string, listener: (value: unknown) => void): void {
+    on(event: string, listener: (value: object) => void): void {
         this.#listeners.set(event, [...(this.#listeners.get(event) ?? []), listener]);
     }
 
-    emit(event: string, value: unknown): void {
+    emit(event: string, value: object): void {
         for (const listener of this.#listeners.get(event) ?? []) {
             listener(value);
         }
@@ -137,7 +134,7 @@ describe('rallar-black-box headless worker runtime', () => {
     it('derives bootstrap secrets and routes every worker message category through one logger', () => {
         const password = 'route-password';
         const token = 'route-control-token';
-        const secrets = headlessWorkerLogSecretsFromEnv({
+        const secrets = toHeadlessWorkerLogSecrets({
             RALLAR_BLACK_BOX_PASSWORD: password,
             RALLAR_BLACK_BOX_CONTROL_TOKEN: token,
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'read-token',
@@ -289,14 +286,16 @@ describe('rallar-black-box headless worker runtime', () => {
                 status: number;
                 ok: boolean;
                 body: Readonly<{ cancel(): Promise<void>; }>;
-                json(): Promise<unknown>;
+                json(): Promise<Readonly<{ state?: string; }>>;
             }>
         >();
-        const unhandled: unknown[] = [];
+        const unhandled: Error[] = [];
         const cancel = vi.fn(async () => {
             throw new Error('late cancel failed');
         });
-        const onUnhandled = (error: unknown) => unhandled.push(error);
+        const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => {
+            unhandled.push(toError(reason));
+        };
         process.on('unhandledRejection', onUnhandled);
         try {
             const polling = waitForDistributedRunTerminal({
@@ -475,6 +474,7 @@ describe('rallar-black-box headless worker runtime', () => {
                     return await new Promise(() => undefined);
                 },
                 readAgentPageStatus: async () => undefined,
+                readSignInRefusal: async () => undefined,
                 sleep,
                 now: Date.now
             });
@@ -514,7 +514,9 @@ describe('rallar-black-box headless worker runtime', () => {
             },
             sleep,
             now: Date.now,
-            readAgentPageStatus: async () => undefined
+            readAgentPageStatus: async () => undefined,
+
+            readSignInRefusal: async () => undefined
         });
 
         await flushMicrotasks();
@@ -532,8 +534,10 @@ describe('rallar-black-box headless worker runtime', () => {
         const shutdown = new AbortController();
         const shutdownReason = new Error('registration stopped');
         const pendingSnapshot = deferred<HeadlessWorkerRegistrationSnapshot>();
-        const unhandled: unknown[] = [];
-        const onUnhandled = (error: unknown) => unhandled.push(error);
+        const unhandled: Error[] = [];
+        const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => {
+            unhandled.push(toError(reason));
+        };
         const fetchSnapshot = vi.fn(async () => await pendingSnapshot.promise);
         process.on('unhandledRejection', onUnhandled);
         try {
@@ -545,7 +549,9 @@ describe('rallar-black-box headless worker runtime', () => {
                 fetchSnapshot,
                 sleep: async () => undefined,
                 now: Date.now,
-                readAgentPageStatus: async () => undefined
+                readAgentPageStatus: async () => undefined,
+
+                readSignInRefusal: async () => undefined
             });
 
             await flushMicrotasks();
@@ -588,7 +594,9 @@ describe('rallar-black-box headless worker runtime', () => {
                     return await new Promise(() => undefined);
                 },
                 now: Date.now,
-                readAgentPageStatus: async () => undefined
+                readAgentPageStatus: async () => undefined,
+
+                readSignInRefusal: async () => undefined
             });
             const outcome = observe(registration);
 
@@ -625,7 +633,9 @@ describe('rallar-black-box headless worker runtime', () => {
             },
             sleep,
             now: () => now,
-            readAgentPageStatus: async () => undefined
+            readAgentPageStatus: async () => undefined,
+
+            readSignInRefusal: async () => undefined
         })).rejects.toThrow('Timed out waiting 10ms');
 
         expect(sleep).not.toHaveBeenCalled();
@@ -641,7 +651,9 @@ describe('rallar-black-box headless worker runtime', () => {
             }),
             sleep: async () => undefined,
             now: () => 0,
-            readAgentPageStatus: async () => undefined
+            readAgentPageStatus: async () => undefined,
+
+            readSignInRefusal: async () => undefined
         })).resolves.toBeUndefined();
 
         await expect(waitForHeadlessWorkerAgentRegistration({
@@ -653,7 +665,9 @@ describe('rallar-black-box headless worker runtime', () => {
             }),
             sleep: async () => undefined,
             now: () => 0,
-            readAgentPageStatus: async () => undefined
+            readAgentPageStatus: async () => undefined,
+
+            readSignInRefusal: async () => undefined
         })).rejects.toThrow(
             'Agent agent-failed registered with failed runtime status.'
         );
@@ -755,8 +769,10 @@ describe('rallar-black-box headless worker runtime', () => {
             throw new Error('json cancel failed');
         });
         const json = vi.fn(async () => await new Promise(() => undefined));
-        const unhandled: unknown[] = [];
-        const onUnhandled = (error: unknown) => unhandled.push(error);
+        const unhandled: Error[] = [];
+        const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => {
+            unhandled.push(toError(reason));
+        };
         process.on('unhandledRejection', onUnhandled);
         try {
             const polling = waitForDistributedRunTerminal({
@@ -796,8 +812,10 @@ describe('rallar-black-box headless worker runtime', () => {
 
     it('hard-times out a non-cooperative retry sleep without unhandled rejection', async () => {
         vi.useFakeTimers();
-        const unhandled: unknown[] = [];
-        const onUnhandled = (error: unknown) => unhandled.push(error);
+        const unhandled: Error[] = [];
+        const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => {
+            unhandled.push(toError(reason));
+        };
         process.on('unhandledRejection', onUnhandled);
         try {
             let sleepSignal: AbortSignal | undefined;
@@ -894,6 +912,24 @@ describe('rallar-black-box headless worker runtime', () => {
         ]);
     });
 
+    it('fails the agent start with the sign-in refusal instead of waiting out the registration deadline', async () => {
+        let now = 0;
+
+        await expect(waitForHeadlessWorkerAgentRegistration({
+            agentId: 'agent-sign-in-refused',
+            timeoutMs: 2_000,
+            pollIntervalMs: 500,
+            fetchSnapshot: async () => ({ agents: [] }),
+            sleep: async (ms) => {
+                now += ms;
+            },
+            now: () => now,
+            readAgentPageStatus: async () => undefined,
+            readSignInRefusal: async () => 'Too many registration attempts'
+        })).rejects.toThrow('Agent agent-sign-in-refused sign-in refused: Too many registration attempts');
+        expect(now).toBe(0);
+    });
+
     it('names the agent page refusal when registration times out', async () => {
         vi.useFakeTimers();
         try {
@@ -903,6 +939,7 @@ describe('rallar-black-box headless worker runtime', () => {
                 pollIntervalMs: 5,
                 fetchSnapshot: async () => await new Promise(() => undefined),
                 readAgentPageStatus: async () => 'Control agent refused to start: unreadable launch value providerMode.',
+                readSignInRefusal: async () => undefined,
                 sleep: vi.fn(async () => undefined),
                 now: Date.now
             });

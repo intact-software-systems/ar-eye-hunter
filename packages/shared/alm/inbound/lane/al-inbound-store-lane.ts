@@ -139,7 +139,8 @@ export class ALInboundStoreLane {
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
-            nowMs: () => this.readNowMs()
+            nowMs: () => this.readNowMs(),
+            lane: input.lane
         });
         this.work = this.createWorkHandler(workPort, workType);
         this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(

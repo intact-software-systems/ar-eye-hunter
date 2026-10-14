@@ -47,10 +47,15 @@ export interface ToDistributedGroupAssertionRecipeEvidenceInput {
     readonly resultByCommandId: ReadonlyMap<string, ControlResultEnvelope>;
 }
 
+/** Each agent's start-recipe evidence with its recorded result tree flattened once. */
+export interface GroupAssertionEvidenceIndex {
+    readonly recipesByAgentId: ReadonlyMap<string, readonly IndexedGroupAssertionRecipeEvidence[]>;
+}
+
 export interface ComputeGroupAssertionEvidenceRowsInput {
     readonly source: RallarBlackBoxGroupAssertionSource;
     readonly participants: readonly DistributedGroupAssertionParticipant[];
-    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
+    readonly evidenceIndex: GroupAssertionEvidenceIndex;
 }
 
 interface DistributedGroupAssertionRecipeEvidenceFields {
@@ -67,15 +72,16 @@ interface GroupAssertionEvidenceRowFields {
     readonly role?: string;
 }
 
-interface RecipeCommandResult {
-    readonly commandId: string;
-    /** Absent when the command result is not a composite child. */
-    readonly originalCommandId?: string;
-    readonly result: RallarBlackBoxTestResult;
+interface IndexedGroupAssertionRecipeEvidence {
+    /** Absent when the start command link names no recipe. */
+    readonly recipeId?: string;
+    /** Absent while the recipe has no recorded result. */
+    readonly commandResults?: RecipeCommandResults;
 }
 
 interface RecipeCommandResults {
-    readonly decoded: readonly RecipeCommandResult[];
+    /** A composite child is listed under its own command id and under the recipe command id it ran. */
+    readonly resultsByCommandId: ReadonlyMap<string, readonly RallarBlackBoxTestResult[]>;
     /** True when a recorded command result or composite child does not decode, so it may hide the addressed command. */
     readonly hasUndecodableResults: boolean;
 }
@@ -116,49 +122,60 @@ export function toDistributedGroupAssertionRecipeEvidence(
         });
 }
 
+export function toGroupAssertionEvidenceIndex(
+    recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[]
+): GroupAssertionEvidenceIndex {
+    const recipesByAgentId = new Map<string, IndexedGroupAssertionRecipeEvidence[]>();
+    for (const evidence of recipeEvidence) {
+        const recipes = recipesByAgentId.get(evidence.agentId) ?? [];
+        recipes.push({
+            recipeId: evidence.recipeId,
+            commandResults: evidence.hasResult ? toRecipeCommandResults(evidence.resultValue) : undefined
+        });
+        recipesByAgentId.set(evidence.agentId, recipes);
+    }
+    return { recipesByAgentId };
+}
+
 export function computeGroupAssertionEvidenceRows(
     input: ComputeGroupAssertionEvidenceRowsInput
 ): readonly GroupAssertionEvidenceRow[] {
     return input.participants.map((participant) =>
-        toGroupAssertionEvidenceRow(participant, input.source, input.recipeEvidence)
+        toGroupAssertionEvidenceRow(participant, input.source, input.evidenceIndex)
     );
 }
 
 function toGroupAssertionEvidenceRow(
     participant: DistributedGroupAssertionParticipant,
     source: RallarBlackBoxGroupAssertionSource,
-    recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[]
+    evidenceIndex: GroupAssertionEvidenceIndex
 ): GroupAssertionEvidenceRow {
     const fields: GroupAssertionEvidenceRowFields = { agentId: participant.agentId, role: participant.roles[0] };
-    const recipeRows = recipeEvidence.filter((evidence) =>
-        evidence.agentId === participant.agentId && evidence.recipeId === source.recipeId
-    );
-    if (recipeRows.length > 1) {
+    const recipes = (evidenceIndex.recipesByAgentId.get(participant.agentId) ?? [])
+        .filter((recipe) => recipe.recipeId === source.recipeId);
+    if (recipes.length > 1) {
         return { ...fields, status: 'duplicate' };
     }
-    const recipeRow = recipeRows[0];
-    return recipeRow?.hasResult === true
-        ? toRecordedGroupAssertionEvidenceRow(fields, source, recipeRow.resultValue)
-        : { ...fields, status: 'missing' };
+    const commandResults = recipes[0]?.commandResults;
+    return commandResults === undefined
+        ? { ...fields, status: 'missing' }
+        : toRecordedGroupAssertionEvidenceRow(fields, source, commandResults);
 }
 
 /** The addressed command must appear exactly once among the recipe's decodable results and reach a value at the path. */
 function toRecordedGroupAssertionEvidenceRow(
     fields: GroupAssertionEvidenceRowFields,
     source: RallarBlackBoxGroupAssertionSource,
-    resultValue: RallarBlackBoxGroupAssertionValue
+    commandResults: RecipeCommandResults
 ): GroupAssertionEvidenceRow {
-    const commandResults = toRecipeCommandResults(resultValue);
-    const matches = commandResults.decoded.filter((entry) =>
-        entry.commandId === source.commandId || entry.originalCommandId === source.commandId
-    );
+    const matches = commandResults.resultsByCommandId.get(source.commandId) ?? [];
     if (matches.length === 0) {
         return { ...fields, status: commandResults.hasUndecodableResults ? 'undecodable' : 'missing' };
     }
     if (matches.length > 1) {
         return { ...fields, status: 'duplicate' };
     }
-    const lookup = decodePayloadPathValue(matches[0].result.value, source.path);
+    const lookup = decodePayloadPathValue(matches[0].value, source.path);
     return lookup.exists ? { ...fields, status: 'resolved', value: lookup.value } : { ...fields, status: 'unresolved' };
 }
 
@@ -168,12 +185,20 @@ function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue):
         : [];
     const rootResults = recordedResults.filter(isRallarBlackBoxTestResult);
     const entries = toRallarBlackBoxCompositeResultFlatEntries(rootResults);
+    const resultsByCommandId = new Map<string, RallarBlackBoxTestResult[]>();
+    for (const entry of entries) {
+        const originalCommandId = entry.position.kind === 'root' ? undefined : entry.position.originalCommandId;
+        const commandIds = originalCommandId === undefined || originalCommandId === entry.commandId
+            ? [entry.commandId]
+            : [entry.commandId, originalCommandId];
+        for (const commandId of commandIds) {
+            const results = resultsByCommandId.get(commandId) ?? [];
+            results.push(entry.result);
+            resultsByCommandId.set(commandId, results);
+        }
+    }
     return {
-        decoded: entries.map((entry) => ({
-            commandId: entry.commandId,
-            originalCommandId: entry.position.kind === 'root' ? undefined : entry.position.originalCommandId,
-            result: entry.result
-        })),
+        resultsByCommandId,
         hasUndecodableResults: rootResults.length < recordedResults.length ||
             entries.some((entry) => entry.childDecodeIssues.length > 0)
     };

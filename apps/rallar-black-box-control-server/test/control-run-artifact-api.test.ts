@@ -1,4 +1,7 @@
-import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForJsonl, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
@@ -141,9 +144,7 @@ Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async ()
         return;
     }
 
-    const server = await startControlServer({
-        RALLAR_BLACK_BOX_MAX_REQUEST_BYTES: '256'
-    });
+    const server = await startControlServer();
     try {
         const oversizedReport = await fetch(
             `${server.baseUrl}/runs/run-big/agents/agent-a/report`,
@@ -161,7 +162,7 @@ Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async ()
                         kind: 'report',
                         payload: {
                             reportId: 'oversized-report',
-                            results: [{ value: 'x'.repeat(512) }]
+                            results: [{ value: 'x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES) }]
                         }
                     }
                 })
@@ -182,7 +183,7 @@ Deno.test('HTTP and WebSocket agent ingress reject oversized payloads', async ()
             atEpochMs: Date.now(),
             eventId: 'oversized-ws',
             payload: {
-                value: 'x'.repeat(512)
+                value: 'x'.repeat(RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES)
             }
         }));
         assertEquals((await closed).code, 1009);
