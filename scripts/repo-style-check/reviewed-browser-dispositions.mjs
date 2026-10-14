@@ -49,6 +49,14 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'isRecord'
     }),
+    // Distributed-run HTTP JSON is raw until decodeDistributedRunState narrows the
+    // one consumed field; the response port's json() declares that boundary.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/headless-worker-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
     // One diagnostic capture lifetime owns stdout framing, safe persistence and
     // child/capture exit policy. Keep its local primitive projection beside that
     // lifetime at the reviewed warning-tier cap; no global threshold changes.

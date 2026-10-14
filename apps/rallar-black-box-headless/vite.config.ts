@@ -16,7 +16,9 @@ export default defineConfig({
     },
     server: {
         port: 5179,
-        strictPort: true
+        strictPort: true,
+        // The full-stack lane drives long-lived agent pages that a hot-reload would strand mid-run.
+        hmr: ['1', 'true'].includes(process.env.RALLAR_BLACK_BOX_FULL_STACK ?? '') ? false : undefined
     },
     build: {
         outDir: 'dist',

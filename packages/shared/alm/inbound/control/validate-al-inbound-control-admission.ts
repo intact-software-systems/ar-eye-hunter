@@ -1,3 +1,4 @@
+import { isALHopCompletionAck, type ALAckPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-control-admission.ts';
@@ -19,11 +20,7 @@ export function validateALInboundControlAdmission(
             rejectInboundControl('Inbound acknowledgement names another origin than the message it acknowledges')
         );
     }
-    if (
-        acks.some((prior) =>
-            prior.fromPeerId === ack.fromPeerId && prior.logicalRecipientPeerId === ack.logicalRecipientPeerId
-        )
-    ) {
+    if (acks.some((prior) => isSameAckIdentity(prior, ack))) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }
     if (
@@ -34,6 +31,15 @@ export function validateALInboundControlAdmission(
         issues.push(rejectInboundControl('Inbound acknowledgement candidate exceeds persistence limits'));
     }
     return issues;
+}
+
+/**
+ * A recipient relay speaks for itself twice: `accepted` once it delivered, then its terminal ACK once its
+ * subtree completed. Only the terminal one completes its hop, so the two never duplicate each other.
+ */
+function isSameAckIdentity(prior: ALAckPayload, ack: ALAckPayload): boolean {
+    return prior.fromPeerId === ack.fromPeerId && prior.logicalRecipientPeerId === ack.logicalRecipientPeerId &&
+        isALHopCompletionAck(prior) === isALHopCompletionAck(ack);
 }
 
 function rejectInboundControl(message: string): ALMessageRejection {

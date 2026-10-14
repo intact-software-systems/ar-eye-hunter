@@ -7,6 +7,7 @@ import {
     type ResourceEntryKeyString
 } from '../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
@@ -73,6 +74,7 @@ interface ReadALInboundClaimedSelectionInput {
     readonly port: ALWorkQueuePort;
     readonly pageSize: number;
     readonly nowMs: () => number;
+    readonly lane: ALStoreDurability;
 }
 
 /** What one round claimed, with the eligibility surfaces of exactly the rows the port reserved. */
@@ -119,6 +121,8 @@ interface ALInboundWorkSelectorDependencies {
     readonly delivery: ALInboundAdmittedDelivery;
     readonly namespace: string;
     readonly nowMs: () => number;
+    /** The durability of the store pair the selector reads: it decides where control sends run in a batch. */
+    readonly lane: ALStoreDurability;
 }
 
 export interface ALInboundWorkSelector {
@@ -324,7 +328,13 @@ export function createALInboundWorkSelector(
     return {
         readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
         selectReady: async (port, pageSize) => {
-            const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
+            const claimed = await readALInboundClaimedSelection({
+                page,
+                port,
+                pageSize,
+                nowMs: dependencies.nowMs,
+                lane: dependencies.lane
+            });
             claimedObservations = claimed.observations;
             unreservedDue = claimed.unreservedDue;
             promotedCount = 0;
@@ -390,14 +400,18 @@ async function readALInboundNextReadyAtMs(
 async function readALInboundClaimedSelection(
     input: ReadALInboundClaimedSelectionInput
 ): Promise<ALInboundClaimedSelection> {
-    const { page, port, pageSize, nowMs } = input;
+    const { page, port, pageSize, nowMs, lane } = input;
     const selectionStartedAtMs = nowMs();
     const selection = await page.takeSelection(port, pageSize);
     const claimStartedAtMs = nowMs();
     const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
     const claimedAtMs = nowMs();
     const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
-    const ordered = computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds);
+    const ordered = computeALInboundClaimOrder(
+        [...selection.unleasedReservations, ...claims],
+        selection.effectKinds,
+        lane
+    );
     return {
         selection: {
             claims: ordered,
@@ -415,33 +429,39 @@ async function readALInboundClaimedSelection(
 }
 
 /**
- * The batch's run order: page deliveries first, then admission replays and rows whose kind the
- * page never decoded, then control sends and forwards. Stable within each rank, so page order
- * still decides among equals.
+ * The batch's run order: page deliveries, then admission replays and rows whose kind the page never decoded,
+ * then forwards. Control sends run first on the volatile lane, since an ACK confirms admission and must not
+ * wait behind a page of handlers there; on a durable lane they run last beside forwards, so their commits
+ * never delay a delivery. Stable within each rank, so page order still decides among equals.
  */
 export function computeALInboundClaimOrder(
     claims: readonly ALWorkClaim[],
-    effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>
+    effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>,
+    lane: ALStoreDurability
 ): readonly ALWorkClaim[] {
     return [...claims].sort((left, right) =>
-        toALInboundClaimRank(effectKinds.get(toKeyAsString(left.entry.key))) -
-        toALInboundClaimRank(effectKinds.get(toKeyAsString(right.entry.key)))
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(left.entry.key)), lane) -
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(right.entry.key)), lane)
     );
 }
 
 /** A row whose kind never decoded ranks with the admission replays: both are read again before delivery. */
-function toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2 {
+function toALInboundClaimRank(
+    kind: ALInboundDurableEffect['kind'] | undefined,
+    lane: ALStoreDurability
+): 0 | 1 | 2 | 3 {
     switch (kind) {
+        case 'send-control':
+            return lane === 'volatile' ? 0 : 3;
         case 'dispatch-local':
         case 'release-buffered':
-            return 0;
+            return 1;
         case 'admit-control':
         case 'admit-message':
         case undefined:
-            return 1;
-        case 'forward-message':
-        case 'send-control':
             return 2;
+        case 'forward-message':
+            return 3;
     }
 }
 

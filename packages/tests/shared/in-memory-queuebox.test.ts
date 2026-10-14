@@ -10,12 +10,16 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
+    toKeyAsString,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
+
+/** Completed rows a retaining owner keeps until they expire: far more than the live rows a sweep looks for. */
+const RETAINED_COMPLETED_ROWS = 64;
 
 interface QueueEntryTestOptions {
     readonly status?: EntityStatus;
@@ -329,6 +333,36 @@ describe('InMemoryQueueBox', () => {
                 }
             )).size
         ).toBe(0);
+    });
+
+    it('finalizes only the exhausted reservation among completed rows it retains, which stay retained', async () => {
+        const queue = new InMemoryQueueBox();
+        queue.retainCompletedUntilExpiry({ typeIds: [EnqueuedType.APP_INBOX], topicIds: [] });
+        const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
+        const completed = Array.from({ length: RETAINED_COMPLETED_ROWS }, (_, index) =>
+            createEntry(EnqueuedType.APP_INBOX, `completed-${index}`, {
+                status: EntityStatus.COMPLETED,
+                attempts: 20,
+                startTs: staleStart
+            }));
+        for (const entry of completed) {
+            await queue.enqueue(entry);
+        }
+        const exhausted = createEntry(EnqueuedType.APP_INBOX, 'exhausted', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart
+        });
+        await queue.enqueue(exhausted);
+
+        const recovered = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            { processingAttempts: 20, maxToReserve: 10, staleAfterMs: 5 * 60 * 1000 }
+        );
+
+        expect([...recovered.values()].map(({ entry }) => entry.key)).toEqual([exhausted.key]);
+        expect(completed.map((entry) => queue.peek(toKeyAsString(entry.key))?.status))
+            .toEqual(completed.map(() => EntityStatus.COMPLETED));
     });
 
     it('skips poison finalization generations without consuming a valid bounded batch', async () => {

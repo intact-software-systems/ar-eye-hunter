@@ -65,7 +65,7 @@ export interface ALInboundControlEffectInput extends ALInboundLocalDeliveryInput
     readonly fromPeerId: string;
 }
 
-interface ALInboundAckEffectInput {
+export interface ALInboundAckEffectInput {
     readonly toPeerId: string;
     readonly ackedMsgId: string;
     readonly originPeerId: string;
@@ -202,7 +202,7 @@ export interface ALInboundUpwardAck {
 }
 
 /**
- * The ACKs a relay transition sends upward (D40): one `forwarded` ACK per recipient a child ACK named,
+ * The ACKs a relay transition sends upward (D40): one `forwarded` ACK per recipient the transition relays,
  * then, on the transition that completed the row, the terminal ACK of the relay itself, last.
  */
 export function toALInboundUpwardAcks(

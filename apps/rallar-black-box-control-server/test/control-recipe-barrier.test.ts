@@ -26,6 +26,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 interface BarrierClock {
     now: number;
@@ -71,7 +72,7 @@ function toArrival(input: ArrivalInput): ControlEventEnvelope {
 
 function acknowledgeDispatched(service: RallarBlackBoxControlService, runId: string, agentIds: readonly string[]): void {
     for (const agentId of agentIds) {
-        for (const command of service.takeDispatchableCommands(runId, agentId)) {
+        for (const command of takeAgentDispatchableCommands(service, runId, agentId)) {
             service.receiveClientEnvelope(toCommandResultEnvelope({ runId, agentId, command, ok: true }));
         }
     }
@@ -154,7 +155,7 @@ Deno.test('a recipe barrier fails timed-out for the arrived agents, and a late p
 Deno.test('a recipe barrier fails at once when a participant that has not arrived failed its run', () => {
     const service = toRunningTwoAgentRun({ now: 10_000 });
     service.receiveClientEnvelope(toArrival({ agentId: 'agent-1' }));
-    const [start] = service.takeDispatchableCommands('run-1', 'agent-2');
+    const [start] = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     assert(start?.command.kind === 'recipe.run');
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: start, ok: false }));
 

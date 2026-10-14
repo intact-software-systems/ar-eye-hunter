@@ -17,6 +17,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 interface ReceiptPin {
     readonly handleId: string;
@@ -47,7 +48,7 @@ function toThreeAgentOutcome(swapRecipients: boolean) {
     assertRight(service.createDistributedRun(manifest));
     assertRight(service.stageDistributedRun(manifest.distributedRunId));
     const acknowledgeDispatched = () =>
-        agents.flatMap((agentId) => service.takeDispatchableCommands(runId, agentId))
+        agents.flatMap((agentId) => takeAgentDispatchableCommands(service, runId, agentId))
             .forEach((command) => service.receiveClientEnvelope(toResultEnvelope(command)));
     acknowledgeDispatched();
     acknowledgeDispatched();
@@ -55,7 +56,7 @@ function toThreeAgentOutcome(swapRecipients: boolean) {
     const sender = manifest.recipes.find((selection) => selection.role === 'sender')!.recipe!;
     const pins = toReceiptPins(sender);
     agents.forEach((agentId) => {
-        const [root] = service.takeDispatchableCommands(runId, agentId);
+        const [root] = takeAgentDispatchableCommands(service, runId, agentId);
         assert(root?.command.kind === 'recipe.run' && root.command.recipe, `${agentId} must start its role recipe`);
         service.receiveClientEnvelope(toResultEnvelope(root, { recipe: root.command.recipe, pins, swapRecipients }));
     });

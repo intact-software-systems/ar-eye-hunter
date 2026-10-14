@@ -21,6 +21,7 @@ import {
 import {
     parseControlClientMessage,
     parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
     type ControlClientEnvelope,
     type ControlCommandEnvelope,
     type ControlRegisterEnvelope,
@@ -82,7 +83,8 @@ function createReloadAgent(
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 0,
         reconnectBaseMs: 600,
-        reconnectMaxMs: 5_000
+        reconnectMaxMs: 5_000,
+        maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
     });
     return createRallarBlackBoxBrowserControlAgent({
         bootstrap: resolveRallarBlackBoxBootstrapConfig(SEARCH, {}, ''),
@@ -543,7 +545,8 @@ describe('browser control-agent reload', () => {
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
             reconnectBaseMs: 600,
-            reconnectMaxMs: 5_000
+            reconnectMaxMs: 5_000,
+            maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
         });
         const connection = { url: 'ws://owned.test/control', runId: 'accepted-run', agentId: 'accepted-agent', completedCommandIds: ['accepted-prefix'] };
         try {

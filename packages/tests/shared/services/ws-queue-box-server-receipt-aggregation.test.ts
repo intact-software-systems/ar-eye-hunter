@@ -46,6 +46,8 @@ const SNAPSHOT_VERSION = 7;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 /** The ack timeout an at-least-once message resolves to: the server's own retry window. */
 const ROOM_MESSAGE_ACK_TIMEOUT_MS = 2_000;
+/** The conditional commits one receipt admission tries before it retains the receipt as work. */
+const RECEIPT_ADMISSION_ATTEMPTS = 3;
 
 interface ReceiptFixture {
     readonly service: WsQueueBoxServerService;
@@ -306,26 +308,31 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
 
-    it('reports a terminal receipt the server pending row could not take once its admission attempts ran out', async () => {
+    it('retains a terminal receipt the server pending row could not take as work, and completes the row when its replay commits', async () => {
         const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
         await admitRoomMessage(fixture);
         await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
         const commitBundle = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
-        // Only the receipt admission writes a lone pending row with no work: every one of its attempts conflicts.
-        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementation(async (bundle) =>
-            bundle.durableEffects.length === 0 && bundle.mutations.every((mutation) => mutation.kind === 'set-pending-ack')
-                ? 'conflict'
-                : await commitBundle(bundle)
-        );
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        let conflicts = 0;
+        // Only the receipt admission writes a lone pending row with no work: its inline attempts all conflict.
+        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            const receiptOnly = bundle.durableEffects.length === 0 &&
+                bundle.mutations.every((mutation) => mutation.kind === 'set-pending-ack');
+            if (receiptOnly && conflicts < RECEIPT_ADMISSION_ATTEMPTS) {
+                conflicts += 1;
+                return 'conflict';
+            }
+            return await commitBundle(bundle);
+        });
 
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
 
-        expect(warn).toHaveBeenCalledWith(
-            'AL complete receipt for room-message-1 of origin a left its receipt row unmoved: ' +
-                'AL receipt kept conflicting with the origin version'
-        );
+        expect(conflicts).toBe(RECEIPT_ADMISSION_ATTEMPTS);
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete);
+        }).toEqual([expect.objectContaining({ msgId: 'room-message-1', confirmedRecipientPeerIds: ['b', 'c'] })]);
     });
 });
 

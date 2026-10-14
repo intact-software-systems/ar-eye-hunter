@@ -17,6 +17,7 @@ import {
 import {
     parseControlClientMessage,
     parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
     type ControlClientEnvelope,
     type ControlCommandEnvelope,
     type ControlEventEnvelope,
@@ -35,7 +36,8 @@ import { createSpaBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRuntime
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -54,7 +56,8 @@ function toClientOptions(
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 5_000,
         reconnectBaseMs: 600,
-        reconnectMaxMs: 5_000
+        reconnectMaxMs: 5_000,
+        maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
     };
 }
 
@@ -113,6 +116,40 @@ function toConfigureCommand(): RallarBlackBoxTestCommand {
             actor: 'alice'
         }
     };
+}
+
+interface CountedRuntimeEvents {
+    readonly runtime: RallarBlackBoxTestRuntime;
+    readonly reads: () => number;
+}
+
+/** Hands the client the runtime's own states with their retained events counted on every indexed read. */
+function countRetainedEventReads(runtime: RallarBlackBoxTestRuntime): CountedRuntimeEvents {
+    let reads = 0;
+    const toCountedState = (state: RallarBlackBoxTestState): RallarBlackBoxTestState => ({
+        ...state,
+        events: new Proxy(state.events, {
+            get: (target, key, receiver) => {
+                if (typeof key === 'string' && /^\d+$/.test(key)) {
+                    reads += 1;
+                }
+                return Reflect.get(target, key, receiver);
+            }
+        })
+    });
+    const counted = new Proxy(runtime, {
+        get: (target, key) => {
+            if (key === 'state') {
+                return () => toCountedState(target.state());
+            }
+            if (key === 'subscribe') {
+                return (listener: (state: RallarBlackBoxTestState) => void) => target.subscribe((state) => listener(toCountedState(state)));
+            }
+            const value = Reflect.get(target, key, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+        }
+    });
+    return { runtime: counted, reads: () => reads };
 }
 
 describe('shared rallar black-box control client', () => {
@@ -580,6 +617,32 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
+    it('publishes a newly recorded event after a long history while reading only the newest events', () => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const events = countRetainedEventReads(runtime);
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient(toClientOptions(events.runtime, () => socket));
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+            for (let index = 0; index < 2_000; index += 1) {
+                runtime.recordEvent({ kind: 'diagnostic', topic: 'rallar.browser.noise', severity: 'info', payload: { index } });
+            }
+            const readsBefore = events.reads();
+
+            runtime.recordEvent({ kind: 'diagnostic', topic: 'rallar.browser.latest', severity: 'info', payload: {} });
+
+            expect(events.reads() - readsBefore).toBeLessThanOrEqual(4);
+            expect(toSentEnvelopes(socket).filter((envelope) => envelope.kind === 'diagnostic').at(-1))
+                .toMatchObject({ payload: { topic: 'rallar.browser.latest' } });
+            expect(toSentEnvelopes(socket).filter((envelope) => envelope.kind === 'diagnostic')).toHaveLength(2_001);
+        }
+        finally {
+            client.dispose();
+        }
+    });
+
     it('delivers each snapshot change to subscribers until they unsubscribe', () => {
         const socket = new FakeControlSocket();
         const client = new RallarBlackBoxControlClient(toClientOptions(createDefaultRallarBlackBoxTestRuntime(), () => socket));
@@ -851,6 +914,91 @@ describe('shared rallar black-box control client', () => {
                 }
             });
             expect(toResultEnvelopes(sockets[1], 'configure-1')[0].replayed).toBe(true);
+        }
+        finally {
+            client.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('replaces an oversize result frame with a bounded failed result that a reconnect replays and the report counts', async () => {
+        vi.useFakeTimers();
+        const maxFrameBytes = 4_000;
+        const sockets: FakeControlSocket[] = [];
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const client = new RallarBlackBoxControlClient({
+            ...toClientOptions(runtime, () => {
+                const socket = new FakeControlSocket();
+                sockets.push(socket);
+                return socket;
+            }),
+            reconnectBaseMs: 25,
+            reconnectMaxMs: 25,
+            maxFrameBytes
+        });
+        const oversizeResultDiagnostics = () =>
+            sockets.flatMap((socket) => toSentEnvelopes(socket)).filter((envelope) => {
+                const event = envelope.kind === 'diagnostic' && isJsonRecordValue(envelope.payload)
+                    ? envelope.payload
+                    : undefined;
+                return event?.topic === 'rallar.bb.control.frame_too_large' && isJsonRecordValue(event.payload) &&
+                    event.payload.frameKind === 'result';
+            });
+
+        try {
+            connectToRunOne(client);
+            sockets[0].open();
+            sockets[0].publishMessage(JSON.stringify(toCommandEnvelope('configure-big', {
+                kind: 'configure',
+                config: { runId: 'run-1', agentId: 'agent-1', actor: 'alice', defaults: { note: 'x'.repeat(maxFrameBytes) } }
+            })));
+            await vi.waitFor(() => {
+                expect(toResultEnvelopes(sockets[0], 'configure-big')).toHaveLength(1);
+            });
+            const executed = runtime.state().resultCache['configure-big'];
+            const [sent] = toResultEnvelopes(sockets[0], 'configure-big');
+            expect(sent).toMatchObject({
+                ok: false,
+                replayed: false,
+                error: {
+                    code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
+                    details: { maxFrameBytes }
+                },
+                result: {
+                    commandId: 'configure-big',
+                    kind: 'configure',
+                    status: 'failed',
+                    ok: false,
+                    startedAtEpochMs: executed.startedAtEpochMs,
+                    endedAtEpochMs: executed.endedAtEpochMs,
+                    error: { code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE' }
+                }
+            });
+            expect(sent.result).not.toHaveProperty('value');
+            expect(isJsonRecordValue(sent.error?.details) && Number(sent.error.details.frameBytes)).toBeGreaterThan(maxFrameBytes);
+            expect(toEventEnvelopes(sockets[0], 'report').at(-1)?.payload).toMatchObject({
+                payload: { summary: { status: 'failed', failures: 1, latestCommandId: 'configure-big' } }
+            });
+
+            sockets[0].close();
+            await vi.advanceTimersByTimeAsync(25);
+            sockets[1].open();
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(toResultEnvelopes(sockets[1], 'configure-big')).toEqual([{
+                ...sent,
+                replayed: true,
+                result: { ...sent.result, replayed: true }
+            }]);
+            expect(oversizeResultDiagnostics()).toHaveLength(1);
+            expect(oversizeResultDiagnostics()[0]).toMatchObject({
+                payload: {
+                    payload: { frameKind: 'result', commandId: 'configure-big', agentId: 'agent-1', maxFrameBytes }
+                }
+            });
+            expect(sockets.flatMap((socket) => socket.sent).every((frame) => frame.length <= maxFrameBytes)).toBe(true);
+            expect(client.getSnapshot().sentCount).toBe(sockets[0].sent.length + sockets[1].sent.length);
+            expect(runtime.state().eventHistory.capture).toMatchObject({ status: 'gap', reason: 'control-frame-too-large' });
         }
         finally {
             client.dispose();

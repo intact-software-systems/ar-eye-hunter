@@ -2,6 +2,8 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckStatus, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
+import { isALUnicastAddressedTo } from '../../../al-contracts/is-al-unicast-addressed-to.ts';
+import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
@@ -11,7 +13,7 @@ import {
     type ALInboundEffectIntent
 } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
-import { isALPendingAckComplete } from '../transition-al-pending-ack.ts';
+import { isALPendingAckComplete, isALPendingAckUpwardRecipient } from '../transition-al-pending-ack.ts';
 
 export interface ALInboundDuplicateChanges {
     readonly mutations: readonly ALInboundAdmissionMutation[];
@@ -63,7 +65,7 @@ export function computeALInboundDuplicateChanges(
         return { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
     }
     if (read.fromPeerId === pendingAck.toPeerId) {
-        return { mutations: [], effects: toParentAnswer(read, pendingAck) };
+        return { mutations: [], effects: toParentAnswer(read, pendingAck, input.selfPeerId) };
     }
     if (!isReparentingSender(read, pendingAck, input.recordedParentPresent)) {
         const status = pendingAck.status;
@@ -74,7 +76,7 @@ export function computeALInboundDuplicateChanges(
     return {
         mutations: [toReparentedRowMutation(read, reparented)],
         effects: [
-            ...toParentAnswer(read, reparented),
+            ...toParentAnswer(read, reparented, input.selfPeerId),
             ...(input.recordedParentPresent ? [toFormerParentRelease(read, pendingAck)] : [])
         ]
     };
@@ -135,17 +137,24 @@ function isReparentingSender(
     return !recordedParentPresent && !pendingAck.expectedFromPeerIds.includes(read.fromPeerId);
 }
 
+/**
+ * Every ACK the row relays upward again, then its terminal ACK once complete. While it still waits, a recipient
+ * that delivered confirms itself again, since its `accepted` ACK may be the one the origin lost.
+ */
 function toParentAnswer(
     read: ALInboundMessageReadDto,
-    pendingAck: ALPendingAckSnapshot
+    pendingAck: ALPendingAckSnapshot,
+    selfPeerId: string
 ): readonly ALInboundEffectIntent[] {
-    const relayed = [...new Set(read.acks.map((ack) => ack.logicalRecipientPeerId))].map((peerId) =>
-        toRepeatedAck(read, {
-            toPeerId: pendingAck.toPeerId,
-            logicalRecipient: { kind: 'relayed', peerId },
-            status: 'forwarded'
-        })
-    );
+    const relayed = [...new Set(read.acks.map((ack) => ack.logicalRecipientPeerId))]
+        .filter((peerId) => isALPendingAckUpwardRecipient(pendingAck, peerId))
+        .map((peerId) =>
+            toRepeatedAck(read, {
+                toPeerId: pendingAck.toPeerId,
+                logicalRecipient: { kind: 'relayed', peerId },
+                status: 'forwarded'
+            })
+        );
     if (isALPendingAckComplete(pendingAck)) {
         return [
             ...relayed,
@@ -157,7 +166,31 @@ function toParentAnswer(
         ];
     }
     const owedPeerIds = toALPendingAckOwedPeerIds(pendingAck);
-    return owedPeerIds.length === 0 ? relayed : [...relayed, toRetriedForward(read, owedPeerIds)];
+    return [
+        ...relayed,
+        ...(isAcceptingRecipient(read, pendingAck, selfPeerId)
+            ? [toRepeatedAck(read, {
+                toPeerId: pendingAck.toPeerId,
+                logicalRecipient: { kind: 'self' },
+                status: 'accepted'
+            })]
+            : []),
+        ...(owedPeerIds.length === 0 ? [] : [toRetriedForward(read, owedPeerIds)])
+    ];
+}
+
+/**
+ * Whether this peer confirmed itself with `accepted` beside the row when it first admitted the message: it is a
+ * logical recipient, one the frozen audience names or the unicast addresses, never a relay passing a copy on.
+ */
+function isAcceptingRecipient(
+    read: ALInboundMessageReadDto,
+    pendingAck: ALPendingAckSnapshot,
+    selfPeerId: string
+): boolean {
+    const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
+    return isALLogicalReceiptMode(read.plan.ack.algo) && pendingAck.localReady &&
+        (frozen?.recipientPeerIds.includes(selfPeerId) === true || isALUnicastAddressedTo(read.msg, selfPeerId));
 }
 
 /** Child hops a repeated parent copy can still forward to using the original canonical envelope. */

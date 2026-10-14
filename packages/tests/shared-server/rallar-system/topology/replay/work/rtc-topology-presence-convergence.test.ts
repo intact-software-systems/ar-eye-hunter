@@ -241,6 +241,7 @@ class PresenceConvergenceFixture {
         topologyService: new RallarRtcTopologyService({ now: () => this.now })
     }).planning;
     readonly handler = createRtcTopologyWorkHandler({
+        nowEpochMs: () => this.now,
         outboxQueueReader: this.outboxQueueReader,
         database: this.database,
         topologyPlanning: this.planning,

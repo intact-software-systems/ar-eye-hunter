@@ -1,13 +1,12 @@
 import { createDefaultRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { renderHeadlessStatus } from './status-view.ts';
+import { HeadlessStatusView } from './status-view.ts';
 import './styles.css';
 
 const root = document.getElementById('root');
 if (!root) {
     throw new Error('Missing #root for rallar black-box headless agent.');
 }
-const rootElement = root;
 
 const agent = createDefaultRallarBlackBoxBrowserControlAgent({
     search: window.location.search,
@@ -15,16 +14,14 @@ const agent = createDefaultRallarBlackBoxBrowserControlAgent({
     hash: window.location.hash
 });
 
-function render(): void {
-    renderHeadlessStatus(rootElement, agent.getSnapshot());
-}
+const statusView = new HeadlessStatusView(root, () => agent.getSnapshot());
 
-agent.subscribe(render);
-render();
+agent.subscribe(() => statusView.requestRender());
+statusView.render();
 
 function recordStartFailure(failure: string): void {
     agent.recordStatus(failure);
-    render();
+    statusView.render();
 }
 
 // start() returns expected failures as values; an unexpected rejection must still reach the status line.

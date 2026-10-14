@@ -104,7 +104,11 @@ export class NativeSessionTestFixture {
 export async function createNativeSessionTestFixture(): Promise<NativeSessionTestFixture> {
     const configuration = decodeApiV1Configuration({
         ...validDecodeApiV1ConfigurationInput(),
-        defaultsSource: defaults
+        defaultsSource: {
+            ...defaults,
+            // Optional synchronous timing output must not consume the native HTTP allowance.
+            observability: { ...defaults.observability, timingLogs: false }
+        }
     });
     const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const backgroundProducersStopped = Promise.withResolvers<void>();

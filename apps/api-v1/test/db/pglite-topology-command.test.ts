@@ -28,7 +28,12 @@ import type {
     GroupPresenceSummary,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -209,20 +214,11 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>[1] = [];
-            class RecordingTopologyService extends RallarRtcTopologyService {
-                override planGroupTopologyAt(
-                    ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
-                ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
-                    plannedRtts = args[1];
-                    return super.planGroupTopologyAt(...args);
-                }
-            }
             // The reporting limit resolves no lower than the planning degree
             // limit, so a non-reporting pair needs both endpoints at full
             // planned degree: a four-session ring keeps every selection
             // exactly the planned hops and leaves the a-c chord outside.
-            const topologyService = new RecordingTopologyService({
+            const topologyService = new RallarRtcTopologyService({
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
@@ -260,12 +256,45 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            computeGroupTopologyFromAuthority(authority, previous, {
+            const filtered = requirePlannedTopology(computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
                 origin: 'automatic'
-            });
+            }));
 
-            assert.deepEqual(plannedRtts, []);
+            assert.equal(filtered.planningObservation?.relevantRttMeasurementCount, 0);
+            assert.equal(filtered.snapshot.state, 'active');
+            assert.equal(filtered.snapshot.topology, 'tree');
+            assert.equal(filtered.snapshot.degreeLimit, 2);
+            assert.deepEqual(filtered.snapshot.activeSessionIds, [
+                'session-a',
+                'session-b',
+                'session-c',
+                'session-d'
+            ]);
+            assert.deepEqual(filtered.snapshot.sourceGroupStateCausalRevision, group.causalRevision);
+
+            const reportingRtt = {
+                sessionIdFrom: 'session-b',
+                sessionIdTo: 'session-c',
+                rttMs: 0.01,
+                createdAtEpochMs: nowEpochMs,
+                version: 1
+            };
+            assert.equal(await rttRepository.putMeasurementIfNewer(reportingRtt), true);
+            const mixedAuthority = await service.planning.readTopologyPlanningAuthority({
+                groupRef,
+                snapshotSelection: 'prefer-current'
+            });
+            assert.deepEqual(mixedAuthority.rttMeasurements, [storedRtt, reportingRtt]);
+
+            const withReportingRtt = requirePlannedTopology(computeGroupTopologyFromAuthority(mixedAuthority, previous, {
+                intent: 'full-rebuild',
+                origin: 'automatic'
+            }));
+
+            assert.equal(withReportingRtt.planningObservation?.relevantRttMeasurementCount, 1);
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-b'].includes('session-c'));
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-c'].includes('session-b'));
         });
     }
 );
@@ -333,10 +362,10 @@ Deno.test(
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
-                    ...args: Parameters<PSqlQueueBox['releaseEntries']>
-                ): ReturnType<PSqlQueueBox['releaseEntries']> {
-                    const released = await super.releaseEntries(...args);
-                    if (args[0].some((release) => release.disposition.status === EntityStatus.RETRY)) {
+                    releases: readonly ResourceInboxRelease[]
+                ): Promise<Map<Key, ResourceEntry>> {
+                    const released = await super.releaseEntries(releases);
+                    if (releases.some((release) => release.disposition.status === EntityStatus.RETRY)) {
                         retryReleaseCount += 1;
                     }
                     return released;
@@ -353,6 +382,7 @@ Deno.test(
             outboxReader.onOutboxMessageDo(
                 AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
                 createRtcTopologyWorkHandler({
+                    nowEpochMs: () => nowEpochMs,
                     outboxQueueReader: outboxReader,
                     database: sql,
                     topologyPlanning: topologyManagement.planning,

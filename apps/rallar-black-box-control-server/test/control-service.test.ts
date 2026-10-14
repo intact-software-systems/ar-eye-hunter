@@ -19,6 +19,7 @@ import {
     toRegisterEnvelope,
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 Deno.test('control service queues and dispatches commands to a registered agent', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
@@ -38,10 +39,10 @@ Deno.test('control service queues and dispatches commands to a registered agent'
 
     assertJsonEquals(queued.commandId, 'generated-command-1');
     assertJsonEquals(
-        service.takeDispatchableCommands('run-1', 'agent-1').map((command) => command.commandId),
+        takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.commandId),
         ['generated-command-1']
     );
-    assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
+    assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
 
     const run = service.snapshotRun('run-1');
     assert(run);
@@ -60,13 +61,13 @@ Deno.test('control service stores results and suppresses completed resume comman
         command: toConfigureCommand()
     });
     assertJsonEquals(
-        service.takeDispatchableCommands('run-1', 'agent-1').map((command) => command.commandId),
+        takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.commandId),
         ['configure-1']
     );
 
     service.markAgentDisconnected('run-1', 'agent-1');
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: ['configure-1'] }));
-    assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
+    assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
 
     service.receiveClientEnvelope({
         kind: 'result',
@@ -107,7 +108,7 @@ for (const outerOnly of [false, true]) {
         const command = assertRight(
             service.enqueueCommand({ runId: 'run-1', agentId: 'agent-1', commandId: 'configure-retained', command: toConfigureCommand() })
         );
-        service.takeDispatchableCommands('run-1', 'agent-1');
+        takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
         const result = toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command, ok: true });
         assert(result.kind === 'result');
         assertJsonEquals(service.receiveClientEnvelope(outerOnly ? { ...result, result: undefined } : result).accepted, true);
@@ -417,10 +418,10 @@ Deno.test('control service compacts recipe run results while preserving distribu
         }
     });
     service.stageDistributedRun('dist-1');
-    const stageCommand = service.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const stageCommand = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0];
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: stageCommand, ok: true }));
     service.startDistributedRun('dist-1');
-    const startCommand = service.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const startCommand = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0];
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: startCommand, ok: true }));
 
     const passed = service.snapshotDistributedRun('dist-1');
@@ -523,10 +524,10 @@ Deno.test('control service keeps terminal distributed rollups stable after runti
         }
     });
     service.stageDistributedRun('dist-1');
-    const stageCommand = service.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const stageCommand = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0];
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: stageCommand, ok: true }));
     service.startDistributedRun('dist-1');
-    const startCommand = service.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const startCommand = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')[0];
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: startCommand, ok: true }));
 
     const passed = service.snapshotDistributedRun('dist-1');

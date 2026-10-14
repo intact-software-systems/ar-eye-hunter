@@ -100,8 +100,10 @@ Follow these production paths directly when reviewing a change:
    receipt settlement → guarded outbox/count observations. The deadline index,
    cap and sweep keep their current bounded lifecycle.
 3. Relay: service → relay `relayUnownedAck` → actual shared audience proof and
-   budget → publisher result. Failed publication remains distinct from the
-   existing `Right(true)` handoff return. A relayed subscriber calls
+   budget per admitted message → publisher result. A failed publication returns
+   `Right(false)` with a `publication-failed` observation: the ACK is admitted
+   where it arrived, counts nowhere, and the origin's ACK-timeout retry
+   recovers it. A relayed subscriber calls
    `acceptRelayedAck` once; the receiving instance does not relay it again.
 4. Queued send: outbound runtime → service `sendPreparedMessage` → dequeue
    authority and cluster publication or actual recipient scope/identity check →

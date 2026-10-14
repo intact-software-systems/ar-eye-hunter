@@ -15,6 +15,8 @@ import {
 import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
+/** The control server's default frame and request body limit; it closes a larger socket frame with 1009. */
+export const RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES = 2_000_000;
 
 export interface ControlCommandEnvelope {
     readonly kind: 'command';

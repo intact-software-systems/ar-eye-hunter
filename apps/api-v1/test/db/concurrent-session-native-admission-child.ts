@@ -14,6 +14,7 @@ import {
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -31,7 +32,8 @@ import {
     writeNativeGroupJoin,
     writeNativeGroupPresence,
     writeNativeGroupRequest,
-    type NativeGroupRequestResult
+    type NativeGroupRequestResult,
+    type NativeGroupSessionFlow
 } from './native-session-test-fixture.ts';
 
 interface NativeGroupDurableResultObservation {
@@ -67,7 +69,7 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
         assert.equal(await fixture.runtime.groupsRepository.findGroup(groupRef), undefined);
         let firstFlowFailure: Error | undefined;
         const startedAt = performance.now();
-        const connections = await Promise.allSettled(
+        await Promise.allSettled(
             sessions.map(async (session, index) => {
                 const ticket = await issueNativeWebSocketTicket(baseUrl, session, index);
                 const url = new URL(`/api/ws/${session.sessionId}`, baseUrl);
@@ -78,9 +80,23 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
                 const socket = new WebSocket(url);
                 sockets.push(socket);
                 await waitForSocketOpen(socket);
+            }).map((connection) =>
+                connection.catch((cause) => {
+                    firstFlowFailure ??= cause instanceof Error ? cause : new Error(String(cause));
+                    throw cause;
+                })
+            )
+        );
+        if (firstFlowFailure) {
+            throw firstFlowFailure;
+        }
+
+        await assertNativeAdmittedSessions(fixture.runtime, sessions, sockets);
+        const roomSetups = await Promise.allSettled(
+            sessions.map(async (session, index) => {
                 const connection = fixture.runtime.wsQBoxServerService.socket.connections.get(session.sessionId);
                 assert.ok(connection?.isOpen, `Session ${index} must have its current server connection`);
-                const flow = {
+                const flow: NativeGroupSessionFlow = {
                     baseUrl,
                     session,
                     groupRef,
@@ -105,39 +121,14 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
             throw firstFlowFailure;
         }
         const groupResults: NativeGroupRequestResult[] = [];
-        for (const connection of connections) {
-            if (connection.status === 'rejected') {
-                throw connection.reason;
+        for (const roomSetup of roomSetups) {
+            if (roomSetup.status === 'rejected') {
+                throw roomSetup.reason;
             }
-            groupResults.push(...connection.value);
+            groupResults.push(...roomSetup.value);
         }
 
-        const snapshot = await readAdmittedSnapshot(fixture.runtime);
-        assert.equal(sockets.length, 15);
-        assert.ok(sockets.every((socket) => socket.readyState === WebSocket.OPEN));
-        assert.equal(snapshot.activeSessionCount, 15);
-        assert.equal(snapshot.principal.username, 'alice');
-        assert.equal(snapshot.principal.status, 'active');
-        assert.deepEqual(
-            snapshot.activeSessions.map((session) => session.sessionId).sort(),
-            sessions.map((session) => session.sessionId).sort()
-        );
-        const socketServer = fixture.runtime.wsQBoxServerService.socket;
-        assert.equal(socketServer.connections.size, 15);
-        for (const session of snapshot.activeSessions) {
-            const connection = socketServer.connections.get(session.sessionId);
-            assert.ok(connection?.isOpen);
-            assert.equal(session.applicationId, 'rallar-server');
-            assert.equal(session.workspaceId, 'default');
-            assert.equal(session.principalId, 'alice');
-            assert.equal(session.status, 'active');
-            assert.equal(session.disconnectedAtEpochMs, null);
-            assert.equal(session.transport, 'ws');
-            assert.equal(session.connectionId, connection.generationId);
-            assert.equal(session.generationId, connection.generationId);
-            assert.ok(session.generationVersion >= 1);
-            assert.ok(session.expiresAtEpochMs > Date.now());
-        }
+        const snapshot = await assertNativeAdmittedSessions(fixture.runtime, sessions, sockets);
         assert.equal(
             groupResults.filter((result) => result.command.operation === 'create-group' && result.status === 201)
                 .length,
@@ -190,6 +181,40 @@ Deno.test('fifteen native same-user sessions complete concurrent room setup thro
         await fixture.stop(sockets.map(closeSocket), primaryFailure);
     }
 });
+
+async function assertNativeAdmittedSessions(
+    runtime: ApiV1Runtime,
+    sessions: readonly IssuedAuthSession[],
+    sockets: readonly WebSocket[]
+): Promise<ClientSnapshot> {
+    const snapshot = await readAdmittedSnapshot(runtime);
+    assert.equal(sockets.length, 15);
+    assert.ok(sockets.every((socket) => socket.readyState === WebSocket.OPEN));
+    assert.equal(snapshot.activeSessionCount, 15);
+    assert.equal(snapshot.principal.username, 'alice');
+    assert.equal(snapshot.principal.status, 'active');
+    assert.deepEqual(
+        snapshot.activeSessions.map((session) => session.sessionId).sort(),
+        sessions.map((session) => session.sessionId).sort()
+    );
+    const socketServer = runtime.wsQBoxServerService.socket;
+    assert.equal(socketServer.connections.size, 15);
+    for (const session of snapshot.activeSessions) {
+        const connection = socketServer.connections.get(session.sessionId);
+        assert.ok(connection?.isOpen);
+        assert.equal(session.applicationId, 'rallar-server');
+        assert.equal(session.workspaceId, 'default');
+        assert.equal(session.principalId, 'alice');
+        assert.equal(session.status, 'active');
+        assert.equal(session.disconnectedAtEpochMs, null);
+        assert.equal(session.transport, 'ws');
+        assert.equal(session.connectionId, connection.generationId);
+        assert.equal(session.generationId, connection.generationId);
+        assert.ok(session.generationVersion >= 1);
+        assert.ok(session.expiresAtEpochMs > Date.now());
+    }
+    return snapshot;
+}
 
 function assertNativeGroupHttpResult(result: NativeGroupRequestResult): void {
     const requestId = result.command.request.requestId;

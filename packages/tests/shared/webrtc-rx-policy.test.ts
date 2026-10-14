@@ -363,7 +363,9 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
             }),
             'peer-2'
         );
+        // A member that delivered confirms itself at once, before any child ACK it relays.
         await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
+            ['self', 'accepted'],
             ['peer-2', 'forwarded']
         ]);
 
@@ -384,12 +386,12 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         expect(delivered).toEqual([message.id.msgId]);
         // The relay relays one ACK per recipient a child ACK named (D40), then ends its subtree with its own
         // terminal ACK: it is a group member that delivered the message locally.
-        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).length).toBe(3);
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).length).toBe(4);
         const upstream = (await fixture.outboundTo('peer-1')).map(shared.parseALControlMessage)
             .filter((control) => control?.type === 'ack');
         // Each is its own durable work row, so they leave in any order.
         expect(upstream.map((control) => control?.payload)).toEqual(
-            expect.arrayContaining([['peer-2', 'forwarded'], ['peer-3', 'forwarded'], ['self', 'subtree-complete']].map((
+            expect.arrayContaining([['self', 'accepted'], ['peer-2', 'forwarded'], ['peer-3', 'forwarded'], ['self', 'subtree-complete']].map((
                 [recipient, status]
             ) => expect.objectContaining({
                 status,
@@ -445,10 +447,12 @@ describe('a retried copy of a message this peer already admitted', () => {
         expect(delivered).toEqual([message.id.msgId]);
         await expect.poll(async () => readForwardedCopies(await fixture.outboundTo('peer-3'), message)).toBe(2);
         expect(readForwardedCopies(await fixture.outboundTo('peer-2'), message)).toBe(1);
-        // The ACK it already relayed for `peer-2` may be the one the origin lost, so it goes upward again.
-        expect(readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
+        // Its own accepted ACK and the one it relayed for `peer-2` may be the ones the origin lost, so both go upward again.
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
             ['peer-2', 'forwarded'],
-            ['peer-2', 'forwarded']
+            ['peer-2', 'forwarded'],
+            ['self', 'accepted'],
+            ['self', 'accepted']
         ]);
     });
 
@@ -483,6 +487,7 @@ describe('a retried copy of a message this peer already admitted', () => {
             ['peer-2', 'forwarded'],
             ['peer-3', 'forwarded'],
             ['peer-3', 'forwarded'],
+            ['self', 'accepted'],
             ['self', 'subtree-complete'],
             ['self', 'subtree-complete']
         ]);

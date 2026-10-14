@@ -35,6 +35,7 @@ export function createControlSnapshotPersistence(
     let scheduled = false;
     let persisting = false;
     let dirty = false;
+    let writtenSnapshotJson: string | undefined;
 
     async function flush(): Promise<void> {
         scheduled = false;
@@ -44,9 +45,14 @@ export function createControlSnapshotPersistence(
         dirty = false;
         persisting = true;
         try {
+            const snapshotJson = JSON.stringify(input.controlService.snapshotForPersistence(input.snapshotBounds));
+            if (snapshotJson === writtenSnapshotJson) {
+                return;
+            }
             const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${sequence += 1}`;
-            const snapshot = input.controlService.snapshotForPersistence(input.snapshotBounds);
-            await writeSnapshotFile(input.storageDir, tempPath, toSnapshotFileText(snapshot));
+            if (await writeSnapshotFile(input.storageDir, tempPath, toSnapshotFileText(snapshotJson))) {
+                writtenSnapshotJson = snapshotJson;
+            }
         }
         finally {
             persisting = false;
@@ -85,29 +91,24 @@ function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
 }
 
-function toSnapshotFileText(snapshot: ControlServerSnapshot): string {
-    return JSON.stringify(
-        {
-            schemaVersion: SNAPSHOT_FILE_SCHEMA_VERSION,
-            savedAtEpochMs: Date.now(),
-            snapshot
-        },
-        null,
-        2
-    );
+/** Embeds the already serialized snapshot, so change detection and the file share one serialization. */
+function toSnapshotFileText(snapshotJson: string): string {
+    return `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${Date.now()},"snapshot":${snapshotJson}}`;
 }
 
-async function writeSnapshotFile(storageDir: string, tempPath: string, payload: string): Promise<void> {
+async function writeSnapshotFile(storageDir: string, tempPath: string, payload: string): Promise<boolean> {
     const path = toSnapshotPath(storageDir);
     try {
         await Deno.mkdir(storageDir, { recursive: true });
         await Deno.writeTextFile(tempPath, payload);
         await Deno.rename(tempPath, path);
+        return true;
     }
     catch (error) {
         Deno.remove(tempPath).catch(() => undefined);
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`Could not persist control snapshot to ${path}: ${message}`);
+        return false;
     }
 }
 

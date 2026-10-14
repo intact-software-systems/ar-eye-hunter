@@ -1,4 +1,4 @@
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -108,11 +108,43 @@ async function computeSecondArrival(
     peer: ReceivingPeer,
     carriers: readonly [first: ALDeliveryCarrier, second: ALDeliveryCarrier]
 ): Promise<ALInboundCommitBundle> {
+    return await computeRetriedArrival(msg, msg, { peer, carriers });
+}
+
+/** Commits the first copy's admission, then computes what a later copy of the same message would commit. */
+async function computeRetriedArrival(
+    first: ALMessage,
+    retried: ALMessage,
+    arrival: Readonly<{ peer: ReceivingPeer; carriers: readonly [first: ALDeliveryCarrier, second: ALDeliveryCarrier]; }>
+): Promise<ALInboundCommitBundle> {
     const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
-    const [first, second] = carriers;
-    const firstBundle = await computeArrival(admissionStore, msg, { peer, carrier: first });
+    const { peer, carriers } = arrival;
+    const firstBundle = await computeArrival(admissionStore, first, { peer, carrier: carriers[0] });
     expect(await admissionStore.commitBundle(firstBundle)).toBe('committed');
-    return await computeArrival(admissionStore, msg, { peer, carrier: second });
+    return await computeArrival(admissionStore, retried, { peer, carrier: carriers[1] });
+}
+
+/** The retried hop copy a relay's parent resends to it alone (D25). */
+function toRetriedHopCopy(msg: ALMessage): ALMessage {
+    return { ...msg, forwarding: { nextHopPeerIds: [INBOUND_TEST_SELF_PEER_ID] } };
+}
+
+/** A room unicast acknowledged by its addressee, relayed by this peer toward it. */
+function createRelayedUnicast(msgId: string, toPeerId: string): ALMessage {
+    const message = newALUnicastMessage(
+        INBOUND_TEST_SENDER_PEER_ID,
+        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+        toPeerId,
+        'chat.message.v1',
+        { text: msgId },
+        {
+            reliability: 'at-least-once',
+            ack: 'all-logical-recipients',
+            ttlMs: 60_000,
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
+        }
+    );
+    return { ...message, id: { ...message.id, msgId } };
 }
 
 function toRepeatedAcks(bundle: ALInboundCommitBundle): readonly RepeatedAck[] {
@@ -181,5 +213,33 @@ describe('a duplicate on the other carrier than its first admission (D56, R-S3b-
         const msg = createInboundTestMessage({ msgId: 'unacknowledged' });
 
         expect(toRepeatedAcks(await computeSecondArrival(msg, LEAF_PEER, ['rtc', 'ws']))).toEqual([]);
+    });
+});
+
+describe('a relay answering the retried copy its parent resends', () => {
+    it.each<{ shape: string; msg: ALMessage; accepted: readonly ALAckStatus[]; }>([
+        {
+            shape: 'a recipient of the frozen audience confirms itself again',
+            msg: {
+                ...createRelayedMessage('frozen-recipient'),
+                targets: {
+                    mode: 'multicast',
+                    groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                    recipientPeerIds: [INBOUND_TEST_SELF_PEER_ID, ...DOWNSTREAM_PEER_IDS],
+                    snapshotVersion: 1
+                }
+            },
+            accepted: ['accepted']
+        },
+        {
+            shape: 'a relay forwarding a unicast addressed to another peer confirms nothing',
+            msg: createRelayedUnicast('relayed-unicast', DOWNSTREAM_PEER_IDS[0]),
+            accepted: []
+        }
+    ])('$shape', async ({ msg, accepted }) => {
+        const bundle = await computeRetriedArrival(msg, toRetriedHopCopy(msg), { peer: RELAY_PEER, carriers: ['rtc', 'rtc'] });
+
+        expect(toRepeatedAcks(bundle).map((ack) => ack.status)).toEqual(accepted);
+        expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toContain('forward-message');
     });
 });

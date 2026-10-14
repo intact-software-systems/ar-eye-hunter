@@ -2,13 +2,13 @@ import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control
 import { bindAcknowledgedControlRecipe } from '@shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { ControlServiceFailure } from './control-service-failure.ts';
 import { toControlCommandSnapshot } from './control-service-snapshots.ts';
 import type {
     ControlAgentState,
     ControlCommandState,
     ControlRunState
 } from './control-service-state.ts';
-import type { ControlServiceFailure } from './control-service.ts';
 import {
     computeControlRecipeReloadStep,
     toControlRecipeReloadDispatch

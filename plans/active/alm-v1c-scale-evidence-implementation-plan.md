@@ -23,6 +23,31 @@ make the full V1c outcome complete or waive either failed gate.
 The live pull request owns delivery state. Git history, immutable ignored evidence and the
 pull request retain prior outcomes and review chronology; do not copy that history into this plan.
 
+## Standing constraints for step 2 and the following slices
+
+The maintainer set these on 2026-10-14 after merging step 1; they bind every remaining V1c slice
+and V1d:
+
+- Performance and scalability are the subject. Locate bottlenecks with the repository's
+  `performance-analysis` skill (static audit → measurement plan → runtime validation → one change
+  at a time) before selecting a repair. Problems exist in both Rallar production code and the
+  black-box shared-test harness; both must be resolved, neither excuses the other.
+- The queuebox engine (`packages/shared/queuebox`, the server AppInbox built on it and the browser
+  IndexedDB engine) is the event-handling core. It must be quick, responsive, smooth and fault
+  tolerant. Scale exposes intermittent faults, so fault tolerance (stale claims, lease expiry,
+  duplicate delivery, retry exhaustion, breaker interaction, unbounded retention, wedged waits)
+  is a first-class acceptance quality beside latency.
+- The 15/30/50 recipes run locally first. The GitHub workflow `Run GitHub Free Distributed
+  Recipe` is used only after a local pass; where it cannot carry a cohort, the plan states what
+  is needed instead of adapting the workload.
+- Static analysis names the slow parts with `path:line` evidence and a confidence label
+  (proven, strong suspicion, needs measurement); a repair is selected only from a positively
+  located defect with RED → GREEN coverage at its owned boundary.
+- No legacy, no duplication, no migration code. Keep the repository consistent, use the repo
+  skills and governance, and prefer an existing pattern (`Either`, `LatestRepository`, lane
+  budgets, `RateLimiter`, the AppInbox doctrine) over a new one.
+- Test-driven and sub-agent-driven development with distinct implementation and review seats.
+
 ## Binding workload and acceptance
 
 - Cohorts remain 15, 30 and 50, with one appointed director and N−1 players in the declared tree.
@@ -149,112 +174,65 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 
 ## Next two useful slices
 
-### V1c step 1: prepare the current branch for main
+Step 1 is merged (#652). The opening navigation probe of step 2 was performed on 2026-10-14 from the
+concrete group-state AppInbox registration with Go to Definition and Find Usages and reached all
+five landmarks (entry `processGroupStateMutation`; authority decode and `validate`; the guarded
+batch's conflict in `writeGroupMutation`; the completion written by `writeComputedMutation`; the
+wake, the completion notification and `observeSnapshot`), with one resolvable type-only pivot at
+`GroupStateMutationService.write` and no search escape. The static audit, the GitHub Free review and
+decisions D194 to D204 live in
+[alm-v1c-step2-design-proposal.md](../../playground/alm/alm-v1c-step2-design-proposal.md); this plan
+binds the two slices that follow from them.
 
-Deliver the existing implementation as a coherent reviewed increment:
+### Step 2a: the leader-ACK path and the harness amplification
 
-- Keep complete per-invocation lane budgets, bounded reservation clamping and claim accounting.
-  Retain the existing AppInbox reader's RateLimiter, advisory pressure, cache and fixed fallback.
-  Include the approved scalar validation: positive safe-integer service limits and valid actual
-  storage requests. Preserve nonpositive reservation sentinels, safe ordinary-lane clamping,
-  valid independent finalization batch sizes and existing failure/backoff behavior.
-- Preserve the meaningful failing-first runtime repairs: expected admission and quota denials
-  do not count as operational breaker failures; whole-batch quota refusal uses the existing
-  NotReady boundary and nonspending forecast, without charging processing attempts. Actual
-  replay rechecks quota. Partial-batch fallback and twenty genuine failure attempts remain.
-  The controlled full-owner case submits and receives its same-origin receipt on claim two at
-  1,251 ms, versus claim eight at 3,031 ms. This proves that bounded policy repair, not native
-  causality or the comparative benefit gate.
-- Preserve owned engine rejection/cleanup, awaitable disposal, immediate native-send failure
-  settlement and original detail, exact sampler/lifecycle assertions, and the direct receipt
-  diagnostic boundary. Mandatory ACK processing precedes optional guarded observation.
-- Preserve approved public contracts: finalization result types, awaitable disposal, WS
-  `authorizeInboundMessage`, explicit precise queue creation clocks and explicit RTC quota clock.
-  Default factories retain UTC nanoseconds; quota, AL deadlines and creation clocks stay distinct.
-  Direct callers supply the required dependencies. No legacy adapters or migration code are selected.
-- Deliver the measured completion-polling repair through one optional wait-execution boundary in
-  the existing retry policy and an explicitly owned local completion hint, with meaningful
-  test-first isolation and fresh integration coverage. A hint follows committed terminal writes or
-  terminal queue release and only requests another durable read. Preserve the canonical retry
-  algorithm, polling defaults, elapsed budget, result validation and cross-process fallback.
-  Close read-to-wait races, duplicate notifications and timer/subscription cleanup without a
-  raced background polling loop or timing-sink dependency. Use the approved canonical retry
-  path, methods, named inputs, timing and exhaustion contracts, with explicit default and
-  injected database factories; retain one engine and no predecessor adapters.
-- Preserve incompatible existing admission databases through typed schema/identity refusal,
-  with acquired-handle cleanup and original failure causes. Initialize genuine absence only;
-  observed cross-context recreation remains an event, not a local delete/recreate migration.
-  Owned browser cleanup stopping cancels normal periodic/retry waits and future admission;
-  distinguish unsupported in-flight work and failed external cancellation from completed cleanup.
+Deliver D202, D199 and D200 as one reviewed increment on the current branch:
 
-Review every changed human-authored file completely for behavior, necessity and current standards.
-Every support file modified by remediation enters closure recursively; independent untouched code
-stays outside. Complete production-legacy classification and owner-to-result navigation review.
-The maintainer is away from the Mac and explicitly postpones the manual five-landmark IDE probe
-to step 2 because local GUI access is unavailable. The probe has not been performed; automated
-checks do not replace it.
-Remove affected unneeded legacy and duplicate paths. Exact current source and meaningful existing
-review evidence may be reused; heuristic inventories and hash-only bindings do not prove semantic
-review. Keep the unrelated local scanner edit outside publication.
+- Leader-ACK path (D202): a logical recipient of a `group-leader` or `receiver` send acknowledges
+  itself immediately with status `accepted` beside the deferred subtree row; relays forward only
+  ACKs whose logical recipient is in the frozen audience; `send-control` ranks first in an inbound
+  batch; the in-memory QueueBox prunes COMPLETED rows on release; a server receipt that loses three
+  commit conflicts is retained as pending-control work; the server ACK relay budgets per held
+  aggregate and reports a failed NOTIFY as a typed failure. Routing, authority, frozen audiences,
+  QoS, the 30 s TTL, the fallback trigger and D56's late-ACK rule are unchanged.
+- Harness (D199, D200): one rollup per affecting control message with agent-indexed evidence; no
+  array copy under unbounded retention; compact change-driven snapshot persistence; an oversize
+  result frame recorded as a diagnostic with a gap record and bounded replay; the agent page's
+  per-event work independent of history (event cursor, report projection only while shown,
+  incremental wait matching); the headless app's paced render and `hmr: false` under the
+  full-stack lifecycle.
+- Docs: the runbook's complete local all-local command and the GitHub Free verdict.
 
-Run the exact changed-range style gate before publication and resolve any failure. A narrow
-reviewed disposition must describe the actual cohesive owner and exact measured cap; it cannot waive
-an actual standards violation or change global thresholds. Run focused affected checks before the
-required current Branch Release Gate, formation and medium-scale correctness gates. Report skipped
-checks explicitly. Passing release tests alone do not establish original consumer acceptance.
+Every change is RED first at its owned boundary (the proofs are listed in the proposal §4).
+Measured before and after in the same regime (D204): the local all-local 15-agent run on this
+machine, which fails today with 240 delivery-state timeouts after every page sets up. Publish the
+slice through the draft PR, keep this plan, and wait for the user's manual merge.
 
-Keep the PR's Goal, Changes, Acceptance, Validation, Risk and rollback, and Follow-up current. State
-that original capture-off fifteen and comparative benefit remain failed and belong to step 2.
-After complete review and passing required current checks, run `npm run pr:delivery -- ready` once.
-Keep auto-merge unarmed and wait for the user's manual merge. Retain this plan because V1c remains
-unfinished. Do not add the private measurement checkpoint to step 1 merely because it exists.
+### Step 2b: the engine, its fault tolerance and the handler cost, then 15 → 30 → 50
 
-### V1c step 2: complete consumer proof and measured lane policy
-
-After step 1 is manually merged, work on a fresh non-default feature branch. Keep the original
-workload and unchanged benefit gates above as the completion criteria; six/eleven diagnostics
-remain supplemental, and V1d stays outcome-shaped.
-
-Begin step 2 with the deferred manual 5/5 cold probe from the changed concrete AppInbox
-registrations, using only Go to Definition and Find Usages. Reach the concrete operation entry,
-domain or update policy, first conditional write guard, exact durable result and after-commit
-effect. Record search escapes, ambiguous pivots and named deferred boundaries. Complete this
-check before further step 2 production changes or scale acceptance; no passing result is claimed
-until the probe is performed.
-
-Then narrow the measured admission/dequeue callback remainder at its existing owners. Recover
-outbound commit-phase and sender-queue diagnostics; keep the original metrics sink active. A private
-reviewable checkpoint extends the existing bounded, guarded, deferred observer and safe codec.
-Its native observer fixture extension and complete independent review remain pending. Finish those
-checks before deciding on one changed diagnostic. Bind raw source and measurement overlay separately.
-Do not duplicate admission logic, add a capture framework or infer absence from partial observation.
-Keep API epoch, monotonic duration, stored reservation and browser clocks separate.
-
-Select a production repair only from a positively located defect and meaningful RED → GREEN
-coverage at its owned boundary. Preserve authority, frozen audiences, cadence, receipts, deadlines,
-storage, metric limits, native predicates and owned cleanup. Then establish original capture-off
-fifteen acceptance before thirty, and thirty before fifty. A failed run earns exact current evidence
-review and a meaningful change before another workload; no unchanged acceptance retry is selected.
-
-Keep the controller's complete lane-budget callback as the canonical policy extension point.
-`maxToReserve` is batch size; `maxNumToDequeue` is claimed-entry service per ordinary lane per
-invocation. Fixed lane order is count preference, not weighted round robin or a latency guarantee.
-Finalization runs one bounded batch; unused lane quota is not redistributed. AppInbox currently
-hardcodes service one, with eligible RETRY service one/two; deployment weighting is not exposed.
-
-Assess typed deployment policy at application configuration/composition, consumed by the existing
-reader. Keep reservation size separate from lane service, require positive safe integers and bounded
-maxima, protect recovery service and retain the current cache/RateLimiter/fallback ownership. Do not
-introduce deep environment reads, a second scheduler or exact-count queries. Any new public contract
-requires a concrete compatibility proposal before implementation. No configuration is called optimal
-until representative workload evidence proves its tradeoffs.
-
-Preserve the four comparison arms and equal durable work. Compare durable completion, attempts,
-NEW progress, retry latency, recovery progress, reservations, pressure reads/concurrency and total
-backend operations across sustained, recurring, disappearing and partially hidden work. Satisfy the
-unchanged PostgreSQL correctness and comparative thresholds; retain all valid failed samples and
-cold/stale penalties. If adaptive service does not improve on fixed RETRY two, report that result
-and use the selected fixed bounded fallback rather than substituting an easier benefit claim.
+After step 2a is manually merged, on a fresh non-default branch: D194 to D198 (a handler-finalized
+success skips the post-commit release; the registration runnable wakes the engine after a batch
+that claimed work; typed retryable conflicts are not breaker failures, an open breaker reports no
+work and wakes at its reopen time, one task's `isWork` failure does not abort the pass, a reserve
+or release error backs off through `wakeAt`; the AppInbox TIMEOUT lane's 60 s lease;
+`resource_inbox_results` eviction; the `prod-in-memory` completion-wait ceiling) and D201 (the
+synchronous canonical SHA-256 with every caller renamed, provenance from the computed rows, one
+projection per validation, the bounded audience re-read once its linearization point is ruled),
+each RED first, with the state-write comparator and the unweakened Postgres medium-scale gate.
+Step 2a's hosted 15-agent run from the branch fails at that burst (13 join requests and one
+presence update refused 503 "App inbox entry did not complete within the wait budget"), so this is
+the first hosted blocker. Step 2b also takes the 50-agent local blocker measured in the proposal
+§1.6: topology planning places the appointed director at the root of the tree (or at the node of
+minimum eccentricity) for a room whose traffic is leader-addressed, instead of a leaf at depth 7;
+the per-hop ALM cost and the retry churn at hub relays are measured at their owners before a
+change; the harness diagnostic volume (≈9,000 events per second at 50, 94 % ALM diagnostics,
+13 lost results) is bounded by sampling or by a per-recipe opt-in that keeps the assertions'
+evidence; the RTC limiter, breaker and data-channel queue get a diagnostic so they can be ruled
+in or out. Then establish the original capture-off fifteen acceptance before thirty and thirty before fifty,
+locally first and then through the hosted manifests, and run the four-arm lane-policy benefit gate
+bound above. A failed run earns exact current evidence review and a meaningful change before
+another workload; no unchanged acceptance retry is selected. Configurable AppInbox concurrency and
+the cross-server AppInbox wake (F4, F5) need Postgres evidence and stay outcome-shaped.
 
 ## Completion and handoff
 

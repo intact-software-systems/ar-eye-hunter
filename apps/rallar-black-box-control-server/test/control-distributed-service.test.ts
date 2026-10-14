@@ -41,6 +41,7 @@ import {
     toRegisterEnvelope,
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 interface CaptureIntentTestRuntime extends RallarBlackBoxTestRuntime {
     readonly captureConsumptions: readonly RtcSignalingDiagnostics.CaptureConfiguration[];
@@ -139,7 +140,7 @@ Deno.test('distributed run Off reaches both role invocations but an intent-only 
     assertRight(service.stageDistributedRun('capture-execution'));
 
     for (const { agentId, runtime } of agents) {
-        const commands = service.takeDispatchableCommands('run-1', agentId);
+        const commands = takeAgentDispatchableCommands(service, 'run-1', agentId);
         assertEquals(commands.length, 1);
         const decoded = parseControlServerMessage(JSON.stringify(commands[0]), { runId: 'run-1', agentId });
         assert(decoded.ok);
@@ -162,7 +163,7 @@ Deno.test('distributed run Off reaches both role invocations but an intent-only 
 
     const invocations = [];
     for (const { agentId, runtime, connections } of agents) {
-        const commands = service.takeDispatchableCommands('run-1', agentId);
+        const commands = takeAgentDispatchableCommands(service, 'run-1', agentId);
         assertEquals(commands.length, 1);
         const decoded = parseControlServerMessage(JSON.stringify(commands[0]), { runId: 'run-1', agentId });
         assert(decoded.ok);
@@ -287,7 +288,7 @@ for (
             const invocations = [];
             for (const phase of ['admission', 'start'] as const) {
                 while (true) {
-                    const commands = service.takeDispatchableCommands('run-1', 'agent-1');
+                    const commands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
                     if (commands.length === 0) {
                         break;
                     }
@@ -375,8 +376,8 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertJsonEquals(staged.state, 'waiting-for-ack');
     assertJsonEquals(staged.commandLinks.filter((link) => link.phase === 'stage').length, 2);
 
-    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     assertJsonEquals(agent1StageCommands[0].command.kind, 'recipe.load');
     assertJsonEquals(agent2StageCommands[0].command.kind, 'recipe.load');
 
@@ -392,8 +393,8 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertJsonEquals(started.state, 'running');
     assertJsonEquals(started.commandLinks.filter((link) => link.phase === 'start').length, 2);
 
-    const agent1StartCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StartCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     assertJsonEquals(agent1StartCommands[0].command.kind, 'recipe.run');
     assertJsonEquals(agent2StartCommands[0].command.kind, 'recipe.run');
 
@@ -419,6 +420,53 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertJsonEquals(restored.snapshotDistributedRun('dist-1')?.state, 'passed');
 });
 
+Deno.test('a start result the agent could not frame fails the distributed run instead of leaving it running', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
+    assertRight(service.createDistributedRun(toDistributedManifest()));
+    assertRight(service.stageDistributedRun('dist-1'));
+    for (const agentId of ['agent-1', 'agent-2']) {
+        const [stage] = takeAgentDispatchableCommands(service, 'run-1', agentId);
+        service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId, command: stage, ok: true }));
+    }
+    assertRight(service.startDistributedRun('dist-1'));
+    const [agent1Start] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const [agent2Start] = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
+    service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1Start, ok: true }));
+    const frameTooLarge = {
+        code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
+        message: 'The result frame of 2500000 bytes exceeds the control frame limit of 2000000 bytes.',
+        details: { frameBytes: 2_500_000, maxFrameBytes: 2_000_000 }
+    };
+
+    service.receiveClientEnvelope({
+        kind: 'result',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-2',
+        commandId: agent2Start.commandId,
+        ok: false,
+        result: {
+            commandId: agent2Start.commandId,
+            kind: 'recipe.run',
+            status: 'failed',
+            ok: false,
+            startedAtEpochMs: 2_000,
+            endedAtEpochMs: 2_010,
+            durationMs: 10,
+            error: frameTooLarge,
+            replayed: false
+        },
+        error: frameTooLarge,
+        replayed: false
+    });
+
+    const failed = service.snapshotDistributedRun('dist-1');
+    assertJsonEquals(failed?.state, 'failed');
+    assertJsonEquals(failed?.rollup.ok, false);
+});
+
 Deno.test('control service reconciles persisted distributed start links from completed control results', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
@@ -426,14 +474,14 @@ Deno.test('control service reconciles persisted distributed start links from com
 
     service.createDistributedRun(toDistributedManifest());
     service.stageDistributedRun('dist-1');
-    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1StageCommands[0], ok: true }));
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: agent2StageCommands[0], ok: true }));
 
     service.startDistributedRun('dist-1');
-    const agent1StartCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StartCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1StartCommands[0], ok: true }));
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: agent2StartCommands[0], ok: true }));
 
@@ -545,13 +593,13 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
 
     service.createDistributedRun(toDistributedManifest());
     service.stageDistributedRun('dist-1');
-    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1StageCommands[0], ok: true }));
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: agent2StageCommands[0], ok: true }));
     service.startDistributedRun('dist-1');
-    const agent1StartCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StartCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StartCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope({
         kind: 'event',
         protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -642,8 +690,8 @@ Deno.test('control service coordinates distributed barrier before auto start', (
 
     const staged = assertRight(service.stageDistributedRun('dist-1'));
     assertJsonEquals(staged.state, 'waiting-for-ack');
-    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
 
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1StageCommands[0], ok: true }));
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: agent2StageCommands[0], ok: true }));
@@ -653,9 +701,9 @@ Deno.test('control service coordinates distributed barrier before auto start', (
     assertJsonEquals(waitingAtBarrier.state, 'waiting-for-barrier');
     assertJsonEquals(waitingAtBarrier.commandLinks.filter((link) => link.phase === 'barrier').length, 2);
 
-    const agent1BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-1')
+    const agent1BarrierCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1')
         .filter((command) => command.command.kind === 'health');
-    const agent2BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-2')
+    const agent2BarrierCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2')
         .filter((command) => command.command.kind === 'health');
     assertJsonEquals(agent1BarrierCommands[0].command.metadata?.barrier, {
         event: 'barrier.ready',
@@ -698,12 +746,12 @@ Deno.test('control service holds barrier-ready scheduled runs until start time',
     }, { startMode: 'scheduled', startDeadlineEpochMs: 1_050 }));
 
     service.stageDistributedRun('dist-1');
-    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2StageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1StageCommands[0], ok: true }));
     service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: agent2StageCommands[0], ok: true }));
-    const agent1BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-1');
-    const agent2BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    const agent1BarrierCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    const agent2BarrierCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(
         toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: agent1BarrierCommands[0], ok: true })
     );
@@ -748,11 +796,11 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
         }
     }));
     timeoutService.stageDistributedRun('dist-barrier-timeout');
-    const timeoutStage1 = timeoutService.takeDispatchableCommands('run-1', 'agent-1')[0];
-    const timeoutStage2 = timeoutService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    const timeoutStage1 = takeAgentDispatchableCommands(timeoutService, 'run-1', 'agent-1')[0];
+    const timeoutStage2 = takeAgentDispatchableCommands(timeoutService, 'run-1', 'agent-2')[0];
     timeoutService.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: timeoutStage1, ok: true }));
     timeoutService.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: timeoutStage2, ok: true }));
-    const timeoutBarrier1 = timeoutService.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const timeoutBarrier1 = takeAgentDispatchableCommands(timeoutService, 'run-1', 'agent-1')[0];
     timeoutService.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: timeoutBarrier1, ok: true }));
     now += 11;
 
@@ -772,8 +820,8 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
         }
     }));
     disconnectService.stageDistributedRun('dist-barrier-disconnect');
-    const disconnectStage1 = disconnectService.takeDispatchableCommands('run-1', 'agent-1')[0];
-    const disconnectStage2 = disconnectService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    const disconnectStage1 = takeAgentDispatchableCommands(disconnectService, 'run-1', 'agent-1')[0];
+    const disconnectStage2 = takeAgentDispatchableCommands(disconnectService, 'run-1', 'agent-2')[0];
     disconnectService.receiveClientEnvelope(
         toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: disconnectStage1, ok: true })
     );
@@ -798,8 +846,8 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
         }
     }));
     cancelService.stageDistributedRun('dist-barrier-cancel');
-    const cancelStage1 = cancelService.takeDispatchableCommands('run-1', 'agent-1')[0];
-    const cancelStage2 = cancelService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    const cancelStage1 = takeAgentDispatchableCommands(cancelService, 'run-1', 'agent-1')[0];
+    const cancelStage2 = takeAgentDispatchableCommands(cancelService, 'run-1', 'agent-2')[0];
     cancelService.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: cancelStage1, ok: true }));
     cancelService.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-2', command: cancelStage2, ok: true }));
 
@@ -826,7 +874,7 @@ Deno.test('control service cancels distributed runs and queues cancel commands',
     assertJsonEquals(cancelled.commandLinks.length, 1);
     assertJsonEquals(cancelled.commandLinks[0].phase, 'cancel');
 
-    const commands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const commands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     assertJsonEquals(commands[0].command.kind, 'recipe.cancel');
 });
 
@@ -1004,8 +1052,8 @@ Deno.test('control service refuses required Native RTC capture for explicit role
         refused: staged.left !== undefined || staged.right?.state === 'failed',
         mentionsCapture: message?.toLowerCase().includes('capture') === true,
         commandLinks: service.snapshotDistributedRun('dist-1')?.commandLinks,
-        queuedAgent1: service.takeDispatchableCommands('run-1', 'agent-1'),
-        queuedAgent2: service.takeDispatchableCommands('run-1', 'agent-2')
+        queuedAgent1: takeAgentDispatchableCommands(service, 'run-1', 'agent-1'),
+        queuedAgent2: takeAgentDispatchableCommands(service, 'run-1', 'agent-2')
     }, {
         refused: true,
         mentionsCapture: true,
@@ -1041,8 +1089,8 @@ Deno.test('control service refuses required Native RTC capture on unstaged selec
         refused: started.left !== undefined || started.right?.state === 'failed',
         mentionsCapture: message?.toLowerCase().includes('capture') === true,
         commandLinks: service.snapshotDistributedRun('dist-1')?.commandLinks,
-        queuedAgent1: service.takeDispatchableCommands('run-1', 'agent-1'),
-        queuedAgent2: service.takeDispatchableCommands('run-1', 'agent-2')
+        queuedAgent1: takeAgentDispatchableCommands(service, 'run-1', 'agent-1'),
+        queuedAgent2: takeAgentDispatchableCommands(service, 'run-1', 'agent-2')
     }, {
         refused: true,
         mentionsCapture: true,
@@ -1065,8 +1113,8 @@ Deno.test('capture admission restaging preserves frozen membership and rechecks 
     });
     assertRight(service.createDistributedRun(manifest));
     const first = assertRight(service.stageDistributedRun('dist-1'));
-    service.takeDispatchableCommands('run-1', 'agent-1');
-    service.takeDispatchableCommands('run-1', 'agent-2');
+    takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    takeAgentDispatchableCommands(service, 'run-1', 'agent-2');
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-0', identity: toCaptureTestIdentity('agent-0', ['native']) }));
     service.receiveClientEnvelope(toRegisterEnvelope({ agentId: 'agent-2', identity: toFleetIdentity('agent-2') }));
     const refused = assertRight(service.stageDistributedRun('dist-1'));
@@ -1074,7 +1122,7 @@ Deno.test('capture admission restaging preserves frozen membership and rechecks 
     assertEquals(refused.targetAgentIds, ['agent-1', 'agent-2']);
     assertEquals(refused.targetResolution?.roleAssignments, first.targetResolution?.roleAssignments);
     assertEquals(refused.commandLinks, first.commandLinks);
-    assertEquals(service.takeDispatchableCommands('run-1', 'agent-0'), []);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-0'), []);
 });
 
 Deno.test('capture admission keeps an unsupported Health role alongside the supported RTC role', () => {
@@ -1134,8 +1182,8 @@ for (const policy of ['selected-agents', 'role-map', 'all-online-group-members']
         assert(staged.error?.message.includes('agent-2'));
         assert(staged.error?.message.toLowerCase().includes('capture'));
         assertEquals(staged.commandLinks, []);
-        assertEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
-        assertEquals(service.takeDispatchableCommands('run-1', 'agent-2'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-2'), []);
     });
 }
 
@@ -1163,7 +1211,7 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
             const staged = assertRight(service.stageDistributedRun('dist-1'));
             assertEquals(staged.targetAgentIds, ['agent-1', 'agent-2']);
             const frozenRoles = staged.targetResolution?.roleAssignments;
-            const commands = [...runtimes.keys()].flatMap((agentId) => service.takeDispatchableCommands('run-1', agentId));
+            const commands = [...runtimes.keys()].flatMap((agentId) => takeAgentDispatchableCommands(service, 'run-1', agentId));
             assertEquals(commands.length, 2);
             service.receiveClientEnvelope(
                 toRegisterEnvelope({
@@ -1207,7 +1255,7 @@ for (const startMode of ['manual', 'auto-after-ready', 'scheduled'] as const) {
             assertEquals(refused.targetResolution?.roleAssignments, frozenRoles);
             assertEquals(refused.commandLinks.filter((link) => link.phase === 'start'), []);
             for (const agentId of ['agent-0', 'agent-1', 'agent-2']) {
-                assertEquals(service.takeDispatchableCommands('run-1', agentId), []);
+                assertEquals(takeAgentDispatchableCommands(service, 'run-1', agentId), []);
             }
         });
     }
@@ -1246,8 +1294,8 @@ for (const policy of ['selected-agents', 'role-map'] as const) {
                 assert(refused.error?.message.includes('agent-2'));
                 assert(refused.error?.message.toLowerCase().includes('capture'));
                 assertEquals(refused.commandLinks, []);
-                assertEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
-                assertEquals(service.takeDispatchableCommands('run-1', 'agent-2'), []);
+                assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1'), []);
+                assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-2'), []);
             });
         }
     }
@@ -1269,7 +1317,7 @@ Deno.test('capture admission fix1 preserves unrelated role work with a named mis
     const staged = assertRight(service.stageDistributedRun('dist-1'));
     assertEquals(staged.state, 'waiting-for-ack');
     assertEquals(staged.targetAgentIds, ['agent-1']);
-    assertEquals(service.takeDispatchableCommands('run-1', 'agent-1').map((command) => command.command.kind), ['recipe.load']);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.command.kind), ['recipe.load']);
 });
 
 Deno.test('control service resolves 50 global fleet targets and routes derived roles', () => {
@@ -1300,8 +1348,8 @@ Deno.test('control service resolves 50 global fleet targets and routes derived r
     ]);
     assertJsonEquals(staged.commandLinks.filter((link) => link.role === 'receiver').length, 49);
 
-    const senderStageCommands = service.takeDispatchableCommands('run-1', 'agent-01');
-    const receiverStageCommands = service.takeDispatchableCommands('run-1', 'agent-02');
+    const senderStageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-01');
+    const receiverStageCommands = takeAgentDispatchableCommands(service, 'run-1', 'agent-02');
 
     assertJsonEquals(senderStageCommands[0].command.kind, 'recipe.load');
     assertJsonEquals(
@@ -1332,7 +1380,7 @@ Deno.test('control service fails global fleet mismatch before queueing commands'
     assertJsonEquals(staged.targetResolution?.summary.selected, 49);
     assertJsonEquals(staged.targetResolution?.summary.expectedParticipantCount, 50);
     assertJsonEquals(staged.targetResolution?.summary.missingExpectedParticipants, 1);
-    assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-01'), []);
+    assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-01'), []);
 });
 
 Deno.test('control service freezes global fleet target roles after staging', () => {
@@ -1350,7 +1398,7 @@ Deno.test('control service freezes global fleet target roles after staging', () 
     ]);
 
     for (const agentId of staged.targetAgentIds) {
-        const [stageCommand] = service.takeDispatchableCommands('run-1', agentId);
+        const [stageCommand] = takeAgentDispatchableCommands(service, 'run-1', agentId);
         service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: agentId, command: stageCommand, ok: true }));
     }
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-00', completedCommandIds: [], identity: toFleetIdentity('agent-00') }));
@@ -1426,7 +1474,7 @@ Deno.test('control service defers a refused automatic start to a later refresh i
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
     }, { startMode: 'auto-after-ready' }));
     service.stageDistributedRun('dist-1');
-    const [stageCommand] = service.takeDispatchableCommands('run-1', 'agent-1');
+    const [stageCommand] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
 
     // The stage command used the agent's only rate slot, so queueing the automatic start is refused.
     const received = service.receiveClientEnvelope(
@@ -1660,7 +1708,7 @@ for (const phase of ['stage', 'start'] as const) {
                 'draft'
             );
             const snapshot = assertRight(phase === 'stage' ? service.stageDistributedRun('dist-1') : service.startDistributedRun('dist-1'));
-            const commands = service.takeDispatchableCommands('run-1', 'agent-1');
+            const commands = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
             if (witness.outcome === 'dispatch') {
                 assertEquals(snapshot.state, phase === 'stage' ? 'waiting-for-ack' : 'running');
                 assertEquals(commands.map((envelope) => envelope.command.kind), [phase === 'stage' ? 'recipe.load' : 'recipe.run']);

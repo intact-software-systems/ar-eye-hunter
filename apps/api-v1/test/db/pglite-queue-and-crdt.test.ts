@@ -17,7 +17,8 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     computeCoalescedAppOutboxWork,
-    writeCoalescedAppOutboxWork
+    writeCoalescedAppOutboxWork,
+    type ComputedCoalescedAppOutboxWork
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -53,15 +54,11 @@ const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
 const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 
-interface StringCountRow {
-    readonly count: string;
-}
-
 interface CreatedTimestampRow {
     readonly created_ts: string;
 }
 
-function createInitialCoalescedTopologyWork(groupId: string) {
+function createInitialCoalescedTopologyWork(groupId: string): ComputedCoalescedAppOutboxWork {
     const groupRef = {
         applicationId: 'coalesced-write-test',
         workspaceId: 'queuebox',
@@ -617,6 +614,7 @@ Deno.test(
             const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
             const outboxQueueReader = new OutboxQueueReader(queue);
             const handler = createRtcTopologyWorkHandler({
+                nowEpochMs: () => nowEpochMs,
                 outboxQueueReader,
                 database: sql,
                 topologyPlanning: topologyManagement.planning,

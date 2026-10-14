@@ -213,8 +213,7 @@ async function computeAcceptedRtcTopologyWork(
     const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
     if (
         unchangedGated && read.mutation.snapshot !== null && !computedTopology.changed &&
-        read.mutation.snapshot.value.sourceGroupStateCausalRevision.presenceRevision ===
-            authority.group.causalRevision.presenceRevision
+        hasRequiredPresenceCoverage(read.mutation.snapshot.value, authority.group.causalRevision.presenceRevision)
     ) {
         return Either.ofRight({
             decision: 'skipped-unchanged',
@@ -248,8 +247,7 @@ function computeFingerprintSkip(
         return null;
     }
     return storedInputFingerprint === inputFingerprint &&
-            snapshot.value.sourceGroupStateCausalRevision.presenceRevision ===
-                authority.group.causalRevision.presenceRevision
+            hasRequiredPresenceCoverage(snapshot.value, authority.group.causalRevision.presenceRevision)
         ? {
             decision: 'skipped-fingerprint',
             work,
@@ -258,6 +256,13 @@ function computeFingerprintSkip(
             criterionPetition: { authority, planned: snapshot.value }
         }
         : null;
+}
+
+function hasRequiredPresenceCoverage(
+    snapshot: RallarOverlayTopologySnapshot,
+    requiredPresenceRevision: number
+): boolean {
+    return snapshot.sourceGroupStateCausalRevision.presenceRevision >= requiredPresenceRevision;
 }
 
 async function computeAcceptedTopologyMutation(
