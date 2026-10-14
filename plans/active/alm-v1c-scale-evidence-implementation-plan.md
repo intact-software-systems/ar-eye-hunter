@@ -219,7 +219,16 @@ or release error backs off through `wakeAt`; the AppInbox TIMEOUT lane's 60 s le
 synchronous canonical SHA-256 with every caller renamed, provenance from the computed rows, one
 projection per validation, the bounded audience re-read once its linearization point is ruled),
 each RED first, with the state-write comparator and the unweakened Postgres medium-scale gate.
-Then establish the original capture-off fifteen acceptance before thirty and thirty before fifty,
+Step 2a's hosted 15-agent run from the branch fails at that burst (13 join requests and one
+presence update refused 503 "App inbox entry did not complete within the wait budget"), so this is
+the first hosted blocker. Step 2b also takes the 50-agent local blocker measured in the proposal
+§1.6: topology planning places the appointed director at the root of the tree (or at the node of
+minimum eccentricity) for a room whose traffic is leader-addressed, instead of a leaf at depth 7;
+the per-hop ALM cost and the retry churn at hub relays are measured at their owners before a
+change; the harness diagnostic volume (≈9,000 events per second at 50, 94 % ALM diagnostics,
+13 lost results) is bounded by sampling or by a per-recipe opt-in that keeps the assertions'
+evidence; the RTC limiter, breaker and data-channel queue get a diagnostic so they can be ruled
+in or out. Then establish the original capture-off fifteen acceptance before thirty and thirty before fifty,
 locally first and then through the hosted manifests, and run the four-arm lane-policy benefit gate
 bound above. A failed run earns exact current evidence review and a meaningful change before
 another workload; no unchanged acceptance retry is selected. Configurable AppInbox concurrency and

@@ -96,6 +96,31 @@ the whole worker and discards its logs; `almDiagnostics: true` streams events no
   with the harness leaving ≈5 s for the last shot and its verification (H3) on pages doing O(history)
   work per event (H2).
 
+### 1.6 Measured on the step 2a head (local, this Mac)
+
+| Cohort | Result                                    | Evidence                                                                                                                                                       |
+| ------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15     | passed, 15/15 recipes, 231/231 assertions | 37,022 events (55,998 before the slice)                                                                                                                        |
+| 30     | passed, 30/30 recipes, 231/231 assertions | first local 30-agent pass; ACK latency p50 901 ms, p90 1.8 s, max 2.5 s; every attempt over RTC                                                                |
+| 50     | failed in the match window                | all 50 set up; 18 distinct shot-6 timeouts at 3.8–4.5 s after send, all `transport-accepted`; 22 shots-complete barrier timeouts then fail every player window |
+
+What the 50-agent artifacts show (`scratchpad` diagnosis, numbers from `observation/events.jsonl`
+and `results.jsonl`): the accepted tree put the director as a **leaf at depth 7** behind one
+degree-5 relay (at 30 the director was the root with four children, depth 4), and ACK latency grows
+with depth — p50 152 ms at depth 2, 1.35 s at 3, 2.64 s at 4, 4.0 s at 5, 4.6 s at 6, 5.2 s at 7 —
+so the last shot's ACK from deep players cannot fit the window's remaining ≈5 s; attempts per
+acknowledged shot rose from 1.9 to 3.4 (max 15), congestion deferrals from 0 to 615 (480 on one
+hub relay) and ACK submissions dropped before sending from 0 to 182, while the director stayed at
+or under 20 ACK submissions per second and 164/1,000 admissions; only 7 shots fell back to WS; the
+per-session 20/s limiter, the breaker and the RTC data-channel queue emit no diagnostics, so they
+are unobserved. Harness load rose to ≈9,000 events per second (180 per agent, 94 % ALM
+diagnostics; 3,400 at 30), 75 % of events reached the control server more than 1 s late (up to
+37 s), and 13 agents' recipe results never arrived, although the pages' own 5 s stats cadence and
+trivial command latencies stayed on time. Ranked causes for step 2b: (1) director placement and
+tree depth (topology planning), (2) per-hop ALM cost and retry churn at hub relays, (3) the harness
+diagnostic volume making the evidence lossy, (4) unobserved limiter/breaker/queue state needing a
+diagnostic before it can be ruled in or out.
+
 ## 2. GitHub Free review
 
 The repository is public, so standard-runner minutes are free; the hard limits are ≈20 concurrent
@@ -196,4 +221,17 @@ head; a hosted 15-agent dispatch from the branch when the local run passes.
 
 ## 6. As applied
 
-Filled at the close of each slice.
+**Step 2a (PR #662, head after the fix waves).** D202 landed as recorded in its row (immediate
+`accepted`, status-aware duplicate key, upward filter by frozen audience, volatile-lane control
+ordering with D19 kept for durable work, RESERVED-indexed finalization, retained conflicting
+receipts, per-message relay budget, publication failure as an observation). D199 and D200 landed
+with one rollup per affecting message reused by the persistence flush, in-place trimming, compact
+change-driven snapshots, an unframeable result reported as a small failed result, cursor-based
+waits, a report projection only on completion, the headless app's paced render and HMR off, and
+the server refusing a frame limit below the client's. D203 added the co-located per-IP limits and
+the two-cause registration report. Measured: local 15 and 30 pass, 50 fails in the window (§1.6);
+hosted 15 from the branch (run 38628301915, registration enabled) still fails at setup with 13
+join requests and one presence update refused 503 "App inbox entry did not complete within the
+wait budget" and the director timing out on RTC readiness — the serial-AppInbox burst step 2b
+targets. A first hosted dispatch without `register_before_login=true` failed at the first login
+(the rollout wipes the in-memory API's users) and is an operator error, not evidence.
