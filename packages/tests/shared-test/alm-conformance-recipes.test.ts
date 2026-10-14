@@ -356,6 +356,7 @@ describe('alm-conformance recipe family', () => {
         expect(connect.commandId).toBe('alm-ws-probe-successor-connect');
         expect(connect.connection).toBe('sender');
         expect(connect.rallar).toEqual({
+            almDiagnostics: true,
             typeId: 'alm.conformance.ws.probe',
             topicId: CONFORMANCE_TOPIC_ID,
             username: '',

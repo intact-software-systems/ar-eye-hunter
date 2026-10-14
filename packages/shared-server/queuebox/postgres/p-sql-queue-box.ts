@@ -1,4 +1,5 @@
-import { Temporal } from '@js-temporal/polyfill';
+import type { Temporal } from '@js-temporal/polyfill';
+
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
@@ -7,34 +8,32 @@ import {
 } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
-    QueueBoxResourceEntryRepository,
-    ResourceInboxFairnessReservationInput,
-    ResourceInboxFairnessSelection,
-    ResourceInboxFinalizationReservationOptions,
-    ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
-    ResourceInboxRelease,
-    ResourceInboxReleaseDisposition,
-    ResourceInboxReservationInput,
-    ResourceInboxWorkAdvertisementOptions,
-    ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type QueueBoxResourceEntryRepository,
+    type ResourceInboxFairnessReservationInput,
+    type ResourceInboxFairnessSelection,
+    type ResourceInboxFinalizationReservationOptions,
+    type ResourceInboxFinalizationSelection,
+    type ResourceInboxRelease,
+    type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationRequest,
-    type ResourceInboxTimeoutReservationRequest
+    type ResourceInboxTimeoutReservationRequest,
+    type ResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxWorkPage
 } from '@shared/queuebox/queue-box-types.ts';
 import {
     captureResourceEntryObservations,
     validateResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
 import {
-    EntityStatus,
-    Key,
     NEW_AND_RETRY_STATUSES,
-    ResourceEntry,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY
+    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+    type Key,
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -44,6 +43,12 @@ import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-o
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
 import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-entry-repository.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
+import { computeResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
+
+interface PSqlQueueReleaseCandidate {
+    readonly disposition: ResourceInboxReleaseDisposition;
+    readonly replacement: ResourceInboxObservedReplacement;
+}
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
@@ -51,7 +56,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     constructor(
         resourceInbox: PSqlResourceInboxRepository,
-        now: () => Temporal.Instant = Temporal.Now.instant
+        now: () => Temporal.Instant
     ) {
         this.resourceInbox = resourceInbox;
         this.now = now;
@@ -140,18 +145,18 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
-                for (const e of foundEntries.values()) {
+                for (const entry of foundEntries.values()) {
                     if (reservedEntries.size >= options.maxToReserve) {
                         break;
                     }
-                    if (validateResourceEntryObservation(e, observations).left) {
+                    if (validateResourceEntryObservation(entry, observations).left) {
                         continue;
                     }
-                    const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
+                    const reserved = await txRepo.reservations.startProcessingEntity(entry, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
-                        (entry) => {
-                            reservedEntries.set(e.key, entry);
+                        (reservedEntry) => {
+                            reservedEntries.set(entry.key, reservedEntry);
                             return undefined;
                         }
                     );
@@ -188,18 +193,18 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
-                for (const e of foundEntries.values()) {
+                for (const entry of foundEntries.values()) {
                     if (reservedEntries.size >= options.maxToReserve) {
                         break;
                     }
-                    if (validateResourceEntryObservation(e, observations).left) {
+                    if (validateResourceEntryObservation(entry, observations).left) {
                         continue;
                     }
-                    const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
+                    const reserved = await txRepo.reservations.startProcessingEntity(entry, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
-                        (entry) => {
-                            reservedEntries.set(e.key, entry);
+                        (reservedEntry) => {
+                            reservedEntries.set(entry.key, reservedEntry);
                             return undefined;
                         }
                     );
@@ -297,7 +302,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
-        const releasedAt = Temporal.Instant.fromEpochMilliseconds(this.now().epochMilliseconds);
+        const releasedAt = this.now().round({ smallestUnit: 'microsecond', roundingMode: 'halfEven' });
         const candidates = toPSqlQueueReleaseCandidates(releases, releasedAt);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
@@ -334,10 +339,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
+        const values = computeResourceInboxEntryInsertValues(resourceEntry);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
                 const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
-                await txRepo.entries.replace(resourceEntry);
+                await txRepo.entries.replaceComputed(values);
 
                 return previous ?? undefined;
             }
@@ -352,9 +358,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        const values = computeResourceInboxEntryInsertValues(resourceEntry);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
-                return await txRepo.entries.writeIfAbsentOrReplaceExpired(resourceEntry);
+                return await txRepo.entries.writeComputedIfAbsentOrReplaceExpired(values);
             }
         );
     }
@@ -385,11 +392,6 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async deleteExpired(): Promise<number> {
         return await this.resourceInbox.maintenance.deleteExpired();
     }
-}
-
-interface PSqlQueueReleaseCandidate {
-    readonly disposition: ResourceInboxReleaseDisposition;
-    readonly replacement: ResourceInboxObservedReplacement;
 }
 
 /** Every release of a batch decided before its one transaction opens: validated, then computed. */

@@ -3,6 +3,12 @@ import { decodeALControlMessage, type ALAckPayload } from '../../al-contracts/al
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
+import {
+    recordWsQueueBoxServerReceiptObservation,
+    toImmutableWsQueueBoxServerReceiptAck,
+    type WsQueueBoxServerReceiptAckFacts,
+    type WsQueueBoxServerReceiptObserver
+} from './ws-queue-box-server-receipt-observation.ts';
 
 /** Carries one receiver ACK to the other server instances; the left value names why it could not be sent. */
 export type WsServerAckRelayPublisher = (
@@ -16,6 +22,7 @@ const RELAY_BUDGET_SWEEP_SIZE = 1_024;
 export namespace WsQueueBoxServerAckRelay {
     export interface Dependencies {
         readonly serverPeerId: string;
+        readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
         readonly clock: { nowMs(): number; };
         /** The audience the origin's message was frozen to, read from the admission store every instance shares. */
         readonly readIngressAudience: (msgId: string, originPeerId: string) => Promise<readonly string[] | undefined>;
@@ -34,6 +41,7 @@ export namespace WsQueueBoxServerAckRelay {
  */
 export class WsQueueBoxServerAckRelay {
     readonly #serverPeerId: string;
+    readonly #receiptObserver: WsQueueBoxServerReceiptObserver | undefined;
     readonly #receipts: WsQueueBoxServerReceiptAggregation;
     readonly #publishRelayedAck: WsServerAckRelayPublisher | undefined;
     readonly #clock: { nowMs(): number; };
@@ -42,6 +50,7 @@ export class WsQueueBoxServerAckRelay {
 
     constructor(dependencies: WsQueueBoxServerAckRelay.Dependencies) {
         this.#serverPeerId = dependencies.serverPeerId;
+        this.#receiptObserver = dependencies.receiptObserver;
         this.#clock = dependencies.clock;
         this.#readIngressAudience = dependencies.readIngressAudience;
         this.#receipts = dependencies.receipts;
@@ -49,14 +58,37 @@ export class WsQueueBoxServerAckRelay {
     }
 
     /** The ingress check; an ACK this instance will hand over is checked only for what needs no aggregate. */
-    readRelayedAckRejection(ack: ALAckPayload): ALMessageRejection | undefined {
+    readRelayedAckRejection(
+        ack: ALAckPayload,
+        observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
+    ): ALMessageRejection | undefined {
         if (this.#publishRelayedAck === undefined || this.#receipts.holdsReceiptFor(ack)) {
-            return this.#receipts.readRelayedAckRejection(ack);
+            return this.#receipts.readRelayedAckRejection(ack, observation);
         }
-        return ack.toPeerId === ack.originPeerId ? undefined : {
+        if (ack.toPeerId === ack.originPeerId) {
+            return undefined;
+        }
+        const rejection: ALMessageRejection = {
             code: 'unauthorized',
             message: 'AL acknowledgement is not addressed to the origin it names'
         };
+        if (this.#receiptObserver !== undefined && observation?.controlIdentity !== undefined) {
+            try {
+                recordWsQueueBoxServerReceiptObservation(this.#receiptObserver, {
+                    kind: 'ack-rejection',
+                    serverPeerId: this.#serverPeerId,
+                    controlMsgId: observation.controlIdentity.msgId,
+                    controlSenderId: observation.controlIdentity.senderId,
+                    controlCreatedAtEpochMs: observation.controlIdentity.ts,
+                    rejectionCode: 'unauthorized',
+                    owner: 'ack-relay',
+                    stage: observation.stage,
+                    failedGuards: Object.freeze(['origin-addressee-mismatch'] as const)
+                });
+            }
+            catch { /* Optional evidence cannot change the fixed-address refusal. */ }
+        }
+        return rejection;
     }
 
     /**
@@ -69,13 +101,23 @@ export class WsQueueBoxServerAckRelay {
         if (publish === undefined || ack === undefined) {
             return Either.ofRight(false);
         }
+        const ackFacts = this.#receiptObserver
+            ? Object.freeze({
+                controlMsgId: message.id.msgId,
+                controlSenderId: message.id.senderId,
+                controlCreatedAtEpochMs: message.id.ts,
+                ack: toImmutableWsQueueBoxServerReceiptAck(ack)
+            })
+            : undefined;
         if (!await this.isAdmittedTo(ack)) {
+            this.recordRelayObservation(ackFacts, 'provenance-refused');
             return Either.ofLeft({
                 code: 'unauthorized',
                 message: 'AL acknowledgement names no message its origin admitted to this sender'
             });
         }
         if (!this.takeRelayBudget(message.id.senderId)) {
+            this.recordRelayObservation(ackFacts, 'budget-refused');
             return Either.ofLeft({
                 code: 'unauthorized',
                 message: 'AL acknowledgement relay budget of this session is used up'
@@ -87,16 +129,32 @@ export class WsQueueBoxServerAckRelay {
                 `AL acknowledgement ${message.id.msgId} for ${ack.originPeerId} was not relayed: ${published.left}`
             );
         }
+        this.recordRelayObservation(ackFacts, published.left === undefined ? 'published' : 'publication-failed');
         return Either.ofRight(true);
     }
 
     /** A handed-over ACK: counted against this instance's aggregate, or dropped without an answer. */
-    async acceptRelayedAck(message: ALMessage): Promise<void> {
+    async acceptRelayedAck(message: ALMessage, relayPublisherId?: string): Promise<void> {
         const control = decodeALControlMessage(message).right;
         if (control?.type !== 'ack' || control.payload.toPeerId === this.#serverPeerId) {
             return;
         }
-        await this.#receipts.acceptControlMessage(message);
+        await this.#receipts.acceptControlMessage(message, relayPublisherId, true);
+    }
+
+    private recordRelayObservation(
+        ackFacts: WsQueueBoxServerReceiptAckFacts | undefined,
+        outcome: 'provenance-refused' | 'budget-refused' | 'published' | 'publication-failed'
+    ): void {
+        if (ackFacts === undefined) {
+            return;
+        }
+        recordWsQueueBoxServerReceiptObservation(this.#receiptObserver, {
+            ...ackFacts,
+            kind: 'ack-relay',
+            serverPeerId: this.#serverPeerId,
+            outcome
+        });
     }
 
     private readUnownedAck(message: ALMessage): ALAckPayload | undefined {

@@ -1,7 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
@@ -10,10 +20,10 @@ import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canon
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission,
     runOutboundWorkTask,
     waitForOutboundWorkDrained,
     type OutboundTestStores
@@ -89,7 +99,7 @@ describe('outbound sequence minting', () => {
         for (const name of ['before-1', 'before-2', 'before-3']) {
             await enqueueMintedSeq(first, createRoundEvent(name, { orderingKey: 'game-1', epoch: 1 }));
         }
-        first.dispose();
+        await first.dispose();
 
         const restarted = createMintingRuntime(stores).runtime;
 
@@ -102,7 +112,13 @@ describe('outbound sequence minting', () => {
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
         interleaveAfterFirstDecisionRead(stores, async () => {
-            const bundle = await computeOutboundTestAdmission(stores.admissionStore, early, MINTING_PLANNER);
+            const bundle = await readOutboundTestAdmission({
+                store: stores.admissionStore,
+                message: early,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() },
+                planner: MINTING_PLANNER
+            });
             expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
         });
 
@@ -130,7 +146,13 @@ describe('outbound sequence minting', () => {
         const late = createRoundEvent('late', { orderingKey: 'game-1', epoch: 1 });
         const early = createRoundEvent('early', { orderingKey: 'game-1', epoch: 1 });
         interleaveAfterFirstDecisionRead(stores, async () => {
-            const bundle = await computeOutboundTestAdmission(stores.admissionStore, early, MINTING_PLANNER);
+            const bundle = await readOutboundTestAdmission({
+                store: stores.admissionStore,
+                message: early,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() },
+                planner: MINTING_PLANNER
+            });
             expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
         });
         expect((await runtime.enqueueIfAbsent(late)).verdict.kind).toBe('pending');

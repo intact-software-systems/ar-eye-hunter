@@ -7,14 +7,18 @@ import {
 } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
 
 describe('AL admission persistence-ready queue work', () => {
     it.each(['insert', 'replace'] as const)('converts caller timestamps before the %s transaction', async (operation) => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission');
+        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
         const entry = createEntry();
         if (operation === 'replace') {
             await backend.workQueue.enqueue({ ...entry, resource: 'previous' });
@@ -63,7 +67,7 @@ describe('AL admission persistence-ready queue work', () => {
 
     it('commits one mixed release batch in one transaction, each entry on its own disposition', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission');
+        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
         for (const resourceId of ['mixed-completed', 'mixed-retry', 'mixed-not-ready']) {
             await backend.workQueue.enqueue({ ...createEntry(), key: { topicId: 'alm-work', resourceId, contextId: 'admission' } });
         }
@@ -102,7 +106,7 @@ describe('AL admission persistence-ready queue work', () => {
 
     it('commits two concurrent writes on disjoint keys, neither fencing the other', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
-        const backend = new PSqlAdmissionWorkBackend(sql, 'admission');
+        const backend = new PSqlAdmissionWorkBackend(sql, 'admission', Date.now);
 
         await Promise.all([
             backend.write(async (write) => {

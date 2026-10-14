@@ -15,7 +15,7 @@ import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-mess
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
@@ -71,9 +71,11 @@ describe('middleware relayed ACK notices', () => {
     });
 });
 
-function createMemoryTransport(): RelayedAckNoticeTransport & {
+interface MemoryRelayedAckNoticeTransport extends RelayedAckNoticeTransport {
     readonly published: RelayedAckNotice[];
-} {
+}
+
+function createMemoryTransport(): MemoryRelayedAckNoticeTransport {
     const published: RelayedAckNotice[] = [];
     const subscribers: Array<(notice: RelayedAckNotice) => Promise<void> | void> = [];
     return {
@@ -147,9 +149,12 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
                 }
                 : { authorized: true }
     });
-    onTestFinished(() => {
-        runtime.wsQBoxServerService.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([runtime.wsQBoxServerService.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     await runtime.liveWsNoticeSubscriberReadiness;
     return { service: runtime.wsQBoxServerService, sockets };

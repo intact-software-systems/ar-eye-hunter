@@ -25,6 +25,7 @@ import {
     type LiveRtcAgentDiagnostics,
     type LiveRtcLifecycleFailureInterval
 } from './live-rtc-agent-diagnostics.ts';
+import { LiveRtcBrowserRecording } from './live-rtc-browser-recording.ts';
 import {
     jsonRecord,
     normalizeJson,
@@ -282,7 +283,7 @@ export namespace LiveRtcControlClient {
     export interface CaptureDiagnosticsInput {
         testInfo: Pick<TestInfo, 'attach'>;
         runId: string;
-        agents: readonly Pick<FormationAgent, 'agentId' | 'prefix'>[];
+        agents: readonly (Pick<FormationAgent, 'agentId' | 'prefix'> & { readonly page?: object; })[];
         label: string;
         cycle: number | null;
         readonly failureInterval?: LiveRtcLifecycleFailureInterval;
@@ -302,6 +303,7 @@ export namespace LiveRtcControlClient {
 }
 
 export class LiveRtcControlClient {
+    readonly browserRecording: LiveRtcBrowserRecording;
     readonly #request: APIRequestContext;
     readonly #baseUrl: string;
     readonly #diagnosticsOutDir: string | undefined;
@@ -318,6 +320,7 @@ export class LiveRtcControlClient {
         this.#diagnosticsOutDir = input.diagnosticsOutDir;
         this.#monotonicNow = input.monotonicNow;
         this.#epochNow = input.epochNow;
+        this.browserRecording = new LiveRtcBrowserRecording(this);
     }
 
     async fetchRun(runId: string): Promise<LiveRtcControlClient.RunSnapshot> {
@@ -872,6 +875,7 @@ export class LiveRtcControlClient {
         const commandIds: string[] = [];
         const agents: LiveRtcAgentDiagnostics[] = [];
         for (const agent of input.agents) {
+            this.browserRecording.assertAgent(agent);
             const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${input.label}`;
             commandIds.push(commandId);
             agents.push(
@@ -939,6 +943,7 @@ export class LiveRtcControlClient {
             ...diagnostics,
             details: normalizeJson({
                 ...requiredJsonRecord(diagnostics.details, 'RTC diagnostic details'),
+                ...this.browserRecording.observe(input.runId, result),
                 healthCapturedAtEpochMs: this.#epochNow()
             })
         };

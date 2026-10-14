@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from 'react';
 
-import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
+import {
+    takeAgentResumeRecord,
+    type AgentResumeRecord
+} from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     readRallarBlackBoxBootstrapConfig,
     toRallarBlackBoxBootstrapRefusal,
@@ -128,7 +131,7 @@ class RallarBlackBoxRuntimeStore {
     private readonly runtimeChangeEmit = new PacedEmit(RUNTIME_CHANGE_EMIT_INTERVAL_MS, () => this.emit());
     private bootstrapStarted = false;
     private runSequence = 1;
-    private resumedCommandIds: readonly string[] = [];
+    private resumedRecord: AgentResumeRecord | undefined;
     private bootstrapConfig = initializeBootstrapConfig();
 
     constructor() {
@@ -137,6 +140,8 @@ class RallarBlackBoxRuntimeStore {
             typeof window !== 'undefined'
         ) {
             const browserRuntime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics,
+                eventHistory: this.bootstrapConfig.eventHistory,
                 rallarRuntime: createSpaBrowserRallarRuntime(),
                 fetch: globalThis.fetch?.bind(globalThis),
                 webSocketFactory: createBrowserWebSocketFactory()
@@ -146,6 +151,7 @@ class RallarBlackBoxRuntimeStore {
         }
         else {
             this.runtime = createDefaultRallarBlackBoxTestRuntime({
+                eventHistory: this.bootstrapConfig.eventHistory,
                 commandExecutor: runSimulatedProviderCommand
             });
         }
@@ -188,11 +194,12 @@ class RallarBlackBoxRuntimeStore {
     };
 
     updateBootstrapConfig(
-        patch: Partial<RallarBlackBoxBootstrapConfig>
+        patch: Partial<Omit<RallarBlackBoxBootstrapConfig, 'routineBrowserDiagnostics'>>
     ): void {
         this.bootstrapConfig = {
             ...this.bootstrapConfig,
-            ...patch
+            ...patch,
+            routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics
         };
         this.snapshot = {
             ...this.snapshot,
@@ -224,6 +231,10 @@ class RallarBlackBoxRuntimeStore {
         const config = this.runtime.state().currentConfig;
         const effectiveRunId = runId || config?.runId || `local-control-run-${this.runSequence++}`;
         const effectiveAgentId = agentId || config?.agentId || 'visible-agent-local';
+        const resumed = this.resumedRecord?.runId === effectiveRunId && this.resumedRecord.agentId === effectiveAgentId
+            ? this.resumedRecord
+            : undefined;
+        this.resumedRecord = undefined;
         this.snapshot = {
             ...this.snapshot,
             lastAction: 'Connecting control WebSocket',
@@ -236,7 +247,8 @@ class RallarBlackBoxRuntimeStore {
             agentId: effectiveAgentId,
             token: this.bootstrapConfig.controlToken,
             finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
-            completedCommandIds: this.resumedCommandIds
+            completedCommandIds: resumed?.completedCommandIds ?? [],
+            recipeExecutions: resumed?.recipeExecutions
         });
     }
 
@@ -283,6 +295,12 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async configureLocalWorkbenchOnly(): Promise<void> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            this.setLocalWorkbenchConfigurationFailure(refusal);
+            return;
+        }
+
         try {
             const runNumber = this.runSequence++;
             this.snapshot = {
@@ -330,7 +348,7 @@ class RallarBlackBoxRuntimeStore {
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
         const resumed = takeAgentResumeRecord(this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
-        this.resumedCommandIds = resumed?.completedCommandIds ?? [];
+        this.resumedRecord = resumed;
         this.snapshot = {
             ...this.snapshot,
             bootstrapping: true,
@@ -569,6 +587,11 @@ class RallarBlackBoxRuntimeStore {
     private async resetForRun(
         lastAction: string
     ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            return Either.ofLeft(refusal);
+        }
+
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,
@@ -595,6 +618,7 @@ class RallarBlackBoxRuntimeStore {
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
         const config: RallarBlackBoxTestConfig = {
+            eventHistory: this.bootstrapConfig.eventHistory,
             runId: this.bootstrapConfig.runId,
             agentId: this.bootstrapConfig.agentId,
             environment: this.bootstrapConfig.environment,

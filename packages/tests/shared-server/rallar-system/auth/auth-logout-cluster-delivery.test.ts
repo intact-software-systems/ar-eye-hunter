@@ -14,7 +14,7 @@ import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-run
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -277,12 +277,13 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
         await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge, channel: 'events', publisherId: 'A' });
         await installQueueBoxPubSubBridge({ wsQBoxServerService: remoteService, bridge: remoteBridge, channel: 'events', publisherId: 'B' });
     }
-    onTestFinished(() => {
-        service.dispose();
-        remoteService.dispose();
-        engine.stop();
-        remoteEngine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), remoteService.dispose(), engine.stop(), remoteEngine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { stores, reader, engine, bridge, remoteBridge, remoteSocket, target, outsider };
 }

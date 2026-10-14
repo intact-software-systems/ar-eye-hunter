@@ -19,7 +19,7 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -305,20 +305,20 @@ function readFrames(socket: SimulatedWebSocket): readonly ALMessage[] {
     return readMessages(socket).filter((message) => !message.payload.typeId.startsWith('al.control.'));
 }
 
-function readControlPayloads(socket: SimulatedWebSocket, typeId: string): readonly unknown[] {
-    return readMessages(socket)
-        .filter((message) => message.payload.typeId === typeId)
-        .map((message): unknown => JSON.parse(message.payload.resource));
-}
-
 function readReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_RECEIPT_TYPE_ID).map((payload) => decodeALReceiptPayload(payload));
+    return readMessages(socket)
+        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
 }
 
 function readAcks(socket: SimulatedWebSocket): readonly ALAckPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_ACK_TYPE_ID).map((payload) => decodeALAckPayload(payload));
+    return readMessages(socket)
+        .filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID)
+        .map((message) => decodeALAckPayload(JSON.parse(message.payload.resource)));
 }
 
 function readNacks(socket: SimulatedWebSocket): readonly ALNackPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_NACK_TYPE_ID).map((payload) => decodeALNackPayload(payload));
+    return readMessages(socket)
+        .filter((message) => message.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
+        .map((message) => decodeALNackPayload(JSON.parse(message.payload.resource)));
 }

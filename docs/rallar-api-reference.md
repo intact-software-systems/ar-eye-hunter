@@ -952,11 +952,21 @@ The browser keeps one ALM database per scope, named
 the database of earlier releases is left for the browser to evict. The
 `storage` diagnostics port (`setDefaults({ diagnosticsPorts: { storage } })`,
 `RallarDiagnosticsPortsInput.storage`) replaces `onStorageReset` and receives
-every `ALStorageEvent`:
+every `ALStorageEvent`.
 
-- `reset`: the database was deleted and recreated because its schema no longer
-  matched (`ALStorageResetEvent`); a reset the cleanup caused names the
-  database instead of a store;
+The canonical ALM opener creates a genuinely absent database, but refuses an existing
+store/schema mismatch or missing/different schema identity with
+`ALStorageSchemaMismatchError`, preserving its schema and rows. An unreadable or
+undecodable identity rejects with `ALStorageSchemaIdentityError` and its original
+Error cause. Acquired handles close on failure. Opening and cleanup never delete/recreate
+an incompatible database or silently rewrite its format.
+
+- `reset`: an externally notified reset (`ALStorageResetEvent`). The canonical
+  opener reports only recreation it observed after this document recorded
+  `versionchange`, with reason `other-context` and `previousSchemaId: undefined`.
+  Independently supplied `schema-id-mismatch`/`store-schema-mismatch` descriptors
+  remain valid observation inputs. A database-wide cleanup's external-reset
+  observation names the database instead of a store; cleanup does not cause a reset;
 - `recovery`: what a durable store found when its lane started, once per store
   and connect (`ALStorageRecoveryOutcome`: `restored`, `expired-at-recovery`,
   `storage-created` or `storage-reset`). The session's inbound store is shared

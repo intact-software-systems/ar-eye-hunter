@@ -13,6 +13,7 @@ import { snapshotExecutableMetadata } from './snapshot-executable-metadata.ts';
 export function snapshotExecutableRecipe(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
     return Object.freeze({
         ...recipe,
+        ...(recipe.eventHistory === undefined ? {} : { eventHistory: Object.freeze({ ...recipe.eventHistory }) }),
         ...(recipe.metadata === undefined ? {} : { metadata: snapshotExecutableMetadata(recipe.metadata) }),
         commands: Object.freeze(recipe.commands.map(snapshotExecutableCommand))
     });
@@ -26,7 +27,10 @@ export function snapshotExecutableCommand(command: RallarBlackBoxTestCommand): R
         case 'recipe.load':
         case 'recipe.run':
             return snapshotOwnedOptions(command, {
-                recipe: command.recipe && snapshotExecutableRecipe(command.recipe)
+                recipe: command.recipe && snapshotExecutableRecipe(command.recipe),
+                ...(command.kind === 'recipe.run'
+                    ? { eventHistory: command.eventHistory && Object.freeze({ ...command.eventHistory }) }
+                    : {})
             });
         case 'loop':
             return snapshotOwnedOptions(command, {
@@ -82,6 +86,7 @@ function snapshotFaultCommand(
 /** Configuration controls SDK selection, capture, defaults, fleet admission and redaction. */
 function snapshotRuntimeConfig(config: RallarBlackBoxTestConfig): RallarBlackBoxTestConfig {
     return snapshotOwnedOptions(config, {
+        eventHistory: config.eventHistory && Object.freeze({ ...config.eventHistory }),
         rallar: config.rallar && snapshotConnectionOptions(config.rallar),
         browser: config.browser && Object.freeze({ ...config.browser }),
         control: config.control && Object.freeze({ ...config.control }),

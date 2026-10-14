@@ -12,8 +12,6 @@ import {
     type RallarBlackBoxControlClientOptions,
     type RallarBlackBoxControlSnapshot,
     type RallarBlackBoxControlSocketEvent,
-    type RallarBlackBoxControlSocketEventType,
-    type RallarBlackBoxControlSocketListener,
     type RallarBlackBoxControlWebSocketFactory
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import {
@@ -42,52 +40,7 @@ import type {
 import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserTestStorage } from './browser-test-storage.ts';
-
-class FakeControlSocket {
-    readyState = 0;
-    readonly sent: string[] = [];
-    private readonly listeners = new Map<RallarBlackBoxControlSocketEventType, Set<RallarBlackBoxControlSocketListener>>();
-
-    addEventListener(type: RallarBlackBoxControlSocketEventType, listener: RallarBlackBoxControlSocketListener): void {
-        const listeners = this.listeners.get(type) ?? new Set<RallarBlackBoxControlSocketListener>();
-        listeners.add(listener);
-        this.listeners.set(type, listeners);
-    }
-
-    removeEventListener(type: RallarBlackBoxControlSocketEventType, listener: RallarBlackBoxControlSocketListener): void {
-        this.listeners.get(type)?.delete(listener);
-    }
-
-    send(message: string): void {
-        this.sent.push(message);
-    }
-
-    close(): void {
-        if (this.readyState === 3) {
-            return;
-        }
-
-        this.readyState = 3;
-        this.publishEvent('close', {});
-    }
-
-    open(): void {
-        this.readyState = 1;
-        this.publishEvent('open', {});
-    }
-
-    publishMessage(messageText: string): void {
-        this.publishEvent('message', { data: messageText });
-    }
-
-    publishError(event: RallarBlackBoxControlSocketEvent): void {
-        this.publishEvent('error', event);
-    }
-
-    private publishEvent(type: RallarBlackBoxControlSocketEventType, event: RallarBlackBoxControlSocketEvent): void {
-        this.listeners.get(type)?.forEach((listener) => listener(event));
-    }
-}
+import { FakeControlSocket } from './rallar-bb-runtime/fake-control-socket.ts';
 
 function toClientOptions(
     runtime: RallarBlackBoxTestRuntime,

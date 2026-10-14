@@ -13,13 +13,29 @@ import {
     WsOutboxProvenanceReader,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { newALBroadcastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+
+interface WsOutboxProvenanceFixture {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly proof: WsOutboxProvenance;
+    readonly repository: FakeRuntimeStateRepository;
+    readonly reader: WsOutboxProvenanceReader;
+    readonly key: string;
+}
 
 describe('row-bound WS producer provenance', () => {
     it('encodes every queue key component injectively', () => {
@@ -47,7 +63,7 @@ describe('row-bound WS producer provenance', () => {
             {},
             { ttlMs: 30_000 }
         );
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts = {
             version: 1 as const,
             producerKind: 'crdt' as const,
@@ -91,7 +107,7 @@ describe('row-bound WS producer provenance', () => {
             {},
             { ttlMs: 30_000 }
         );
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const facts = {
             version: 1 as const,
             producerKind: 'crdt' as const,
@@ -206,7 +222,7 @@ describe('row-bound WS producer provenance', () => {
             created_by: entry.audit.createdBy,
             created_ts: createdTs.toString({ fractionalSecondDigits: 6 }),
             expire_ts: entry.audit.expiryTs.toZonedDateTimeISO('UTC').toPlainDateTime().toString({ fractionalSecondDigits: 6 }),
-            start_ts: null,
+            start_ts: createdTs.toString({ fractionalSecondDigits: 6 }),
             end_ts: null,
             next_ts: null
         });
@@ -215,11 +231,11 @@ describe('row-bound WS producer provenance', () => {
     });
 });
 
-async function createFixture(admittedAudience: readonly string[]) {
+async function createFixture(admittedAudience: readonly string[]): Promise<WsOutboxProvenanceFixture> {
     const message = newALUnicastMessage('server', { topicId: 'snapshot', contextId: 'request', resourceId: 'page' }, 'peer', 'snapshot.v1', {}, {
         ttlMs: 30_000
     });
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'state-sync',

@@ -1,4 +1,5 @@
-import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
+import { tryRunInIntervals } from '@shared/resilience/try-with-policy.ts';
+
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 
 export const RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
@@ -26,13 +27,15 @@ export async function initResourceInboxExpiryEviction(
     repository: Readonly<{ deleteExpired(): Promise<number>; }>,
     intervalMs: number = RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS
 ): Promise<void> {
-    await tryRunInIntervals(
-        async () => {
+    await tryRunInIntervals({
+        handler: async () => {
             const removed = await repository.deleteExpired();
             if (removed > 0) {
                 console.log(`Evicted expired resource_inbox rows: ${removed}`);
             }
         },
-        intervalMs
-    );
+        intervalMsecs: intervalMs,
+        retryIntervalMsecs: 10_000,
+        maxAttempts: Number.MAX_VALUE
+    });
 }

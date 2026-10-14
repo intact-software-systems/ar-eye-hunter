@@ -1,6 +1,7 @@
 import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import { decodeRecipeExecutionSegment } from '../recipe/run-recipe-commands.ts';
 
 import {
     toRallarBlackBoxLoopChildResultPath,
@@ -56,6 +57,9 @@ export function isAdmissibleControlRtcCaptureResult(input: ControlRtcCaptureEvid
         return false;
     }
     const execution = toKnownExecutionCommand(input);
+    if (execution === undefined) {
+        return false;
+    }
     const requirements = toCommandCaptureRequirements(execution);
     if (requirements.entries.length === 0) {
         return true;
@@ -144,28 +148,43 @@ export function bindAcknowledgedControlRecipe(input: AcknowledgedControlRecipeIn
 }
 
 /** An existing completed load supplies authored commands; this does not certify a content hash or fresh scope. */
-function toKnownExecutionCommand(input: ControlRtcCaptureEvidenceInput): RallarBlackBoxTestCommand {
+function toKnownExecutionCommand(input: ControlRtcCaptureEvidenceInput): RallarBlackBoxTestCommand | undefined {
     const queued = input.command;
     const command = queued?.command;
     if (queued === undefined || command === undefined) {
         throw new TypeError('Application admission requires its queued command.');
     }
-    if (command.kind !== 'recipe.run' || command.recipe !== undefined) {
+    if (command.kind !== 'recipe.run') {
         return command;
     }
-    const accepted = resolveAcknowledgedControlRecipe({
-        command: queued,
-        agentId: input.envelope.agentId,
-        commands: input.commands,
-        results: input.results
-    });
-    return accepted !== undefined
-        ? {
-            ...command,
-            recipe: accepted.recipe,
-            expectedRecipeBodyId: command.expectedRecipeBodyId ?? accepted.recipeBodyId
-        }
-        : command;
+    const accepted = command.recipe === undefined
+        ? resolveAcknowledgedControlRecipe({
+            command: queued,
+            agentId: input.envelope.agentId,
+            commands: input.commands,
+            results: input.results
+        })
+        : undefined;
+    const known = accepted === undefined ? command : {
+        ...command,
+        recipe: accepted.recipe,
+        expectedRecipeBodyId: command.expectedRecipeBodyId ?? accepted.recipeBodyId
+    };
+    if (queued.recipeExecution === undefined) {
+        return known;
+    }
+    const segment = decodeRecipeExecutionSegment(queued.recipeExecution.segment).right;
+    const actual =
+        decodeRecipeExecutionSegment(decodeRecord(decodeRecord(input.envelope.result?.value).invocation).segment).right;
+    if (
+        segment === undefined || known.recipe === undefined || segment.end > known.recipe.commands.length ||
+        actual === undefined ||
+        actual.start !== segment.start || actual.end !== segment.end || actual.first !== segment.first
+    ) {
+        return undefined;
+    }
+    // The original queued intent owns provenance; application requirements belong only to its actual executed range.
+    return { ...known, recipe: { ...known.recipe, commands: known.recipe.commands.slice(segment.start, segment.end) } };
 }
 
 function toCommandCaptureRequirements(command: RallarBlackBoxTestCommand): RecipeCaptureRequirements.Analysis {

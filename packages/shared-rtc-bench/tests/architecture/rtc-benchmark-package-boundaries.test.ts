@@ -8,6 +8,7 @@ const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
 const browserSoakProducerPath = path.join(packageRoot, 'workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs');
 const canonicalEitherPath = path.join(repoRoot, 'packages/shared/resilience/Either.ts');
 const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
+const browserRecordingContractPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts');
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
 );
@@ -65,7 +66,10 @@ function isApprovedImport(file: string, specifier: string): boolean {
     if (file === browserSoakProducerPath && specifier.startsWith('.') && path.resolve(path.dirname(file), specifier) === canonicalEitherPath) {
         return true;
     }
-    if (specifier.startsWith('.') && [finiteIceFixturePolicyPath, ...productionFixturePaths].includes(path.resolve(path.dirname(file), specifier))) {
+    if (
+        specifier.startsWith('.') &&
+        [finiteIceFixturePolicyPath, browserRecordingContractPath, ...productionFixturePaths].includes(path.resolve(path.dirname(file), specifier))
+    ) {
         return true;
     }
     if (isPackageLocalImport(file, specifier)) {
@@ -177,6 +181,28 @@ describe('shared RTC benchmark package boundaries', () => {
             false
         );
         expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
+    });
+
+    it('admits only the portable browser recording contract and its canonical JSON dependency', () => {
+        const consumer = path.join(packageRoot, 'baseline/acceptance/validate-rtc-b06-browser-recording.ts');
+        const recording = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts');
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), recording))).toBe(true);
+        expect(parseImportSpecifiers(fs.readFileSync(recording, 'utf8'))).toEqual([
+            '../../../shared/api/api-json-value.ts'
+        ]);
+        for (
+            const forbidden of [
+                'rallar-bb-test/browser/browser-command-contracts.ts',
+                'rallar-bb-test/browser/diagnostic-recording/to-browser-diagnostics-receipt.ts',
+                'rallar-bb-test/browser-control-agent/to-rallar-black-box-routine-browser-diagnostics.ts',
+                'rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts',
+                'black-box-runner/rallar-in-memory-runtime.ts',
+                'black-box-runner/fixtures/another-contract.ts'
+            ]
+        ) {
+            expect(isApprovedImport(consumer, `../../../shared-test/${forbidden}`)).toBe(false);
+        }
+        expect(isApprovedImport(consumer, '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts')).toBe(false);
     });
 
     it('scans performance script roots that exist', () => {

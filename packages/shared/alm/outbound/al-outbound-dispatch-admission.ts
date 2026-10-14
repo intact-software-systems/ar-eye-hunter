@@ -8,7 +8,7 @@ import { decodePersistedALMessage } from '../../al-contracts/al-message-persiste
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import { decodeALAdmissionValue } from '../al-admission-decoder.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';

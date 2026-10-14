@@ -4,6 +4,7 @@ import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
@@ -62,6 +63,7 @@ export namespace AppInboxHandlerExecutor {
     export interface Dependencies {
         readonly resultRepository: AppInboxResultRepository;
         readonly transactionWriter: AppInboxTransactionWriter;
+        readonly nowEpochMs: () => number;
     }
 
     export interface Config {
@@ -74,6 +76,7 @@ export namespace AppInboxHandlerExecutor {
 export class AppInboxHandlerExecutor {
     private readonly resultRepository: AppInboxResultRepository;
     private readonly transactionWriter: AppInboxTransactionWriter;
+    private readonly nowEpochMs: () => number;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: AppInboxOptions;
@@ -84,6 +87,7 @@ export class AppInboxHandlerExecutor {
     ) {
         this.resultRepository = dependencies.resultRepository;
         this.transactionWriter = dependencies.transactionWriter;
+        this.nowEpochMs = dependencies.nowEpochMs;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
         this.options = config.options ?? {};
@@ -120,7 +124,7 @@ export class AppInboxHandlerExecutor {
     async rejectMalformedMessage(attempt: ResourceInboxAttempt): Promise<ResourceEntry> {
         const completionInput = {
             entry: attempt.entry,
-            completedAtEpochMs: (this.options.nowEpochMs ?? Date.now)(),
+            completedAtEpochMs: this.nowEpochMs(),
             durableResult: toTerminalAppInboxFailure({
                 code: 'app-inbox-malformed-command',
                 status: 400,
@@ -254,7 +258,9 @@ export class AppInboxHandlerExecutor {
         await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
         throw new ResourceInboxHandlerEntryError(
             computed.finalizedEntry,
-            input.error
+            input.classification.queueFailure === 'command-rejected'
+                ? new ResourceInboxCommandRejectedError(input.classification.code, input.error)
+                : input.error
         );
     }
 

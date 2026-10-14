@@ -29,6 +29,7 @@ import {
 } from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';
+
 export type AgentPrefix = 'A' | 'B' | 'C';
 
 export interface CreateLiveRtcDeliveryOperationsConfig {
@@ -37,6 +38,7 @@ export interface CreateLiveRtcDeliveryOperationsConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly almDiagnostics: boolean;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
@@ -167,16 +169,6 @@ export interface LiveRtcDeliveryOperations {
     ): Promise<readonly string[]>;
 }
 
-export class LiveRtcNackProbeFailure extends Error {
-    readonly diagnostic: LiveRtcNackFailureDiagnostic;
-
-    constructor(failure: Error, diagnostic: LiveRtcNackFailureDiagnostic) {
-        super(failure.message, { cause: failure });
-        this.name = 'LiveRtcNackProbeFailure';
-        this.diagnostic = diagnostic;
-    }
-}
-
 interface LiveRtcMatrixPayload {
     readonly topic: string;
     readonly matrixId: string;
@@ -196,6 +188,58 @@ interface SendMatrixPayloadInput {
     readonly deliveryMode: 'direct' | 'multicast' | 'broadcast';
     readonly targetSessionIds?: readonly string[];
     readonly matrixId: string;
+}
+
+interface SendPayloadInput {
+    readonly transport: TransportUnderTest;
+    readonly groupId: string;
+    readonly targetSessionIds?: readonly string[];
+    readonly payload: LiveRtcMatrixPayload;
+    readonly minSnapshotVersion?: number;
+}
+
+interface ConfigureAgentForServerCommandsInput {
+    readonly control: LiveRtcControlPort;
+    readonly runId: string;
+    readonly agent: LiveRtcControlClient.FormationAgent;
+    readonly groupId: string;
+    readonly suffix: string;
+}
+
+interface DeliveryCase {
+    readonly sender: LiveRtcControlClient.FormationAgent;
+    readonly firstHopReceivers: readonly LiveRtcControlClient.FormationAgent[];
+    readonly deliveryMode: 'direct' | 'multicast' | 'broadcast';
+    readonly matrixId: string;
+}
+
+interface RunDeliveryCaseInput {
+    readonly run: RunAllDeliveryPermutationsInput;
+    readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly deliveryCase: DeliveryCase;
+}
+
+interface CompletedDeliveryCase {
+    readonly commandId: string;
+    readonly scenario: LiveRtcControlClient.DeliveryScenario;
+    readonly timing: LiveRtcPerformanceTiming;
+}
+
+interface WaitForDeliveryReceiptsInput {
+    readonly run: RunAllDeliveryPermutationsInput;
+    readonly deliveryCase: DeliveryCase;
+    readonly receivers: readonly LiveRtcControlClient.FormationAgent[];
+    readonly startedAtMs: number;
+}
+
+export class LiveRtcNackProbeFailure extends Error {
+    readonly diagnostic: LiveRtcNackFailureDiagnostic;
+
+    constructor(failure: Error, diagnostic: LiveRtcNackFailureDiagnostic) {
+        super(failure.message, { cause: failure });
+        this.name = 'LiveRtcNackProbeFailure';
+        this.diagnostic = diagnostic;
+    }
 }
 
 export function createLiveRtcDeliveryOperations(
@@ -237,14 +281,6 @@ function toTransportSlug(transport: TransportUnderTest): string {
     return transport.replace('.', '-');
 }
 
-interface SendPayloadInput {
-    readonly transport: TransportUnderTest;
-    readonly groupId: string;
-    readonly targetSessionIds?: readonly string[];
-    readonly payload: LiveRtcMatrixPayload;
-    readonly minSnapshotVersion?: number;
-}
-
 function toRtcSendInput(
     runtime: LiveRtcDeliveryRuntime,
     input: SendPayloadInput
@@ -270,14 +306,6 @@ function toRtcSendInput(
         openTimeoutMs: 20_000,
         data: input.payload
     };
-}
-
-interface ConfigureAgentForServerCommandsInput {
-    readonly control: LiveRtcControlPort;
-    readonly runId: string;
-    readonly agent: LiveRtcControlClient.FormationAgent;
-    readonly groupId: string;
-    readonly suffix: string;
 }
 
 async function configureAgentForServerCommands(
@@ -746,30 +774,6 @@ async function closeAndResetSettledAgentTrio(
 
     await closeAndReset(input.agents[0]);
     return commandIds;
-}
-
-interface DeliveryCase {
-    readonly sender: LiveRtcControlClient.FormationAgent;
-    readonly firstHopReceivers: readonly LiveRtcControlClient.FormationAgent[];
-    readonly deliveryMode: 'direct' | 'multicast' | 'broadcast';
-    readonly matrixId: string;
-}
-interface RunDeliveryCaseInput {
-    readonly run: RunAllDeliveryPermutationsInput;
-    readonly sessions: Readonly<Record<AgentPrefix, string>>;
-    readonly deliveryCase: DeliveryCase;
-}
-interface CompletedDeliveryCase {
-    readonly commandId: string;
-    readonly scenario: LiveRtcControlClient.DeliveryScenario;
-    readonly timing: LiveRtcPerformanceTiming;
-}
-
-interface WaitForDeliveryReceiptsInput {
-    readonly run: RunAllDeliveryPermutationsInput;
-    readonly deliveryCase: DeliveryCase;
-    readonly receivers: readonly LiveRtcControlClient.FormationAgent[];
-    readonly startedAtMs: number;
 }
 
 function toDeliveryCases(

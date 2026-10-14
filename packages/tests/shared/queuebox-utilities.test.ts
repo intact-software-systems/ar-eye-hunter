@@ -1,6 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
@@ -15,13 +22,6 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -191,7 +191,8 @@ describe('QueueBoxUtilities', () => {
         expect(SlidingWindowCounter.sumInWindowWithNow(resilience.rateAdjuster.slidingWindow, Date.now())).toBe(0);
         expect(resilience.rateAdjuster.status.get().rate).toBe(2);
     });
-    it('maps AL messages to resource entries using the route as the queue key', () => {
+    it('uses the precise explicit UTC creation instant independently of message time', () => {
+        const createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
         const expiresAtMs = Date.UTC(2026, 0, 1, 0, 0, 30);
         const msg = {
             ...newALUnicastMessage(
@@ -217,12 +218,16 @@ describe('QueueBoxUtilities', () => {
             }
         };
 
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'ws.outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'ws.outbox', createdAt);
 
         expect(entry.key).toEqual(msg.route);
         expect(entry.typeId).toBe('ws.outbox');
         expect(entry.audit.createdBy).toBe('alice');
+        expect(entry.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+        expect(entry.audit.date.toString()).toBe('23:59:59.123456789');
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
+        expect(entry.status).toBe(EntityStatus.NEW);
+        expect(entry.dequeueAudit).toEqual({ attempts: 0 });
         expect(JSON.parse(entry.resource)).toMatchObject({
             id: {
                 msgId: msg.id.msgId
@@ -238,18 +243,16 @@ describe('QueueBoxUtilities', () => {
             audit: { createdBy: creator, createdTs: 123 }
         };
 
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'ws.outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'ws.outbox', Temporal.Now.instant());
 
         expect(creator.length).toBeGreaterThan(16);
-        expect(entry.audit.createdBy).toBe(toAppQueueCreatedBy(creator));
         expect(entry.audit.createdBy.length).toBeLessThanOrEqual(16);
-        expect(entry.audit.createdBy).not.toBe(toAppQueueCreatedBy('default-qbox-servers'));
         expect(JSON.parse(entry.resource).audit.createdBy).toBe(creator);
     });
 
     it('preserves an absent message deadline without turning queue retention into a delivery TTL', () => {
         const msg = newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'message' }, 'peer', 'chat.v1', {});
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         expect(entry.audit.expiryTs.equals(NEVER_EXPIRE_TS)).toBe(true);
         expect(JSON.parse(entry.resource)).not.toHaveProperty('constraints');
     });
@@ -263,7 +266,7 @@ describe('QueueBoxUtilities', () => {
             qos: Object.freeze({ expiry: Object.freeze({ algo: 'fresh-until', opts: Object.freeze({ maxStalenessMs: 1_000 }) }) })
         });
         const serialized = JSON.stringify(msg);
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(msg.id.ts + expectedTtlMs);
         expect(entry.resource).toBe(serialized);
         expect(JSON.stringify(msg)).toBe(serialized);

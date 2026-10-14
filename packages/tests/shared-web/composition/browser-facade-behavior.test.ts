@@ -108,9 +108,11 @@ describe('browser facade transport ownership', () => {
         const shutdownEvents: string[] = [];
         const stopQueueEngine = vi.fn(() => {
             shutdownEvents.push('queue-engine-stopped');
+            return Promise.resolve();
         });
         const closeWebSocket = vi.fn(() => {
             shutdownEvents.push('websocket-closed');
+            return Promise.resolve();
         });
         runtime.middleware.middleware.qboxEngine.stop = stopQueueEngine;
         runtime.middleware.middleware.webSocketQueueBox.close = closeWebSocket;

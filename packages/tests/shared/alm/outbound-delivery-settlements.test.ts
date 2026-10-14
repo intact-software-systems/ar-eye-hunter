@@ -1,4 +1,11 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -19,20 +26,18 @@ import type {
     ALOutboundRuntimeStores,
     ALOutboundSettledSendResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
-import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
     createVolatileOutboundTestStores,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
     peekOutboundWorkReadyAt,
+    readOutboundTestAdmission,
     runOutboundWorkTask,
     toOutboundTestAck,
     trackOutboundTestAcks,
@@ -73,18 +78,6 @@ function createStores(kind: 'memory' | 'indexeddb'): ALOutboundRuntimeStores<Out
         retention: normalizeALRuntimeStoreRetention()
     });
     return { admissionStore, workQueue: backend.workQueue };
-}
-
-/** The identity the admission commits for a first immediate attempt on one prepared copy. */
-function firstAttemptId(msgId: string): string {
-    return toALOutboundEffectId([
-        'send',
-        msgId,
-        'immediate',
-        'initial',
-        0,
-        toALOutboundPreparedFingerprint(PREPARED)
-    ]);
 }
 
 function planSend(
@@ -176,13 +169,13 @@ it.each(BACKEND_KINDS)(
             kind: 'attempt-started',
             msgId: message.id.msgId,
             carrier: 'ws',
-            attemptId: firstAttemptId(message.id.msgId)
+            attemptId: expect.any(String)
         });
         expect(settlements[1]).toMatchObject({
             kind: 'attempt-settled',
             msgId: message.id.msgId,
             carrier: 'ws',
-            attemptId: firstAttemptId(message.id.msgId),
+            attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
             outcome: 'sent',
             submissionAttempted: true,
             willRetry: false
@@ -214,7 +207,7 @@ it.each(BACKEND_KINDS)('states that a not-ready attempt will be tried again over
         carrier: 'ws',
         lane: 'durable',
         atMs: expect.any(Number),
-        attemptId: firstAttemptId(message.id.msgId),
+        attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
         outcome: 'not-ready',
         submissionAttempted: false,
         detail: 'No carrier lane yet',
@@ -231,6 +224,7 @@ it.each(BACKEND_KINDS)('states a retained attempt only when its carrier settles 
         planOutgoingMessage: planSend(),
         sendPreparedMessage: async () => ({ status: 'queued', settled: settled.promise })
     });
+    onTestFinished(() => settled.resolve({ status: 'cancelled', submissionAttempted: false }));
     const message = createOutboundMessage('msg-settled-retained');
 
     await enqueueOutboundOrThrow(runtime, message);
@@ -243,7 +237,7 @@ it.each(BACKEND_KINDS)('states a retained attempt only when its carrier settles 
     expect(settlements[1]).toMatchObject({
         kind: 'attempt-settled',
         msgId: message.id.msgId,
-        attemptId: firstAttemptId(message.id.msgId),
+        attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
         outcome: 'sent',
         submissionAttempted: true,
         detail: 'Handed to the native queue',
@@ -374,7 +368,7 @@ it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline ove
     await runtime.enqueueIfAbsent(message);
     // The owner's clock passes the message deadline while its work is still unclaimed.
     ownerNowMs = Date.now() + 5_000;
-    await claims.release();
+    await claims.release(runtime);
     await runOutboundWorkTask(runtime);
 
     // Expiry alone: an attempt that ran would have stated `attempt-started` before its carrier.
@@ -393,7 +387,12 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
     const settlements: ALDeliverySettlement[] = [];
     const stores = createStores(kind);
     const store = stores.admissionStore;
-    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
+    const competitor = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('competing-sender-version'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const commitBundle = store.commitBundle.bind(store);
     let contested = false;
     // A competing sender wins the version fence inside the first commit, so the send below is told
@@ -450,7 +449,7 @@ it.each(BACKEND_KINDS)('states the old message superseded when its replacement c
     expect(settlements.filter((settlement) => settlement.msgId === old.id.msgId)).toEqual([
         expect.objectContaining({ kind: 'superseded', replacementMsgId: replacement.id.msgId })
     ]);
-    await held.release();
+    await held.release(runtime);
     await expect.poll(async () => {
         await runOutboundWorkTask(runtime);
         return settlements.some((settlement) => settlement.msgId === old.id.msgId && settlement.kind === 'attempt-settled');
@@ -481,7 +480,12 @@ it.each(BACKEND_KINDS)('states the old message superseded at its replacement\'s 
     const old = createOutboundMessage('msg-superseded-before-replay');
     const replacement = createOutboundMessage('msg-replayed-replacement');
     await enqueueOutboundOrThrow(runtime, old);
-    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-replay-version'));
+    const competitor = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('competing-replay-version'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const commitBundle = store.commitBundle.bind(store);
     let contested = false;
     // The replacement's own commit loses the sender's version fence, so its admission waits for the replay.
@@ -587,7 +591,7 @@ it.each(BACKEND_KINDS)('ends the attempt it started when the carrier throws over
     expect(settlements[1]).toMatchObject({
         kind: 'attempt-settled',
         msgId: message.id.msgId,
-        attemptId: firstAttemptId(message.id.msgId),
+        attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
         outcome: 'failed',
         submissionAttempted: false,
         detail: 'WS connection dropped mid-send',
@@ -707,6 +711,7 @@ it.each(BACKEND_KINDS)(
                 return { status: 'queued', settled: settled.promise };
             }
         });
+        onTestFinished(() => settled.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage('msg-cancel-retained');
 
         await enqueueOutboundOrThrow(runtime, message);
@@ -724,7 +729,7 @@ it.each(BACKEND_KINDS)(
         expect(settlements[2]).toMatchObject({
             kind: 'attempt-settled',
             msgId: message.id.msgId,
-            attemptId: firstAttemptId(message.id.msgId),
+            attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
             outcome: 'cancelled',
             submissionAttempted: false,
             willRetry: false
@@ -770,7 +775,7 @@ it.each(BACKEND_KINDS)(
         expect(settlements[2]).toMatchObject({
             kind: 'attempt-settled',
             msgId: message.id.msgId,
-            attemptId: firstAttemptId(message.id.msgId),
+            attemptId: settlements.find((settlement) => settlement.kind === 'attempt-started')?.attemptId,
             outcome: 'cancelled',
             submissionAttempted: false,
             detail: 'The message was cancelled before its carrier ran.',
@@ -783,7 +788,7 @@ it.each(BACKEND_KINDS)(
     'disposes every live per-message signal without stating a cancelled settlement over %s',
     async (kind) => {
         const settlements: ALDeliverySettlement[] = [];
-        const settledByMsgId = new Map<string, ReturnType<typeof Promise.withResolvers<ALOutboundSettledSendResult>>>();
+        const settledByMsgId = new Map<string, PromiseWithResolvers<ALOutboundSettledSendResult>>();
         const signalByMsgId = new Map<string, AbortSignal>();
         const runtime = createDefaultOutboundTestRuntime({
             stores: createStores(kind),
@@ -797,6 +802,11 @@ it.each(BACKEND_KINDS)(
                 return { status: 'queued', settled: settled.promise };
             }
         });
+        onTestFinished(() => {
+            for (const settled of settledByMsgId.values()) {
+                settled.resolve({ status: 'cancelled', submissionAttempted: false });
+            }
+        });
         // Two independent messages: disposal must reach both controllers, not just one shared signal.
         const first = createOutboundMessage('msg-dispose-live-signal-1');
         const second = createOutboundMessage('msg-dispose-live-signal-2');
@@ -805,7 +815,7 @@ it.each(BACKEND_KINDS)(
         await enqueueOutboundOrThrow(runtime, second);
         expect(settlements.map((settlement) => settlement.kind)).toEqual(['attempt-started', 'attempt-started']);
 
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         expect(signalByMsgId.get(first.id.msgId)?.aborted).toBe(true);
         expect(signalByMsgId.get(second.id.msgId)?.aborted).toBe(true);
@@ -813,6 +823,7 @@ it.each(BACKEND_KINDS)(
 
         settledByMsgId.get(first.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
         settledByMsgId.get(second.id.msgId)?.resolve({ status: 'cancelled', submissionAttempted: false });
+        await disposing;
         await waitUntil(() => settlements.length === 4);
 
         // Both attempts settle cancelled; the owner itself states no `cancelled` fact for a disposed message.

@@ -100,21 +100,22 @@ it('reports storage-created for each store of a session whose connect created th
     ]);
 });
 
-it('reports storage-reset for each store of a session whose connect reset the database', async () => {
+it('reports an observed external reset for each store of the recreating connect', async () => {
     const scope: StateScope = { applicationId: 'recovery-app', workspaceId: crypto.randomUUID() };
-    (await openIndexedDbAdmissionDatabase({
+    await openIndexedDbAdmissionDatabase({
         dbName: toBrowserALRuntimeDbName(scope),
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
-        schemaId: 'an-older-schema',
+        schemaId: AL_ADMISSION_SCHEMA_ID,
         onStorageReset: () => {}
-    })).close();
+    });
+    await deleteDatabase(toBrowserALRuntimeDbName(scope));
 
     const outcomes = await openSessionStores(scope, `reset-${crypto.randomUUID()}`);
 
     expect(outcomes).toEqual([
-        ['browser-session-inbound/ws', { kind: 'storage-reset', reason: 'schema-id-mismatch' }],
-        ['browser-ws-client', { kind: 'storage-reset', reason: 'schema-id-mismatch' }],
-        ['browser-rtc-overlay', { kind: 'storage-reset', reason: 'schema-id-mismatch' }]
+        ['browser-session-inbound/ws', { kind: 'storage-reset', reason: 'other-context' }],
+        ['browser-ws-client', { kind: 'storage-reset', reason: 'other-context' }],
+        ['browser-rtc-overlay', { kind: 'storage-reset', reason: 'other-context' }]
     ]);
 });
 

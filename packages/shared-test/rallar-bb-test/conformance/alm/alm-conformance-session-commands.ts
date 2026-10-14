@@ -134,6 +134,7 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
         rallar: {
+            almDiagnostics: true,
             typeId,
             topicId: toScenarioTopicId(step),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),

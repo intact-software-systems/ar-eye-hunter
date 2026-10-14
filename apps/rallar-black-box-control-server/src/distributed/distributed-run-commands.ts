@@ -212,6 +212,9 @@ function toDistributedStartCommand(target: DistributedRecipeTarget): RallarBlack
     const metadata = toDistributedCommandMetadata(target);
     return {
         kind: 'recipe.run',
+        ...(target.distributedRun.manifest.eventHistory === undefined
+            ? {}
+            : { eventHistory: target.distributedRun.manifest.eventHistory }),
         commandId,
         label: `Run ${selection.recipe?.recipeId ?? selection.recipeId}`,
         ...(selection.recipe === undefined ? {} : { recipe: selection.recipe }),

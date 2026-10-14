@@ -41,6 +41,9 @@ describe('runtime construction', () => {
         expect(firstA.eventId).toBe('event-1');
         expect(healthA.commandId).toBe('command-2');
         expect(firstB.eventId).toBe('event-1');
+        expect(firstA.history).toMatchObject({ generation: 0, ordinal: 1 });
+        expect(firstB.history).toMatchObject({ generation: 0, ordinal: 1 });
+        expect(firstA.history?.runtimeId).not.toBe(firstB.history?.runtimeId);
     });
 
     it('reads the current default clock function after construction', () => {
@@ -103,6 +106,7 @@ describe('runtime construction', () => {
         };
         const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4 };
         const input = {
+            eventHistory: { mode: 'full' } as const,
             now: () => 1_000,
             sleep: async (ms: number) => {
                 sleptMs.push(ms);
@@ -131,8 +135,8 @@ describe('runtime construction', () => {
         input.readAlmUsage = async () => ({ ...initialLedger, usage: { admissions: 99, bytes: 99, oldestAgeMs: 99, tracks: 99 } });
         input.readCongestionCounters = async () => ({ dropped: 99, deferred: 99, handedOver: 99 });
         runtime.recordEvent({ kind: 'event', topic: 'snapshot' });
-        expect(runtime.state().events[0]).toMatchObject({ atEpochMs: 1_000, eventId: 'event-initial-1' });
-        expect((await runtime.execute({ kind: 'health' })).commandId).toBe('command-initial-2');
+        expect(runtime.state().events[0]).toMatchObject({ atEpochMs: 1_000, eventId: expect.stringMatching(/^event-initial-/) });
+        expect((await runtime.execute({ kind: 'health' })).commandId).toMatch(/^command-initial-/);
         const loop = await runtime.execute({ kind: 'loop', commandId: 'loop', count: 2, intervalMs: 10, commands: [{ kind: 'health' }] });
         expect(loop).toMatchObject({ ok: true, value: { iterations: 2, passed: 2 } });
         expect(sleptMs).toEqual([10]);
@@ -148,7 +152,7 @@ describe('runtime construction', () => {
         { name: 'default', create: createDefaultRallarBlackBoxTestRuntime }
     ])('keeps absent optional capabilities absent: $name', async ({ create }) => {
         let sequence = 1;
-        const runtime = create({ now: () => 1_000, sleep: sleepWithAbort, idFactory: (prefix) => `${prefix}-${sequence++}` });
+        const runtime = create({ eventHistory: { mode: 'full' }, now: () => 1_000, sleep: sleepWithAbort, idFactory: (prefix) => `${prefix}-${sequence++}` });
         const stats = await runtime.execute({ kind: 'stats' });
         expect(stats.ok).toBe(true);
         expect(stats.value).not.toHaveProperty('rallar.alm');

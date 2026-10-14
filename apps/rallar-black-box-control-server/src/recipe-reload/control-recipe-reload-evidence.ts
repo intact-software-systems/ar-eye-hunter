@@ -5,6 +5,8 @@ import {
     RALLAR_BLACK_BOX_TEST_RESULT_STATUSES,
     type RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecipeExecutionSegment } from '@shared-test/rallar-bb-test/recipe/run-recipe-commands.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { toCompactedResultEnvelope } from '../control-evidence-compaction.ts';
@@ -101,13 +103,15 @@ export function isControlRecipeReloadResult(command: ControlCommandState, envelo
         return !result.ok || (isJsonRecordValue(result.value) && result.value.reloading === true);
     }
     const children = toReloadSegmentResults(result);
-    const expected = command.envelope.command.kind === 'recipe.run'
-        ? command.envelope.command.recipe?.commands
-        : undefined;
+    const recipe = command.envelope.command.kind === 'recipe.run' ? command.envelope.command.recipe : undefined;
+    const segment = command.envelope.recipeExecution?.segment;
+    const expected = recipe?.commands.slice(segment?.start, segment?.end);
+    const actualRange = decodeRecipeExecutionSegment(decodeRecord(decodeRecord(result.value).invocation).segment).right;
     if (
         !children || !expected || !isJsonRecordValue(result.value) ||
-        result.value.recipeId !==
-            (command.envelope.command.kind === 'recipe.run' ? command.envelope.command.recipe?.recipeId : undefined) ||
+        result.value.recipeId !== recipe?.recipeId ||
+        (segment !== undefined && (actualRange === undefined || actualRange.start !== segment.start ||
+            actualRange.end !== segment.end || actualRange.first !== segment.first)) ||
         children.length > expected.length ||
         (result.ok && children.length !== expected.length)
     ) {

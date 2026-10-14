@@ -28,7 +28,12 @@ import {
     toSelfMembershipCommand,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
-import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
+import {
+    toCommandId,
+    toConnectionName,
+    toRoomRef,
+    toSendHandleId
+} from './alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
 import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
@@ -93,13 +98,27 @@ export interface AlmConformanceScenario {
     readonly tags: readonly AlmConformanceTag[];
 }
 
+interface AlmRecipeDiagnosticSelection {
+    readonly almDiagnostics: boolean;
+    readonly deliveryDiagnostics: boolean;
+}
+
 interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
+    readonly almDiagnostics: boolean;
+    readonly deliveryDiagnostics: boolean;
     /** Set only on the sender of a scenario that pins its receipt identity. */
     readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
     /** Set on both roles of a scenario whose sender reloads its page. */
     readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
 }
+
+const ALM_DIAGNOSTIC_TOPICS = [
+    'rallar.browser.alm.outbound_diagnostics',
+    'rallar.browser.alm.inbound_diagnostics',
+    'rallar.browser.alm.storage',
+    'rallar.browser.alm.storage_reset'
+];
 
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
@@ -172,7 +191,20 @@ export function createAlmConformanceRecipes(
 
     return ALM_CONFORMANCE_SCENARIOS
         .filter((definition) => definition.carriers.includes(input.carrier))
-        .map((definition) => toAlmConformanceScenario(input, definition));
+        .map((definition) =>
+            toAlmConformanceScenario(input, definition, { almDiagnostics: true, deliveryDiagnostics: false })
+        );
+}
+
+/** Independent pages own the entire diagnostic history of each specialised delivery run. */
+export function createAlmDeliveryDiagnosticsRecipes(
+    input: CreateAlmConformanceRecipesInput,
+    almDiagnostics: boolean
+): AlmConformanceScenario {
+    return toAlmConformanceScenario(input, {
+        ...deliveryBaseline,
+        scenarioKey: almDiagnostics ? 'delivery-diagnostics-on' : 'delivery-diagnostics-off'
+    }, { almDiagnostics, deliveryDiagnostics: true });
 }
 
 export function toAlmConformanceRoleRecipe(
@@ -184,7 +216,8 @@ export function toAlmConformanceRoleRecipe(
 
 function toAlmConformanceScenario(
     input: CreateAlmConformanceRecipesInput,
-    definition: AlmConformanceScenarioDefinition
+    definition: AlmConformanceScenarioDefinition,
+    diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
     const toRoleRecipe = (role: AlmConformanceRole): RallarBlackBoxTestRecipe => {
         const step: AlmConformanceStepInput = {
@@ -199,7 +232,7 @@ function toAlmConformanceScenario(
             : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
         const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
-        return toAlmConformanceRecipe({ ...step, commands, receiptRoles, reloadCheckpoint });
+        return toAlmConformanceRecipe({ ...step, ...diagnostics, commands, receiptRoles, reloadCheckpoint });
     };
     return {
         scenarioId: definition.scenarioId,
@@ -217,13 +250,20 @@ function toAlmConformanceScenario(
 
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
+    const connect = toConnectCommand(recipe);
+    const profile = recipe.deliveryDiagnostics ? 'alm-delivery-diagnostics' : 'alm-conformance';
     return {
         schemaVersion: 1,
         recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
-        name: `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
+        name: recipe.deliveryDiagnostics
+            ? `ALM delivery diagnostics ${recipe.almDiagnostics ? 'On' : 'Off'} ${recipe.role} over ${carrier}`
+            : `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
         metadata: {
-            profile: 'alm-conformance',
+            profile,
+            ...(recipe.deliveryDiagnostics
+                ? { almDiagnostics: recipe.almDiagnostics, freshRuntimeRequired: true }
+                : {}),
             carrier,
             scenarioId: recipe.scenarioId,
             group: toRoomRef(recipe.input.group),
@@ -235,13 +275,16 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
                 : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] })
         },
         commands: [
+            ...(recipe.deliveryDiagnostics ? toFreshDiagnosticHistoryCommands(recipe) : []),
             toEnsureGroupCommand(recipe),
             toSelfMembershipCommand(recipe, 'active'),
             ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
-            toConnectCommand(recipe),
+            { ...connect, rallar: { ...connect.rallar, almDiagnostics: recipe.almDiagnostics } },
+            ...(recipe.deliveryDiagnostics ? [toAppliedDiagnosticsWait(recipe)] : []),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
-            toStatsCommand(recipe, 'stats')
+            toStatsCommand(recipe, 'stats'),
+            ...(recipe.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(recipe) : [])
         ]
     };
 }
@@ -267,4 +310,46 @@ function toReceiptRolesMetadata(
         confirmed: roles.confirmed,
         unconfirmed: roles.unconfirmed
     };
+}
+
+function toFreshDiagnosticHistoryCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [...ALM_DIAGNOSTIC_TOPICS, 'rallar.browser.connect.phase_completed'].map((topic) => ({
+        kind: 'wait',
+        commandId: toCommandId(step, `fresh-${topic.split('.').at(-1)}`),
+        match: { kind: 'diagnostic', topic },
+        absent: true,
+        timeoutMs: 0
+    }));
+}
+
+function toAppliedDiagnosticsWait(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(recipe, 'applied-diagnostics'),
+        match: {
+            kind: 'diagnostic',
+            connection: toConnectionName(recipe),
+            topic: 'rallar.browser.connect.phase_completed',
+            payloadFields: { 'data.phase': 'rallar-connect', 'data.almDiagnostics': recipe.almDiagnostics }
+        },
+        timeoutMs: 0
+    };
+}
+
+function toDeliveryDiagnosticEvidenceCommands(recipe: AlmConformanceRecipeInput): readonly RallarBlackBoxTestCommand[] {
+    const topics = recipe.almDiagnostics
+        ? [
+            recipe.role === 'sender'
+                ? 'rallar.browser.alm.outbound_diagnostics'
+                : 'rallar.browser.alm.inbound_diagnostics'
+        ]
+        : ALM_DIAGNOSTIC_TOPICS;
+    return topics.map((topic) => ({
+        kind: 'wait',
+        commandId: toCommandId(recipe, `diagnostic-${topic.split('.').at(-1)}`),
+        match: { kind: 'diagnostic', topic },
+        ...(recipe.almDiagnostics ? {} : { absent: true }),
+        // Delivery and the receiver's authored negative-control window bound this already retained interval.
+        timeoutMs: 0
+    }));
 }

@@ -9,6 +9,7 @@ import {
     vi
 } from 'vitest';
 
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -20,18 +21,23 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores, ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
-import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-
-import '../../setup-browser-indexeddb.ts';
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+import '../../setup-browser-indexeddb.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
@@ -95,6 +101,8 @@ describe('outbound IndexedDB durable queue replay', () => {
                 { ttlMs: 30_000, ack: 'receiver', reliability: 'at-least-once' }
             )
         );
+        const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
+        let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
         const runtime1 = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
             stores,
@@ -112,59 +120,68 @@ describe('outbound IndexedDB durable queue replay', () => {
                     mode: 'hop'
                 }
             }),
-            sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
+            sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
-        for (const msg of messages) {
-            expect((await runtime1.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
-            // The send holds its claim (it never settles), so the acknowledgements below race nothing.
-            await runOutboundWorkTask(runtime1);
-            const respondents = msg.route.resourceId === 'complete' ? ['peer-1', 'peer-2'] : ['peer-1'];
-            for (const fromPeerId of respondents) {
-                await runtime1.acceptControlMessage(
-                    newALAckControlMessage(
-                        { v: 3, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
-                        {
-                            ackedMsgId: msg.id.msgId,
-                            originPeerId: 'self',
-                            logicalRecipientPeerId: fromPeerId,
-                            fromPeerId,
-                            toPeerId: 'self',
-                            status: 'accepted',
-                            observedAtEpochMs: Date.now(),
-                            carrier: 'ws'
-                        }
-                    ),
-                    'peer'
-                );
+        let disposing: Promise<void> | undefined;
+        try {
+            for (const msg of messages) {
+                expect((await runtime1.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
+                // The held send keeps its claim through the crash assertions, so the acknowledgements race nothing.
                 await runOutboundWorkTask(runtime1);
+                const respondents = msg.route.resourceId === 'complete' ? ['peer-1', 'peer-2'] : ['peer-1'];
+                for (const fromPeerId of respondents) {
+                    await runtime1.acceptControlMessage(
+                        newALAckControlMessage(
+                            { v: 3, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
+                            {
+                                ackedMsgId: msg.id.msgId,
+                                originPeerId: 'self',
+                                logicalRecipientPeerId: fromPeerId,
+                                fromPeerId,
+                                toPeerId: 'self',
+                                status: 'accepted',
+                                observedAtEpochMs: Date.now(),
+                                carrier: 'ws'
+                            }
+                        ),
+                        'peer'
+                    );
+                    await runOutboundWorkTask(runtime1);
+                }
             }
-        }
-        runtime1.dispose();
-        vi.setSystemTime(Date.now() + 10_001);
+            disposing = runtime1.dispose();
+            vi.setSystemTime(Date.now() + 10_001);
 
-        const sent: string[] = [];
-        const runtime2 = createDefaultOutboundTestRuntime({
-            queueEngine: new InboxOutboxEngine(),
-            stores,
-            planOutgoingMessage: () => {
-                throw new Error('Replay must use the retained message');
-            },
-            sendPreparedMessage: async (message) => {
-                sent.push(message.text ?? '');
-                return { status: 'sent', submissionAttempted: true };
-            }
-        });
-        await runtime2.ready();
-        expect(sent).toEqual(['partial']);
-        expect(await admissionStore.readPendingAck({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toBeUndefined();
-        expect(await admissionStore.readReceiptState({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toMatchObject({
-            expectedPeerIds: ['peer-1', 'peer-2'],
-            ackedPeerIds: ['peer-1', 'peer-2']
-        });
-        expect(await admissionStore.readPendingAck({ originPeerId: messages[1].id.senderId, msgId: messages[1].id.msgId })).toMatchObject({
-            expectedPeerIds: ['peer-1', 'peer-2'],
-            ackedPeerIds: ['peer-1']
-        });
+            const sent: string[] = [];
+            const runtime2 = createDefaultOutboundTestRuntime({
+                queueEngine: new InboxOutboxEngine(),
+                stores,
+                planOutgoingMessage: () => {
+                    throw new Error('Replay must use the retained message');
+                },
+                sendPreparedMessage: async (message) => {
+                    sent.push(message.text ?? '');
+                    return { status: 'sent', submissionAttempted: true };
+                }
+            });
+            await runtime2.ready();
+            expect(sent).toEqual(['partial']);
+            expect(await admissionStore.readPendingAck({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toBeUndefined();
+            expect(await admissionStore.readReceiptState({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toMatchObject({
+                expectedPeerIds: ['peer-1', 'peer-2'],
+                ackedPeerIds: ['peer-1', 'peer-2']
+            });
+            expect(await admissionStore.readPendingAck({ originPeerId: messages[1].id.senderId, msgId: messages[1].id.msgId })).toMatchObject({
+                expectedPeerIds: ['peer-1', 'peer-2'],
+                ackedPeerIds: ['peer-1']
+            });
+            beforeCleanup = await readQueueRows(stores.workQueue);
+        }
+        finally {
+            abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
+            await (disposing ?? runtime1.dispose());
+        }
+        expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
 
     it('retries through its injected queue engine and leaves unrelated work registered after disposal', async () => {
@@ -203,7 +220,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             },
             ongoingTasks: []
         });
-        runtime.dispose();
+        await runtime.dispose();
         await engine.executeOnce();
         expect(unrelatedWork).toBe(false);
         expect(sent).toEqual(['engine-owned', 'engine-owned']);
@@ -232,31 +249,43 @@ describe('outbound IndexedDB durable queue replay', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore, workQueue: backend.workQueue },
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ text: 'retained' }] }),
-            sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => ({
+                status: 'queued',
+                settled: new Promise<ALOutboundSettledSendResult>((resolve) => {
+                    lifecycle.signal.addEventListener('abort', () => {
+                        resolve({ status: 'cancelled', submissionAttempted: false });
+                    }, { once: true });
+                })
+            })
         });
-        const msg = createOutboundMessage('queue-owned-send');
-        expect((await runtime.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
-        const database = await openIndexedDbAdmissionDatabase({
-            dbName: dbName,
-            storeName: 'admission',
-            schemaId: AL_ADMISSION_SCHEMA_ID,
-            onStorageReset: () => {}
-        });
-        onTestFinished(() => database.close());
-        const queue = new IndexedDbQueueBox({
-            connection: new IndexedDbConnection(async () => database),
-            storeName: AL_ADMISSION_WORK_STORE_NAME,
-            observer: createPassThroughIndexedDbOperationObserver()
-        });
-        const keys = await queue.getAllKeys();
-        expect(keys).toHaveLength(3);
-        const workKey = keys.find((key) => key.topicId === 'AL_OUTBOUND')!;
-        await expect.poll(async () => (await queue.getItem(workKey))?.status).toBe(EntityStatus.RESERVED);
-        const reserved = await queue.getItem(workKey);
-        expect(reserved).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
-        expect(JSON.parse(reserved!.resource)).toMatchObject({
-            payload: { kind: 'send-prepared', message: { msgId: msg.id.msgId } }
-        });
+        try {
+            const msg = createOutboundMessage('queue-owned-send');
+            expect((await runtime.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
+            const database = await openIndexedDbAdmissionDatabase({
+                dbName: dbName,
+                storeName: 'admission',
+                schemaId: AL_ADMISSION_SCHEMA_ID,
+                onStorageReset: () => {}
+            });
+            onTestFinished(() => database.close());
+            const queue = new IndexedDbQueueBox({
+                connection: new IndexedDbConnection(async () => database),
+                storeName: AL_ADMISSION_WORK_STORE_NAME,
+                observer: createPassThroughIndexedDbOperationObserver()
+            });
+            const keys = await queue.getAllKeys();
+            expect(keys).toHaveLength(3);
+            const workKey = keys.find((key) => key.topicId === 'AL_OUTBOUND')!;
+            await expect.poll(async () => (await queue.getItem(workKey))?.status).toBe(EntityStatus.RESERVED);
+            const reserved = await queue.getItem(workKey);
+            expect(reserved).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
+            expect(JSON.parse(reserved!.resource)).toMatchObject({
+                payload: { kind: 'send-prepared', message: { msgId: msg.id.msgId } }
+            });
+        }
+        finally {
+            await runtime.dispose();
+        }
     });
 
     it.each(['memory', 'indexeddb'] as const)('fences old completion and retry after the same worker reclaims an effect in %s', async (storage) => {
@@ -294,6 +323,8 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const { admissionStore, stores, backend, port, peek } = createAdmission();
         const msg = createOutboundMessage('queued');
+        const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
+        let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
         const runtime1 = createDefaultOutboundTestRuntime({
             stores,
             planOutgoingMessage: (message) => ({
@@ -302,47 +333,56 @@ describe('outbound IndexedDB durable queue replay', () => {
                 lane: 'durable',
                 preparedMessages: [{ text: 'captured-recipient' }]
             }),
-            // A send that never settles keeps its claim, so the row survives the runtime as a reservation.
-            sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
+            // A send held through the crash assertions keeps its claim, so the row survives the runtime as a reservation.
+            sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
-        const enqueued = await runtime1.enqueueIfAbsent(msg);
-        const workKey = await readOutboundWorkKey(backend.workQueue);
-        await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
-            .toBe(EntityStatus.RESERVED);
-        runtime1.dispose();
-        vi.setSystemTime(Date.now() + 10_001);
-        const [claimed] = await claimOne(port);
-        const work = await admissionStore.readWorkSnapshot(claimed!.entry, undefined);
-        expect(work.payload.kind).toBe('send-prepared');
-        expect(work.canonicalMessage).toEqual(msg);
-        expect(claimed!.entry.audit.date).toBeInstanceOf(Temporal.PlainTime);
-        expect(claimed!.entry.audit.createdTs).toBeInstanceOf(Temporal.PlainDateTime);
-        expect(claimed!.entry.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
-        expect(claimed!.entry.dequeueAudit.startTs).toBeInstanceOf(Temporal.Instant);
-        await port.releaseAll([{ claim: claimed!, outcome: { status: 'not-ready', readyAtMs: Date.now() } }]);
-        const retryAt = await peek();
-        expect(retryAt).toBeDefined();
-        vi.setSystemTime(retryAt!);
-        const sent: string[] = [];
-        const runtime2 = createDefaultOutboundTestRuntime({
-            stores,
-            planOutgoingMessage: () => {
-                throw new Error('Saved prepared attempt must not replan');
-            },
-            sendPreparedMessage: async (prepared, _phase, lifecycle) => {
-                sent.push(prepared.text!);
-                expect(lifecycle.canonicalMessage).toEqual(msg);
-                return { status: 'sent', submissionAttempted: true };
-            }
-        });
-        await runtime2.ready();
-        expect(sent).toEqual(['captured-recipient']);
-        const canonical = await backend.workQueue.getItem(enqueued.entry!.key);
-        expect(canonical?.status).toBe(EntityStatus.COMPLETED);
-        expect(canonical?.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
-        expect(canonical?.audit.expiryTs.toString()).toBe(enqueued.entry?.audit.expiryTs.toString());
-        expect(canonical?.resource).toBe(JSON.stringify(msg));
-        expect(await peek()).toBeUndefined();
+        let disposing: Promise<void> | undefined;
+        try {
+            const enqueued = await runtime1.enqueueIfAbsent(msg);
+            const workKey = await readOutboundWorkKey(backend.workQueue);
+            await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
+                .toBe(EntityStatus.RESERVED);
+            disposing = runtime1.dispose();
+            vi.setSystemTime(Date.now() + 10_001);
+            const [claimed] = await claimOne(port);
+            const work = await admissionStore.readWorkSnapshot(claimed!.entry, undefined);
+            expect(work.payload.kind).toBe('send-prepared');
+            expect(work.canonicalMessage).toEqual(msg);
+            expect(claimed!.entry.audit.date).toBeInstanceOf(Temporal.PlainTime);
+            expect(claimed!.entry.audit.createdTs).toBeInstanceOf(Temporal.PlainDateTime);
+            expect(claimed!.entry.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
+            expect(claimed!.entry.dequeueAudit.startTs).toBeInstanceOf(Temporal.Instant);
+            await port.releaseAll([{ claim: claimed!, outcome: { status: 'not-ready', readyAtMs: Date.now() } }]);
+            const retryAt = await peek();
+            expect(retryAt).toBeDefined();
+            vi.setSystemTime(retryAt!);
+            const sent: string[] = [];
+            const runtime2 = createDefaultOutboundTestRuntime({
+                stores,
+                planOutgoingMessage: () => {
+                    throw new Error('Saved prepared attempt must not replan');
+                },
+                sendPreparedMessage: async (prepared, _phase, lifecycle) => {
+                    sent.push(prepared.text!);
+                    expect(lifecycle.canonicalMessage).toEqual(msg);
+                    return { status: 'sent', submissionAttempted: true };
+                }
+            });
+            await runtime2.ready();
+            expect(sent).toEqual(['captured-recipient']);
+            const canonical = await backend.workQueue.getItem(enqueued.entry!.key);
+            expect(canonical?.status).toBe(EntityStatus.COMPLETED);
+            expect(canonical?.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
+            expect(canonical?.audit.expiryTs.toString()).toBe(enqueued.entry?.audit.expiryTs.toString());
+            expect(canonical?.resource).toBe(JSON.stringify(msg));
+            expect(await peek()).toBeUndefined();
+            beforeCleanup = await readQueueRows(stores.workQueue);
+        }
+        finally {
+            abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
+            await (disposing ?? runtime1.dispose());
+        }
+        expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
 
     it.each(['memory', 'indexeddb'] as const)('finishes exhausted QueueBox work without advertising another retry in %s', async (storage) => {
@@ -411,40 +451,51 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         const { backend, stores, peek } = createAdmission();
         const message = createOutboundMessage('changed-canonical-deadline');
+        const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
+        let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
         const runtime1 = createDefaultOutboundTestRuntime({
             stores,
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'captured' }] }),
-            sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
+            sendPreparedMessage: async () => ({ status: 'queued', settled: abandonedSend.promise })
         });
-        const admitted = await runtime1.enqueueIfAbsent(message);
-        const workKey = await readOutboundWorkKey(backend.workQueue);
-        await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
-            .toBe(EntityStatus.RESERVED);
-        runtime1.dispose();
-        vi.setSystemTime(Date.now() + 10_001);
-        const canonical = await backend.workQueue.getItem(admitted.entry!.key);
-        const corrupted = {
-            ...canonical!,
-            resource: JSON.stringify({ ...message, constraints: { ...message.constraints, expiresAtMs: message.constraints!.expiresAtMs! + 1 } })
-        };
-        await backend.workQueue.setItem(corrupted.key, corrupted, { expireAtTimestamp: Number(corrupted.audit.expiryTs.epochMilliseconds) });
+        let disposing: Promise<void> | undefined;
+        try {
+            const admitted = await runtime1.enqueueIfAbsent(message);
+            const workKey = await readOutboundWorkKey(backend.workQueue);
+            await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
+                .toBe(EntityStatus.RESERVED);
+            disposing = runtime1.dispose();
+            vi.setSystemTime(Date.now() + 10_001);
+            const canonical = await backend.workQueue.getItem(admitted.entry!.key);
+            const corrupted = {
+                ...canonical!,
+                resource: JSON.stringify({ ...message, constraints: { ...message.constraints, expiresAtMs: message.constraints!.expiresAtMs! + 1 } })
+            };
+            await backend.workQueue.setItem(corrupted.key, corrupted, { expireAtTimestamp: Number(corrupted.audit.expiryTs.epochMilliseconds) });
 
-        const sent: string[] = [];
-        const runtime2 = createDefaultOutboundTestRuntime({
-            stores,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'replanned' }] }),
-            sendPreparedMessage: async (prepared) => {
-                sent.push(prepared.text ?? '');
-                return { status: 'sent', submissionAttempted: true };
-            }
-        });
-        await runtime2.ready();
-        await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
-            .toBe(EntityStatus.NON_RETRYABLE);
+            const sent: string[] = [];
+            const runtime2 = createDefaultOutboundTestRuntime({
+                stores,
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ text: 'replanned' }] }),
+                sendPreparedMessage: async (prepared) => {
+                    sent.push(prepared.text ?? '');
+                    return { status: 'sent', submissionAttempted: true };
+                }
+            });
+            await runtime2.ready();
+            await expect.poll(async () => (await backend.workQueue.getItem(workKey))?.status)
+                .toBe(EntityStatus.NON_RETRYABLE);
 
-        expect(sent).toEqual([]);
-        expect((await backend.workQueue.getItem(corrupted.key))?.resource).toBe(corrupted.resource);
-        expect(await peek()).toBeUndefined();
+            expect(sent).toEqual([]);
+            expect((await backend.workQueue.getItem(corrupted.key))?.resource).toBe(corrupted.resource);
+            expect(await peek()).toBeUndefined();
+            beforeCleanup = await readQueueRows(stores.workQueue);
+        }
+        finally {
+            abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
+            await (disposing ?? runtime1.dispose());
+        }
+        expect(await readQueueRows(stores.workQueue)).toEqual(beforeCleanup);
     });
 });
 
@@ -453,7 +504,7 @@ async function claimOne(port: ALWorkQueuePort): Promise<readonly ALWorkClaim[]> 
 }
 
 async function readNextRetryAtMs(
-    workQueue: ALOutboundRuntimeStores<OutboundTestPayload>['workQueue'],
+    workQueue: QueueBoxResourceEntryRepository,
     claim: ALWorkClaim
 ): Promise<number | undefined> {
     const entry = await workQueue.getItem(claim.entry.key);
@@ -461,9 +512,17 @@ async function readNextRetryAtMs(
     return nextTs === undefined ? undefined : Number(nextTs) + 1;
 }
 
+interface ReplayAdmissionFixture {
+    readonly backend: InMemoryAdmissionBackend | IndexedDbAdmissionBackend;
+    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    readonly admissionStore: ALOutboundAdmissionStore<OutboundTestPayload>;
+    readonly port: ALWorkQueuePort;
+    readonly peek: () => Promise<number | undefined>;
+}
+
 /** The single outbound work row an admitted message committed. */
 async function readOutboundWorkKey(
-    workQueue: ALOutboundRuntimeStores<OutboundTestPayload>['workQueue']
+    workQueue: QueueBoxResourceEntryRepository
 ): Promise<Key> {
     const key = (await workQueue.getAllKeys()).find((candidate) => candidate.topicId === 'AL_OUTBOUND');
     if (key === undefined) {
@@ -472,7 +531,7 @@ async function readOutboundWorkKey(
     return key;
 }
 
-function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
+function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb'): ReplayAdmissionFixture {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
@@ -501,4 +560,11 @@ function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
         port: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         peek: async () => await peekOutboundWorkReadyAt(backend.workQueue, admissionStore.namespace)
     };
+}
+
+/** The authoritative queue rows, including leases, that an abandoned actor must not change after replay. */
+async function readQueueRows(
+    workQueue: QueueBoxResourceEntryRepository
+): Promise<readonly (ResourceEntry | undefined)[]> {
+    return await Promise.all((await workQueue.getAllKeys()).map((key) => workQueue.getItem(key)));
 }

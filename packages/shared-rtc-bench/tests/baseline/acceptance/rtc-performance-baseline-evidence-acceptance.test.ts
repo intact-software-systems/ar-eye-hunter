@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import type { RtcBaselineAcceptedArtifact } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
@@ -110,6 +114,7 @@ const browserOwnership = 'Native-browser workloads must enter through record-bro
 const externalOwnership = 'Local-full-stack workloads must enter through external ingestion.';
 
 const completedNativeConnectCapture = {
+    almDiagnostics: true,
     runId: 'capture-run',
     agentId: 'agent-a',
     commandId: 'connect-a-realtime',
@@ -515,12 +520,14 @@ describe('RTC baseline evidence acceptance', () => {
         const original = {
             ...staged.samples[0]!,
             rawEvidence: {
-                rtcConnectCaptures: [{
+                ...recordingEvidence(),
+                rtcConnectCaptures: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({
                     ...completedNativeConnectCapture,
+                    agentId,
                     transport,
                     requestedConfiguration: { mode, origin: 'step' },
                     receipt
-                }]
+                }))
             }
         };
         const writes: RtcBaselineAcceptedArtifact[] = [];
@@ -535,6 +542,16 @@ describe('RTC baseline evidence acceptance', () => {
                     field: 'rtcCaptureMode',
                     value: mode,
                     source: 'cli'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'almDiagnostics',
+                    value: true,
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'routineBrowserDiagnostics',
+                    value: 'enabled',
+                    source: 'default'
                 }]
             })
         }));
@@ -643,7 +660,8 @@ describe('RTC baseline evidence acceptance', () => {
         const externalAttempt = stagedExternalAttempt();
         externalAttempt.samples[0]!.rawEvidence = {
             durationMs: 1,
-            rtcConnectCaptures: [completedNativeConnectCapture]
+            ...recordingEvidence(),
+            rtcConnectCaptures: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({ ...completedNativeConnectCapture, agentId }))
         };
         const external = createRtcBaselineEvidenceAcceptance(
             dependencies({
@@ -656,6 +674,16 @@ describe('RTC baseline evidence acceptance', () => {
                         field: 'rtcCaptureMode',
                         value: 'native',
                         source: 'cli'
+                    }, {
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'almDiagnostics',
+                        value: true,
+                        source: 'default'
+                    }, {
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'routineBrowserDiagnostics',
+                        value: 'enabled',
+                        source: 'default'
                     }]
                 }),
                 writeAcceptedArtifact: collectWrites(writes)
@@ -787,3 +815,20 @@ describe('RTC baseline evidence acceptance', () => {
         expect(writes.at(-1)).toMatchObject({ artifactKind: 'failure' });
     });
 });
+
+function recordingEvidence() {
+    const receipt = { routineBrowserDiagnostics: 'enabled', omittedRoutineBrowserDiagnostics: 0, forwardedBrowserDiagnostics: 1 };
+    return {
+        diagnostics: [{
+            cycle: null,
+            agents: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({
+                agentId,
+                details: {
+                    browserDiagnostics: receipt,
+                    browserDiagnosticsAdmission: { runId: 'capture-run', agentId, commandId: `admit-${agentId}`, receipt },
+                    browserDiagnosticsHealth: { runId: 'capture-run', agentId, commandId: `health-${agentId}` }
+                }
+            }))
+        }]
+    };
+}

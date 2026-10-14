@@ -1,5 +1,63 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // One RTC carrier owner keeps admission protection, control-handoff translation
+    // and route/native guards together. The explicit quota-clock admission guard
+    // stays at that boundary. The separation review accepts this exact score;
+    // other findings and further growth remain undispositioned.
+    Object.freeze({
+        path: 'packages/shared/multicast/web-rtc-overlay-multicast-manager.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 119
+    }),
+    // A workflow condition's VM result is untrusted until its boolean guard.
+    // Only that checked decision leaves the manual-mode job selector.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveManualModeJobs',
+        maximumMagnitude: 1
+    }),
+    // The named app composition boundary assembles defaults before the required
+    // constructor. This module-owned prompt has no checker symbol, even though
+    // its display message names the default factory.
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'factory.defaults',
+        symbol: undefined
+    }),
+    // Readiness HTTP JSON is untrusted until the API/config and control/health
+    // validators check its identities and shape. They return void; the probe's
+    // module-owned readJson declaration and local guard expose that boundary.
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertFullStackApiConfigEvidence'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertFullStackControlHealthEvidence'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/playwright-full-stack-api-server.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    // One diagnostic capture lifetime owns stdout framing, safe persistence and
+    // child/capture exit policy. Keep its local primitive projection beside that
+    // lifetime at the reviewed warning-tier cap; no global threshold changes.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-full-stack-api-with-timing.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
     // Capture selections enter as raw values only here; the product parser and
     // page/control decoders validate before any connection or domain decision.
     Object.freeze({

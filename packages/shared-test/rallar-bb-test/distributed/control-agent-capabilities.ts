@@ -2,7 +2,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import {
     isRallarBlackBoxAssertOperator,
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxControlAgentAssertionsCapability,
@@ -66,7 +66,7 @@ const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
     'lte'
 ];
 
-const EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
+const EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
     .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
 
 // The advertisement is a build-time truth: an agent built from this checkout
@@ -89,7 +89,7 @@ export function toControlAgentCapabilities(
         assertions: {
             absence: true,
             untilLoop: true,
-            operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+            operators: RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
         },
         messaging: CONTROL_AGENT_MESSAGING_CAPABILITY
     };

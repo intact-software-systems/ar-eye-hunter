@@ -20,7 +20,8 @@ export interface ControlRecipeReloadRoot extends ControlCommandEnvelope {
 }
 
 export function isControlRecipeReloadRoot(envelope: ControlCommandEnvelope): envelope is ControlRecipeReloadRoot {
-    return envelope.command.kind === 'recipe.run' && envelope.command.recipe !== undefined &&
+    return envelope.recipeExecution === undefined && envelope.command.kind === 'recipe.run' &&
+        envelope.command.recipe !== undefined &&
         (hasAlmReloadPair(envelope.command) || hasAuthoredAlmReloadCheckpoints(envelope.command) ||
             (envelope.command.recipe.metadata?.profile === 'alm-conformance' &&
                 envelope.command.recipe.commands.some(containsReload)));
@@ -55,7 +56,15 @@ export function toControlRecipeReloadCommands(root: ControlRecipeReloadRoot): re
     if (known !== undefined) {
         return known;
     }
-    const commands = computeControlRecipeReloadCommands(root);
+    const commands = computeControlRecipeReloadCommands(root).map((child, index, children) => ({
+        ...child,
+        recipeExecution: Object.freeze({
+            ...child.recipeExecution,
+            rootCommandId: root.commandId,
+            first: index === 0,
+            last: index === children.length - 1
+        })
+    }));
     reloadCommandsByRoot.set(root, commands);
     return commands;
 }
@@ -71,7 +80,7 @@ function computeControlRecipeReloadCommands(root: ControlRecipeReloadRoot): read
             segment.push(command);
             continue;
         }
-        if (segment.length > 0) {
+        if (segment.length > 0 || commands.length === 0) {
             commands.push(toReloadSegment(root, segment, commands.length));
             segment = [];
         }
@@ -137,17 +146,18 @@ function toReloadSegment(
     commands: readonly RallarBlackBoxTestCommand[],
     index: number
 ): ControlCommandEnvelope {
-    return toReloadChild(root, {
-        kind: 'recipe.run',
-        rtcCaptureMode: root.command.rtcCaptureMode,
-        recipe: {
-            rtcCaptureMode: root.command.recipe.rtcCaptureMode,
-            schemaVersion: 1,
-            recipeId: `${root.command.recipe.recipeId}:segment:${index}`,
-            continueOnFailure: false,
-            commands
+    const start = commands.length === 0 ? 0 : root.command.recipe.commands.indexOf(commands[0]);
+    const end = start + commands.length;
+    const child = toReloadChild(root, root.command, index);
+    return {
+        ...child,
+        recipeExecution: {
+            rootCommandId: root.commandId,
+            first: index === 0,
+            last: false,
+            segment: Object.freeze({ start, end, first: index === 0 })
         }
-    }, index);
+    };
 }
 
 export function validateControlRecipeReloadEnqueue(

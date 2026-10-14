@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
 import { scheduler } from 'node:timers/promises';
 
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
-    RALLAR_CRDT_OPERATION_VERSION,
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtOperationBatch,
-    type RallarCrdtUpdateEnvelope
-} from '@shared/crdt/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+    toDomain,
+    type ResourceInboxRow
+} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import {
+    CrdtMutationConflictError,
+    type CrdtMutationCommand,
+    type CrdtMutationComputedWrite
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import {
+    createCrdtMutationService,
+    type CrdtMutationService
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
     computeCrdtOutboxProvenance,
     writeCrdtOutboxProvenance
@@ -23,22 +28,30 @@ import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
-    CrdtMutationConflictError,
-    type CrdtMutationCommand,
-    type CrdtMutationComputedWrite
-} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtOperationBatch,
+    type RallarCrdtUpdateEnvelope
+} from '@shared/crdt/mod.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import {
+    createDefaultWsQueueBoxServerService,
+    type WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketServer
+} from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
@@ -90,6 +103,18 @@ interface FanoutFirstDequeueInput {
     readonly proofState: 'present' | 'missing';
 }
 
+interface FanoutDequeueRecipient {
+    readonly id: string;
+    readonly native: TestWebSocket;
+}
+
+interface FanoutDequeueFixture {
+    readonly recipients: readonly FanoutDequeueRecipient[];
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly engine: InboxOutboxEngine;
+    readonly service: WsQueueBoxServerService;
+}
+
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
     await verifyAtomicMutationCommit();
 });
@@ -97,7 +122,11 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
 Deno.test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
-        const input = await command({ commandId: 'scoped-reply-command', updateId: 'scoped-reply-update', capturedAtEpochMs: 1_000 });
+        const input = await command({
+            commandId: 'scoped-reply-command',
+            updateId: 'scoped-reply-update',
+            capturedAtEpochMs: 1_000
+        });
         const computed = await computeValidatedWrite(service, input);
         const reply = computed.outboxWrites[0]?.entry;
         assert.ok(reply);
@@ -113,7 +142,10 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
             nowMs: () => 1_001
         });
         assert.deepEqual(
-            await reader.readProducerProvenance(decodePersistedALMessage(reply.resource), reply),
+            await reader.readProducerProvenance(
+                decodePersistedALMessage(reply.resource),
+                reply
+            ),
             {
                 admittedAudience: ['session-1'],
                 recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
@@ -148,13 +180,29 @@ for (const scope of ['room', 'principal', 'app'] as const) {
                     authorize: async (input) => ({
                         ...await authorizeTestCrdtCommand(input),
                         publicationAuthority: {
-                            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
-                            admittedAudience: ['session-1', 'recipient', 'wrong-scope', 'wrong-principal']
+                            recipientScope: {
+                                applicationId: 'app-1',
+                                workspaceId: 'workspace-1'
+                            },
+                            admittedAudience: [
+                                'session-1',
+                                'recipient',
+                                'wrong-scope',
+                                'wrong-principal'
+                            ]
                         }
                     })
                 }, { policies: [] });
-                const service = createCrdtMutationService({ repository, serviceId: 'producer' });
-                const input = await command({ commandId: 'fanout-command', updateId: 'fanout-update', capturedAtEpochMs: now, document });
+                const service = createCrdtMutationService({
+                    repository,
+                    serviceId: 'producer'
+                });
+                const input = await command({
+                    commandId: 'fanout-command',
+                    updateId: 'fanout-update',
+                    capturedAtEpochMs: now,
+                    document
+                });
                 const computed = await computeValidatedWrite(service, input);
                 const proofs = await computeCrdtOutboxProvenance(computed);
                 await sql.begin(async (transaction) => {
@@ -168,23 +216,80 @@ for (const scope of ['room', 'principal', 'app'] as const) {
                     and ri_resource::jsonb->'payload'->>'typeId' = 'rallar.crdt.update.v1'
                 `;
                 assert.equal(rows.length, 1);
-                await assertFanoutFirstDequeue({ sql, entry: toDomain(rows[0]!), scope, proofState });
+                await assertFanoutFirstDequeue({
+                    sql,
+                    entry: toDomain(rows[0]!),
+                    scope,
+                    proofState
+                });
             });
         });
     }
 }
 
-async function assertFanoutFirstDequeue(input: FanoutFirstDequeueInput): Promise<void> {
+async function assertFanoutFirstDequeue(
+    input: FanoutFirstDequeueInput
+): Promise<void> {
     const { sql, entry, scope, proofState } = input;
+    const { recipients, stores, engine, service } = createFanoutDequeueFixture(
+        sql
+    );
+    let primaryFailure: Error | undefined;
+    try {
+        await stores.workQueue.enqueue(entry);
+        await engine.executeOnce();
+        // executeOnce submits tracked work; it does not await every task's completion.
+        const deadline = performance.now() + 10_000;
+        while (performance.now() < deadline) {
+            const status = (await stores.workQueue.getItem(entry.key))?.status;
+            if (
+                status === EntityStatus.COMPLETED ||
+                status === EntityStatus.NON_RETRYABLE
+            ) {
+                break;
+            }
+            await scheduler.yield();
+        }
+        assert.equal(
+            (await stores.workQueue.getItem(entry.key))?.status,
+            proofState === 'present'
+                ? EntityStatus.COMPLETED
+                : EntityStatus.NON_RETRYABLE
+        );
+        assertFanoutDelivery(recipients, scope, proofState);
+    }
+    catch (caught) {
+        primaryFailure = toError(caught);
+        throw caught;
+    }
+    finally {
+        await closeFanoutDequeueFixture({ service, engine, recipients }, primaryFailure, (failure) => {
+            console.error('CRDT fanout cleanup failed', failure);
+        });
+    }
+}
+
+function createFanoutDequeueFixture(sql: PGliteSql): FanoutDequeueFixture {
     const socket = new JsonWebSocketServer();
-    const recipients = ['session-1', 'recipient', 'wrong-scope', 'wrong-principal', 'late-joiner'].map((id) => {
+    const recipients = [
+        'session-1',
+        'recipient',
+        'wrong-scope',
+        'wrong-principal',
+        'late-joiner'
+    ].map((id) => {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
         socket.addConnection(new ConnectionContext({ id, socket: native }));
         return { id, native };
     });
-    const reader = new WsOutboxProvenanceReader({ repository: new PSqlRuntimeStateRepository(sql), nowMs: Date.now });
-    const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const reader = new WsOutboxProvenanceReader({
+        repository: new PSqlRuntimeStateRepository(sql),
+        nowMs: Date.now
+    });
+    const stores = createDefaultInMemoryALOutboundRuntimeStores({
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         name: 'foreign-dequeue',
@@ -198,47 +303,40 @@ async function assertFanoutFirstDequeue(input: FanoutFirstDequeueInput): Promise
                 applicationId: 'app-1',
                 workspaceId: connection.id === 'wrong-scope' ? 'other' : 'workspace-1'
             },
-            principalId: connection.id === 'wrong-principal' ? 'other' : 'principal-1',
+            principalId: connection.id === 'wrong-principal'
+                ? 'other'
+                : 'principal-1',
             expiresAtEpochMs: Date.now() + 60_000
         })
     });
-    try {
-        await stores.workQueue.enqueue(entry);
-        await engine.executeOnce();
-        // executeOnce submits tracked work; it does not await every task's completion.
-        const deadline = performance.now() + 10_000;
-        while (performance.now() < deadline) {
-            const status = (await stores.workQueue.getItem(entry.key))?.status;
-            if (status === EntityStatus.COMPLETED || status === EntityStatus.NON_RETRYABLE) {
-                break;
-            }
-            await scheduler.yield();
-        }
-        assert.equal((await stores.workQueue.getItem(entry.key))?.status, proofState === 'present' ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE);
-        const delivered = recipients.filter(({ native }) => native.sent.length > 0).map(({ id }) => id);
-        assert.deepEqual(
-            delivered,
-            proofState === 'missing' ? [] : scope === 'principal'
-                ? ['session-1', 'recipient']
-                : scope === 'room'
-                ? ['recipient', 'wrong-principal']
-                : ['recipient', 'wrong-principal', 'late-joiner']
-        );
-        for (const { native } of recipients) {
-            assert.ok(native.sent.length <= 1);
-            if (native.sent[0] !== undefined) {
-                const sent = decodePersistedALMessage(native.sent[0]);
-                assert.equal(sent.id.msgId, 'crdt:fanout-command:fanout');
-                assert.equal(sent.payload.typeId, 'rallar.crdt.update.v1');
-                assert.equal(JSON.parse(sent.payload.resource).updateId, 'fanout-update');
-            }
-        }
-    }
-    finally {
-        service.dispose();
-        engine.stop();
-        for (const { native } of recipients) {
-            native.close();
+    return { recipients, stores, engine, service };
+}
+
+/** Independently checks the admitted audience and the unchanged CRDT wire identity. */
+function assertFanoutDelivery(
+    recipients: readonly FanoutDequeueRecipient[],
+    scope: FanoutFirstDequeueInput['scope'],
+    proofState: FanoutFirstDequeueInput['proofState']
+): void {
+    const delivered = recipients.filter(({ native }) => native.sent.length > 0)
+        .map(({ id }) => id);
+    assert.deepEqual(
+        delivered,
+        proofState === 'missing'
+            ? []
+            : scope === 'principal'
+            ? ['session-1', 'recipient']
+            : scope === 'room'
+            ? ['recipient', 'wrong-principal']
+            : ['recipient', 'wrong-principal', 'late-joiner']
+    );
+    for (const { native } of recipients) {
+        assert.ok(native.sent.length <= 1);
+        if (native.sent[0] !== undefined) {
+            const sent = decodePersistedALMessage(native.sent[0]);
+            assert.equal(sent.id.msgId, 'crdt:fanout-command:fanout');
+            assert.equal(sent.payload.typeId, 'rallar.crdt.update.v1');
+            assert.equal(JSON.parse(sent.payload.resource).updateId, 'fanout-update');
         }
     }
 }
@@ -246,12 +344,24 @@ async function assertFanoutFirstDequeue(input: FanoutFirstDequeueInput): Promise
 async function verifyAtomicMutationCommit(): Promise<void> {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
-        const first = await command({ commandId: 'command-1', updateId: 'update-1', capturedAtEpochMs: 1_000 });
+        const first = await command({
+            commandId: 'command-1',
+            updateId: 'update-1',
+            capturedAtEpochMs: 1_000
+        });
         await apply(sql, service, first);
         await assertFirstMutationCommitted(sql, first.documentKey);
 
-        const second = await command({ commandId: 'command-2', updateId: 'update-2', capturedAtEpochMs: 2_000 });
-        const third = await command({ commandId: 'command-3', updateId: 'update-3', capturedAtEpochMs: 3_000 });
+        const second = await command({
+            commandId: 'command-2',
+            updateId: 'update-2',
+            capturedAtEpochMs: 2_000
+        });
+        const third = await command({
+            commandId: 'command-3',
+            updateId: 'update-3',
+            capturedAtEpochMs: 3_000
+        });
         const secondComputed = await computeValidatedWrite(service, second);
         const thirdComputed = await computeValidatedWrite(service, third);
         await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, secondComputed));
@@ -272,7 +382,8 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
         });
         const computed = await computeValidatedWrite(service, input);
         const entries = readCollisionEntries(computed);
-        await createPSqlResourceInboxRepository(sql).entries.write(entries.collision);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries
+            .write(entries.collision);
 
         const transactionRejected = await sql.begin(
             async (transaction) => await writePSqlCrdtMutation(transaction, computed)
@@ -286,7 +397,10 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
 
 function createMutationService(sql: PGliteSql) {
     return createCrdtMutationService({
-        repository: new PSqlCrdtMutationRepository({ sql, authorize: authorizeTestCrdtCommand }, { policies: [] }),
+        repository: new PSqlCrdtMutationRepository({
+            sql,
+            authorize: authorizeTestCrdtCommand
+        }, { policies: [] }),
         serviceId: 'server-1'
     });
 }
@@ -305,11 +419,14 @@ async function assertFirstMutationCommitted(
   `;
     assert.equal(Number(document?.document_revision), 1);
     assert.equal(Number(document?.update_count), 1);
-    assert.deepEqual(outbox.map((row) => row.ri_type_id), ['WS_OUTBOX', 'WS_OUTBOX']);
+    assert.deepEqual(outbox.map((row) => row.ri_type_id), [
+        'WS_OUTBOX',
+        'WS_OUTBOX'
+    ]);
 }
 
 async function computeValidatedWrite(
-    service: ReturnType<typeof createCrdtMutationService>,
+    service: CrdtMutationService,
     input: CrdtMutationCommand
 ): Promise<CrdtMutationComputedWrite> {
     const read = await service.read(input);
@@ -322,7 +439,9 @@ async function computeValidatedWrite(
     return computed;
 }
 
-function readCollisionEntries(computed: CrdtMutationComputedWrite): CollisionEntries {
+function readCollisionEntries(
+    computed: CrdtMutationComputedWrite
+): CollisionEntries {
     const durableResult = computed.outboxWrites[0]?.entry;
     const collision = computed.outboxWrites.at(-1)?.entry;
     assert.ok(durableResult);
@@ -362,7 +481,10 @@ async function assertOnlyCollisionRemains(
     );
 }
 
-async function readResourceInboxCount(sql: PGliteSql, entry: ResourceEntry): Promise<number> {
+async function readResourceInboxCount(
+    sql: PGliteSql,
+    entry: ResourceEntry
+): Promise<number> {
     const [row] = await sql<SqlCountRow[]>`
     select count(*) as count from resource_inbox
     where ri_resource_id = ${entry.key.resourceId}
@@ -374,7 +496,7 @@ async function readResourceInboxCount(sql: PGliteSql, entry: ResourceEntry): Pro
 
 async function apply(
     sql: PGliteSql,
-    service: ReturnType<typeof createCrdtMutationService>,
+    service: CrdtMutationService,
     input: CrdtMutationCommand
 ): Promise<void> {
     const read = await service.read(input);
@@ -388,7 +510,9 @@ async function apply(
 async function command(input: CommandInput): Promise<CrdtMutationCommand> {
     const { commandId, updateId, capturedAtEpochMs, document = DOCUMENT } = input;
     if (document.scope === 'custom') {
-        throw new Error('This publication fixture covers room, principal and app documents');
+        throw new Error(
+            'This publication fixture covers room, principal and app documents'
+        );
     }
     return await createCrdtMutationCommand({
         operation: 'append',
@@ -408,12 +532,19 @@ async function command(input: CommandInput): Promise<CrdtMutationCommand> {
             kind: document.scope,
             senderSessionId: 'session-1',
             topicId: `${document.scope}.crdt`,
-            contextId: document.scope === 'room' ? 'group-1' : document.scope === 'principal' ? 'principal-1' : 'app-1'
+            contextId: document.scope === 'room'
+                ? 'group-1'
+                : document.scope === 'principal'
+                ? 'principal-1'
+                : 'app-1'
         }
     });
 }
 
-function update(updateId: string, createdAtEpochMs: number): RallarCrdtUpdateEnvelope {
+function update(
+    updateId: string,
+    createdAtEpochMs: number
+): RallarCrdtUpdateEnvelope {
     const payload: RallarCrdtOperationBatch = {
         kind: 'batch',
         operations: [{
@@ -436,3 +567,138 @@ function update(updateId: string, createdAtEpochMs: number): RallarCrdtUpdateEnv
         payload
     };
 }
+
+interface FanoutDequeueCleanupRecipient {
+    readonly native: Pick<TestWebSocket, 'close'>;
+}
+
+interface FanoutDequeueCleanup {
+    readonly service: Pick<WsQueueBoxServerService, 'dispose'>;
+    readonly engine: Pick<InboxOutboxEngine, 'stop'>;
+    readonly recipients: readonly FanoutDequeueCleanupRecipient[];
+}
+
+async function closeFanoutDequeueFixture(
+    cleanup: FanoutDequeueCleanup,
+    primaryFailure: Error | undefined,
+    reportSecondaryFailure: (failure: AggregateError) => void
+): Promise<void> {
+    const outcomes = await Promise.allSettled([
+        Promise.resolve().then(() => cleanup.service.dispose()),
+        Promise.resolve().then(() => cleanup.engine.stop()),
+        ...cleanup.recipients.map(({ native }) => Promise.resolve().then(() => native.close()))
+    ]);
+    const failures = outcomes.flatMap((outcome) => outcome.status === 'rejected' ? [toError(outcome.reason)] : []);
+    if (failures.length === 0) {
+        return;
+    }
+    const failure = new AggregateError(failures, 'CRDT fanout cleanup failed');
+    if (!primaryFailure) {
+        throw failure;
+    }
+    try {
+        reportSecondaryFailure(failure);
+    }
+    catch {
+        // Cleanup reporting cannot replace the original assertion failure.
+    }
+}
+
+Deno.test('CRDT fanout cleanup attempts every owned stage and joins the held engine after service failure', async () => {
+    const calls: string[] = [];
+    const serviceFailure = new Error('fanout service disposal');
+    const engineFailure = new Error('fanout engine stop');
+    const socketFailure = new Error('fanout socket close');
+    const engineAllowed = Promise.withResolvers<void>();
+    const closing = closeFanoutDequeueFixture(
+        {
+            service: {
+                dispose: () => {
+                    calls.push('service');
+                    return Promise.reject(serviceFailure);
+                }
+            },
+            engine: {
+                stop: async () => {
+                    calls.push('engine');
+                    await engineAllowed.promise;
+                    throw engineFailure;
+                }
+            },
+            recipients: [
+                {
+                    native: {
+                        close: () => {
+                            calls.push('socket-1');
+                            throw socketFailure;
+                        }
+                    }
+                },
+                {
+                    native: {
+                        close: () => {
+                            calls.push('socket-2');
+                        }
+                    }
+                }
+            ]
+        },
+        undefined,
+        () => {}
+    );
+    let completed = false;
+    const outcome = closing.then(() => {
+        completed = true;
+        return undefined;
+    }, (error) => {
+        completed = true;
+        return error;
+    });
+    try {
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.deepEqual(calls, ['service', 'engine', 'socket-1', 'socket-2']);
+        assert.equal(completed, false);
+    }
+    finally {
+        engineAllowed.resolve();
+        await outcome;
+    }
+    const failure = await outcome;
+    assert.ok(failure instanceof AggregateError);
+    assert.deepEqual(failure.errors, [serviceFailure, engineFailure, socketFailure]);
+});
+
+Deno.test('CRDT fanout cleanup preserves the exact assertion Error and reports actual secondary failures', async () => {
+    const primaryFailure = new Error('fanout wire assertion');
+    const serviceFailure = new Error('fanout service disposal');
+    const reports: AggregateError[] = [];
+    const cleanup: FanoutDequeueCleanup = {
+        service: { dispose: () => Promise.reject(serviceFailure) },
+        engine: { stop: () => Promise.resolve() },
+        recipients: []
+    };
+    const asserting = async () => {
+        try {
+            throw primaryFailure;
+        }
+        finally {
+            await closeFanoutDequeueFixture(cleanup, primaryFailure, (failure) => {
+                reports.push(failure);
+            });
+        }
+    };
+    await assert.rejects(asserting, (error) => error === primaryFailure);
+    assert.equal(reports.length, 1);
+    assert.deepEqual(reports[0].errors, [serviceFailure]);
+    await assert.rejects(async () => {
+        try {
+            throw primaryFailure;
+        }
+        finally {
+            await closeFanoutDequeueFixture(cleanup, primaryFailure, () => {
+                throw new Error('reporting sink');
+            });
+        }
+    }, (error) => error === primaryFailure);
+});

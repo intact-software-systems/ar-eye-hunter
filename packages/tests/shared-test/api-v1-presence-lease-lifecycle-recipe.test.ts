@@ -38,7 +38,22 @@ const EXPIRY_EVENT: ApiJsonObject = {
     reason: 'expired',
     causalRevision: { groupRevision: 5, presenceRevision: 2 }
 };
-const ALICE_SESSION: ApiJsonObject = { sessionId: 'alice-session', principalId: 'alice', status: 'active' };
+const ALICE_SESSION: ApiJsonObject = {
+    sessionId: 'alice-session',
+    principalId: 'alice',
+    status: 'active',
+    generationId: 'presencelease-generation-semantic',
+    expiresAtEpochMs: 300000
+};
+const BOB_SESSION: ApiJsonObject = {
+    sessionId: 'bob-session',
+    principalId: 'bob',
+    status: 'active',
+    generationId: 'presencelease-generation-semantic',
+    connectedAtEpochMs: 0,
+    lastHeartbeatAtEpochMs: 0,
+    expiresAtEpochMs: 5000
+};
 const MEMBERS: ApiJsonValue[] = [
     { principalId: 'alice', status: 'active' },
     { principalId: 'bob', status: 'active' }
@@ -64,6 +79,85 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('API-v1 presence lease lifecycle recipe', () => {
+    it('observes the exact short lease after an Alice-only committed response before planning', async () => {
+        const http = createInitialLeaseHttpPort();
+        const pending = executeInitialLeaseSequence(http.fetch);
+        await vi.runAllTimersAsync();
+        const report = await pending;
+
+        expect(report.summary.failure).toBe(0);
+        expect(http.requests.filter(({ path }) => path.includes('/lifecycle/plan/')).map(({ atEpochMs }) => atEpochMs)).toEqual([150]);
+        expect(http.requests.filter(({ method }) => method === 'PUT')).toHaveLength(1);
+    });
+
+    it.each(['absent Bob', 'wrong session', 'wrong generation', 'wrong expiry', 'already expired'])(
+        'fails the initial prerequisite for %s without renewing the 5000 ms lease',
+        async (invalid) => {
+            const http = createInitialLeaseHttpPort(invalid);
+            const pending = executeInitialLeaseSequence(http.fetch);
+            await vi.runAllTimersAsync();
+            const report = await pending;
+
+            expect(report.summary.failure).toBeGreaterThan(0);
+            expect(report.resultsByName.connectBobPresenceWithAShortLease[0].status).toBe('SUCCESS');
+            expect(report.resultsByName.bothInitialLeasesConvergeBeforeExpiry[0].status).toBe('FAILURE');
+            expect(report.summary.durationMs).toBeLessThanOrEqual(5000);
+            expect(http.requests.some(({ path }) => path.includes('/lifecycle/plan/'))).toBe(false);
+            expect(http.requests.filter(({ method }) => method === 'PUT')).toHaveLength(1);
+        }
+    );
+
+    it('caps observation by the remaining absolute lease time after a slow accepted write', async () => {
+        const http = createInitialLeaseHttpPort('absent Bob', 4800);
+        const pending = executeInitialLeaseSequence(http.fetch);
+        await vi.runAllTimersAsync();
+        const report = await pending;
+
+        expect(report.summary.failure).toBeGreaterThan(0);
+        expect(report.summary.durationMs).toBeLessThanOrEqual(5000);
+        expect(http.requests.filter(({ path }) => path === GROUP_PATH).map(({ atEpochMs }) => atEpochMs)).toEqual([4800, 4950]);
+        expect(http.requests.some(({ path }) => path.includes('/lifecycle/plan/'))).toBe(false);
+    });
+
+    it('rejects an accepted short lease once its absolute expiry has already arrived', async () => {
+        const http = createInitialLeaseHttpPort('', 5000);
+        const pending = executeInitialLeaseSequence(http.fetch);
+        await vi.runAllTimersAsync();
+        const report = await pending;
+
+        expect(report.summary.failure).toBeGreaterThan(0);
+        expect(http.requests.some(({ path }) => path === GROUP_PATH || path.includes('/lifecycle/plan/'))).toBe(false);
+        expect(report.summary.durationMs).toBe(5000);
+    });
+
+    it('cancels a hanging initial read at the remaining absolute expiry', async () => {
+        const http = createInitialLeaseHttpPort('hanging read', 4800);
+        const pending = executeInitialLeaseSequence(http.fetch);
+        await vi.runAllTimersAsync();
+        const report = await pending;
+
+        expect(report.summary.failure).toBeGreaterThan(0);
+        expect(report.summary.durationMs).toBe(5000);
+        expect(http.requests.filter(({ path }) => path === GROUP_PATH)).toHaveLength(1);
+        expect(http.requests.some(({ path }) => path.includes('/lifecycle/plan/'))).toBe(false);
+    });
+
+    it.each(['missing Bob', 'wrong generation', 'wrong session', 'expired fresh lease'])(
+        'fails final fresh-lease observation for %s without repeating the accepted write',
+        async (invalidFreshLease) => {
+            const http = createPresenceLeaseHttpPort([toPresenceSnapshot(3)], 0, invalidFreshLease);
+            const pending = executePostExpirySequence(http.fetch);
+            await vi.runAllTimersAsync();
+            const report = await pending;
+
+            expect(report.summary.failure).toBeGreaterThan(0);
+            expect(report.resultsByName.bobCanTakeAFreshLeaseWithoutRejoining[0].status).toBe('SUCCESS');
+            expect(report.resultsByName.bothLeasesConvergeAfterRefresh[0].status).toBe('FAILURE');
+            expect(report.summary.durationMs).toBeLessThanOrEqual(25000);
+            expect(http.requests.filter(({ method }) => method === 'PUT')).toHaveLength(1);
+        }
+    );
+
     it('waits for canonical summary convergence after the expiry event becomes visible', async () => {
         const http = createPresenceLeaseHttpPort([toPresenceSnapshot(2), toPresenceSnapshot(3)], 0);
         const pending = executePostExpirySequence(http.fetch);
@@ -82,7 +176,9 @@ describe('API-v1 presence lease lifecycle recipe', () => {
             { method: 'GET', path: GROUP_PATH, atEpochMs: 0 },
             { method: 'GET', path: `${GROUP_PATH}/events`, atEpochMs: 2000 },
             { method: 'GET', path: GROUP_PATH, atEpochMs: 2000 },
-            { method: 'PUT', path: `${GROUP_PATH}/sessions/bob-session/requests/presencelease-bob-release-semantic`, atEpochMs: 2000 }
+            { method: 'PUT', path: `${GROUP_PATH}/sessions/bob-session/requests/presencelease-bob-release-semantic`, atEpochMs: 2000 },
+            { method: 'GET', path: GROUP_PATH, atEpochMs: 2000 },
+            { method: 'GET', path: GROUP_PATH, atEpochMs: 2150 }
         ]);
         expect(report.resultsByName.expirySummaryConverges[0]).toMatchObject({
             status: 'SUCCESS',
@@ -110,7 +206,7 @@ describe('API-v1 presence lease lifecycle recipe', () => {
         expect(report.summary.failure).toBe(0);
         expect(report.outputs.presenceRevisionAfterSweep).toBe(revision);
         expect(report.resultsByName.expirySummaryConverges[0]).toMatchObject({ pollAttempts: 1, pollExhausted: false, pollElapsedMs: 0 });
-        expect(http.requests.map(({ method }) => method)).toEqual(['GET', 'GET', 'PUT']);
+        expect(http.requests.map(({ method }) => method)).toEqual(['GET', 'GET', 'PUT', 'GET', 'GET']);
     });
 
     it('records bounded failure and blocks the fresh lease when canonical summary revision never advances', async () => {
@@ -150,7 +246,9 @@ describe('API-v1 presence lease lifecycle recipe', () => {
             { method: 'GET', path: GROUP_PATH, atEpochMs: 4000 },
             { method: 'GET', path: `${GROUP_PATH}/events`, atEpochMs: 6000 },
             { method: 'GET', path: GROUP_PATH, atEpochMs: 6000 },
-            { method: 'PUT', path: `${GROUP_PATH}/sessions/bob-session/requests/presencelease-bob-release-semantic`, atEpochMs: 6000 }
+            { method: 'PUT', path: `${GROUP_PATH}/sessions/bob-session/requests/presencelease-bob-release-semantic`, atEpochMs: 6000 },
+            { method: 'GET', path: GROUP_PATH, atEpochMs: 6000 },
+            { method: 'GET', path: GROUP_PATH, atEpochMs: 6150 }
         ]);
         expect(report.outputs.presenceRevisionAfterSweep).toBe(3);
     });
@@ -239,7 +337,7 @@ function executePostExpirySequence(fetch: BlackBoxFetch): ReturnType<typeof exec
 function toPresenceSnapshot(presenceRevision: number): ApiJsonObject {
     return {
         causalRevision: { groupRevision: 5, presenceRevision },
-        group: { lifecycleState: 'connecting' },
+        group: { groupId: 'presence-group', lifecycleState: 'connecting' },
         onlineMemberCount: 1,
         memberCount: 2,
         activeSessions: [ALICE_SESSION],
@@ -247,10 +345,12 @@ function toPresenceSnapshot(presenceRevision: number): ApiJsonObject {
     };
 }
 
-function createPresenceLeaseHttpPort(snapshots: readonly ApiJsonObject[], missingEventReads: number): PresenceLeaseHttpPort {
+function createPresenceLeaseHttpPort(snapshots: readonly ApiJsonObject[], missingEventReads: number, invalidFreshLease = ''): PresenceLeaseHttpPort {
     const requests: CapturedPresenceLeaseRequest[] = [];
     let eventReads = 0;
     let stateReads = 0;
+    let freshLeaseAccepted = false;
+    let freshReads = 0;
     const fetch: BlackBoxFetch = async (url, request) => {
         const path = new URL(String(url)).pathname;
         const method = request?.method ?? 'GET';
@@ -260,13 +360,100 @@ function createPresenceLeaseHttpPort(snapshots: readonly ApiJsonObject[], missin
             return Response.json(eventReads <= missingEventReads ? [] : [EXPIRY_EVENT]);
         }
         if (method === 'GET' && path === GROUP_PATH) {
+            if (freshLeaseAccepted) {
+                const freshBob = {
+                    ...BOB_SESSION,
+                    sessionId: invalidFreshLease === 'wrong session' ? 'other-session' : 'bob-session',
+                    generationId: invalidFreshLease === 'wrong generation' ? 'old-generation' : 'presencelease-generation-two-semantic',
+                    expiresAtEpochMs: invalidFreshLease === 'expired fresh lease' ? 0 : Date.now() + 300000
+                };
+                return Response.json(
+                    freshReads++ === 0 ? toPresenceSnapshot(3) : {
+                        ...toPresenceSnapshot(4),
+                        onlineMemberCount: 2,
+                        activeSessions: invalidFreshLease === 'missing Bob' ? [ALICE_SESSION] : [ALICE_SESSION, freshBob]
+                    }
+                );
+            }
             const snapshot = snapshots[Math.min(stateReads++, snapshots.length - 1)];
             return Response.json(snapshot);
         }
         if (method === 'PUT' && path === `${GROUP_PATH}/sessions/bob-session/requests/presencelease-bob-release-semantic`) {
-            return Response.json({ ...toPresenceSnapshot(4), onlineMemberCount: 2, activeSessions: [ALICE_SESSION, { sessionId: 'bob-session' }] });
+            freshLeaseAccepted = true;
+            return Response.json(toPresenceSnapshot(3));
         }
         throw new Error(`Unexpected presence lease request ${method} ${path}`);
+    };
+    return { fetch, requests };
+}
+
+function executeInitialLeaseSequence(fetch: BlackBoxFetch): ReturnType<typeof executeBlackBox> {
+    const recipe = readApiV1Recipe('tests/api-v1/api-v1-group-presence-lease-lifecycle.json');
+    const steps = recipe.steps ?? [];
+    const start = steps.findIndex(({ name }) => name === 'connectBobPresenceWithAShortLease');
+    const end = steps.findIndex(({ name }) => name === 'planTheLayout');
+    return executeBlackBox(
+        toExecutableInteractions({
+            ...recipe,
+            variables: {
+                rallarApiBaseUrl: 'http://presence-lease.test',
+                applicationId: 'presence-app',
+                workspaceId: 'presence-workspace',
+                groupId: 'presence-group',
+                runId: 'semantic'
+            },
+            steps: [
+                ...Object.entries({ ...PRIOR_OUTPUTS, leaseStartEpochMs: 0, shortLeaseExpiryEpochMs: 5000 }).map(([output, value]) => ({
+                    name: `seed-${output}`,
+                    type: 'set',
+                    output,
+                    value
+                })),
+                ...steps.slice(start, end + 1)
+            ]
+        }),
+        0,
+        { failFast: true, dependencies: { now: Date.now, createUuid: () => 'initial-lease-semantic', fetch } }
+    );
+}
+
+function createInitialLeaseHttpPort(invalid = '', writeDurationMs = 0): PresenceLeaseHttpPort {
+    const requests: CapturedPresenceLeaseRequest[] = [];
+    let reads = 0;
+    const fetch: BlackBoxFetch = async (url, request) => {
+        const path = new URL(String(url)).pathname;
+        const method = request?.method ?? 'GET';
+        requests.push({ method, path, atEpochMs: Date.now(), body: request?.body ? String(request.body) : undefined });
+        if (method === 'PUT') {
+            vi.setSystemTime(writeDurationMs);
+            return Response.json(toPresenceSnapshot(1));
+        }
+        if (method === 'GET' && path === GROUP_PATH) {
+            if (invalid === 'hanging read') {
+                const signal = request?.signal;
+                if (!signal) {
+                    throw new Error('Expected an owned HTTP request timeout signal');
+                }
+                return new Promise<Response>((_resolve, reject) =>
+                    signal.addEventListener('abort', () => reject(new DOMException('HTTP read aborted', 'AbortError')), { once: true })
+                );
+            }
+            const bob = {
+                ...BOB_SESSION,
+                sessionId: invalid === 'wrong session' ? 'other-session' : 'bob-session',
+                generationId: invalid === 'wrong generation' ? 'old-generation' : 'presencelease-generation-semantic',
+                expiresAtEpochMs: invalid === 'wrong expiry' ? 6000 : invalid === 'already expired' ? 100 : 5000
+            };
+            return Response.json({
+                ...toPresenceSnapshot(2),
+                onlineMemberCount: 2,
+                activeSessions: invalid === 'absent Bob' || reads++ === 0 ? [ALICE_SESSION] : [ALICE_SESSION, bob]
+            });
+        }
+        if (method === 'POST' && path.includes('/lifecycle/plan/')) {
+            return Response.json({ group: { lifecycleState: 'planned' } });
+        }
+        throw new Error(`Unexpected initial lease request ${method} ${path}`);
     };
     return { fetch, requests };
 }

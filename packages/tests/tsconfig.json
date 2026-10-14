@@ -48,6 +48,7 @@
     "**/*.d.ts"
   ],
   "exclude": [
+    "shared-server/rallar-system/websocket/native-receiver-receipts-child.ts",
     "shared-test/scenario-black-box-rtc-config.test.ts",
     "shared-test/rtc-client-provider/**",
     "repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers/assertions.ts",

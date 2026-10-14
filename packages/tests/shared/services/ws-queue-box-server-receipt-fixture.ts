@@ -13,7 +13,7 @@ import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-co
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -112,9 +112,12 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
             await service.enqueueOutboxIfAbsent(message);
         }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bus, channel: 'ws', publisherId: input.publisherId });
     return { service, engine, server };

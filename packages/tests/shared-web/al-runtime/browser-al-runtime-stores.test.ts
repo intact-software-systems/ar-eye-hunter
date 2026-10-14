@@ -1,8 +1,12 @@
-import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { computeOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-// @vitest-environment happy-dom
-
-import '../../setup-browser-indexeddb.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import {
     deleteBrowserALRuntimeEntriesForSession,
@@ -38,6 +42,7 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { createPassThroughALStorageEventSink, type ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
@@ -54,14 +59,10 @@ import { createCountingIndexedDbOperationObserver } from '@shared/persistence/in
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
+import { readOutboundTestAdmission } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+// @vitest-environment happy-dom
+import '../../setup-browser-indexeddb.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -75,7 +76,7 @@ const OTHER_SCOPE: StateScope = { applicationId: 'other-app', workspaceId: 'othe
 // The names are spelled out so a change to the naming scheme fails here first.
 const SCOPE_DB_NAME = 'rallar-al-runtime:rallar-server:default';
 const OTHER_SCOPE_DB_NAME = 'rallar-al-runtime:other-app:other-workspace';
-const LEGACY_DB_NAME = 'ar-eye-hunter-al-runtime';
+const UNRELATED_DB_NAME = 'ar-eye-hunter-al-runtime';
 /** Created after the failing database and listed after it in creation and in name order alike. */
 const THIRD_SCOPE: StateScope = { applicationId: 'third-app', workspaceId: 'third-workspace' };
 const THIRD_SCOPE_DB_NAME = 'rallar-al-runtime:third-app:third-workspace';
@@ -555,20 +556,20 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:first`]);
     });
 
-    it('leaves the legacy database and its rows where they are', async () => {
+    it('leaves an unrelated database and its rows where they are', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
         const sessionId = `legacy-${crypto.randomUUID()}`;
-        const legacyKey = `${toBrowserOutboundSentPrefix(toBrowserWsClientALRuntimeStoreId(sessionId))}:legacy`;
-        const legacyDb = await openIndexedDbAdmissionDatabase({
-            dbName: LEGACY_DB_NAME,
+        const unrelatedKey = `${toBrowserOutboundSentPrefix(toBrowserWsClientALRuntimeStoreId(sessionId))}:legacy`;
+        const unrelatedDb = await openIndexedDbAdmissionDatabase({
+            dbName: UNRELATED_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {}
         });
-        legacyDb.close();
-        const legacyRow = { key: legacyKey, value: { msgId: 'legacy' }, expireAtTimestamp: 1, writeToken: 'legacy', revision: 1 };
-        await putRawBrowserALRuntimeEntry(legacyRow, LEGACY_DB_NAME);
+        unrelatedDb.close();
+        const unrelatedRow = { key: unrelatedKey, value: { msgId: 'legacy' }, expireAtTimestamp: 1, writeToken: 'legacy', revision: 1 };
+        await putRawBrowserALRuntimeEntry(unrelatedRow, UNRELATED_DB_NAME);
         configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
         await persistSentMessage(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore, 'scoped');
 
@@ -578,8 +579,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         });
         await deleteExpiredBrowserALRuntimeEntries({ currentScope: SCOPE, storage: diagnosticsPorts.storage });
 
-        expect(await readIndexedDbDatabaseNames()).toEqual([LEGACY_DB_NAME, SCOPE_DB_NAME]);
-        expect(await readBrowserALRuntimeEntry(legacyKey, LEGACY_DB_NAME)).toEqual(legacyRow);
+        expect(await readIndexedDbDatabaseNames()).toEqual([UNRELATED_DB_NAME, SCOPE_DB_NAME]);
+        expect(await readBrowserALRuntimeEntry(unrelatedKey, UNRELATED_DB_NAME)).toEqual(unrelatedRow);
     });
 
     it('sweeps every scope\'s database before it reports the first failure', async () => {
@@ -732,20 +733,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(observer.getCounts().total).toBeGreaterThan(0);
     });
 
-    // Each store states its reset and its health under its own id, and every resolve of it shares one health.
-    it('names each store on the reset and the health it states through the storage port', async () => {
-        const seeded = await openIndexedDbAdmissionDatabase({
-            dbName: SCOPE_DB_NAME,
-            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
-            schemaId: 'rallar-alm-previous',
-            onStorageReset: () => {}
-        });
-        seeded.close();
+    // Each store states its health under its own id, and every resolve of it shares one health.
+    it('names each store on the health it states through the storage port', async () => {
         const events: ALStorageEvent[] = [];
         const sessionId = `storage-port-${crypto.randomUUID()}`;
         const wsClientId = `browser-ws-client:${sessionId}`;
         configureBrowserALRuntimeStores(sessionId, {
-            scope: SCOPE,
+            scope: { applicationId: 'storage-health', workspaceId: sessionId },
             diagnosticsPorts: toRallarDiagnosticsPorts({ storage: (event) => events.push(event) })
         });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
@@ -755,18 +749,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId).storageHealth).not.toBe(stores.storageHealth);
         stores.storageHealth?.recordFailure({ cause: 'quota', detail: 'QuotaExceededError: full' });
 
-        await vi.waitFor(() => expect(events).toHaveLength(2));
+        await vi.waitFor(() => expect(events).toHaveLength(1));
         expect(events).toEqual([
-            {
-                kind: 'reset',
-                storeId: wsClientId,
-                event: {
-                    dbName: SCOPE_DB_NAME,
-                    previousSchemaId: 'rallar-alm-previous',
-                    schemaId: AL_ADMISSION_SCHEMA_ID,
-                    reason: 'schema-id-mismatch'
-                }
-            },
             {
                 kind: 'health',
                 storeId: wsClientId,
@@ -816,7 +800,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             createPassThroughALStorageEventSink()
         );
         const message = createOutboundUnicastMessage('inbound-memory');
-        await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));
+        await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()));
 
         expect(volatile.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(volatile.admissionStore.namespace).toBe(
@@ -857,7 +841,12 @@ async function persistSentMessage(
     msgId: string
 ): Promise<void> {
     const snapshot = createSentSnapshot(msgId);
-    const bundle = await computeOutboundTestAdmission(admissionStore, snapshot.msg);
+    const bundle = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: snapshot.msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const status = await admissionStore.commitBundle(bundle);
 
     if (status !== 'committed') {

@@ -16,6 +16,7 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import { resolveALOwnedChildPeerIds } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -23,12 +24,6 @@ import type {
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
-import type {
-    ALOutboundCancelOutcome,
-    ALOutboundEnqueueResult,
-    ALOutboundPreparedSendResult,
-    ALOutboundRuntimeDiagnosticsSink
-} from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundDispatchPlan,
@@ -38,7 +33,11 @@ import {
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
     toALOutboundCongestionDrop,
-    type ALOutboundDropReasonCode
+    type ALOutboundCancelOutcome,
+    type ALOutboundDropReasonCode,
+    type ALOutboundEnqueueResult,
+    type ALOutboundPreparedSendResult,
+    type ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -58,12 +57,14 @@ import { isSessionInGroup, readGroupMemberSessionIds } from '../api/group-client
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { computeRateLimiterRetryAfterMs } from '../resilience/compute-rate-limiter-retry-after-ms.ts';
 import { Either } from '../resilience/Either.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
+import type { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '../transport-faults/transport-fault-port.ts';
@@ -120,6 +121,9 @@ import {
     toRtcTargetedRepairCopy
 } from './web-rtc-overlay-missing-recipient-repair.ts';
 
+/** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
+type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan' | 'hand-over';
+
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
         readHealth(): Pick<RtcDataChannelHealth, 'readyState' | 'bufferedAmount' | 'flowControl'>;
@@ -137,6 +141,9 @@ export namespace WebRtcOverlayMulticastManager {
     }
 
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
+        /** Epoch-ms domain of the supplied limiter; seed custom limiters with RateLimiter.initWithTs. */
+        readonly quotaNow: () => number;
         readonly connectionService: Connection;
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
@@ -152,9 +159,6 @@ export namespace WebRtcOverlayMulticastManager {
         readonly faultPort: TransportFaultPort;
     }
 }
-
-/** Which plan of the session's own message this is; only a new admission's plan reads backpressure (D184). */
-type RtcOutgoingPlanStage = 'admission' | 'dequeue' | 'replan';
 
 export class WebRtcOverlayMulticastManager {
     public static readonly ENQUEUE_TYPE = EnqueuedType.RTC_OUTBOX;
@@ -174,6 +178,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
     private readonly rateLimiter: RateLimiter;
+    private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
@@ -186,6 +191,7 @@ export class WebRtcOverlayMulticastManager {
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
+        this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
         this.clock = dependencies.outboundRuntime.clock;
@@ -208,7 +214,8 @@ export class WebRtcOverlayMulticastManager {
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WebRtcOverlayMulticastManager.ENQUEUE_TYPE
+                        WebRtcOverlayMulticastManager.ENQUEUE_TYPE,
+                        dependencies.creationNow()
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
                 // A plan without authority is a new admission's; a retained message is planned with its captured one.
@@ -242,10 +249,11 @@ export class WebRtcOverlayMulticastManager {
         return multicaster;
     }
 
-    dispose(): void {
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.outboundRuntime.dispose();
+        const disposingOutbound = this.outboundRuntime.dispose();
         this.multicasterByOverlayId.clear();
+        await disposingOutbound;
     }
 
     cancel(msgId: string): ALOutboundCancelOutcome {
@@ -261,6 +269,26 @@ export class WebRtcOverlayMulticastManager {
         return result!;
     }
 
+    /** Translates control admission into the inbound worker's exception-based handoff protocol. */
+    async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
+        const results = await this.enqueueAllIfAbsent(msgs);
+        if (
+            results.length > 0 &&
+            results.every((result) => result.verdict.kind === 'unroutable' && result.verdict.reason === 'rate-limited')
+        ) {
+            const retryAfterMs = computeRateLimiterRetryAfterMs(this.rateLimiter, this.quotaNow());
+            if (retryAfterMs !== undefined) {
+                throw new NotReadyException(Math.max(1, retryAfterMs), results[0]!.reason);
+            }
+        }
+        for (const result of results) {
+            const error = toRtcControlHandoffError(result);
+            if (error !== undefined) {
+                throw error;
+            }
+        }
+    }
+
     /**
      * One sender carrier leg. A leg with a fallback carrier (`hand-over`) answers a carrier gap with `no-route`
      * at once, so the fallback takes the message; a leg without one (`hold`) lets a durable send wait it out.
@@ -269,6 +297,16 @@ export class WebRtcOverlayMulticastManager {
         const availability = !this.disposed && isRtcCarrierGapHandedOver(msg, carrierGap)
             ? this.readCarrierAvailability(msg)
             : undefined;
+        if (availability?.kind === 'available' && this.hasUnavailableOriginRoute(msg, availability)) {
+            const plan = this.planOutgoingMessage(msg, 'hand-over');
+            if (plan.dropReasonCode === 'no-route') {
+                return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                    kind: 'unroutable',
+                    reason: 'no-route',
+                    detail: plan.dropReason ?? 'RTC accepted route is unavailable'
+                });
+            }
+        }
         if (availability?.kind !== 'unavailable') {
             return await this.enqueueIfAbsent(msg);
         }
@@ -279,30 +317,36 @@ export class WebRtcOverlayMulticastManager {
         });
     }
 
-    /** One circuit-breaker call and one rate-limiter token for the whole group, whose messages commit as one. */
+    /** An already-open circuit spends no quota token; local quota refusals never enter failure accounting. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
             return msgs.map((msg) => WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg));
         }
 
+        if (!this.circuitBreaker.isAllowedThrough()) {
+            return msgs.map(WebRtcOverlayMulticastManager.toCircuitOpenResult);
+        }
+
+        if (!this.rateLimiter.allowAt(this.quotaNow())) {
+            return msgs.map((msg) =>
+                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                    kind: 'unroutable',
+                    reason: 'rate-limited',
+                    detail: 'RTC enqueue rate limit exceeded'
+                })
+            );
+        }
+        return await this.enqueueThroughCircuitBreaker(msgs);
+    }
+
+    private async enqueueThroughCircuitBreaker(
+        msgs: readonly ALMessage[]
+    ): Promise<readonly ALOutboundEnqueueResult[]> {
         const either = await CircuitBreaker.tryToExecute<readonly ALOutboundEnqueueResult[]>(
             this.circuitBreaker,
-            () => {
-                return RateLimiter.tryToExecuteOrDefault<readonly ALOutboundEnqueueResult[]>(
-                    this.rateLimiter,
-                    () => this.outboundRuntime.enqueueAllIfAbsent(msgs),
-                    msgs.map((msg) =>
-                        WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                            kind: 'unroutable',
-                            reason: 'rate-limited',
-                            detail: 'RTC enqueue rate limit exceeded'
-                        })
-                    )
-                );
-            },
+            () => this.outboundRuntime.enqueueAllIfAbsent(msgs),
             (results) => results.every(isRtcEnqueueBreakerSuccess)
         );
-
         return either.fold(
             (error) => msgs.map((msg) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(msg, error)),
             (value) => value
@@ -314,16 +358,20 @@ export class WebRtcOverlayMulticastManager {
         error: Error
     ): ALOutboundEnqueueResult {
         if (error.message === 'Not allowed to execute') {
-            return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                kind: 'unroutable',
-                reason: 'circuit-open',
-                detail: 'RTC enqueue circuit breaker open'
-            });
+            return WebRtcOverlayMulticastManager.toCircuitOpenResult(msg);
         }
 
         return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
             kind: 'failed',
             detail: `RTC enqueue failed: ${error.message}`
+        });
+    }
+
+    private static toCircuitOpenResult(msg: ALMessage): ALOutboundEnqueueResult {
+        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+            kind: 'unroutable',
+            reason: 'circuit-open',
+            detail: 'RTC enqueue circuit breaker open'
         });
     }
 
@@ -495,6 +543,24 @@ export class WebRtcOverlayMulticastManager {
         });
     }
 
+    private hasUnavailableOriginRoute(msg: ALMessage, availability: RtcOutboundCarrierAvailability): boolean {
+        if (
+            msg.id.senderId !== this.connectionService.input.sessionId ||
+            availability.kind !== 'available' || availability.admission.kind !== 'authorized' || !availability.context
+        ) {
+            return false;
+        }
+        const frozen = toRtcOriginFrozenMessage(msg, availability.context, this.connectionService.input.sessionId);
+        const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
+            nowMs: availability.context.nowMs,
+            selfPeerId: this.connectionService.input.sessionId,
+            groupMemberPeerIds: availability.admission.memberPeerIds,
+            overlayNeighborPeerIds: availability.admission.forwardingPeerIds
+        });
+        const readyPeerIds = this.connectionService.readyPeerIdsForLane();
+        return ownedChildPeerIds.length > 0 && ownedChildPeerIds.every((peerId) => !readyPeerIds.includes(peerId));
+    }
+
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
@@ -628,6 +694,12 @@ export class WebRtcOverlayMulticastManager {
             this.qosProvider
         );
         const plan = multicaster.createOriginatingPlan(msg, context, qos);
+        if (
+            stage === 'hand-over' && !plan.handlingPlan.dropReason &&
+            this.hasUnavailableOriginRoute(msg, this.readCarrierAvailability(msg))
+        ) {
+            return this.toNoRouteDispatchPlan(msg, 'without a ready accepted RTC edge');
+        }
         return this.planOutboundDispatch(
             msg,
             stage === 'admission' && this.decideBackpressure(msg, plan)
@@ -1029,6 +1101,25 @@ export class WebRtcOverlayMulticastManager {
             ),
             repairTracking: repair
         };
+    }
+}
+
+function toRtcControlHandoffError(result: ALOutboundEnqueueResult): Error | undefined {
+    switch (result.verdict.kind) {
+        case 'pending':
+        case 'admitted':
+        case 'duplicate':
+            return;
+        case 'deferred':
+        case 'unroutable':
+        case 'storage-unavailable':
+        case 'failed':
+            return new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
+        case 'refused':
+        case 'skipped':
+        case 'superseded':
+        case 'expired':
+            return new NonRetryableException(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
     }
 }
 

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import {
     mkdirSync,
     mkdtempSync,
@@ -15,12 +15,41 @@ import {
     it
 } from 'vitest';
 
+import { findingMagnitude } from '../../../scripts/repo-style-check/finding-magnitude.mjs';
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import { isReviewedDisposition, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
+
+interface ReviewedStyleSourceFixtureDto {
+    readonly file: string;
+    readonly raw: string;
+}
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
 const fixtureRoots: string[] = [];
+const reviewedApiCaptureBoundaries = [
+    { file: 'apps/api-v1/test/configuration/read-api-v1-configuration.test.ts', symbol: 'readIceOverrideConfigurationResource' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackApiCapture' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertIndependentCaptureConsumer' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertOrdinaryExhaustiveApiCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackSpaCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts', symbol: 'toTimingCaptureObject' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts', symbol: 'toReceiptCaptureObject' }
+] as const;
+const reviewedSchemaJsonBoundaries = [
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: undefined, cap: 6 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'validateJsonSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'toDiscriminatedSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isExpectedType', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isSameJsonValue', cap: 2 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isJsonRecordValue', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readJsonFile', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'expectValid', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: undefined, cap: 3 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readGoldenCompatibilityCorpus', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'inlineRecipesInManifest', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'jsonCodeBlocks', cap: 1 }
+] as const;
 
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -29,6 +58,134 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it('counts each real unknown detail as one occurrence', () => {
+        const file = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts');
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource('isSameJsonValue', 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findingMagnitude(findings[0])).toBe(1);
+    });
+
+    it('blocks an extra real unknown in one reviewed owner', () => {
+        const relativeFile = 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 0));
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 1));
+        const grown = runChangedChecker(fixture);
+        expect(grown.status, grown.stdout).toBe(1);
+        expect(grown.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('bounds actual scanner unknowns for $file / $symbol at $cap', ({ file: relativeFile, symbol, cap }) => {
+        const fixture = createReviewedFixture();
+        const raw = symbol === undefined
+            ? `interface OpaqueJson {\n${Array.from({ length: cap }, (_, index) => `readonly value${index}: unknown;`).join('\n')}\n}\n`
+            : unknownSource(symbol, cap - 1);
+        writeFixture(fixture, relativeFile, raw);
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        const grown = symbol === undefined
+            ? `${raw}\ninterface AddedOpaqueJson { readonly added: unknown; }\n`
+            : unknownSource(symbol, cap);
+        writeFixture(fixture, relativeFile, grown);
+        const rejected = runChangedChecker(fixture);
+        expect(rejected.status, rejected.stdout).toBe(1);
+        expect(rejected.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('keeps wrong schema JSON keys and cap growth blocking for $file / $symbol', ({ file: relativeFile, symbol, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = symbol === undefined
+            ? 'export interface OpaqueJson { readonly value: unknown; }\n'
+            : unknownSource(symbol, 0);
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { layoutOnly: false } })
+            .findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        const finding = { ...findings[0], affectedCount: cap };
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, affectedCount: cap + 1 })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedSchemaBoundary' })).toBe(false);
+    });
+    it.each(reviewedApiCaptureBoundaries)('recognizes the exact API capture boundary $file / $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource(symbol, 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findings[0].symbol).toBe(symbol);
+        expect(isReviewedDisposition(repoRoot, findings[0])).toBe(true);
+    });
+
+    it.each(reviewedApiCaptureBoundaries)('keeps wrong and neighboring API capture boundary keys blocking for $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file,
+                raw: unknownSource(symbol, 0) +
+                    '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                    '\nconst anonymousCaptureBoundary: unknown = null;\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ symbol: owner }) => owner)).toEqual([symbol, 'unreviewedCaptureBoundary', undefined]);
+        const finding = findings[0];
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'wrongCaptureBoundary' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: undefined })).toBe(false);
+        for (const neighbor of findings.slice(1)) {
+            expect(isReviewedDisposition(repoRoot, { ...neighbor, message: finding.message })).toBe(false);
+        }
+    });
+
+    it('retains raw API capture boundary warnings while the CLI accepts only the seven reviewed owners', () => {
+        const fixture = createReviewedFixture();
+        const sources: readonly ReviewedStyleSourceFixtureDto[] = [...new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))].map((relativeFile) => ({
+            file: path.join(fixture, relativeFile),
+            raw: reviewedApiCaptureBoundaries.filter(({ file }) => file === relativeFile)
+                .map(({ symbol }) => unknownSource(symbol, 0)).join('')
+        }));
+        for (const { file, raw } of sources) {
+            writeFixture(fixture, path.relative(fixture, file), raw);
+        }
+        const findings = scanProductionSources({ repoRoot: fixture, sources, options: { layoutOnly: false } }).findings
+            .filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ file, symbol }) => ({ file: path.relative(fixture, file), symbol }))).toEqual([...reviewedApiCaptureBoundaries]);
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('keeps named and anonymous API capture boundary neighbors blocking in the CLI', () => {
+        const fixture = createReviewedFixture();
+        for (const file of new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))) {
+            writeFixture(fixture, file, '');
+        }
+        for (const { file, symbol } of reviewedApiCaptureBoundaries) {
+            appendFixture(fixture, file, unknownSource(symbol, 0));
+        }
+        appendFixture(
+            fixture,
+            'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+            '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                '\nconst anonymousCaptureBoundary: unknown = null;\n'
+        );
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('FAIL: 2 new or worsened repository style findings');
+        expect(result.stdout).toContain('boundary.unknown');
+    });
+
     it('keeps an unchecked Relic browser cast blocking', () => {
         const findings = scanProductionSources({
             repoRoot,
@@ -252,7 +409,8 @@ describe('reviewed repository style dispositions', () => {
         { relativeFile: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts', maximumMagnitude: 91 },
         { relativeFile: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts', maximumMagnitude: 117 },
         { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 },
-        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 }
+        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 },
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', maximumMagnitude: 87 }
     ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
         const finding = {
             file: path.join(repoRoot, relativeFile),
@@ -276,6 +434,49 @@ describe('reviewed repository style dispositions', () => {
         expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'otherOwner' })).toBe(false);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('exposes one canonical terminal receipt policy record at $cap for $relativeFile', ({ relativeFile, cap }) => {
+        const entries = reviewedDispositions.filter((entry) =>
+            entry.path === relativeFile && entry.rule === 'file.cognitive-load' && entry.symbol === undefined
+        );
+        expect(entries).toEqual([{
+            path: relativeFile,
+            rule: 'file.cognitive-load',
+            symbol: undefined,
+            maximumMagnitude: cap
+        }]);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('bounds the reviewed terminal receipt owner at $cap without matching another path or function in $relativeFile', ({ relativeFile, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = Array.from({ length: cap }, (_, index) => `function receiptGuard${index}(value: boolean): number { if (value) { return 1; } return 0; }`)
+            .join('\n');
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { cognitiveMetrics: true } }).findings
+            .filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(findings).toHaveLength(1);
+        const finding = findings[0];
+        expect(finding.symbol).toBeUndefined();
+        expect(finding.message).toContain(`File cognitive load ${cap} `);
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'receiptGuard0' })).toBe(false);
+        const grown = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: `${raw}\nfunction addedReceiptGuard(value: boolean): number { if (value) { return 1; } return 0; }` }],
+            options: { cognitiveMetrics: true }
+        }).findings.filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(grown).toHaveLength(1);
+        expect(grown[0].message).toContain(`File cognitive load ${cap + 1} `);
+        expect(isReviewedDisposition(repoRoot, grown[0])).toBe(false);
     });
 
     it('bounds directory review and distinguishes checker-owned prefixes at the same path', () => {
@@ -559,7 +760,11 @@ describe('reviewed repository style dispositions', () => {
             file: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
             symbols: ['validateRallarBlackBoxTestCommand']
         },
-        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] }
+        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] },
+        {
+            file: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+            symbols: ['toSafeBusinessSocketDecision', 'toSafeAuthenticatedScope']
+        }
     ])('recognizes only the reviewed recipe capture boundary keys in $file', ({ file: relativeFile, symbols }) => {
         const file = path.join(repoRoot, relativeFile);
         const raw = symbols.map((symbol) =>
@@ -651,7 +856,7 @@ function createReviewedFixture(): string {
     return fixture;
 }
 
-function reviewedSources(root: string) {
+function reviewedSources(root: string): readonly ReviewedStyleSourceFixtureDto[] {
     return [
         {
             file: path.join(
@@ -726,7 +931,7 @@ function commitAll(fixtureRoot: string, message: string): void {
     runGit(fixtureRoot, ['commit', '-m', message]);
 }
 
-function runChangedChecker(fixtureRoot: string) {
+function runChangedChecker(fixtureRoot: string): SpawnSyncReturns<string> {
     return spawnSync(process.execPath, [checkerPath, 'HEAD'], {
         cwd: fixtureRoot,
         encoding: 'utf8'

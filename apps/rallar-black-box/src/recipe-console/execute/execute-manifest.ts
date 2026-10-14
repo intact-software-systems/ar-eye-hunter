@@ -15,6 +15,8 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
+
 export const EXECUTE_ACK_TIMEOUT_MS = 15_000;
 
 export interface ExecuteManifestDraft {
@@ -61,6 +63,7 @@ export interface CreateExecuteDistributedRunIdInput {
 }
 
 export interface CreateExecuteManifestDraftInput {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly distributedRunId: string;
     readonly controlRunId: string;
     readonly group: RallarBlackBoxDistributedGroupRef;
@@ -112,6 +115,7 @@ export function createExecuteManifestDraft(
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         rtcCaptureMode: input.rtcCaptureMode,
+        eventHistory: input.eventHistory,
         displayName: input.selectedRecipe.item.title,
         group: input.group,
         recipes: [input.selectedRecipe.item],

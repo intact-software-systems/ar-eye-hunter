@@ -7,6 +7,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -45,10 +46,17 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly outboxQueueReader: OutboxQueueReader;
     readonly recomputeDebounceMs: number;
     readonly database?: PSqlSql;
-    readonly now?: () => number;
+    readonly now: () => number;
     readonly serviceId: string;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationPresenceSummarySink;
+}
+
+interface ReadTopologyReplanPolicyFactsInput {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly group: Group;
+    readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly nowEpochMs: number;
 }
 
 export class GroupPresenceSummaryWork {
@@ -57,7 +65,7 @@ export class GroupPresenceSummaryWork {
 
     public constructor(options: GroupPresenceSummaryWorkOptions) {
         this.options = options;
-        this.now = options.now ?? Date.now;
+        this.now = options.now;
     }
 
     public async read(
@@ -93,12 +101,12 @@ export class GroupPresenceSummaryWork {
                 current: current ?? null
             },
             coalescedTopologyEntry,
-            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts(
+            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
                 work,
-                group.value,
+                group: group.value,
                 coalescedTopologyEntry,
                 nowEpochMs
-            )
+            })
         };
         assertGroupPresenceSummaryRead(work.aggregateRef, read.presence);
         return read;
@@ -106,11 +114,9 @@ export class GroupPresenceSummaryWork {
 
     /** The policy and planned slot are read only when the enqueue gate will consult them. */
     private async readTopologyReplanPolicyFacts(
-        work: GroupPresenceSummaryWorkData,
-        group: Group,
-        coalescedTopologyEntry: ResourceEntry | null,
-        nowEpochMs: number
+        input: ReadTopologyReplanPolicyFactsInput
     ): Promise<TopologyReplanPolicyFacts> {
+        const { work, group, coalescedTopologyEntry, nowEpochMs } = input;
         const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs });
         if (!consultsTopologyReplanPolicy(facts)) {
             return { consulted: false };

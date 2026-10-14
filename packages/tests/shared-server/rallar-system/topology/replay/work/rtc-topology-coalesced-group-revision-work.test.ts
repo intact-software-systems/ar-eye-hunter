@@ -173,7 +173,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: first.entryWrite.entry
         });
 
-        expect(second.expectedEntry).toBe(first.entryWrite.entry);
+        expect(second.expectedEntry).toEqual(first.entryWrite.entry);
         const envelope = readPersistedGroupRevisionEnvelope(second.entryWrite.entry);
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 2,
@@ -210,12 +210,11 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: first.entryWrite.entry
         });
-        const merged = JSON.parse(second.entryWrite.entry.resource) as {
-            id: { ts: number; };
-            audit: { createdTs: number; };
-            constraints: { expiresAtMs: number; };
-        };
+        const merged = decodePersistedALMessage(second.entryWrite.entry.resource);
 
+        if (merged.audit === undefined || merged.constraints === undefined) {
+            throw new TypeError('Merged topology message requires audit and constraints');
+        }
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
         expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
@@ -269,12 +268,12 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: completedFirst
         });
-        const revivedMessage = JSON.parse(revived.entryWrite.entry.resource) as {
-            id: { ts: number; };
-            constraints: { expiresAtMs: number; };
-        };
+        const revivedMessage = decodePersistedALMessage(revived.entryWrite.entry.resource);
 
         expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
+        if (revivedMessage.constraints === undefined) {
+            throw new TypeError('Revived topology message requires constraints');
+        }
         expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
         expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
         expect(revived.entryWrite.entry.audit).toEqual(first.entryWrite.entry.audit);
@@ -291,7 +290,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 6
         });
-        expect(merged.groupSnapshot).toBe(newer.groupSnapshot);
+        expect(merged.groupSnapshot).toEqual(newer.groupSnapshot);
         expect(merged.requestedAtEpochMs).toBe(BASE_EPOCH_MS + 300);
         expect(merged[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs).toBe(
             BASE_EPOCH_MS + 300 + DEBOUNCE_MS
@@ -605,10 +604,14 @@ describe('computeRtcTopologyInputFingerprint', () => {
 });
 
 function withSessions(snapshot: GroupSnapshot, sessionIds: readonly string[]): GroupSnapshot {
+    const session = snapshot.activeSessions[0];
+    if (!session) {
+        throw new Error('Session fixture requires an active session');
+    }
     return {
         ...snapshot,
         activeSessions: sessionIds.map((sessionId) => ({
-            ...snapshot.activeSessions[0]!,
+            ...session,
             sessionId
         }))
     };
@@ -761,9 +764,9 @@ describe('the series anchor on coalesced rows', () => {
 
     it('fails closed on a predecessor without a series anchor', () => {
         const first = createReplan(BASE_EPOCH_MS, null);
-        const message = JSON.parse(first.entryWrite.entry.resource);
-        const envelope = JSON.parse(message.payload.resource);
-        delete envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].windowOpenedAtEpochMs;
+        const message = decodePersistedALMessage(first.entryWrite.entry.resource);
+        const envelope = readPersistedGroupRevisionEnvelope(first.entryWrite.entry);
+        expect(Reflect.deleteProperty(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD], 'windowOpenedAtEpochMs')).toBe(true);
         const malformedPredecessor = {
             ...first.entryWrite.entry,
             resource: JSON.stringify({ ...message, payload: { ...message.payload, resource: JSON.stringify(envelope) } })

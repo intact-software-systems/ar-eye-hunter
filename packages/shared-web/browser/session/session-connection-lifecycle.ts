@@ -19,6 +19,7 @@ import {
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -52,7 +53,7 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
         readonly sessionDeliveries: BrowserSessionDeliveries;
-        readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
+        readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
@@ -115,12 +116,13 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         }
 
         this.rtcCaptureConfiguration = Object.freeze({ ...input.rtcCaptureConfiguration });
+        const storage = input.diagnosticsPorts.storage;
         const middlewareOptions = {
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
             deliverySettlements: this.input.sessionDeliveries.observers,
-            onResyncRequired: this.input.onResyncRequired
+            onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;

@@ -1,5 +1,18 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import type {
+    CrdtMutationActor,
+    CrdtMutationResponseAudience
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
@@ -7,29 +20,16 @@ import {
     type RallarCrdtSnapshotEnvelope,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-
-import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const REASON = 'api-v1-admin-compaction';
@@ -53,7 +53,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await readPGliteDatabaseEpochMs(sql) + 12 * 60 * 60 * 1_000;
-            const service = createService(sql, now);
+            const { service, inboxQueueReader } = createCrdtInboxHarness(sql, now);
             await service.createAndEnqueueAppend({
                 update: update(now - 10_000),
                 deliveryId: 'append-delivery',
@@ -67,7 +67,7 @@ Deno.test(
                 capturedAtEpochMs: now,
                 expireAtEpochMs: now + 60_000
             });
-            await drain(service, sql);
+            await drain(inboxQueueReader, sql);
             const inputSnapshot = snapshot(now + 1);
             const command = await createCrdtMutationCommand({
                 operation: 'compact',
@@ -85,7 +85,7 @@ Deno.test(
             assert.equal(command.snapshot?.metadata.reason, REASON);
 
             service.writeCrdtCommandNoWaiting(command);
-            await drain(service, sql);
+            await drain(inboxQueueReader, sql);
             const [stored] = await sql<PersistedSnapshotResultRow[]>`
       select s.snapshot_envelope, s.reason, r.ris_resource
       from crdt_snapshots s
@@ -150,9 +150,14 @@ Deno.test(
     }
 );
 
-function createService(sql: PGliteSql, now: number) {
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+interface CrdtInboxHarness {
+    readonly service: AppCrdtInboxService;
+    readonly inboxQueueReader: InboxQueueReader;
+}
+
+function createCrdtInboxHarness(sql: PGliteSql, now: number): CrdtInboxHarness {
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
@@ -175,21 +180,21 @@ function createService(sql: PGliteSql, now: number) {
         },
         policies: [{ documentType: 'checklist', rollout: 'production' }]
     });
-    return Object.assign(service, { inboxQueueReader });
+    return { service, inboxQueueReader };
 }
 
 async function drain(
-    service: ReturnType<typeof createService>,
+    inboxQueueReader: InboxQueueReader,
     sql: PGliteSql
 ): Promise<void> {
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await service.inboxQueueReader.dequeueInbox(
+    await inboxQueueReader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createApiV1TestQueueResilience()
     );
 }
 
-function actor() {
+function actor(): CrdtMutationActor {
     return {
         actorId: 'client-1',
         principalId: 'client-1',
@@ -198,7 +203,7 @@ function actor() {
     } as const;
 }
 
-function audience() {
+function audience(): CrdtMutationResponseAudience {
     return {
         kind: 'admin',
         senderSessionId: 'session-1',

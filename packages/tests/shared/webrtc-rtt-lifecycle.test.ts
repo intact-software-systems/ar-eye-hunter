@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -237,6 +238,8 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         rtcSignalingTopicId: 'rtc-signaling'
     }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     const multicast = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: connectionService,
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
@@ -252,11 +255,9 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    onTestFinished(() => multicast.dispose());
     const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });
-    onTestFinished(() => {
-        streamer.dispose();
-        multicast.dispose();
-    });
+    onTestFinished(() => streamer.dispose());
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {
         onHeartbeat: async (measurement) => {

@@ -17,10 +17,17 @@ import type {
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
+import type {
+    RallarBlackBoxEventHistory,
+    RallarBlackBoxEventHistoryPolicy,
+    RallarBlackBoxEventHistorySequence,
+    RallarBlackBoxTestConnectionFacts
+} from './runtime/event-history.ts';
 
 import type { BlackBoxRallarCrdtConnectionInput } from '../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
-import type { ControlClientIdentity } from './control-protocol.ts';
+import type { ControlClientIdentity, ControlCommandEnvelope } from './control-protocol.ts';
 import type { RecipeCaptureSequence } from './recipe/recipe-capture-sequence.ts';
 
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
@@ -122,6 +129,8 @@ export type RallarBlackBoxTestRuntimeStatus =
     | 'cancelled';
 
 export interface RallarBlackBoxTestConfig {
+    /** Omission leaves the runtime’s selected event history unchanged. */
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly runId?: string;
     readonly agentId?: string;
     readonly environment?: string;
@@ -161,6 +170,7 @@ export type RallarBlackBoxTestConfigureCommand =
     }>;
 
 export interface RallarBlackBoxTestRecipe {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly schemaVersion: 1;
     readonly recipeId: string;
@@ -180,6 +190,7 @@ export type RallarBlackBoxTestRecipeLoadCommand =
 export type RallarBlackBoxTestRecipeRunCommand =
     & RallarBlackBoxTestCommandBase<'recipe.run'>
     & Readonly<{
+        eventHistory?: RallarBlackBoxEventHistoryPolicy;
         rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
         /** Absent for ordinary latest-loaded execution; when present, bind a bodyless run to this acknowledged load. */
         expectedRecipeBodyId?: string;
@@ -282,15 +293,25 @@ export type RallarBlackBoxTestAssertOperator =
     | 'length'
     | 'matches'
     | 'matchesShape'
-    | 'matchesShapeComplete';
+    | 'matchesShapeComplete'
+    | 'sameUniqueStringSet';
 
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>
-    & Readonly<{
-        source: string;
-        operator: RallarBlackBoxTestAssertOperator;
-        expected?: ApiJsonValue;
-    }>;
+    & (
+        | Readonly<{
+            source: string;
+            operator: Exclude<RallarBlackBoxTestAssertOperator, 'sameUniqueStringSet'>;
+            expected?: ApiJsonValue;
+            comparisonSource?: never;
+        }>
+        | Readonly<{
+            source: string;
+            operator: 'sameUniqueStringSet';
+            comparisonSource: string;
+            expected?: never;
+        }>
+    );
 
 export interface RallarBlackBoxTestRtcConnectReadiness {
     readonly minReadyPeers?: number;
@@ -593,6 +614,8 @@ export interface RallarBlackBoxTestCrdtWaitCondition {
     readonly path?: string;
     readonly operator: RallarBlackBoxTestCrdtWaitOperator;
     readonly expected?: unknown;
+    readonly comparisonSource?: never;
+    readonly comparisonExists?: never;
 }
 
 export type RallarBlackBoxTestCrdtWaitCommand =
@@ -1017,15 +1040,11 @@ export interface RallarBlackBoxTestWaitResultValue {
     readonly event?: RallarBlackBoxTestEvent;
 }
 
-export interface RallarBlackBoxTestAssertResultValue {
-    readonly commandId: string;
-    readonly source: string;
-    readonly operator: RallarBlackBoxTestAssertOperator;
-    readonly expected?: unknown;
-    readonly actual?: unknown;
-    readonly exists: boolean;
-    readonly passed: boolean;
-}
+export type {
+    RallarBlackBoxTestAssertResultValue,
+    RallarBlackBoxTestSetAssertResultValue,
+    RallarBlackBoxTestValueAssertResultValue
+} from './assert/assert-result-contracts.ts';
 
 export type RallarBlackBoxTestEventKind =
     | 'event'
@@ -1045,6 +1064,8 @@ export namespace RallarBlackBoxTestEvent {
 
 export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     eventId: string;
+    /** Present on runtime events; absent on independently produced controller statistics and reports. */
+    history?: RallarBlackBoxEventHistorySequence;
     kind: RallarBlackBoxTestEventKind;
     topic: string;
     atEpochMs: number;
@@ -1058,7 +1079,7 @@ export type RallarBlackBoxTestEvent<T = unknown> = Readonly<{
     control?: RallarBlackBoxTestEvent.ControlExecution;
 }>;
 
-export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs'>;
+export type RallarBlackBoxTestRuntimeEventInput = Omit<RallarBlackBoxTestEvent, 'eventId' | 'atEpochMs' | 'history'>;
 
 /**
  * The page's session ledger report (D180) beside `orderingTracks`, the ordering snapshots its inbound stores state
@@ -1069,6 +1090,7 @@ export interface RallarBlackBoxTestAlmUsage extends ALVolatileSessionReport {
 }
 
 export interface RallarBlackBoxTestStatsSnapshot {
+    readonly eventHistory: RallarBlackBoxEventHistory;
     readonly atEpochMs: number;
     readonly runId?: string;
     readonly agentId?: string;
@@ -1134,6 +1156,8 @@ export interface RallarBlackBoxTestReportFragment {
 }
 
 export interface RallarBlackBoxTestState {
+    readonly eventHistory: RallarBlackBoxEventHistory;
+    readonly connection: RallarBlackBoxTestConnectionFacts;
     readonly status: RallarBlackBoxTestRuntimeStatus;
     readonly currentConfig?: RallarBlackBoxTestConfig;
     readonly loadedRecipe?: RallarBlackBoxTestRecipe;
@@ -1199,40 +1223,31 @@ export interface RallarBlackBoxRtcCaptureSupport {
     readonly modes: readonly RtcSignalingDiagnostics.CaptureMode[];
 }
 
+/** Optional third-argument facts for one owned recipe admission; snapshotted before registration and effects. */
+export interface RallarBlackBoxTestExecutionInput {
+    readonly eventHistorySelection?: RecipeEventHistorySelection;
+    readonly recipeExecution?: ControlCommandEnvelope['recipeExecution'];
+}
+
 export interface RallarBlackBoxTestRuntime {
     /** Absent for simulated, missing or unverified executors. Immutable for this runtime's lifetime. */
     readonly rtcCaptureSupport?: RallarBlackBoxRtcCaptureSupport;
-    /** A control address scopes the active result cache; omitted for ordinary local execution. */
+    /** The optional second argument scopes result caching; the third carries owned recipe facts. Both are snapshotted before callbacks. */
     execute(
         command: RallarBlackBoxTestCommand,
-        controlIdentity?: ControlClientIdentity
+        controlIdentity?: ControlClientIdentity,
+        input?: RallarBlackBoxTestExecutionInput
     ): Promise<RallarBlackBoxTestResult>;
+    /** Releases only this assignment's settled outer execution, including a terminal page replacement. */
+    releaseRecipeExecution(rootCommandId: string, controlIdentity?: ControlClientIdentity): void;
     state(): RallarBlackBoxTestState;
+    beginEventCapture(identity: ControlClientIdentity): void;
+    recordEventCaptureGap(reason: string): void;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     subscribe(listener: RallarBlackBoxTestStateListener): () => void;
 }
-export type RallarBlackBoxCommandProviderMode =
-    | 'simulated'
-    | 'browser-rallar'
-    | 'rallar-browser'
-    | 'rallar-remote-browser'
-    | 'rallar-memory'
-    | 'rallar-server'
-    | 'mixed';
-export type RallarBlackBoxCommandRuntimeSurface =
-    | 'spa-local'
-    | 'control-agent'
-    | 'control-server'
-    | 'black-box-runner-adapter';
-export interface RallarBlackBoxCommandCapability {
-    readonly kind: typeof RALLAR_BLACK_BOX_TEST_COMMAND_KINDS[number];
-    readonly title: string;
-    readonly description: string;
-    readonly requiredFields: readonly string[];
-    readonly optionalFields: readonly string[];
-    readonly supportedProviderModes: readonly RallarBlackBoxCommandProviderMode[];
-    readonly runtimeSurfaces: readonly RallarBlackBoxCommandRuntimeSurface[];
-    readonly liveServiceRequirements: readonly string[];
-    readonly artifactExpectations: readonly string[];
-    readonly example: RallarBlackBoxTestCommand;
-}
+export type {
+    RallarBlackBoxCommandCapability,
+    RallarBlackBoxCommandProviderMode,
+    RallarBlackBoxCommandRuntimeSurface
+} from './schema/rallar-black-box-command-capabilities.ts';

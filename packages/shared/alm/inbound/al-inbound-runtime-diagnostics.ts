@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '../../al-contracts/al-control-type-ids.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
@@ -7,10 +8,11 @@ import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
+import type { ALInboundAcknowledgementEvidence } from './control/al-inbound-acknowledgement-evidence.ts';
 
 /**
- * Where an incoming message stopped. `committed` is the only ending that leaves durable work behind,
- * so a delivery that never arrives either did not reach it or was never claimed by a drain.
+ * Where ingress stopped. Pending admission can retain replay work; an origin ACK bypasses inbound
+ * storage and still reaches the outbound owner. This verdict alone does not prove delivery or its absence.
  */
 export type ALInboundAdmissionOutcome =
     | 'committed'
@@ -57,13 +59,44 @@ export interface ALInboundConsumerInvocation {
     readonly settledAtMs: number;
 }
 
+/** Registered AL callback/admission facts, after earlier receive processing; never native arrival time. */
+export type ALInboundRtcAckIngress =
+    & Readonly<{
+        kind: 'rtc-ack-ingress';
+        controlMsgId: string;
+        controlSenderId: string;
+        fromPeerId: string;
+        toPeerId: string;
+        carrier: 'rtc';
+        observedAtEpochMs: number;
+    }>
+    & (
+        | Readonly<{ stage: 'callback-entered'; }>
+        | Readonly<{ stage: 'admission-threw'; pass: 'initial' | 'after-authority-refresh'; }>
+        | Readonly<{
+            stage: 'admission-returned';
+            pass: 'initial' | 'after-authority-refresh';
+            outcome: 'accepted';
+            acceptance: ALInboundMessageRuntime.Acceptance['kind'];
+        }>
+        | Readonly<{
+            stage: 'admission-returned';
+            pass: 'initial' | 'after-authority-refresh';
+            outcome: 'rejected';
+            rejection: ALMessageRejection['code'];
+        }>
+    );
+
 export type ALInboundRuntimeDiagnosticsEvent =
     | ALInboundDispatchDecision
     | ALInboundConsumerInvocation
+    | ALInboundRtcAckIngress
+    | ALInboundAcknowledgementEvidence.Association
+    | ALInboundAcknowledgementEvidence.Handoff
     | Readonly<{
         kind: 'admission-outcome';
         workerId: string;
-        /** The message this ingress decided on, so one delivery can be followed to the drain that ran it. */
+        /** Original message identifier for this admission observation. */
         msgId: string;
         typeId: string;
         /** The carrier the message arrived on. */
@@ -86,7 +119,7 @@ export type ALInboundRuntimeDiagnosticsEvent =
         selectionDurationMs: number;
         /** The port's reservation of the rows that read cleared. */
         claimDurationMs: number;
-        /** Every claim's own work, summed — the same claims `claim-settled` reports one by one. */
+        /** Every claim's own work, summed; individual `claim-settled` records may be absent. */
         runDurationMs: number;
         /** Every release this batch wrote, summed. */
         releaseDurationMs: number;
@@ -97,7 +130,11 @@ export type ALInboundRuntimeDiagnosticsEvent =
          * `batchStartedAtMs`. `durationMs` and `queueWaitMs` run from the batch's own earlier start.
          */
         startedAtMs: number;
-        /** The batch's run order; each id is also a `claim-settled.effectId` unless that claim threw. */
+        /**
+         * The batch's run order. An id joins to `claim-settled.effectId` when that claim returns a
+         * reportable outcome and guarded diagnostic projection/publication succeeds. An absent
+         * settlement event establishes no claim outcome.
+         */
         claimedEffectIds: readonly string[];
         /** Due rows this batch's page saw and did not run, oldest first. */
         deferred: readonly ALInboundDeferredEffect[];
@@ -158,16 +195,15 @@ export interface ALInboundDeferredEffect {
     readonly dueAtMs: number;
 }
 
-export interface ALInboundAdmissionDiagnostics {
-    readonly outcome: ALInboundAdmissionOutcome;
-    readonly reason: string;
+export interface ALInboundRuntimeDiagnosticsSink {
+    (event: ALInboundRuntimeDiagnosticsEvent): void;
+    readonly acknowledgementCapture?: ALInboundAcknowledgementEvidence.Capture;
 }
-
-export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;
 
 /**
  * What a claimed effect says about the message it runs, for the join back to its
- * `admission-outcome`. Null is absence, not a name: `payloadKind` says which effect withheld it.
+ * `admission-outcome` when both events are captured. Null is absence, not a name:
+ * `payloadKind` says which effect withheld it.
  */
 export interface ALInboundClaimIdentity {
     readonly msgId: string | null;
@@ -214,9 +250,15 @@ function toALControlSubjectMsgId(msg: ALMessage): string | null {
     return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
+export interface ALInboundAdmissionDiagnostics {
+    readonly outcome: ALInboundAdmissionOutcome;
+    readonly reason: string;
+}
+
 /**
- * Names an ending that otherwise leaves no trace at all: an `unauthorized` drop writes nothing,
- * sends no NACK and returns no error, so without this it reads exactly like a delivery still coming.
+ * Projects the admission result for optional publication. An `unauthorized` drop writes nothing
+ * and sends no NACK; its captured diagnostic can distinguish that refusal from pending delivery.
+ * Diagnostic absence alone establishes neither outcome.
  */
 export function toALInboundAdmissionDiagnostics(
     admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
@@ -254,7 +296,6 @@ function toAcceptanceDiagnostics(
             return { outcome: 'not-handled', reason: acceptance.kind };
     }
 }
-
 /** Diagnostics are supplemental: a failed sink must not change delivery or replace its original error. */
 export function recordALInboundDiagnostic(
     sink: ALInboundRuntimeDiagnosticsSink | undefined,
@@ -265,5 +306,113 @@ export function recordALInboundDiagnostic(
     }
     catch {
         // No second sink or arbitrary error text escapes this optional observation boundary.
+    }
+}
+
+export namespace ALInboundRtcAckObservation {
+    export interface Dependencies {
+        readonly sessionId: string;
+        readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly epochNow: () => number;
+    }
+
+    export interface Identity {
+        readonly controlMsgId: string;
+        readonly controlSenderId: string;
+        readonly fromPeerId: string;
+        readonly toPeerId: string;
+    }
+
+    export interface AdmissionInput {
+        readonly pass: 'initial' | 'after-authority-refresh';
+        readonly admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance> | 'threw';
+    }
+}
+
+/** Closed optional facts of one registered RTC ACK invocation; never admission or routing policy. */
+export class ALInboundRtcAckObservation {
+    private readonly dependencies: ALInboundRtcAckObservation.Dependencies;
+    private readonly identity: ALInboundRtcAckObservation.Identity;
+    private readonly sink: ALInboundRuntimeDiagnosticsSink;
+
+    constructor(
+        dependencies: ALInboundRtcAckObservation.Dependencies,
+        identity: ALInboundRtcAckObservation.Identity,
+        sink: ALInboundRuntimeDiagnosticsSink
+    ) {
+        this.dependencies = dependencies;
+        this.identity = identity;
+        this.sink = sink;
+    }
+
+    static tryCreate(
+        dependencies: ALInboundRtcAckObservation.Dependencies,
+        message: ALMessage | undefined,
+        fromPeerId: string
+    ): ALInboundRtcAckObservation | undefined {
+        try {
+            const sink = dependencies.inboundDiagnostics;
+            if (!sink || message?.payload.typeId !== AL_CONTROL_ACK_TYPE_ID) {
+                return;
+            }
+            return new this(
+                dependencies,
+                Object.freeze({
+                    controlMsgId: message.id.msgId,
+                    controlSenderId: message.id.senderId,
+                    fromPeerId,
+                    toPeerId: dependencies.sessionId
+                }),
+                sink
+            );
+        }
+        catch { /* Optional construction cannot block mandatory admission. */ }
+    }
+
+    callbackEntered(): void {
+        try {
+            recordALInboundDiagnostic(this.sink, {
+                kind: 'rtc-ack-ingress',
+                ...this.identity,
+                carrier: 'rtc',
+                stage: 'callback-entered',
+                observedAtEpochMs: this.dependencies.epochNow()
+            });
+        }
+        catch { /* Optional projection and clock cannot block mandatory admission. */ }
+    }
+
+    admissionResult(input: ALInboundRtcAckObservation.AdmissionInput): void {
+        try {
+            const identity = {
+                kind: 'rtc-ack-ingress',
+                ...this.identity,
+                carrier: 'rtc',
+                pass: input.pass,
+                observedAtEpochMs: this.dependencies.epochNow()
+            } as const;
+            let event: ALInboundRtcAckIngress;
+            if (input.admitted === 'threw') {
+                event = { ...identity, stage: 'admission-threw' };
+            }
+            else if (input.admitted.left) {
+                event = {
+                    ...identity,
+                    stage: 'admission-returned',
+                    outcome: 'rejected',
+                    rejection: input.admitted.left.code
+                };
+            }
+            else {
+                event = {
+                    ...identity,
+                    stage: 'admission-returned',
+                    outcome: 'accepted',
+                    acceptance: input.admitted.right!.kind
+                };
+            }
+            recordALInboundDiagnostic(this.sink, event);
+        }
+        catch { /* Observation never changes the actual acceptance or original thrown value. */ }
     }
 }

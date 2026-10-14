@@ -14,26 +14,6 @@ import {
 } from './rtc-baseline-capture-admission.ts';
 import type { DenoRtcBaselineAdapters } from './rtc-baseline-deno-adapters.ts';
 
-export const RTC_BASELINE_ENVIRONMENT_NAMES = [
-    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
-    'RALLAR_ICE_MODE',
-    'DATABASE_URL',
-    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR',
-    'RALLAR_BLACK_BOX_RTC_BASELINE_ID',
-    'RALLAR_BLACK_BOX_RTC_CASE_ID',
-    'RALLAR_BLACK_BOX_RTC_INPUT_KEY',
-    'RALLAR_BLACK_BOX_RTC_INTENDED_PHASE',
-    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL',
-    RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME
-] as const;
-const chromiumVersionScript = [
-    'const { execFileSync } = require(\'node:child_process\');',
-    'const { chromium } = require(\'playwright\');',
-    'process.stdout.write(execFileSync(chromium.executablePath(), [\'--version\']));'
-].join(' ');
-
 interface Dependencies {
     readGit(): Promise<RtcBaselineRuntimeObservationDto['git']>;
     readRuntime(): Promise<RtcBaselineRuntimeObservationDto['runtime']>;
@@ -72,6 +52,33 @@ export type RtcBaselineCaptureObserver = (
     request: RtcBaselineCaptureRequestDto,
     initialized?: RtcBaselineRuntimeObservationDto
 ) => Promise<RtcBaselineResult<RtcBaselineRuntimeObservationDto>>;
+
+type RtcBaselineDenoObservationAdapters = Pick<
+    DenoRtcBaselineAdapters,
+    'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
+>;
+
+export const RTC_BASELINE_ENVIRONMENT_NAMES = [
+    'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
+    'RALLAR_ICE_MODE',
+    'DATABASE_URL',
+    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR',
+    'RALLAR_BLACK_BOX_RTC_BASELINE_ID',
+    'RALLAR_BLACK_BOX_RTC_CASE_ID',
+    'RALLAR_BLACK_BOX_RTC_INPUT_KEY',
+    'RALLAR_BLACK_BOX_RTC_INTENDED_PHASE',
+    'RALLAR_BLACK_BOX_RTC_OUTER_ORDINAL',
+    RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME
+] as const;
+const chromiumVersionScript = [
+    'const { execFileSync } = require(\'node:child_process\');',
+    'const { chromium } = require(\'playwright\');',
+    'process.stdout.write(execFileSync(chromium.executablePath(), [\'--version\']));'
+].join(' ');
 
 function issue(message: string) {
     return {
@@ -154,11 +161,6 @@ export function createRtcBaselineRuntimeObservation(
     };
 }
 
-type RtcBaselineDenoObservationAdapters = Pick<
-    DenoRtcBaselineAdapters,
-    'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
->;
-
 function createDenoRuntimeObserver(adapters: RtcBaselineDenoObservationAdapters): RtcBaselineRuntimeObserver {
     function unwrap<T>(result: RtcBaselineResult<T>): T {
         if (!result.ok) {
@@ -215,9 +217,21 @@ export function createRtcBaselineDenoObservation(
     captureAdmission?: RtcBaselineCaptureAdmission
 ): RtcBaselineCaptureObserver {
     const observe = createDenoRuntimeObserver(adapters);
+    let initializedDiagnosticEnvironment: Readonly<Record<string, string>> | undefined;
     return async (request, initialized) => {
         const environment = adapters.environment.readAllowlisted(RTC_BASELINE_ENVIRONMENT_NAMES);
-        const input = createRtcBaselineRuntimeObservationInput(request, environment, { initialized, captureAdmission });
+        const {
+            RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: _ambientAlm,
+            RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: _ambientRecording,
+            ...remainingEnvironment
+        } = environment;
+        const selectedEnvironment = initializedDiagnosticEnvironment === undefined
+            ? environment
+            : { ...remainingEnvironment, ...initializedDiagnosticEnvironment };
+        const input = createRtcBaselineRuntimeObservationInput(request, selectedEnvironment, {
+            initialized,
+            captureAdmission
+        });
         if (!input.ok) {
             return input;
         }
@@ -226,6 +240,14 @@ export function createRtcBaselineDenoObservation(
             return observed;
         }
         const hashes = await adapters.sourceConfigHashing.read(input.value.files);
+        if (hashes.ok && request.workloadIds.includes('RTC-B06') && initializedDiagnosticEnvironment === undefined) {
+            initializedDiagnosticEnvironment = Object.freeze(Object.fromEntries(
+                Object.entries(input.value.observation.allowlistedEnvironment).filter(([name]) =>
+                    name === 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS' ||
+                    name === 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS'
+                )
+            ));
+        }
         return hashes.ok
             ? {
                 ok: true as const,

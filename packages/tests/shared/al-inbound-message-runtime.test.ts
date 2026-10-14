@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -164,15 +165,19 @@ describe('ALInboundMessageRuntime', () => {
         });
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+        let disposal: Promise<void> | undefined;
         const retention = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const stored = await enqueue(entry);
-            first.runtime.dispose(); // Stop after durable retention, before its first claim.
+            disposal = first.runtime.dispose(); // Stop after durable retention, before its first claim.
+            void disposal.catch(() => undefined);
             return stored;
         });
         const seq2 = { ...createOrderedMessage(2, 'two'), constraints: { expiresAtMs: Date.now() + 60_000 } };
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
 
         const queued = await first.runtime.admitIncomingMessage(seq2, source);
+        expect(disposal).toBeDefined();
+        await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
         expect(conflict).toHaveBeenCalledTimes(1);
@@ -261,11 +266,19 @@ describe('ALInboundMessageRuntime', () => {
             peerId: 'peer-1',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
+        onTestFinished(async () => {
+            releaseFirstDelivery.resolve();
+            await firstAdmission;
+        });
         await firstDeliveryStarted.promise;
         const secondAdmission = runtime.admitIncomingMessage(second, {
             kind: 'ws-client',
             peerId: 'peer-2',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
+        onTestFinished(async () => {
+            releaseFirstDelivery.resolve();
+            await secondAdmission;
         });
         await secondAdmissionCommitted.promise;
         releaseFirstDelivery.resolve();
@@ -414,6 +427,10 @@ describe('ALInboundMessageRuntime', () => {
             kind: 'ws-client',
             peerId: 'peer-1',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
+        onTestFinished(async () => {
+            releaseCommitBlocked.resolve();
+            await pendingRelease;
         });
         await releaseCommitReady.promise;
 
@@ -842,7 +859,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
             createOrderedMessage(2, 'two'),
             { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
             persistence.openStores()
@@ -902,7 +919,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         // disposed while its batch still holds a claim leaves that row reserved until its lease ends,
         // which the frozen clock never reaches.
         await expect.poll(() => countWorkRowsWithStatus(stores.workQueue, EntityStatus.RETRY)).toBe(2);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
             persistence.openStores()
@@ -966,7 +983,7 @@ function createInboundHarness(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: overrides.dispatchInboxEntry ?? (async (
             entry: ResourceEntry,
             _plan?: ALMessageHandlingPlan

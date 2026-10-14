@@ -34,14 +34,29 @@ const SCHEMA_BASE_ID = 'https://rallar.dev/schemas/black-box';
 const anySchema: JsonSchema = {};
 
 const stringSchema: JsonSchema = { type: 'string' };
+const nonEmptyStringSchema: JsonSchema = { type: 'string', pattern: '\\S' };
 const numberSchema: JsonSchema = { type: 'number' };
 const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const rtcCaptureModeSchema: JsonSchema = { type: 'string', enum: ['off', 'signaling', 'native'] };
+const eventHistorySchema: JsonSchema = {
+    oneOf: [
+        { type: 'object', properties: { mode: { const: 'full' } }, required: ['mode'], additionalProperties: false },
+        {
+            type: 'object',
+            properties: {
+                mode: { const: 'recent' },
+                maxEvents: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER }
+            },
+            required: ['mode', 'maxEvents'],
+            additionalProperties: false
+        }
+    ]
+};
 const rallarConnectionSchema: JsonSchema = {
     type: 'object',
-    properties: { rtcCaptureMode: rtcCaptureModeSchema },
+    properties: { rtcCaptureMode: rtcCaptureModeSchema, almDiagnostics: booleanSchema },
     additionalProperties: true
 };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
@@ -100,6 +115,7 @@ const inlineRecipeSchema: JsonSchema = { $ref: '#/$defs/recipe' };
 const configSchema: JsonSchema = {
     type: 'object',
     properties: {
+        eventHistory: eventHistorySchema,
         runId: stringSchema,
         agentId: stringSchema,
         environment: stringSchema,
@@ -490,6 +506,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         recipe: inlineRecipeSchema
     }),
     'recipe.run': strictCommandSchema('recipe.run', {
+        eventHistory: eventHistorySchema,
         rtcCaptureMode: rtcCaptureModeSchema,
         expectedRecipeBodyId: { type: 'string' },
         recipe: inlineRecipeSchema
@@ -544,11 +561,33 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         match: waitMatchSchema,
         absent: { const: true }
     }),
-    assert: strictCommandSchema('assert', {
-        source: stringSchema,
-        operator: assertOperatorSchema,
-        expected: anySchema
-    }),
+    assert: {
+        properties: { kind: { const: 'assert' } },
+        oneOf: [
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: assertOperatorSchema,
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator', 'comparisonSource'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: { const: 'sameUniqueStringSet' },
+                    comparisonSource: nonEmptyStringSchema
+                },
+                additionalProperties: false
+            }
+        ]
+    },
     barrier: strictCommandSchema('barrier', {
         barrierId: stringSchema,
         timeoutMs: { type: 'integer', minimum: 1 },
@@ -838,6 +877,7 @@ const commandSchema: JsonSchema = {
     oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind])
 };
 const recipeSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe, {
+    eventHistory: eventHistorySchema,
     rtcCaptureMode: rtcCaptureModeSchema,
     schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
     recipeId: stringSchema,
@@ -916,6 +956,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         distributedRunId: stringSchema,
         controlRunId: stringSchema,
         rtcCaptureMode: rtcCaptureModeSchema,
+        eventHistory: eventHistorySchema,
         displayName: stringSchema,
         description: stringSchema,
         group: {

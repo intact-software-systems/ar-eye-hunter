@@ -31,6 +31,9 @@ export function toNormalizedDistributedRunManifest(
         controlRunId,
         manifest: Object.freeze({
             ...manifest,
+            ...(manifest.eventHistory === undefined
+                ? {}
+                : { eventHistory: Object.freeze({ ...manifest.eventHistory }) }),
             controlRunId,
             group: Object.freeze({ ...manifest.group }),
             recipes: Object.freeze(manifest.recipes.map((selection) =>

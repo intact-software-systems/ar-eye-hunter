@@ -1,5 +1,6 @@
 import type { GroupTopologyValidationIssue } from '@shared/api/graph-topology-management-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+
 import { AdminPruneValidationError } from '../admin-operations/inbox/admin-prune-inbox-validation.ts';
 import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 import { CrdtHttpAdminRejectionError } from '../crdt/inbox/crdt-http-admin-rejection-error.ts';
@@ -20,6 +21,7 @@ import {
 export type AppInboxErrorClassification =
     | Readonly<{
         kind: 'terminal';
+        queueFailure: 'command-rejected' | 'operational';
         code: string;
         result: AppInboxFailure;
     }>
@@ -28,6 +30,18 @@ export type AppInboxErrorClassification =
         code: string;
         message: string;
     }>;
+
+interface TerminalAppInboxErrorPolicy {
+    readonly status: number;
+    readonly queueFailure: 'command-rejected' | 'operational';
+}
+
+interface FailureDenialInput {
+    readonly code: string;
+    readonly status: number;
+    readonly message: string;
+    readonly details: JsonWireObject | null;
+}
 
 const RETRYABLE_CONFLICT_CODES = new Set([
     'app-inbox-reservation-conflict',
@@ -39,40 +53,33 @@ const RETRYABLE_CONFLICT_CODES = new Set([
 
 const RETRYABLE_CODES = new Set([...RETRYABLE_CONFLICT_CODES, 'app-inbox-transient']);
 
-const TERMINAL_STATUS_BY_CODE = new Map<string, number>([
-    ['app-inbox-malformed-command', 400],
-    ['app-inbox-idempotency-conflict', 409],
-    ['app-inbox-lifecycle-rejected', 409],
-    ['client-mutation-idempotency-conflict', 409],
-    ['client-mutation-rejected', 400],
-    ['client-state-event-collision', 409],
-    ['client-state-event-repository-invariant-corruption', 500],
-    ['client-state-repository-invariant-corruption', 500],
-    ['admin-prune-authority-denied', 403],
-    ['crdt-authority-denied', 403],
-    ['group-mutation-authority-denied', 403],
-    ['group-already-exists', 409],
-    ['group-mutation-idempotency-conflict', 409],
-    ['group-mutation-rejected', 400],
-    ['group-state-event-collision', 409],
-    ['group-state-event-repository-invariant-corruption', 500],
-    ['group-state-repository-invariant-corruption', 500],
-    ['group-topology-config-idempotency-conflict', 409],
-    ['group-topology-config-repository-invariant-corruption', 500],
-    ['resource-inbox-invariant-corruption', 500],
-    ['rtc-rtt-idempotency-conflict', 409],
-    ['rtc-topology-publication-collision', 409],
-    ['rtc-topology-repository-invariant-corruption', 500],
-    ['state-mutation-outbox-collision', 409],
-    ['state-mutation-outbox-invariant-corruption', 500]
+const TERMINAL_POLICY_BY_CODE = new Map<string, TerminalAppInboxErrorPolicy>([
+    ['app-inbox-malformed-command', { status: 400, queueFailure: 'operational' }],
+    ['app-inbox-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
+    ['app-inbox-lifecycle-rejected', { status: 409, queueFailure: 'command-rejected' }],
+    ['client-mutation-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
+    ['client-mutation-rejected', { status: 400, queueFailure: 'command-rejected' }],
+    ['client-state-event-collision', { status: 409, queueFailure: 'operational' }],
+    ['client-state-event-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['client-state-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['admin-prune-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
+    ['crdt-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
+    ['group-mutation-authority-denied', { status: 403, queueFailure: 'command-rejected' }],
+    ['group-already-exists', { status: 409, queueFailure: 'command-rejected' }],
+    ['group-mutation-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
+    ['group-mutation-rejected', { status: 400, queueFailure: 'command-rejected' }],
+    ['group-state-event-collision', { status: 409, queueFailure: 'operational' }],
+    ['group-state-event-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['group-state-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['group-topology-config-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
+    ['group-topology-config-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['resource-inbox-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['rtc-rtt-idempotency-conflict', { status: 409, queueFailure: 'command-rejected' }],
+    ['rtc-topology-publication-collision', { status: 409, queueFailure: 'operational' }],
+    ['rtc-topology-repository-invariant-corruption', { status: 500, queueFailure: 'operational' }],
+    ['state-mutation-outbox-collision', { status: 409, queueFailure: 'operational' }],
+    ['state-mutation-outbox-invariant-corruption', { status: 500, queueFailure: 'operational' }]
 ]);
-
-interface FailureDenialInput {
-    readonly code: string;
-    readonly status: number;
-    readonly message: string;
-    readonly details: JsonWireObject | null;
-}
 
 export function classifyAppInboxError(error: unknown): AppInboxErrorClassification {
     const code = toAppInboxErrorCode(error);
@@ -80,31 +87,35 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
         return toRetryableClassification(code);
     }
     if (isGroupPolicyDeniedError(error)) {
-        return toTerminalClassification(toGroupPolicyFailure(error));
+        return toTerminalClassification(toGroupPolicyFailure(error), 'command-rejected');
     }
     if (error instanceof GroupTopologyConfigValidationError || error instanceof GroupTopologyValidationError) {
-        return toTerminalClassification(toTopologyValidationFailure(error));
+        return toTerminalClassification(toTopologyValidationFailure(error), 'command-rejected');
     }
     if (error instanceof AdminPruneValidationError) {
-        return toTerminalClassification(toAdminPruneValidationFailure(error));
+        return toTerminalClassification(toAdminPruneValidationFailure(error), 'command-rejected');
     }
     if (error instanceof CrdtHttpAdminRejectionError) {
-        return toTerminalClassification(toCrdtAdminRejectionFailure(error));
+        return toTerminalClassification(toCrdtAdminRejectionFailure(error), 'command-rejected');
     }
     if (error instanceof AuthMutationRejectedError || error instanceof GroupConnectDeniedError) {
-        return toTerminalClassification(toExplicitStatusFailure(error, error.code, error.status));
+        return toTerminalClassification(toExplicitStatusFailure(error, error.code, error.status), 'command-rejected');
     }
     if (error instanceof SyntaxError || error instanceof TypeError) {
         return toMalformedCommandClassification();
     }
     if (error instanceof NonRetryableException) {
         return toTerminalClassification(
-            toExplicitStatusFailure(error, 'app-inbox-non-retryable', 400)
+            toExplicitStatusFailure(error, 'app-inbox-non-retryable', 400),
+            'operational'
         );
     }
-    const terminalStatus = TERMINAL_STATUS_BY_CODE.get(code);
-    if (terminalStatus !== undefined) {
-        return toTerminalClassification(toExplicitStatusFailure(error, code, terminalStatus));
+    const terminalPolicy = TERMINAL_POLICY_BY_CODE.get(code);
+    if (terminalPolicy !== undefined) {
+        return toTerminalClassification(
+            toExplicitStatusFailure(error, code, terminalPolicy.status),
+            terminalPolicy.queueFailure
+        );
     }
     return toRetryableClassification(code);
 }
@@ -132,17 +143,28 @@ function toRetryableClassification(code: string): AppInboxErrorClassification {
     };
 }
 
-function toTerminalClassification(result: AppInboxFailure): AppInboxErrorClassification {
-    return { kind: 'terminal', code: result.code, result };
+function toTerminalClassification(
+    result: AppInboxFailure,
+    queueFailure: TerminalAppInboxErrorPolicy['queueFailure']
+): AppInboxErrorClassification {
+    return {
+        kind: 'terminal',
+        code: result.code,
+        result,
+        queueFailure: result.status >= 500 ? 'operational' : queueFailure
+    };
 }
 
 function toMalformedCommandClassification(): AppInboxErrorClassification {
     const code = 'app-inbox-malformed-command';
-    return toTerminalClassification(toTerminalAppInboxFailure({
-        code,
-        status: 400,
-        message: 'App inbox command is malformed'
-    }));
+    return toTerminalClassification(
+        toTerminalAppInboxFailure({
+            code,
+            status: 400,
+            message: 'App inbox command is malformed'
+        }),
+        'operational'
+    );
 }
 
 function toGroupPolicyFailure(error: GroupPolicyDeniedError): AppInboxFailure {

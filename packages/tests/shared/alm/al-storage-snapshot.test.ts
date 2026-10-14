@@ -1,10 +1,17 @@
+import { Temporal } from '@js-temporal/polyfill';
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
 import path from 'node:path';
-
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -31,10 +38,12 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALVolatileOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import {
     createOutboundTestRuntimeFor,
     enqueueOutboundOrThrow,
@@ -120,6 +129,30 @@ interface ALStorageSnapshot extends ALStorageLeg {
 }
 
 describe('ALM browser storage snapshot', () => {
+    it('rejects a stored row that cannot be serialized into the snapshot', async () => {
+        const db = await openIndexedDbAdmissionDatabase({
+            dbName: `snapshot-decoder-failure-${crypto.randomUUID()}`,
+            storeName: ADMISSION_STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
+        try {
+            const transaction = db.transaction(ADMISSION_STORE_NAME, 'readwrite');
+            await readIndexedDbTransaction(transaction, async () =>
+                await readIndexedDbRequest(
+                    transaction.objectStore(ADMISSION_STORE_NAME).put({
+                        key: 'unserializable-snapshot-row',
+                        value: 1n
+                    })
+                ));
+
+            await expect(readALStorageLeg(db)).rejects.toBeInstanceOf(TypeError);
+        }
+        finally {
+            db.close();
+        }
+    }, 1_000);
+
     it('records what the standard superseding workload leaves in IndexedDB', async () => {
         await sendOutboundWorkload(undefined);
         await admitInboundWorkload(undefined);
@@ -236,7 +269,7 @@ async function sendOutboundWorkload(
         }
     }
     finally {
-        runtime.dispose();
+        await runtime.dispose();
     }
 }
 
@@ -284,7 +317,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         carrier: 'ws',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: SELF_PEER_ID,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant()),
             stores,
             volatileStores
         }),
@@ -316,7 +349,7 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
         await settleWork(settled.workQueue, (entry) => entry.typeId === typeId);
     }
     finally {
-        runtime.dispose();
+        await runtime.dispose();
     }
 }
 
@@ -419,12 +452,10 @@ async function readALStorageLeg(db: IDBDatabase): Promise<ALStorageLeg> {
     };
 }
 
-function readStoredRows(db: IDBDatabase, storeName: string): Promise<readonly StoredSnapshotRow[]> {
-    return new Promise((resolve, reject) => {
-        const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
-        request.onsuccess = () => resolve(request.result.map(decodeStoredSnapshotRow));
-        request.onerror = () => reject(request.error ?? new Error(`Cannot read ${storeName}`));
-    });
+async function readStoredRows(db: IDBDatabase, storeName: string): Promise<readonly StoredSnapshotRow[]> {
+    const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+    const rows = await readIndexedDbRequest(request);
+    return rows.map(decodeStoredSnapshotRow);
 }
 
 /**

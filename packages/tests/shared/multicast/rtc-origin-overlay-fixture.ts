@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished, vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
@@ -32,7 +33,8 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createPassThroughTransportFaultPort,
@@ -62,10 +64,15 @@ export interface RtcOriginOverlayFixture {
 }
 
 export interface RtcOriginOverlayFixtureInput {
+    readonly creationNow?: QueueBoxUtilities.CreationClock;
+    /** Numerical epoch domain of the supplied limiter; absent, the fixture's Date clock. */
+    readonly quotaNow?: () => number;
     readonly snapshot: GroupSnapshot;
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The same admission policy port production supplies; absent, the default RTC limiter. */
+    readonly rateLimiter?: RateLimiter;
     /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
     readonly stores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
@@ -87,6 +94,12 @@ export interface OriginAcknowledgementInput {
 
 export const ORIGIN_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
+export const ORIGIN_PRINCIPAL_REF = {
+    applicationId: ORIGIN_ROOM.applicationId,
+    workspaceId: ORIGIN_ROOM.workspaceId,
+    principalId: 'principal-1'
+} as const;
+
 const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'r'];
 
 export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInput): RtcOriginOverlayFixture {
@@ -105,6 +118,8 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     const settlements: ALDeliverySettlement[] = [];
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const manager = new WebRtcOverlayMulticastManager({
+        creationNow: input.creationNow ?? Temporal.Now.instant,
+        quotaNow: input.quotaNow ?? Date.now,
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
@@ -117,7 +132,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         },
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
+        rateLimiter: input.rateLimiter ?? toRateLimiter(),
         faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
@@ -190,12 +205,6 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
     };
 }
 
-export const ORIGIN_PRINCIPAL_REF = {
-    applicationId: ORIGIN_ROOM.applicationId,
-    workspaceId: ORIGIN_ROOM.workspaceId,
-    principalId: 'principal-1'
-} as const;
-
 /** The room of `a`, `b`, `c` and `d`, where `a`, `b` and `d` are sessions of one principal. */
 export function createOriginPrincipalSnapshot(): GroupSnapshot {
     const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
@@ -209,12 +218,12 @@ export function createOriginPrincipalSnapshot(): GroupSnapshot {
 }
 
 /** The snapshot with the session `directorSessionId` appointed its room's director, the room's leader. */
-export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessionId: string): GroupSnapshot {
+export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessionId: string, observedAtMs: number): GroupSnapshot {
     const principalId = snapshot.activeSessions.find((session) => session.sessionId === directorSessionId)?.principalId ??
         directorSessionId;
     const appointment = createRallarGroupDirectorAppointment({
         session: { clientId: principalId, sessionId: directorSessionId },
-        now: Date.now()
+        now: observedAtMs
     });
     return {
         ...snapshot,

@@ -10,6 +10,7 @@ export interface ToRemoteControlConfigInput {
 export function toRemoteControlConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestConfig {
     const { bootstrap } = input;
     return {
+        eventHistory: bootstrap.eventHistory,
         runId: bootstrap.runId,
         agentId: bootstrap.agentId,
         environment: bootstrap.environment,

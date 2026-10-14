@@ -116,6 +116,22 @@ const allEqualWithinSchema: JsonSchema = {
     additionalProperties: false
 };
 
+const sameUniqueStringSetAsRoleSchema: JsonSchema = {
+    type: 'object',
+    required: ['groupAssertionId', 'aggregate', 'source', 'scope', 'comparison'],
+    properties: {
+        ...groupAssertionCommonProperties,
+        aggregate: { const: 'sameUniqueStringSetAsRole' },
+        comparison: {
+            type: 'object',
+            required: ['role', 'source'],
+            properties: { role: stringSchema, source: groupAssertionSourceSchema },
+            additionalProperties: false
+        }
+    },
+    additionalProperties: false
+};
+
 export const RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA: JsonSchema = {
     type: 'array',
     items: {
@@ -124,7 +140,8 @@ export const RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA: JsonSchema = {
             noneMatchSchema,
             countMatchingSchema,
             allEqualSchema,
-            allEqualWithinSchema
+            allEqualWithinSchema,
+            sameUniqueStringSetAsRoleSchema
         ]
     }
 };

@@ -26,8 +26,11 @@ import {
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
+
 type AgentPrefix = 'A' | 'B' | 'C';
+
 type ReadinessScope = 'owner' | 'all';
+
 type FormationEntryLifecycleState = 'forming' | 'active';
 
 interface CreateGroupFormationLifecycleDriverConfig {
@@ -36,6 +39,7 @@ interface CreateGroupFormationLifecycleDriverConfig {
     readonly workspaceId: string;
     readonly messagesRtcTypeId: string;
     readonly messagesRtcTopicId: string;
+    readonly almDiagnostics: boolean;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly formation: Pick<LiveRtcFormationOperations, 'readiness'>;
 }
@@ -102,25 +106,6 @@ export interface LiveRtcControlPort extends
         | 'waitForMessage'
         | 'readyPeerIds'
     > {}
-
-/**
- * The policy every live three-browser group is created with. The driver commands each boundary
- * itself, so the stage triggers would dial the layout before it does; the admission and activation
- * modes are part of the same literal and moving either changes what the matrix exercises.
- */
-export const MANUAL_TRIGGER_POLICY = {
-    preset: 'managed',
-    admission: {
-        mode: 'open'
-    },
-    activation: {
-        mode: 'manual'
-    },
-    establishment: {
-        planTrigger: { kind: 'manual' },
-        connectTrigger: { kind: 'manual' }
-    }
-};
 
 export interface SetupGroupMembershipInput {
     readonly control: LiveRtcControlPort;
@@ -246,6 +231,34 @@ interface WaitForCanonicalFormationReadinessInput {
     readonly startedAtMs: number;
 }
 
+interface AlmRecordedRtcConnection extends LiveRtcControlClient.CapturedConnection {
+    readonly almDiagnostics: boolean;
+}
+
+interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
+    readonly connection: string;
+    readonly transport: TransportUnderTest;
+}
+
+/**
+ * The policy every live three-browser group is created with. The driver commands each boundary
+ * itself, so the stage triggers would dial the layout before it does; the admission and activation
+ * modes are part of the same literal and moving either changes what the matrix exercises.
+ */
+export const MANUAL_TRIGGER_POLICY = {
+    preset: 'managed',
+    admission: {
+        mode: 'open'
+    },
+    activation: {
+        mode: 'manual'
+    },
+    establishment: {
+        planTrigger: { kind: 'manual' },
+        connectTrigger: { kind: 'manual' }
+    }
+};
+
 export namespace LiveRtcFormationFailure {
     export interface Input {
         readonly cause: Error;
@@ -298,10 +311,11 @@ function retainConnectionFailure(failure: Error, connections: readonly Formation
 export function createGroupFormationLifecycleDriver(
     config: CreateGroupFormationLifecycleDriverConfig
 ): GroupFormationLifecycleDriver {
+    const frozenConfig = Object.freeze({ ...config });
     return {
-        setupGroupMembership: (input) => setupGroupMembership(config, input),
-        run: async (input) => await runGroupFormationLifecycle(config, input),
-        reconnectAndWaitForPeerReadiness: async (input) => await reconnectFormationAgent(config, input)
+        setupGroupMembership: (input) => setupGroupMembership(frozenConfig, input),
+        run: async (input) => await runGroupFormationLifecycle(frozenConfig, input),
+        reconnectAndWaitForPeerReadiness: async (input) => await reconnectFormationAgent(frozenConfig, input)
     };
 }
 
@@ -622,6 +636,13 @@ async function connectFormationAgent(
         timeoutMs: 60_000
     };
     const result = await input.control.executeOk(execution);
+    const appliedAlmDiagnostics = input.control.resultValue(result).almDiagnostics;
+    if (
+        result.commandId !== commandId || result.agentId !== input.agent.agentId ||
+        appliedAlmDiagnostics !== config.almDiagnostics
+    ) {
+        throw new Error(`ALM recording policy is unverified for Connect ${commandId}.`);
+    }
     if (captureIntent.connectionIntent !== 'explicit') {
         return { commandId, sessionId: input.control.requireSessionId(result, commandId) };
     }
@@ -630,7 +651,8 @@ async function connectFormationAgent(
         input.control.resultValue(result).rtcCapture
     );
     const sessionId = input.control.requireSessionId(result, commandId);
-    const rtcCapture: LiveRtcControlClient.CapturedConnection = {
+    const rtcCapture: AlmRecordedRtcConnection = {
+        almDiagnostics: appliedAlmDiagnostics,
         runId: execution.runId,
         agentId: execution.agentId,
         commandId,
@@ -644,11 +666,6 @@ async function connectFormationAgent(
         ? undefined
         : await acquireFormationNativeCapture(acquisition, rtcCapture);
     return { commandId, sessionId, rtcCapture, ...(nativeAcquisition === undefined ? {} : { nativeAcquisition }) };
-}
-
-interface FormationConnectCommand extends RallarBlackBoxTestRtcConnectCommand {
-    readonly connection: string;
-    readonly transport: TransportUnderTest;
 }
 
 function toFormationConnectCommand(
@@ -667,6 +684,7 @@ function toFormationConnectCommand(
         transport: input.transport,
         rallar: {
             ...captureOptions,
+            almDiagnostics: config.almDiagnostics,
             apiBaseUrl: readLiveRtcAgentApiUrls(config.apiBaseUrl)[input.agent.prefix],
             restoreSession: true,
             logoutOnClose: false,
@@ -758,7 +776,7 @@ async function configureMeshTopology(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `topology/config/requests/${toPathSegment(`topology-mesh-${input.suffix}`)}`
+                    `topology/config/requests/${encodeURIComponent(`topology-mesh-${input.suffix}`)}`
                 ),
                 method: 'PUT',
                 body: {
@@ -805,7 +823,7 @@ async function enterGroupConnectionCycle(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/${operation}/requests/${toPathSegment(`${operation}-${input.suffix}`)}`
+                    `lifecycle/${operation}/requests/${encodeURIComponent(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: operation === 'reconfigure' ? { landing: 'hold' } : {}
@@ -842,7 +860,7 @@ async function connectPublishedLayout(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/connect/requests/${toPathSegment(`connect-${input.suffix}`)}`
+                    `lifecycle/connect/requests/${encodeURIComponent(`connect-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {
@@ -875,7 +893,7 @@ async function activateGroup(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/activate/requests/${toPathSegment(`activate-${transport}-${input.suffix}`)}`
+                    `lifecycle/activate/requests/${encodeURIComponent(`activate-${transport}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -1079,11 +1097,11 @@ function groupRequestPath(
     groupId: string,
     suffix?: string
 ): string {
-    const groupPath = `/api/state/apps/${toPathSegment(config.applicationId)}/workspaces/${
-        toPathSegment(
+    const groupPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+        encodeURIComponent(
             config.workspaceId
         )
-    }/groups/${toPathSegment(groupId)}`;
+    }/groups/${encodeURIComponent(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
@@ -1172,10 +1190,6 @@ function toNonnegativeInteger(value: RtcBaselineJson | undefined): number | unde
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
-}
-
-function toPathSegment(value: string): string {
-    return encodeURIComponent(value);
 }
 
 async function setupGroupMembership(

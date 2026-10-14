@@ -1,5 +1,4 @@
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
@@ -27,7 +26,7 @@ import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-stor
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import * as auth from '@shared/api/auth.ts';
 import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -45,12 +44,14 @@ describe('WS retained-work faults', () => {
         });
         vi.stubGlobal('WebSocket', TestWebSocket);
     });
-    afterEach(() => {
-        vi.clearAllTimers();
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        TestWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
     });
 
     it('supersedes held work through the real configured QoS normalizer and submits only its replacement', async () => {
@@ -96,9 +97,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
         // This fixture owns the auth-storage port; room authority is the real readable repository.
@@ -181,9 +185,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const callbackMessages: string[] = [];
         service.onOutboxMessageDo('observer', {

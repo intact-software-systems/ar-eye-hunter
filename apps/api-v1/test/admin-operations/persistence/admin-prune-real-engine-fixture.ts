@@ -1,22 +1,22 @@
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import assert from 'node:assert/strict';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
+import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import assert from 'node:assert/strict';
+
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from '../../db/pglite-auth-test-harness.ts';
-
-type ApiAdminInboxService = ReturnType<typeof createApiAdminInboxService>;
-type AdminPruneResult = Awaited<ReturnType<ApiAdminInboxService['pruneExpired']>>;
 
 export async function assertUtcPGliteSession(sql: PGliteSql): Promise<void> {
     const [databaseSession] = await sql<{ isUtc: boolean; }[]>`
@@ -31,20 +31,17 @@ export async function assertUtcPGliteSession(sql: PGliteSql): Promise<void> {
 
 export class RealEngineAdminPruneFixture {
     readonly engine = new InboxOutboxEngine();
-    readonly activeDequeues = new Set<Promise<void>>();
-    readonly appAdmin: ReturnType<typeof createApiAdminInboxService>;
+    readonly appAdmin: AppAdminInboxService;
     wakeCount = 0;
 
     private readonly now: number;
 
     private constructor(sql: PGliteSql, now: number) {
         this.now = now;
-        const repository = createPSqlResourceInboxRepository(sql);
-        const queue = new PSqlQueueBox(repository);
+        const repository = createPSqlResourceInboxRepository(sql, () => new Date(this.now));
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
-        inbox.dequeueInbox = trackDequeue(this.activeDequeues, inbox.dequeueInbox.bind(inbox));
-        outbox.dequeueOutbox = trackDequeue(this.activeDequeues, outbox.dequeueOutbox.bind(outbox));
         const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({
             engine: this.engine,
@@ -61,7 +58,7 @@ export class RealEngineAdminPruneFixture {
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
             database: sql,
             serviceId: 'server-1',
-            options: { waitMaxElapsedMsecs: 10_000, nowEpochMs: () => this.now },
+            options: { waitMaxElapsedMsecs: 10_000, nowEpochMs: Date.now },
             currentAuthority: {
                 readSession: () => Promise.resolve(this.adminAuthority()),
                 adminClientIds: ['admin']
@@ -77,7 +74,7 @@ export class RealEngineAdminPruneFixture {
         this.engine.start();
     }
 
-    async prune(): Promise<AdminPruneResult> {
+    async prune(): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         return await this.appAdmin.pruneExpired({
             adminSession: {
                 clientId: 'admin',
@@ -94,12 +91,8 @@ export class RealEngineAdminPruneFixture {
         });
     }
 
-    async stopAndDrain(): Promise<void> {
-        this.engine.stop();
-        while (this.activeDequeues.size > 0) {
-            await Promise.allSettled([...this.activeDequeues]);
-        }
-        assert.equal(this.activeDequeues.size, 0);
+    async stop(): Promise<void> {
+        await this.engine.stop();
     }
 
     /** The port it stands in for is the middleware's, which announces an external write. */
@@ -119,19 +112,4 @@ export class RealEngineAdminPruneFixture {
             expiresAtEpochMs: this.now + 60_000
         };
     }
-}
-
-function trackDequeue(
-    active: Set<Promise<void>>,
-    dequeue: (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void>
-): (typesToDequeue: Set<string>, resilience: ResourceInboxResilience) => Promise<void> {
-    return (typesToDequeue, resilience) => {
-        const pending = dequeue(typesToDequeue, resilience);
-        active.add(pending);
-        void pending.then(
-            () => active.delete(pending),
-            () => active.delete(pending)
-        );
-        return pending;
-    };
 }

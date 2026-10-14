@@ -1,4 +1,11 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -84,7 +91,7 @@ function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<Outbo
 }
 
 async function admitDirect(stores: OutboundTestStores, message: ALMessage, timeoutMs: number) {
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
     const read = await stores.admissionStore.readOutgoingMessage({
         msg: message,
         observedCanonicalEntry: entry,

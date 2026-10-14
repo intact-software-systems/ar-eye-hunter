@@ -4,9 +4,13 @@ import {
     toRtcCaptureReadout
 } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import { resolveRtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
+import { validateRtcB06BrowserRecording } from './validate-rtc-b06-browser-recording.ts';
 
 import type {
     RtcBaselineIssueDto,
+    RtcBaselineJson,
     RtcBaselineResolvedConfigurationValueDto,
     RtcBaselineSampleDto
 } from '../contracts/rtc-baseline-contracts.ts';
@@ -38,31 +42,63 @@ export function validateRtcB06CaptureEvidence(
     if (!Array.isArray(captures) || captures.length === 0) {
         return [captureIssue('receipt-unavailable')];
     }
-    return captures.flatMap((capture) => {
-        if (typeof capture !== 'object' || capture === null || Array.isArray(capture)) {
-            return [captureIssue('invalid-capture-record')];
-        }
-        const hasAttribution = ['runId', 'agentId', 'commandId', 'connection', 'sessionId'].every((field) => {
-            const value = capture[field];
-            return typeof value === 'string' && value.length > 0;
-        });
-        const requested = toRtcCaptureConfiguration(capture.requestedConfiguration);
-        if (
-            !hasAttribution || (capture.transport !== 'realtime' && capture.transport !== 'messages.rtc') ||
-            requested === undefined
-        ) {
-            return [captureIssue('invalid-capture-record')];
-        }
-        if (requested.mode !== mode) {
-            return [captureIssue('mode-mismatch')];
-        }
-        const receipt = capture.receipt;
-        const decoded = toRtcCaptureReadout(receipt === undefined ? undefined : { status: 'observed', value: receipt });
-        const reason = decoded.left ?? (decoded.right === undefined
-            ? 'receipt-unavailable'
-            : resolveRequiredRtcCaptureFailure(requested, decoded.right));
-        return reason === undefined ? [] : [captureIssue(reason)];
+    const captureIssues = captures.flatMap((capture) => validateConnectCapture(capture, mode));
+    if (captureIssues.length > 0) {
+        return captureIssues;
+    }
+    const selection = resolveRtcB06DiagnosticSelection(initializedConfiguration, sample.identity);
+    if (!selection.ok) {
+        return selection.issues;
+    }
+    const almIssues = validateAlmCapturePolicy(selection.value.almDiagnostics, captures);
+    return almIssues.length > 0
+        ? almIssues
+        : validateRtcB06BrowserRecording(sample, selection.value.routineBrowserDiagnostics, captures);
+}
+
+function validateAlmCapturePolicy(
+    almDiagnostics: boolean,
+    captures: readonly RtcBaselineJson[]
+): RtcBaselineIssueDto[] {
+    return captures.every((capture) =>
+            typeof capture === 'object' && capture !== null && !Array.isArray(capture) &&
+            capture.almDiagnostics === almDiagnostics
+        )
+        ? []
+        : [{
+            path: '$.rawEvidence.rtcConnectCaptures',
+            code: 'alm-policy-unverified',
+            message: 'Every completed Connect must prove the initialized ALM recording policy.'
+        }];
+}
+
+function validateConnectCapture(
+    capture: RtcBaselineJson,
+    mode: RtcSignalingDiagnostics.CaptureMode
+): RtcBaselineIssueDto[] {
+    if (typeof capture !== 'object' || capture === null || Array.isArray(capture)) {
+        return [captureIssue('invalid-capture-record')];
+    }
+    const hasAttribution = ['runId', 'agentId', 'commandId', 'connection', 'sessionId'].every((field) => {
+        const value = capture[field];
+        return typeof value === 'string' && value.length > 0;
     });
+    const requested = toRtcCaptureConfiguration(capture.requestedConfiguration);
+    if (
+        !hasAttribution || (capture.transport !== 'realtime' && capture.transport !== 'messages.rtc') ||
+        requested === undefined
+    ) {
+        return [captureIssue('invalid-capture-record')];
+    }
+    if (requested.mode !== mode) {
+        return [captureIssue('mode-mismatch')];
+    }
+    const receipt = capture.receipt;
+    const decoded = toRtcCaptureReadout(receipt === undefined ? undefined : { status: 'observed', value: receipt });
+    const reason = decoded.left ?? (decoded.right === undefined
+        ? 'receipt-unavailable'
+        : resolveRequiredRtcCaptureFailure(requested, decoded.right));
+    return reason === undefined ? [] : [captureIssue(reason)];
 }
 
 function captureIssue(code: string): RtcBaselineIssueDto {

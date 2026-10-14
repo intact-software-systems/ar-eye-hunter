@@ -242,7 +242,7 @@ describe('what never reads backpressure (D184)', () => {
         holdAtHighWatermark(fixture.channels.b!);
         holdAtHighWatermark(fixture.channels.c!);
         const message = createRejectingMulticast('dequeued');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_OUTBOX, Temporal.Now.instant());
 
         await fixture.manager.outbox.enqueueIfAbsent({
             ...entry,

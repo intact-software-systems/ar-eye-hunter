@@ -1,4 +1,10 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -7,21 +13,18 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
 import '../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    createVolatileOutboundTestStores
+    createVolatileOutboundTestStores,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
-
-afterEach(() => {
-    vi.restoreAllMocks();
-});
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
 type SenderQueueWaitEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'sender-queue-wait'; }>;
@@ -30,7 +33,11 @@ type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 
 /** The admission read chain a first send walks: client record, stored message, canonical pair, control. */
 const FIRST_SEND_READ_OPERATIONS = 9;
 
-function createStores(kind: 'memory' | 'indexeddb') {
+afterEach(() => {
+    vi.restoreAllMocks();
+});
+
+function createStores(kind: 'memory' | 'indexeddb'): ALOutboundRuntimeStores<OutboundTestPayload> {
     const backend = kind === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
@@ -108,14 +115,19 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(diagnostics.filter((event) => event.kind === 'browser-lock-hold')[0]).toMatchObject({
             origin: 'send'
         });
-        runtime.dispose();
+        await runtime.dispose();
     }
 );
 
 it('charges the drain its own commit rather than leaving it on the next send', async () => {
     const stores = createStores('memory');
     const store = stores.admissionStore;
-    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
+    const competitor = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('competing-sender-version'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const commitBundle = store.commitBundle.bind(store);
     let contested = false;
     // A competing sender wins the version fence inside the first commit, so the send below is told
@@ -153,7 +165,7 @@ it('charges the drain its own commit rather than leaving it on the next send', a
     });
     expect(drained?.readOperationCount).toBeGreaterThan(0);
     expect(senderQueueWaitsOf(diagnostics).map((event) => event.origin)).toContain('drain');
-    runtime.dispose();
+    await runtime.dispose();
 });
 
 it('names the origin a queued send waited behind', async () => {
@@ -183,7 +195,7 @@ it('names the origin a queued send waited behind', async () => {
         { origin: 'send', queued: false, queuedBehindOrigin: 'none' },
         { origin: 'send', queued: true, queuedBehindOrigin: 'send' }
     ]);
-    runtime.dispose();
+    await runtime.dispose();
 });
 
 it.each(['memory', 'indexeddb'] as const)(
@@ -238,7 +250,7 @@ it.each(['memory', 'indexeddb'] as const)(
         for (const admission of controlAdmissionsOf(diagnostics)) {
             expect(admission).not.toHaveProperty('phase');
         }
-        runtime.dispose();
+        await runtime.dispose();
     }
 );
 
@@ -280,5 +292,5 @@ it('names the lane on the commit, readiness and drain events each store lane sta
         expect(event, event.workerId).toMatchObject({ lane: laneOf(event.workerId) });
     }
     expect(new Set(workEvents.map((event) => laneOf(event.workerId)))).toEqual(new Set(['durable', 'volatile']));
-    runtime.dispose();
+    await runtime.dispose();
 });

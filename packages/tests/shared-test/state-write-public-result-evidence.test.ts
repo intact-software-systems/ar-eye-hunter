@@ -1,7 +1,14 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createGroupStateWriteEvidenceFixture } from './group-state-write-evidence-fixtures.ts';
 
 const command = {
     ri_row_id: 1,
@@ -17,89 +24,6 @@ const command = {
     result_resource: '{}',
     ri_resource: '{}'
 };
-
-function createCanonicalNewerPresenceEvidence() {
-    const resourceId = 'physical-group-row-contract';
-    const logicalId = 'group-command-contract';
-    const groupRef = {
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId: 'group-1'
-    };
-    const fixture = createGroupSnapshotFixture({
-        ...groupRef,
-        sessionIds: ['owner-session', 'member-session']
-    });
-    const snapshot = {
-        ...fixture,
-        causalRevision: { groupRevision: 8, presenceRevision: 2 },
-        group: { ...fixture.group, snapshotVersion: 8, presenceVersion: 2 }
-    };
-    const event = {
-        ...groupRef,
-        eventId: 'group-event-contract',
-        eventType: 'member-joined',
-        snapshotVersion: 8,
-        causalRevision: { groupRevision: 8, presenceRevision: 1 },
-        occurredAtEpochMs: 1,
-        actor: { kind: 'service', serviceId: 'api-v1' },
-        reason: null,
-        traceId: null,
-        requestId: logicalId,
-        payload: {}
-    };
-    const authoritative: readonly PersistedCommandEvidence[] = [{
-        appInboxResourceId: resourceId,
-        appInboxTopicId: 'app-inbox',
-        appInboxContextId: 'scope',
-        valid: true,
-        commandType: 'GROUP_MEMBER_UPSERT',
-        commandIds: [logicalId],
-        receipt: {
-            appInboxResourceId: resourceId,
-            commandId: logicalId,
-            commandHash: `sha256:${'f'.repeat(64)}`,
-            outcome: 'applied',
-            outboxIds: [],
-            identityKind: 'physical-resource-id',
-            requestId: logicalId,
-            aggregateRef: groupRef,
-            causalRevision: { groupRevision: 8, presenceRevision: 1 },
-            snapshotVersion: 8,
-            eventId: event.eventId
-        }
-    }];
-    const evidence = (candidateSnapshot: unknown, candidateEvent: unknown) => {
-        const result = {
-            ...command,
-            ri_resource_id: resourceId,
-            ri_resource: JSON.stringify({
-                payload: {
-                    typeId: 'GROUP_MEMBER_UPSERT',
-                    resource: JSON.stringify({
-                        commandId: logicalId
-                    })
-                }
-            }),
-            result_resource: JSON.stringify({
-                status: 'ok',
-                result: {
-                    snapshot: candidateSnapshot,
-                    event: candidateEvent
-                }
-            })
-        };
-        return deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
-            [result],
-            [],
-            [],
-            undefined,
-            authoritative
-        );
-    };
-    return { snapshot, event, evidence };
-}
 
 describe('durable AppInbox public result evidence', () => {
     it('requires the public client response shape without inventing outbox ids', () => {
@@ -121,17 +45,23 @@ describe('durable AppInbox public result evidence', () => {
             })
         };
         expect(deriveApiV1StateWriteEvidence({
-            match: 'scope',
-            commandTypes: ['CLIENT_INSTANCE_UPSERT']
-        }, [client])).toMatchObject({
+            spec: {
+                match: 'scope',
+                commandTypes: ['CLIENT_INSTANCE_UPSERT']
+            },
+            rawRows: [client]
+        })).toMatchObject({
             atomicCompletionFailures: 0,
             receiptOutboxIdCount: 0,
             appInbox: [{ durableResultValid: true }]
         });
         expect(deriveApiV1StateWriteEvidence({
-            match: 'scope',
-            commandTypes: ['CLIENT_INSTANCE_UPSERT']
-        }, [{ ...client, result_resource: JSON.stringify({ status: 'ok' }) }]))
+            spec: {
+                match: 'scope',
+                commandTypes: ['CLIENT_INSTANCE_UPSERT']
+            },
+            rawRows: [{ ...client, result_resource: JSON.stringify({ status: 'ok' }) }]
+        }))
             .toMatchObject({ atomicCompletionFailures: 1 });
     });
 
@@ -191,14 +121,14 @@ describe('durable AppInbox public result evidence', () => {
                 eventId: 'event-1'
             }
         }];
-        expect(deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['CLIENT_INSTANCE_UPSERT'] },
-            [client],
-            [],
-            [],
-            undefined,
-            authoritative
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: { match: 'scope', commandTypes: ['CLIENT_INSTANCE_UPSERT'] },
+            rawRows: [client],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
     it('rejects a swapped group in a same-shaped group result', () => {
@@ -228,13 +158,13 @@ describe('durable AppInbox public result evidence', () => {
                 }
             })
         };
-        expect(deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['GROUP_UPDATE'] },
-            [group],
-            [],
-            [],
-            undefined,
-            [{
+        expect(deriveApiV1StateWriteEvidence({
+            spec: { match: 'scope', commandTypes: ['GROUP_UPDATE'] },
+            rawRows: [group],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [{
                 appInboxResourceId: resourceId,
                 appInboxTopicId: 'app-inbox',
                 appInboxContextId: 'scope',
@@ -259,7 +189,7 @@ describe('durable AppInbox public result evidence', () => {
                     eventId: 'group-event-1'
                 }
             }]
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
     it('accepts a group result whose independently convergent presence is newer', () => {
@@ -337,14 +267,14 @@ describe('durable AppInbox public result evidence', () => {
         const evidence = (
             candidate = result,
             authority: readonly PersistedCommandEvidence[] = authoritative
-        ) => deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
-            [candidate],
-            [],
-            [],
-            undefined,
-            authority
-        );
+        ) => deriveApiV1StateWriteEvidence({
+            spec: { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
+            rawRows: [candidate],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authority
+        });
 
         expect(evidence()).toMatchObject({
             atomicCompletionFailures: 0,
@@ -417,25 +347,43 @@ describe('durable AppInbox public result evidence', () => {
     });
 
     it('rejects a truncated authoritative group snapshot', () => {
-        const { snapshot, event, evidence } = createCanonicalNewerPresenceEvidence();
+        const { snapshot, event, evidence } = createGroupStateWriteEvidenceFixture({
+            resourceId: 'physical-group-row-contract',
+            commandId: 'group-command-contract',
+            commandType: 'GROUP_MEMBER_UPSERT',
+            commandHash: `sha256:${'f'.repeat(64)}`,
+            eventId: 'group-event-contract',
+            eventType: 'member-joined'
+        });
 
-        expect(evidence({
+        expect(evidence(event, {}, {
             causalRevision: snapshot.causalRevision,
             group: snapshot.group
-        }, event)).toMatchObject({
+        })).toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1
         });
     });
 
     it('rejects a truncated authoritative group event', () => {
-        const { snapshot, event, evidence } = createCanonicalNewerPresenceEvidence();
+        const { snapshot, event, evidence } = createGroupStateWriteEvidenceFixture({
+            resourceId: 'physical-group-row-contract',
+            commandId: 'group-command-contract',
+            commandType: 'GROUP_MEMBER_UPSERT',
+            commandHash: `sha256:${'f'.repeat(64)}`,
+            eventId: 'group-event-contract',
+            eventType: 'member-joined'
+        });
 
-        expect(evidence(snapshot, {
-            eventId: event.eventId,
-            requestId: event.requestId,
-            snapshotVersion: event.snapshotVersion
-        })).toMatchObject({
+        expect(evidence(
+            {
+                eventId: event.eventId,
+                requestId: event.requestId,
+                snapshotVersion: event.snapshotVersion
+            },
+            {},
+            snapshot
+        )).toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1
         });
@@ -464,13 +412,13 @@ describe('durable AppInbox public result evidence', () => {
                 retry: null
             })
         };
-        expect(deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
-            [denied],
-            [],
-            [],
-            undefined,
-            [{
+        expect(deriveApiV1StateWriteEvidence({
+            spec: { match: 'scope', commandTypes: ['GROUP_MEMBER_UPSERT'] },
+            rawRows: [denied],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [{
                 appInboxResourceId: resourceId,
                 appInboxTopicId: 'app-inbox',
                 appInboxContextId: 'scope',
@@ -478,7 +426,7 @@ describe('durable AppInbox public result evidence', () => {
                 commandType: 'GROUP_MEMBER_UPSERT',
                 commandIds: ['denied-group-command']
             }]
-        )).toMatchObject({
+        })).toMatchObject({
             atomicCompletionFailures: 0,
             failedAppInboxCount: 1,
             statusResultFailures: 0

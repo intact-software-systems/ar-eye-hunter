@@ -1,35 +1,55 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
-import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { encodeClientStateStorageKeyPart } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-key-codec.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateOptimisticTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { createRequire } from 'node:module';
-
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { createTestGroupStateRuntime, type TestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { createPostgresClientPhaseDriver, type PostgresClientPhaseDriver } from '../../../rallar-system/client-state/postgres-client-mutation-test-driver.ts';
-
+import { createTestGroupStateRuntime, type TestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
+import type { PostgresSql } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
-type PostgresSql =
-    & PSqlSql
-    & Readonly<{
-        end(): Promise<void>;
-    }>;
-type PostgresFactory = (
-    databaseUrl: string,
-    options: Readonly<{
-        max: number;
-        idle_timeout: number;
-        types: Readonly<{
-            timestampWithoutTimeZone: ReturnType<typeof createPostgresTimestampWithoutTimeZoneTextType>;
-        }>;
-    }>
-) => PostgresSql;
+
 const requestIdFor = createPostgresTestRequestIdFactory();
+
+interface CleanupPostgresPresenceClientsInput {
+    readonly sql: PostgresSql;
+    readonly applicationIds: readonly string[];
+    readonly clients: readonly PostgresSql[];
+    readonly hasPrimaryFailure: boolean;
+}
+
+export async function cleanupPostgresPresenceClients(input: CleanupPostgresPresenceClientsInput): Promise<void> {
+    const cleanupResults = await Promise.allSettled(
+        input.applicationIds.map((applicationId) => cleanupRuntimeState(input.sql, applicationId))
+    );
+    const closeResults = await Promise.allSettled(input.clients.map((client) => client.end()));
+    const failures = [...cleanupResults, ...closeResults]
+        .flatMap((result) => result.status === 'rejected' ? [toError(result.reason)] : []);
+    const firstFailure = failures[0];
+    if (!firstFailure) {
+        return;
+    }
+    const secondaryFailures = input.hasPrimaryFailure ? failures : failures.slice(1);
+    if (secondaryFailures.length > 0) {
+        try {
+            console.error(new AggregateError(secondaryFailures, 'Secondary PostgreSQL presence cleanup failures'));
+        }
+        catch {
+            // Cleanup reporting cannot replace the primary failure.
+        }
+    }
+    if (!input.hasPrimaryFailure) {
+        throw firstFailure;
+    }
+}
 
 interface SeedExpiredClientSessionInput {
     readonly sql: PostgresSql;
@@ -43,7 +63,7 @@ export async function seedExpiredClientSession(
 ): Promise<void> {
     await createPostgresClientPhaseDriver({
         sql: input.sql,
-        runtimeRepository: toRuntimeRepository(input.sql),
+        runtimeRepository: new PSqlRuntimeStateRepository(input.sql),
         atEpochMs: input.atEpochMs - 10_000,
         serviceId: 'postgres-expiry-test-setup'
     }).connectSession(
@@ -80,7 +100,7 @@ export async function seedExpiredGroupPresenceSession(
     input: SeedExpiredGroupPresenceSessionInput
 ): Promise<void> {
     const service = createTestGroupStateRuntime({
-        runtimeRepository: toRuntimeRepository(input.sql),
+        runtimeRepository: new PSqlRuntimeStateRepository(input.sql),
         groupStateEventStoreFor: createPostgresGroupStateEventStore,
         now: () => input.atEpochMs - 10_000,
         serviceId: 'postgres-expiry-test-setup'
@@ -121,22 +141,6 @@ export async function cleanupRuntimeState(sql: PostgresSql, applicationId: strin
         delete from runtime_state_store
         where store_key like ${`app=${encodeURIComponent(applicationId)}:%`}
     `;
-}
-
-export function createSql(databaseUrl: string, maxConnections = 1): PostgresSql {
-    const postgres = createRequire(import.meta.url)('postgres') as PostgresFactory;
-
-    return postgres(databaseUrl, {
-        max: maxConnections,
-        idle_timeout: 1,
-        types: {
-            timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
-        }
-    });
-}
-
-export function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
-    return new PSqlRuntimeStateRepository(sql);
 }
 
 interface CreatePostgresClientServiceInput {
@@ -193,7 +197,7 @@ function createPostgresGroupStateEventStore(
     return new PSqlGroupStateEventRepository(runtimeRepository.sql);
 }
 
-class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
+export class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
     private readonly barrier: PrincipalReadBarrier;
     private readonly applicationId?: string;
 
@@ -211,12 +215,21 @@ class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
         return entry;
     }
 
-    override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        const entries = await super.findAllEntries(namespace);
+    override async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntry[]> {
         const applicationId = this.applicationId;
-        return applicationId === undefined
-            ? entries
-            : entries.filter((entry) => entry.key.startsWith(`app=${encodeURIComponent(applicationId)}:`));
+        if (applicationId === undefined) {
+            return await super.findEntriesByPrefixPage(namespace, keyPrefix, options);
+        }
+        const applicationPrefix = `app=${encodeClientStateStorageKeyPart(applicationId)}:`;
+        if (!keyPrefix.startsWith(applicationPrefix) && !applicationPrefix.startsWith(keyPrefix)) {
+            return [];
+        }
+        const scopedKeyPrefix = keyPrefix.length > applicationPrefix.length ? keyPrefix : applicationPrefix;
+        return await super.findEntriesByPrefixPage(namespace, scopedKeyPrefix, options);
     }
 }
 
@@ -260,16 +273,11 @@ class BarrierGroupPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository 
 
 export class PrincipalReadBarrier {
     private arrived = 0;
-    private readonly ready: Promise<void>;
-    private release!: () => void;
-
+    private readonly ready = Promise.withResolvers<void>();
     private readonly participants: number;
 
     constructor(participants: number) {
         this.participants = participants;
-        this.ready = new Promise<void>((resolve) => {
-            this.release = resolve;
-        });
     }
 
     async arrive(): Promise<void> {
@@ -278,9 +286,9 @@ export class PrincipalReadBarrier {
         }
         this.arrived += 1;
         if (this.arrived === this.participants) {
-            this.release();
+            this.ready.resolve();
         }
-        await this.ready;
+        await this.ready.promise;
     }
 }
 
@@ -298,7 +306,7 @@ export async function seedConnectedClientSession(
 ): Promise<void> {
     await createPostgresClientPhaseDriver({
         sql: input.sql,
-        runtimeRepository: toRuntimeRepository(input.sql),
+        runtimeRepository: new PSqlRuntimeStateRepository(input.sql),
         atEpochMs: input.atEpochMs,
         serviceId: 'postgres-worker-client-setup'
     }).connectSession(

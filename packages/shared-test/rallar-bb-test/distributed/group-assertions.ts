@@ -1,4 +1,5 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     DistributedRunManifestSchemaValue,
     RallarBlackBoxDistributedRunValidationIssue
@@ -15,7 +16,8 @@ export const RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES = [
     'noneMatch',
     'countMatching',
     'allEqual',
-    'allEqualWithin'
+    'allEqualWithin',
+    'sameUniqueStringSetAsRole'
 ] as const;
 
 export type RallarBlackBoxGroupAssertionAggregate = typeof RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES[number];
@@ -42,7 +44,7 @@ export interface RallarBlackBoxGroupAssertionScope {
 }
 
 export interface RallarBlackBoxGroupAssertionPredicate {
-    readonly operator: RallarBlackBoxTestAssertOperator;
+    readonly operator: Exclude<RallarBlackBoxTestAssertOperator, 'sameUniqueStringSet'>;
     /** Absent when the operator compares against no expected value, as `exists` does. */
     readonly expected?: ApiJsonValue;
 }
@@ -60,7 +62,14 @@ export type RallarBlackBoxDistributedGroupAssertion =
     | RallarBlackBoxPredicateGroupAssertion
     | RallarBlackBoxCountMatchingGroupAssertion
     | RallarBlackBoxAllEqualGroupAssertion
-    | RallarBlackBoxAllEqualWithinGroupAssertion;
+    | RallarBlackBoxAllEqualWithinGroupAssertion
+    | RallarBlackBoxSameUniqueStringSetGroupAssertion;
+
+export interface RallarBlackBoxSameUniqueStringSetGroupAssertion extends RallarBlackBoxGroupAssertionFields {
+    readonly aggregate: 'sameUniqueStringSetAsRole';
+    readonly scope: RallarBlackBoxGroupAssertionScope;
+    readonly comparison: Readonly<{ role: string; source: RallarBlackBoxGroupAssertionSource; }>;
+}
 
 export interface RallarBlackBoxPredicateGroupAssertion extends RallarBlackBoxGroupAssertionFields {
     readonly aggregate: 'allMatch' | 'noneMatch';
@@ -129,7 +138,7 @@ export interface RallarBlackBoxMatchingGroupAssertionResult
 
 export interface RallarBlackBoxEqualityGroupAssertionResult
     extends RallarBlackBoxDistributedGroupAssertionResultFields {
-    readonly aggregate: 'allEqual' | 'allEqualWithin';
+    readonly aggregate: 'allEqual' | 'allEqualWithin' | 'sameUniqueStringSetAsRole';
     readonly participants: RallarBlackBoxGroupAssertionParticipantCounts;
 }
 
@@ -167,6 +176,13 @@ interface GroupAssertionSourceValidationInput {
     readonly recipeKeys: ReadonlySet<string>;
 }
 
+interface GroupAssertionSourceReferenceValidationInput {
+    readonly source: RallarBlackBoxGroupAssertionSource;
+    readonly path: string;
+    readonly manifest: DistributedRunManifestSchemaValue;
+    readonly recipeKeys: ReadonlySet<string>;
+}
+
 interface GroupAssertionScopeValidationInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
     readonly path: string;
@@ -188,6 +204,9 @@ export function validateDistributedGroupAssertions(
         return [
             ...validateGroupAssertionIdentity(assertion, path, duplicatePositions.has(index)),
             ...validateGroupAssertionSource({ assertion, path, manifest, recipeKeys }),
+            ...(assertion.aggregate === 'sameUniqueStringSetAsRole'
+                ? validateGroupAssertionComparison({ assertion, path, manifest, recipeKeys })
+                : []),
             ...validateGroupAssertionScope({ assertion, path, manifest }),
             ...validateGroupAssertionAggregate(assertion, path)
         ];
@@ -229,25 +248,62 @@ function validateGroupAssertionIdentity(
 function validateGroupAssertionSource(
     input: GroupAssertionSourceValidationInput
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    const source = input.assertion.source;
+    return validateGroupAssertionSourceReference({
+        source: input.assertion.source,
+        path: `${input.path}.source`,
+        manifest: input.manifest,
+        recipeKeys: input.recipeKeys
+    });
+}
+
+function validateGroupAssertionComparison(
+    input:
+        & GroupAssertionSourceValidationInput
+        & Readonly<{ assertion: RallarBlackBoxSameUniqueStringSetGroupAssertion; }>
+): readonly RallarBlackBoxDistributedRunValidationIssue[] {
+    const issues = validateGroupAssertionSourceReference({
+        source: input.assertion.comparison.source,
+        path: `${input.path}.comparison.source`,
+        manifest: input.manifest,
+        recipeKeys: input.recipeKeys
+    });
+    const role = input.assertion.comparison.role;
+    const targetPolicy = input.manifest.targetPolicy;
+    const declaredRoles = new Set([
+        ...input.manifest.roleAssignments.map((assignment) => assignment.role),
+        ...Object.keys(targetPolicy.mode === 'role-map' ? targetPolicy.roles ?? {} : {})
+    ]);
+    return role.trim().length > 0 &&
+            (declaredRoles.has(role) || input.manifest.roleAssignmentPolicy !== undefined)
+        ? issues
+        : [...issues, {
+            path: `${input.path}.comparison.role`,
+            message: 'Comparison role must name a declared, non-empty role.'
+        }];
+}
+
+function validateGroupAssertionSourceReference(
+    input: GroupAssertionSourceReferenceValidationInput
+): readonly RallarBlackBoxDistributedRunValidationIssue[] {
+    const { source, path, manifest, recipeKeys } = input;
     const fieldIssues = (['recipeId', 'commandId', 'path'] as const)
         .filter((field) => source[field].trim().length === 0)
-        .map((field) => ({ path: `${input.path}.source.${field}`, message: 'A non-empty string is required.' }));
-    if (!input.recipeKeys.has(source.recipeId)) {
+        .map((field) => ({ path: `${path}.${field}`, message: 'A non-empty string is required.' }));
+    if (!recipeKeys.has(source.recipeId)) {
         return [
             ...fieldIssues,
             {
-                path: `${input.path}.source.recipeId`,
+                path: `${path}.recipeId`,
                 message: 'Source recipeId must reference a recipe selection in this manifest.'
             }
         ];
     }
-    const inlineCommandIds = toInlineRecipeCommandIds(input.manifest, source.recipeId);
+    const inlineCommandIds = toInlineRecipeCommandIds(manifest, source.recipeId);
     return inlineCommandIds !== undefined && !inlineCommandIds.has(source.commandId)
         ? [
             ...fieldIssues,
             {
-                path: `${input.path}.source.commandId`,
+                path: `${path}.commandId`,
                 message: 'Source commandId is not an authored commandId of the inline recipe.'
             }
         ]

@@ -17,6 +17,22 @@ Three-browser RTC baseline against API-v1 memory mode:
 npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
+Select routine browser diagnostic recording explicitly through either entry:
+
+```sh
+npm run test:rallar:full-stack:memory:live-rtc-3:routine-browser-diagnostics-enabled
+npm run test:rallar:full-stack:memory:live-rtc-3:routine-browser-diagnostics-disabled
+```
+
+Both entries use the same matrix spec. The generic entry accepts
+`RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=enabled|disabled` and defaults to
+enabled. Disabled recording omits routine informational chronology; it keeps
+warnings, errors and substantive outcomes, but reduces context for diagnosis.
+The selection is immutable for each fresh browser adapter. ALM recording
+(`RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true|false`) and RTC capture
+(`RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=off|signaling|native`) remain independent.
+Health reports the applied adapter selection and its lifetime recording counters.
+
 Both scripts set:
 
 ```text

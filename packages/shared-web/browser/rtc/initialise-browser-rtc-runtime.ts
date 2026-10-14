@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import { toBrowserRtcOverlayALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     createBrowserALVolatileOutboundRuntimeStores,
@@ -41,7 +43,8 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
@@ -60,9 +63,11 @@ import {
     type RtcSignalingDiagnostics
 } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
+
 import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
+    readonly creationNow?: QueueBoxUtilities.CreationClock;
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly volatileBudget: ALVolatileSessionBudget;
     /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
@@ -83,6 +88,8 @@ export function initialiseRtcOverlayMulticastManager(
     const { webRtcConnectionService, qboxEngine } = input;
     const stores = resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId);
     const webRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: input.creationNow ?? Temporal.Now.instant,
         connectionService: webRtcConnectionService,
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         overlayCache: overlaysRepository.readableAcceptedOverlayCache(),

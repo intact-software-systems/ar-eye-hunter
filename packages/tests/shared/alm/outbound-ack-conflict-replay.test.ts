@@ -3,6 +3,7 @@ import {
     afterEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -14,14 +15,16 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALOutboundAdmissionStore,
-    type ALOutboundAdmissionStore
+    type ALOutboundAdmissionStore,
+    type ALOutboundCommitBundle
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
     createOutboundCanonicalEntry,
@@ -29,6 +32,11 @@ import {
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+
+interface ReadRepairBundleInput {
+    readonly attemptIdentity: string;
+    readonly creationNow: QueueBoxUtilities.CreationClock;
+}
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -61,6 +69,7 @@ it.each(
             maxEntries: 10,
             cancel() {}
         });
+        onTestFinished(() => registry.releaseAll());
         const handle = registry.open(message, 'rtc');
         const runtime = createOutboundTestRuntimeFor({
             stores: { admissionStore, workQueue },
@@ -86,7 +95,7 @@ it.each(
         expect(handle.lifecycle().state).toBe('transport-accepted');
 
         // The repair commits after the ACK's read but before its CAS. Both use production writes.
-        const repairBundle = await readRepairBundle(admissionStore, message, 'initial-conflict');
+        const repairBundle = await readRepairBundle(admissionStore, message, { attemptIdentity: 'initial-conflict', creationNow: Temporal.Now.instant });
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation, deadline) => {
             expect(await admissionStore.commitBundle(repairBundle)).toBe('committed');
@@ -132,7 +141,10 @@ it.each(
         expect(handle.lifecycle().state).toBe('transport-accepted');
 
         nowMs = 10_001;
-        const competingReplayRepair = await readRepairBundle(admissionStore, message, 'replay-conflict');
+        const competingReplayRepair = await readRepairBundle(admissionStore, message, {
+            attemptIdentity: 'replay-conflict',
+            creationNow: Temporal.Now.instant
+        });
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation, deadline) => {
             expect(await admissionStore.commitBundle(competingReplayRepair)).toBe('committed');
             return await write(operation, deadline);
@@ -166,8 +178,8 @@ it.each(
 async function readRepairBundle(
     admissionStore: ALOutboundAdmissionStore<OutboundTestPayload>,
     message: ALMessage,
-    attemptIdentity: string
-) {
+    input: ReadRepairBundleInput
+): Promise<ALOutboundCommitBundle<OutboundTestPayload>> {
     const read = await admissionStore.readOutgoingMessage({
         msg: message,
         planner: planTrackedSend,
@@ -176,11 +188,11 @@ async function readRepairBundle(
     });
     const computed = computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(admissionStore, message),
+        outboxEntry: createOutboundCanonicalEntry(admissionStore, message, input.creationNow()),
         dispatchAtMs: read.nowMs,
         intent: 'repair',
         phase: 'immediate',
-        options: { attemptIdentity }
+        options: { attemptIdentity: input.attemptIdentity }
     });
     if (!computed.bundle) {
         throw new Error('Expected a competing repair candidate');

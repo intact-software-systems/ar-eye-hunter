@@ -18,7 +18,11 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDurabilityAlgo, ALOwnershipAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type {
+    ALDurabilityAlgo,
+    ALOwnershipAlgo,
+    ALQosPolicyRequest
+} from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
@@ -122,6 +126,8 @@ export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcC
     readonly logoutOnClose?: boolean;
     /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
+    /** Harness recording only; omission records ALM events. */
+    readonly almDiagnostics?: boolean;
     /**
      * Harness-only: `record` declares a recovery owner on the typed channel this connect subscribes, one that
      * records each invocation as a diagnostic. Absent, the channel declares none, as a product channel by default.
@@ -172,6 +178,8 @@ export interface BlackBoxRallarSendInput {
 
 export interface BlackBoxRallarEvent {
     readonly kind: 'diagnostic' | 'message' | 'close';
+    /** Producer-certified routine progress with no failure or functional evidence; absence is unclassified. */
+    readonly routineBrowserDiagnostic?: true;
     readonly topic: string;
     readonly atEpochMs: number;
     readonly connection?: string;
@@ -201,6 +209,8 @@ export interface BlackBoxRallarDocumentFacts {
 }
 
 export interface BlackBoxRallarConnectDiagnostics {
+    /** Absent when this acquisition installed no harness diagnostics ports. */
+    readonly almDiagnostics?: boolean;
     readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';

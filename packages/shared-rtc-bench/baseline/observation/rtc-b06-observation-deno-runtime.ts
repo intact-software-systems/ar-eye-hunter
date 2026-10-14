@@ -1,7 +1,13 @@
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
+
+import { createRtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
+import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
+import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
+import { readRtcB06DiagnosticSelection } from './read-rtc-b06-diagnostic-selection.ts';
 
 import type { RtcBaselineAttemptLocatorDto, RtcBaselineResult } from '../contracts/rtc-baseline-contracts.ts';
 import type { DenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
@@ -21,6 +27,8 @@ export interface RtcB06LiveProducerCommandInput {
     readonly repositoryRoot: string;
     readonly baselineId: string;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
+    readonly almDiagnostics?: boolean;
+    readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly attempt: RtcBaselineAttemptLocatorDto;
 }
 
@@ -43,11 +51,24 @@ export interface RtcB06ProducerOutput {
     writeStderr(bytes: Uint8Array): Promise<void>;
 }
 
+interface RtcB06PrivateBuildDirectoryIdentity {
+    readonly path: string;
+    readonly dev: number;
+    readonly ino: number;
+}
+
+interface RtcB06PrivateBuildOwnership {
+    readonly buildRoot: string;
+    readonly directories: readonly RtcB06PrivateBuildDirectoryIdentity[];
+}
+
 const liveRtcCommand = ['npm', 'run', 'test:rallar:full-stack:memory:live-rtc-3'];
 
 const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
 
 const inheritedConfiguration = [
+    'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
     'DATABASE_URL',
     'RALLAR_ICE_MODE',
     'RALLAR_ICE_RATE_LIMIT_REQUESTS',
@@ -63,12 +84,29 @@ export function createRtcB06ObservationDenoRuntime(
 ): RtcB06ObservationRunnerDependencies {
     const repositoryRoot = input.repositoryRoot;
     const rtcCaptureMode = input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode;
+    const store = createRtcBaselineFileStore({
+        rootPath: RTC_BASELINE_DENO_ROOT_PATH,
+        filePort: input.adapters.filePort,
+        writerLockRuntime: input.adapters.writerLockRuntime,
+        writerLockConfig: { staleAfterMs: RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS }
+    });
     return {
         envelope: input.envelope,
         preflight: () => preflight(input.runtime),
         readSource: () => readRtcPerformanceObservationSource(input.adapters),
-        runLiveRtcProducer: (producer) =>
-            runRtcB06LiveProducer(input.runtime, input.producerOutput, { ...producer, rtcCaptureMode, repositoryRoot }),
+        runLiveRtcProducer: async (producer) => {
+            const selection = await readRtcB06DiagnosticSelection(store, producer.baselineId, producer.attempt);
+            if (!selection.ok) {
+                await input.producerOutput.writeStderr(encoder.encode(`${JSON.stringify(selection.issues)}\n`));
+                return { exitStatus: 1 };
+            }
+            return runRtcB06LiveProducer(input.runtime, input.producerOutput, {
+                ...producer,
+                rtcCaptureMode,
+                repositoryRoot,
+                ...selection.value
+            });
+        },
         readFinalizedArtifacts: (baselineId) =>
             readRtcPerformanceObservationFinalizedArtifacts(input.runtime, baselineId),
         createArchive: createVerifiedRtcPerformanceObservationArchive,
@@ -121,17 +159,6 @@ export async function runRtcB06LiveProducer(
         await verifyPrivateProductionBuildOwnership(runtime, ownership.directories);
         await runtime.remove(ownership.buildRoot, { recursive: true });
     }
-}
-
-interface RtcB06PrivateBuildDirectoryIdentity {
-    readonly path: string;
-    readonly dev: number;
-    readonly ino: number;
-}
-
-interface RtcB06PrivateBuildOwnership {
-    readonly buildRoot: string;
-    readonly directories: readonly RtcB06PrivateBuildDirectoryIdentity[];
 }
 
 async function allocatePrivateProductionBuild(
@@ -200,6 +227,8 @@ export function createRtcB06LiveProducerCommand(
         executable: 'env',
         arguments: [
             ...inheritedConfiguration.flatMap((name) => ['-u', name]),
+            `RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=${input.almDiagnostics ?? true}`,
+            `RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=${input.routineBrowserDiagnostics ?? 'enabled'}`,
             `RALLAR_BLACK_BOX_RTC_BASELINE_ID=${input.baselineId}`,
             `RALLAR_BLACK_BOX_RTC_CASE_ID=${input.attempt.caseId}`,
             `RALLAR_BLACK_BOX_RTC_INPUT_KEY=${input.attempt.inputKey}`,

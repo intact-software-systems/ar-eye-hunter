@@ -29,10 +29,20 @@ import type {
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import { WsQueueBoxServerReceiptDeadlineIndex } from './ws-queue-box-server-receipt-deadline-index.ts';
+import {
+    recordWsQueueBoxServerReceiptObservation,
+    toImmutableWsQueueBoxServerReceiptAck,
+    toImmutableWsQueueBoxServerReceiptAggregate,
+    toWsQueueBoxServerReceiptOutboxVerdict,
+    type WsQueueBoxServerReceiptAggregateFacts,
+    type WsQueueBoxServerReceiptCountSource,
+    type WsQueueBoxServerReceiptObservation,
+    type WsQueueBoxServerReceiptObserver
+} from './ws-queue-box-server-receipt-observation.ts';
 
 /**
  * The longest the server holds a receipt aggregate in memory: the retention of the durable effect and
@@ -47,7 +57,43 @@ export const WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS = DEFAULT_AL_EPHEMERAL_TTL_MS
  */
 export const WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES = 4096;
 
+interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggregation.Admission {
+    readonly confirmedRecipientPeerIds: readonly string[];
+}
+
+interface WsQueueBoxServerReceiptCountObservation {
+    readonly ack: ALAckPayload;
+    readonly source: WsQueueBoxServerReceiptCountSource | undefined;
+    readonly before: WsQueueBoxServerReceiptAggregateFacts | undefined;
+    readonly after: WsQueueBoxServerReceiptAggregateFacts | undefined;
+    readonly countAtEpochMs: number;
+    readonly outcome: 'rejected' | 'partial' | 'complete';
+}
+
+interface WsQueueBoxServerReceiptCountDecision {
+    readonly result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
+    readonly observation: Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }> | undefined;
+}
+
 export namespace WsQueueBoxServerReceiptAggregation {
+    export type AckGuard =
+        | 'aggregate-absent'
+        | 'origin-addressee-mismatch'
+        | 'sender-recipient-mismatch'
+        | 'outside-frozen-audience'
+        | 'already-confirmed'
+        | 'deadline-expired';
+
+    export interface AckValidationIssue {
+        readonly code: AckGuard;
+        readonly message: string;
+    }
+
+    export interface ProtocolObservation {
+        readonly stage: 'ingress-protocol' | 'runtime-protocol';
+        readonly controlIdentity: ALMessage['id'] | undefined;
+    }
+
     /** What the server froze when it admitted a `receiver` room message: the audience its receipt answers for. */
     export interface Admission {
         readonly msgId: string;
@@ -59,6 +105,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
 
     export interface Dependencies {
         readonly serverPeerId: string;
+        readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly newControlId: () => string;
         readonly qosProvider: ALQosInputProvider | undefined;
@@ -110,10 +157,6 @@ export namespace WsQueueBoxServerReceiptAggregation {
     }
 }
 
-interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggregation.Admission {
-    readonly confirmedRecipientPeerIds: readonly string[];
-}
-
 /**
  * The receipts of the `receiver` room messages this instance admitted, counted in memory (D37) and
  * answered to the origin as one durable outbox row per phase; each terminal receipt also settles the
@@ -157,11 +200,44 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** The typed reason a relayed receiver ACK may not count, read against the live aggregate at ingress. */
-    readRelayedAckRejection(ack: ALAckPayload): ALMessageRejection | undefined {
+    readRelayedAckRejection(
+        ack: ALAckPayload,
+        observation?: WsQueueBoxServerReceiptAggregation.ProtocolObservation
+    ): ALMessageRejection | undefined {
         const nowMs = this.#dependencies.clock.nowMs();
         const aggregate = this.#aggregates.readAt(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId), nowMs);
         const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
-        return issues.length === 0 ? undefined : { code: 'unauthorized', message: issues.join('; ') };
+        if (issues.length === 0) {
+            return undefined;
+        }
+        const rejection: ALMessageRejection = {
+            code: 'unauthorized',
+            message: issues.map((issue) => issue.message).join('; ')
+        };
+        if (this.#dependencies.receiptObserver !== undefined && observation?.controlIdentity !== undefined) {
+            try {
+                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
+                    kind: 'ack-rejection',
+                    serverPeerId: this.#dependencies.serverPeerId,
+                    controlMsgId: observation.controlIdentity.msgId,
+                    controlSenderId: observation.controlIdentity.senderId,
+                    controlCreatedAtEpochMs: observation.controlIdentity.ts,
+                    rejectionCode: 'unauthorized',
+                    owner: 'receipt-aggregation',
+                    stage: observation.stage,
+                    failedGuards: Object.freeze(
+                        issues.map((issue) => issue.code) as [
+                            WsQueueBoxServerReceiptAggregation.AckGuard,
+                            ...WsQueueBoxServerReceiptAggregation.AckGuard[]
+                        ]
+                    ),
+                    validationAtEpochMs: nowMs,
+                    deadlineAtMs: aggregate?.deadlineAtMs
+                });
+            }
+            catch { /* Projection failure loses optional evidence, never the already-constructed refusal. */ }
+        }
+        return rejection;
     }
 
     /** Whether this instance holds the receipt aggregate the ACK names. */
@@ -191,24 +267,80 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /** A counted ACK; its `complete` receipt when it confirms the last expected recipient, none before. */
-    recordAck(ack: ALAckPayload): Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck> {
+    recordAck(
+        ack: ALAckPayload,
+        source?: WsQueueBoxServerReceiptCountSource
+    ): Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck> {
+        const counted = this.countAck(ack, source);
+        if (counted.observation !== undefined) {
+            recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, counted.observation);
+        }
+        return counted.result;
+    }
+
+    private countAck(
+        ack: ALAckPayload,
+        source: WsQueueBoxServerReceiptCountSource | undefined
+    ): WsQueueBoxServerReceiptCountDecision {
         const key = toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId);
         const nowMs = this.#dependencies.clock.nowMs();
         const aggregate = this.#aggregates.readAt(key, nowMs);
+        const before = this.#dependencies.receiptObserver
+            ? toImmutableWsQueueBoxServerReceiptAggregate(aggregate)
+            : undefined;
+        const ackFacts = this.#dependencies.receiptObserver ? toImmutableWsQueueBoxServerReceiptAck(ack) : undefined;
         const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, nowMs);
+        let result: Either<ALMessageRejection, WsQueueBoxServerReceiptAggregation.CountedAck>;
+        let after = aggregate;
+        let outcome: WsQueueBoxServerReceiptCountObservation['outcome'];
         if (issues.length > 0 || aggregate === undefined) {
-            return Either.ofLeft({ code: 'unauthorized', message: issues.join('; ') });
+            result = Either.ofLeft({ code: 'unauthorized', message: issues.map((issue) => issue.message).join('; ') });
+            outcome = 'rejected';
         }
-        const next = {
-            ...aggregate,
-            confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, ack.logicalRecipientPeerId]
+        else {
+            after = {
+                ...aggregate,
+                confirmedRecipientPeerIds: [...aggregate.confirmedRecipientPeerIds, ack.logicalRecipientPeerId]
+            };
+            const complete = after.confirmedRecipientPeerIds.length >= after.expectedRecipientPeerIds.length;
+            if (complete) {
+                this.deleteAggregate(key);
+            }
+            else {
+                this.#aggregates.acceptAt({ key, value: after, nowEpochMs: nowMs });
+            }
+            result = Either.ofRight({
+                receipt: complete ? toReceiptPayload(after, 'complete', nowMs) : undefined,
+                deadlineAtMs: after.deadlineAtMs
+            });
+            outcome = complete ? 'complete' : 'partial';
+        }
+        return {
+            result,
+            observation: ackFacts === undefined
+                ? undefined
+                : this.toCountObservation({ ack: ackFacts, source, before, after, countAtEpochMs: nowMs, outcome })
         };
-        if (next.confirmedRecipientPeerIds.length < next.expectedRecipientPeerIds.length) {
-            this.#aggregates.acceptAt({ key, value: next, nowEpochMs: nowMs });
-            return Either.ofRight({ receipt: undefined, deadlineAtMs: next.deadlineAtMs });
-        }
-        this.deleteAggregate(key);
-        return Either.ofRight({ receipt: toReceiptPayload(next, 'complete', nowMs), deadlineAtMs: next.deadlineAtMs });
+    }
+
+    private toCountObservation(
+        count: WsQueueBoxServerReceiptCountObservation
+    ): Extract<WsQueueBoxServerReceiptObservation, { readonly kind: 'ack-count'; }> {
+        return Object.freeze({
+            kind: 'ack-count',
+            serverPeerId: this.#dependencies.serverPeerId,
+            ack: count.ack,
+            controlMsgId: count.source?.controlMsgId,
+            controlSenderId: count.source?.controlSenderId,
+            controlCreatedAtEpochMs: count.source?.controlCreatedAtEpochMs,
+            source: count.source?.source ?? 'direct',
+            relayPublisherId: count.source?.relayPublisherId,
+            before: count.before,
+            after: toImmutableWsQueueBoxServerReceiptAggregate(count.after),
+            countAtEpochMs: count.countAtEpochMs,
+            outcome: count.outcome,
+            rejectionCode: count.outcome === 'rejected' ? 'unauthorized' : undefined
+        });
     }
 
     /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
@@ -247,15 +379,32 @@ export class WsQueueBoxServerReceiptAggregation {
      * the server's own outbound owner, which answers only the controls addressed to the server. Ingress
      * already refused an ACK that could not count; one that loses a race to the sweep counts nothing.
      */
-    async acceptControlMessage(message: ALMessage): Promise<void> {
+    async acceptControlMessage(message: ALMessage, relayPublisherId?: string, relayed = false): Promise<void> {
         const control = decodeALControlMessage(message).right;
         if (control?.type !== 'ack' || control.payload.toPeerId === this.#dependencies.serverPeerId) {
             await this.#dependencies.acceptServerControl(message);
             return;
         }
-        const counted = this.recordAck(control.payload).right;
-        if (counted?.receipt !== undefined) {
-            await this.writeReceipt(counted.receipt, counted.deadlineAtMs);
+        const source: WsQueueBoxServerReceiptCountSource | undefined = this.#dependencies.receiptObserver
+            ? {
+                source: relayed ? 'relayed' : 'local',
+                relayPublisherId,
+                controlMsgId: message.id.msgId,
+                controlSenderId: message.id.senderId,
+                controlCreatedAtEpochMs: message.id.ts
+            }
+            : undefined;
+        const counted = this.countAck(control.payload, source);
+        try {
+            const result = counted.result.right;
+            if (result?.receipt !== undefined) {
+                await this.writeReceipt(result.receipt, result.deadlineAtMs);
+            }
+        }
+        finally {
+            if (counted.observation !== undefined) {
+                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, counted.observation);
+            }
         }
     }
 
@@ -343,10 +492,42 @@ export class WsQueueBoxServerReceiptAggregation {
             ...newALReceiptControlMessage(id, receipt),
             constraints: { expiresAtMs }
         });
-        await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
+        const receiptControlMsgId = id.msgId;
+        const frozenReceipt = this.#dependencies.receiptObserver
+            ? Object.freeze({
+                ...receipt,
+                expectedRecipientPeerIds: Object.freeze([...receipt.expectedRecipientPeerIds]),
+                confirmedRecipientPeerIds: Object.freeze([...receipt.confirmedRecipientPeerIds])
+            })
+            : undefined;
+        const enqueued = await this.#dependencies.enqueueOutbox(
+            message,
+            toWsQueueBoxServerReceiptDispatchPlan(message)
+        );
+        const enqueueFacts = this.#dependencies.receiptObserver
+            ? Object.freeze({
+                verdict: toWsQueueBoxServerReceiptOutboxVerdict(enqueued.verdict),
+                entryCount: enqueued.entries.length,
+                trackedReceiptAlgo: enqueued.trackedReceiptAlgo
+            })
+            : undefined;
         // Two commits: a crash between them leaves the server row unsettled, which costs only retransmissions its budget bounds.
-        if (receipt.phase !== 'admitted') {
-            await this.#dependencies.acceptServerReceipt(message);
+        try {
+            if (receipt.phase !== 'admitted') {
+                await this.#dependencies.acceptServerReceipt(message);
+            }
+        }
+        finally {
+            if (frozenReceipt !== undefined && enqueueFacts !== undefined) {
+                recordWsQueueBoxServerReceiptObservation(this.#dependencies.receiptObserver, {
+                    kind: 'receipt-outbox',
+                    serverPeerId: this.#dependencies.serverPeerId,
+                    receiptControlMsgId,
+                    receipt: frozenReceipt,
+                    deadlineAtMs,
+                    ...enqueueFacts
+                });
+            }
         }
     }
 }
@@ -368,25 +549,37 @@ function validateWsQueueBoxServerReceiptAck(
     aggregate: WsQueueBoxServerReceiptAggregate | undefined,
     ack: ALAckPayload,
     nowMs: number
-): readonly string[] {
+): readonly WsQueueBoxServerReceiptAggregation.AckValidationIssue[] {
     if (aggregate === undefined) {
-        return ['AL acknowledgement names no receipt this server aggregates'];
+        return [{ code: 'aggregate-absent', message: 'AL acknowledgement names no receipt this server aggregates' }];
     }
-    const issues: string[] = [];
+    const issues: WsQueueBoxServerReceiptAggregation.AckValidationIssue[] = [];
     if (ack.toPeerId !== ack.originPeerId) {
-        issues.push('AL acknowledgement is not addressed to the origin it names');
+        issues.push({
+            code: 'origin-addressee-mismatch',
+            message: 'AL acknowledgement is not addressed to the origin it names'
+        });
     }
     if (ack.fromPeerId !== ack.logicalRecipientPeerId) {
-        issues.push('AL acknowledgement speaks for another recipient than its sender');
+        issues.push({
+            code: 'sender-recipient-mismatch',
+            message: 'AL acknowledgement speaks for another recipient than its sender'
+        });
     }
     if (!aggregate.expectedRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
-        issues.push('AL acknowledgement confirms no recipient of the frozen audience');
+        issues.push({
+            code: 'outside-frozen-audience',
+            message: 'AL acknowledgement confirms no recipient of the frozen audience'
+        });
     }
     if (aggregate.confirmedRecipientPeerIds.includes(ack.logicalRecipientPeerId)) {
-        issues.push('AL acknowledgement confirms a peer the receipt already counted');
+        issues.push({
+            code: 'already-confirmed',
+            message: 'AL acknowledgement confirms a peer the receipt already counted'
+        });
     }
     if (aggregate.deadlineAtMs <= nowMs) {
-        issues.push('AL acknowledgement arrived after its receipt deadline');
+        issues.push({ code: 'deadline-expired', message: 'AL acknowledgement arrived after its receipt deadline' });
     }
     return issues;
 }

@@ -33,10 +33,18 @@ export function decodeWaitResultValue(value: unknown): RallarBlackBoxTestWaitRes
 
 export function decodeAssertResultValue(value: unknown): RallarBlackBoxTestAssertResultValue | undefined {
     const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
-    return typeof candidate.source === 'string' &&
-            typeof candidate.operator === 'string' &&
-            typeof candidate.exists === 'boolean' &&
-            typeof candidate.passed === 'boolean'
-        ? candidate as RallarBlackBoxTestAssertResultValue
-        : undefined;
+    const common = typeof candidate.source === 'string' &&
+        typeof candidate.operator === 'string' &&
+        typeof candidate.exists === 'boolean' &&
+        typeof candidate.passed === 'boolean';
+    if (!common) {
+        return undefined;
+    }
+    if (candidate.operator === 'sameUniqueStringSet') {
+        return typeof candidate.comparisonSource === 'string' &&
+                typeof candidate.comparisonExists === 'boolean'
+            ? candidate as RallarBlackBoxTestAssertResultValue
+            : undefined;
+    }
+    return candidate as RallarBlackBoxTestAssertResultValue;
 }

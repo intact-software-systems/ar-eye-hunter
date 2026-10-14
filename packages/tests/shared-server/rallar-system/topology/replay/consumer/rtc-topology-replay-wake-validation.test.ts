@@ -1,12 +1,14 @@
-import { isRtcTopologyPublicationOutboxEntry } from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+
+import { isRtcTopologyPublicationOutboxEntry } from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';
 
@@ -21,7 +23,8 @@ describe('RTC topology replay wake validation', () => {
                 'app.other.v1',
                 { value: true }
             ),
-            WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
+            WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
+            Temporal.Now.instant()
         );
 
         expect(isRtcTopologyPublicationOutboxEntry(fixture.outbox[0])).toBe(true);

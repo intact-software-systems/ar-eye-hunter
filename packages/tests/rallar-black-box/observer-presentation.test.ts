@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
 import {
@@ -214,6 +215,7 @@ function observedState(value: string): ObservedState {
             }
         });
     const state: RallarBlackBoxTestState = {
+        ...createRuntimeStateFixture(events),
         status: 'completed',
         currentConfig: { runId: 'observer', rallar: { provider: 'simulated' }, redaction: { secretValues: ['private-secret'] } },
         commandHistory: observe(results),
@@ -221,6 +223,7 @@ function observedState(value: string): ObservedState {
         failures: [],
         resultCache: {}
     };
+    payloadVisits = 0;
     return {
         state,
         visits: () => visits,

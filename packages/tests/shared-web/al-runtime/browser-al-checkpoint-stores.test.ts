@@ -1,6 +1,11 @@
-import '../../setup-browser-indexeddb.ts';
-
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import {
     toBrowserRtcOverlayALCheckpointRuntimeStoreId,
@@ -8,7 +13,8 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-checkpoint-store-ids.ts';
 import {
     resolveBrowserALCheckpointSettings,
-    resolveBrowserALCheckpointStores
+    resolveBrowserALCheckpointStores,
+    type BrowserALCheckpointStores
 } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -26,8 +32,12 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import '../../setup-browser-indexeddb.ts';
+
 const SCOPE = defaultStateScope();
 const QUOTA = new DOMException('full', 'QuotaExceededError');
+/** Settings short enough that a refused checkpoint passes its lag bound within a wait. */
+const FAST_CHECKPOINTS = { checkpointIntervalMs: 20, checkpointLagBoundMs: 100 } as const;
 
 describe('the browser checkpoint settings', () => {
     it('defaults to a 1 s interval target and a 10 s recovery-lag bound', () => {
@@ -73,7 +83,7 @@ describe('the checkpoint stores of a browser connect', () => {
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
         onTestFinished(() => disposeCheckpoints(stores));
 
-        await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox'));
+        await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox', Temporal.Now.instant()));
 
         await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({ status: 'failing' })));
         expect(events).toEqual([
@@ -115,7 +125,7 @@ describe('the checkpoint stores of a browser connect', () => {
         expect(storage.getCheckpointLaneSkip()).toBeUndefined();
 
         writes.refusing = true;
-        await stores.rtcOverlay.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox'));
+        await stores.rtcOverlay.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox', Temporal.Now.instant()));
         await vi.waitFor(() => expect(storage.getCheckpointLaneSkip()).toMatchObject({ cause: 'checkpoint-lag' }));
 
         writes.refusing = false;
@@ -138,7 +148,7 @@ describe('the checkpoint stores of a browser connect', () => {
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
         onTestFinished(() => disposeCheckpoints(stores));
 
-        await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox'));
+        await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox', Temporal.Now.instant()));
         vi.advanceTimersByTime(249);
         const beforeInterval = observer.getCounts().total;
         vi.advanceTimersByTime(1);
@@ -150,9 +160,6 @@ describe('the checkpoint stores of a browser connect', () => {
     });
 });
 
-/** Settings short enough that a refused checkpoint passes its lag bound within a wait. */
-const FAST_CHECKPOINTS = { checkpointIntervalMs: 20, checkpointLagBoundMs: 100 } as const;
-
 /** Fails every IndexedDB write as a full quota would, while `refusing` holds. */
 function refuseWritesWhile(writes: { readonly refusing: boolean; }): IndexedDbOperationObserver {
     return {
@@ -160,7 +167,7 @@ function refuseWritesWhile(writes: { readonly refusing: boolean; }): IndexedDbOp
     };
 }
 
-function disposeCheckpoints(stores: ReturnType<typeof resolveBrowserALCheckpointStores>): void {
+function disposeCheckpoints(stores: BrowserALCheckpointStores): void {
     stores.wsClient.checkpoint.dispose();
     stores.rtcOverlay.checkpoint.dispose();
 }

@@ -1,12 +1,56 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+
 import {
     controlRunSnapshotUrlFromControlUrl,
     createHeadlessWorkerAgentUrl,
     readHeadlessWorkerConfig
 } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+
+const recordingWorkerEnvironment = {
+    RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test',
+    RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+    RALLAR_API_BASE_URL: 'https://api.example.test',
+    RALLAR_BLACK_BOX_RUN_ID: 'recording-run',
+    RALLAR_BLACK_BOX_ROOM_ID: 'recording-room',
+    RALLAR_BLACK_BOX_USERNAME: 'fixture-user',
+    RALLAR_BLACK_BOX_PASSWORD: 'fixture-password'
+};
 
 describe('rallar-black-box headless worker config', () => {
+    it.each(['headless', 'operator-spa'])('carries recording selection into %s browser launches independently of capture', (entry) => {
+        for (const [selection, mode] of [[undefined, 'enabled'], ['enabled', 'enabled'], ['disabled', 'disabled']] as const) {
+            const config = readHeadlessWorkerConfig({
+                env: {
+                    ...recordingWorkerEnvironment,
+                    RALLAR_BLACK_BOX_HEADLESS_ENTRY: entry,
+                    RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: selection,
+                    RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'signaling'
+                }
+            });
+            expect(config).toMatchObject({ routineBrowserDiagnostics: mode, rtcCaptureMode: 'signaling' });
+            const url = new URL(config.agents[0].url);
+            expect(url.searchParams.get('routineBrowserDiagnostics')).toBe(mode);
+            expect(url.searchParams.get('rtcCaptureMode')).toBe('signaling');
+        }
+    });
+
+    it.each(['', ' ', ' disabled ', 'off', 'on', 'DISABLED', 'false'])('refuses malformed host recording selection %s', (value) => {
+        expect(() =>
+            readHeadlessWorkerConfig({
+                env: {
+                    ...recordingWorkerEnvironment,
+                    RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: value
+                }
+            })
+        ).toThrow(/routine browser diagnostics/i);
+    });
+
     it('builds control-agent URLs for multiple browser agents', () => {
         const config = readHeadlessWorkerConfig({
             env: {

@@ -26,7 +26,7 @@ export const RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS = [
 export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     configure: { required: ['config'], optional: [] },
     'recipe.load': { required: ['recipe'], optional: [] },
-    'recipe.run': { required: [], optional: ['recipe', 'rtcCaptureMode', 'expectedRecipeBodyId'] },
+    'recipe.run': { required: [], optional: ['recipe', 'rtcCaptureMode', 'eventHistory', 'expectedRecipeBodyId'] },
     'recipe.cancel': { required: [], optional: ['reason', 'targetCommandId'] },
     loop: {
         required: ['commands'],
@@ -44,7 +44,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     },
     parallel: { required: ['groups'], optional: ['maxConcurrency', 'failFast', 'continueOnFailure'] },
     wait: { required: ['match'], optional: ['absent'] },
-    assert: { required: ['source', 'operator'], optional: ['expected'] },
+    assert: { required: ['source', 'operator'], optional: ['expected', 'comparisonSource'] },
     barrier: { required: ['barrierId', 'timeoutMs'], optional: ['participants'] },
     'rtc.connect': {
         required: [],
@@ -214,7 +214,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
 export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     recipe: {
         required: ['schemaVersion', 'recipeId', 'commands'],
-        optional: ['name', 'description', 'continueOnFailure', 'metadata', 'rtcCaptureMode']
+        optional: ['name', 'description', 'continueOnFailure', 'metadata', 'rtcCaptureMode', 'eventHistory']
     },
     parallelGroup: { required: ['commands'], optional: ['groupId', 'label', 'metadata'] },
     loopThresholds: {

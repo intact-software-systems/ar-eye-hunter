@@ -105,7 +105,9 @@ export async function collectApiV1StateWriteEvidence(
 ): Promise<ApiV1StateWriteEvidence> {
     const source = selectApiV1StateWriteEvidenceSource(databaseUrl);
     if (source.kind === 'postgres') {
-        const { collectApiV1StateWriteEvidenceFromSql } = await import('./api-v1-state-write-evidence-sql.ts');
+        const { collectApiV1StateWriteEvidenceFromSql } = await import(
+            './collect-api-v1-state-write-evidence-from-sql.ts'
+        );
         return await readPostgresStateWriteEvidenceSource(
             source,
             async (sql) => await collectApiV1StateWriteEvidenceFromSql(input, toStateWriteEvidenceSql(sql))

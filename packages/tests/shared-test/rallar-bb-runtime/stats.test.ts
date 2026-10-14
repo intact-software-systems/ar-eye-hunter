@@ -111,7 +111,9 @@ describe('the stats result rallar.alm block', () => {
         await entered.promise;
         try {
             if (reassigned) {
-                expect((await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok)
+                expect(
+                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok
+                )
                     .toBe(true);
                 expect(
                     (await runtime.execute({
@@ -214,7 +216,9 @@ describe('the stats result rallar.alm block', () => {
         await entered.promise;
         try {
             if (reassigned) {
-                expect((await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok)
+                expect(
+                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok
+                )
                     .toBe(true);
                 expect(
                     (await runtime.execute({

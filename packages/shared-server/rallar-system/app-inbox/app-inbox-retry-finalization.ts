@@ -4,9 +4,12 @@ import { writeResourceInboxReservationFinish } from '@shared-server/queuebox/pos
 import { writeResourceInboxResultReplacement } from '@shared-server/queuebox/postgres/resource-inbox-result-replacement.ts';
 import type {
     ResourceInboxRetryExhaustion,
-    ResourceInboxRetryExhaustionRecovery
+    ResourceInboxRetryExhaustionRecovery,
+    ResourceInboxRetryFinalizer
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
 import {
     timeRallarAsync,
     type RallarTimingDetails,
@@ -26,6 +29,7 @@ export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustionRecovery;
 
 export interface AppInboxRetryFinalizerDependencies {
+    readonly completionNotifications?: ResourceInboxCompletionNotifications;
     readonly database: PSqlSql;
     readonly timing?: RallarTimingSink;
 }
@@ -37,7 +41,7 @@ interface AppInboxRetryFinalizationWork {
 
 export function createAppInboxRetryFinalizer(
     dependencies: AppInboxRetryFinalizerDependencies
-): (finalization: AppInboxRetryFinalization) => Promise<ResourceEntry> {
+): ResourceInboxRetryFinalizer<AppInboxRetryFinalization> {
     return async (finalization) => {
         if (finalization.reservationAttempt < finalization.processingAttempts) {
             throw new RangeError(
@@ -95,6 +99,7 @@ async function finalizeAppInboxRetry(
     await runInPSqlTransaction(dependencies.database, async (transaction) => {
         await writeAppInboxRetryFinalization(transaction, work.completion);
     });
+    dependencies.completionNotifications?.publish(work.completion.finalizedEntry.key);
     return work.completion.finalizedEntry;
 }
 
@@ -102,10 +107,10 @@ async function writeAppInboxRetryFinalization(
     transaction: PSqlSql,
     computed: AppInboxCompletionComputed<AppInboxFailure>
 ): Promise<void> {
-    await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
     if (!await writeResourceInboxReservationFinish(transaction, computed.reservationFinish)) {
         throw new AppInboxReservationConflictError(computed.reservationFinish.key);
     }
+    await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
 }
 
 function toDiagnostics(exhaustion: AppInboxRetryFinalization): AppInboxFailure {

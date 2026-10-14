@@ -52,7 +52,7 @@ import {
     IndexedDbQueueBox
 } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     afterEach,
     describe,
@@ -341,7 +341,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
     });
     const result = await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs }));
     expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
-    runtime.dispose();
+    await runtime.dispose();
     const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
     expect(keys.size).toBe(3);
     return { store, keys };
@@ -377,7 +377,7 @@ async function saveCheckpointForSession(sessionId: string) {
     await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs: 60_000 }));
     runtime.flushCheckpoint();
     await vi.waitFor(() => expect(observer.getCounts().byKind.write).toBe(1));
-    runtime.dispose();
+    await runtime.dispose();
     const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
     expect(keys.size).toBe(3);
     const readAdmissionKeys = async () => await readRawAdmissionKeys(`browser:${storeId}:`);

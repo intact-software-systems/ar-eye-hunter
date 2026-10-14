@@ -468,19 +468,30 @@
           "Authorization": "{founderAuthHeader}",
           "x-client-id": "{founderClientId}"
         },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
         "outputs": {
           "formationTopologyVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "groupRef": {
             "groupId": "{groupId}"
           },
           "snapshot": {
             "state": "active",
-            "version": "integer"
+            "version": "integer",
+            "activeSessionIds": [
+              "{founderSessionId}",
+              "{memberSessionId}"
+            ]
           }
         }
       }

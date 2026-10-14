@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -34,6 +40,7 @@ it('acknowledges a replay after the dedup window inside its deadline again witho
     const { repository } = await createPSqlAdmissionTestStorage();
     const fixture = createInboundTestRuntime({
         stores: createPSqlALInboundRuntimeStores({
+            nowMs: Date.now,
             repository,
             namespace: 'psql-dedup-retention',
             orderingTrackTtlMs: 60_000,

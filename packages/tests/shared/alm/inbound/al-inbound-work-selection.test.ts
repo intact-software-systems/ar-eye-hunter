@@ -2,10 +2,11 @@ import '../../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -39,7 +40,7 @@ import {
     type ResourceEntry,
     type ResourceEntryKeyString
 } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
@@ -68,9 +69,11 @@ const ROTATION_ROUND_LIMIT = 16;
 /** Rows that are not due yet: with a commit's own row they fill three NEW pages. */
 const WAITING_NEW_ROWS = 40;
 
-afterEach(() => {
-    vi.restoreAllMocks();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+    })
+);
 
 describe('ALInboundWorkSelector readiness', () => {
     it('advertises no readiness from a batch that claimed nothing', async () => {
@@ -286,7 +289,7 @@ describe('ALInboundWorkSelector phase measurement', () => {
             }
             finally {
                 releaseHeld?.();
-                handler.dispose();
+                await handler.dispose();
             }
         }
     );
@@ -425,6 +428,8 @@ describe('ALInboundWorkSelector claim order', () => {
             }
         });
 
+        onTestFinished(() => releaseHeld?.());
+
         for (let round = 0; round < ROTATION_ROUND_LIMIT && !heldEntered; round += 1) {
             await fixture.queueEngine.executeOnce();
             await new Promise((resolve) => setTimeout(resolve, 0));
@@ -467,6 +472,7 @@ describe('ALInboundWorkSelector claim order', () => {
                     await held;
                 }
             });
+            onTestFinished(() => releaseHeld?.());
             const wake = vi.spyOn(fixture.queueEngine, 'wake');
             await fixture.runtime.ready();
             wake.mockClear();
@@ -554,6 +560,14 @@ function createSelectorFixture(): SelectorFixture {
     };
 }
 
+interface CostBoundaryFixture {
+    readonly namespace: string;
+    readonly port: ALWorkQueuePort;
+    readonly nowMs: () => number;
+    readonly advance: (durationMs: number) => void;
+    readonly selector: ALInboundWorkSelector;
+}
+
 /** The selector under a clock only its own two measured calls move, so each phase has one source. */
 function createTimedSelectorFixture(): SelectorFixture {
     const namespace = 'inbound-selection-phases';
@@ -593,7 +607,7 @@ function createTimedSelectorFixture(): SelectorFixture {
 }
 
 /** Logical phase costs at real selector and queue-port seams; these are not IndexedDB timings. */
-function createCostBoundaryFixture() {
+function createCostBoundaryFixture(): CostBoundaryFixture {
     const namespace = 'cost-boundary';
     let currentMs = NOW_MS;
     const nowMs = () => currentMs;

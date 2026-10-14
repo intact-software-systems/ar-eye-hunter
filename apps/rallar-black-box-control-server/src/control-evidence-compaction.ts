@@ -12,8 +12,13 @@ import type {
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecipeExecutionSegment } from '@shared-test/rallar-bb-test/recipe/run-recipe-commands.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import {
+    validateEventHistoryPolicy,
+    type RallarBlackBoxEventHistoryPolicy
+} from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 
@@ -132,7 +137,9 @@ function toCompactedResult(node: RallarBlackBoxCompositeResultTreeNode): RallarB
         : toRtcCaptureReadout(decodeJsonValue(value.rtcCapture)).right;
     const leaf = result.kind === 'recipe.load'
         ? toFiniteFields(value, ['recipeId', 'recipeBodyId'])
-        : readout === undefined ? undefined : { ...toFiniteIdentity(value), rtcCapture: readout };
+        : readout === undefined
+        ? undefined
+        : { ...toFiniteIdentity(value), rtcCapture: readout };
     return {
         commandId: result.commandId,
         kind: result.kind,
@@ -218,13 +225,7 @@ function toCompactedCompositeValue(node: RallarBlackBoxCompositeResultTreeNode):
     const identity = node.entry.kind === 'recipe.run'
         ? {
             recipeId: typeof value.recipeId === 'string' ? value.recipeId : undefined,
-            invocation: toFiniteFields(decodeRecord(value.invocation), [
-                'invocationId',
-                'recipeBodyId',
-                'run',
-                'recipe',
-                'step'
-            ])
+            invocation: toCompactedRecipeInvocation(decodeRecord(value.invocation))
         }
         : {};
     return {
@@ -311,4 +312,16 @@ function hasLimitedEvidence(node: RallarBlackBoxCompositeResultTreeNode): boolea
         node.entry.childDecodeIssues.length > 0 ||
         decodeRecord(decodeRecord(node.entry.result.value).resultEvidence).status === 'limited' ||
         node.children.some(hasLimitedEvidence);
+}
+
+function toCompactedRecipeInvocation(invocation: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
+    const policy = invocation.eventHistory;
+    const segment = decodeRecipeExecutionSegment(invocation.segment).right;
+    return {
+        ...(segment === undefined ? {} : { segment }),
+        ...toFiniteFields(invocation, ['invocationId', 'recipeBodyId', 'run', 'recipe', 'step']),
+        ...(validateEventHistoryPolicy(policy).length === 0
+            ? { eventHistory: { ...policy as RallarBlackBoxEventHistoryPolicy } }
+            : {})
+    };
 }

@@ -1,4 +1,5 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { decodeRecipeExecutionSegment, type RecipeExecutionSegment } from './recipe/run-recipe-commands.ts';
 
 import { decodeRallarBlackBoxTestResult, isRallarBlackBoxTestError } from './composite-results.ts';
 import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
@@ -23,6 +24,13 @@ export interface ControlCommandEnvelope {
     readonly commandId: string;
     readonly command: RallarBlackBoxTestCommand;
     readonly deadlineEpochMs?: number;
+    /** Owned linear reload lifecycle; does not alter authored recipe or run policy provenance. */
+    readonly recipeExecution?: {
+        readonly rootCommandId: string;
+        readonly first: boolean;
+        readonly last: boolean;
+        readonly segment?: RecipeExecutionSegment;
+    };
 }
 
 export interface ControlRegisterResume {
@@ -132,6 +140,10 @@ export function parseControlServerMessage(
             issues: commandValidation.issues
         };
     }
+    const recipeExecution = decodeControlRecipeExecution(envelope.recipeExecution);
+    if (!recipeExecution.ok) {
+        return recipeExecution;
+    }
     const deadlineEpochMs = envelope.deadlineEpochMs;
     if (deadlineEpochMs !== undefined && typeof deadlineEpochMs !== 'number') {
         return { ok: false, error: 'Control command deadlineEpochMs must be a number.' };
@@ -146,8 +158,34 @@ export function parseControlServerMessage(
             agentId: address.agentId,
             commandId: address.commandId,
             command: envelope.command as RallarBlackBoxTestCommand,
-            deadlineEpochMs
+            deadlineEpochMs,
+            ...(recipeExecution.value === undefined ? {} : { recipeExecution: recipeExecution.value })
         }
+    };
+}
+
+function decodeControlRecipeExecution(value: unknown):
+    | Readonly<{ ok: true; value: ControlCommandEnvelope['recipeExecution']; }>
+    | Readonly<{ ok: false; error: string; }> {
+    if (value === undefined) {
+        return { ok: true, value: undefined };
+    }
+    if (!isJsonRecordValue(value)) {
+        return { ok: false, error: 'Control recipe execution must be an object.' };
+    }
+    const { rootCommandId, first, last } = value;
+    if (
+        typeof rootCommandId !== 'string' || !rootCommandId || typeof first !== 'boolean' || typeof last !== 'boolean'
+    ) {
+        return { ok: false, error: 'Control recipe execution requires an owned root and lifecycle boundaries.' };
+    }
+    const segment = value.segment === undefined ? undefined : decodeRecipeExecutionSegment(value.segment);
+    if (segment?.left !== undefined || (segment?.right !== undefined && segment.right.first !== first)) {
+        return { ok: false, error: 'Control command has an invalid owned recipe segment.' };
+    }
+    return {
+        ok: true,
+        value: { rootCommandId, first, last, ...(segment?.right === undefined ? {} : { segment: segment.right }) }
     };
 }
 
@@ -323,7 +361,11 @@ function decodeResultEnvelope(
     const { commandId, ok } = envelope;
     const error = envelope.error;
     const attribution = envelope.attribution;
-    if (attribution !== undefined && (!isJsonRecordValue(attribution) || attribution.status !== 'unavailable' || attribution.reason !== 'queued-command-not-retained')) {
+    if (
+        attribution !== undefined &&
+        (!isJsonRecordValue(attribution) || attribution.status !== 'unavailable' ||
+            attribution.reason !== 'queued-command-not-retained')
+    ) {
         return { ok: false, error: 'Control result attribution must name unavailable retained queue ownership.' };
     }
     if (error !== undefined && !isRallarBlackBoxTestError(error)) {
@@ -348,7 +390,9 @@ function decodeResultEnvelope(
             commandId,
             ok,
             result: result?.right,
-            ...(attribution === undefined ? {} : { attribution: { status: 'unavailable', reason: 'queued-command-not-retained' } as const }),
+            ...(attribution === undefined
+                ? {}
+                : { attribution: { status: 'unavailable', reason: 'queued-command-not-retained' } as const }),
             error,
             replayed: typeof envelope.replayed === 'boolean' ? envelope.replayed : undefined
         }

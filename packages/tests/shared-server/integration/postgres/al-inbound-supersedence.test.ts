@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -19,6 +20,7 @@ import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import type { InboundTestDecision } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
@@ -127,8 +129,8 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     };
-    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace);
-    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace);
+    const firstBackend = new PSqlAdmissionWorkBackend(first, namespace, Date.now);
+    const secondBackend = new PSqlAdmissionWorkBackend(second, namespace, Date.now);
     return [
         {
             admissionStore: createALInboundAdmissionStore({
@@ -172,7 +174,7 @@ async function claimWork(stores: ALInboundRuntimeStores) {
         .map((claim) => decodeALInboundWorkEntry(claim.entry, stores.admissionStore.namespace));
 }
 
-async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) {
+async function readDecision(store: ALInboundAdmissionStore, message: ALMessage): Promise<InboundTestDecision> {
     const nowMs = Date.now();
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
     const read = await store.readIncomingMessage({
@@ -185,7 +187,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
     const facts = readALInboundEffectFacts(nowMs, {
         selfPeerId: 'receiver',
         newControlId: crypto.randomUUID.bind(crypto),
-        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }) };
 }

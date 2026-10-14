@@ -10,7 +10,7 @@ import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contract
 import { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import type { ALInboundConsumerInvocation, ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
@@ -162,9 +162,10 @@ it('reports returned invocation while closing prevents later wildcard and any ca
     });
     expect(await fixture.service.acceptIncomingMessage(signal)).toMatchObject({ left: undefined, right: { kind: 'admitted' } });
     await entered.promise;
-    fixture.service.close();
+    const closing = fixture.service.close();
     release.resolve();
     await expect.poll(() => toConsumerInvocations(fixture.events)).toMatchObject([{ outcome: 'returned' }]);
+    await closing;
     expect(calls).toEqual(['exact']);
     expect(fixture.events).toContainEqual(expect.objectContaining({ kind: 'dispatch-decision', disposition: 'port-retry' }));
 });

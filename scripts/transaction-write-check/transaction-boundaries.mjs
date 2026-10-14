@@ -67,7 +67,6 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
         new Set([
             'deleteByKey',
             'replace',
-            'replacePendingIfMatch',
             'tryWriteIfAbsentOrReplaceExpired',
             'upsert',
             'write',
@@ -75,10 +74,6 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
             'writeIfAbsentOrReplaceExpired',
             'writeMaterializedIfAbsentOrReplaceExpired'
         ])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/resource-inbox-finished-replacement.ts',
-        new Set(['replaceFinishedResourceEntryIfMatch'])
     ]
 ]);
 
@@ -294,7 +289,7 @@ function callRegistersIndexedDbCompletion(call, transactionDeclarations, project
     });
 }
 
-export function transactionExecutedCallbackArguments(call) {
+export function transactionExecutedCallbackArguments(call, project = call.getProject()) {
     const callbacks = call.getArguments().filter((argument) =>
         isCallbackReference(argument) && !isTransactionArgument(argument)
     );
@@ -305,7 +300,10 @@ export function transactionExecutedCallbackArguments(call) {
     ) {
         return callbacks;
     }
-    return call.getArguments().some(isTransactionArgument) ? callbacks : [];
+    return resolveCallTargets(call, project).bodies.length === 0 &&
+            call.getArguments().some(isTransactionArgument)
+        ? callbacks
+        : [];
 }
 
 export function isTransactionWriteDeclaration(declaration) {
@@ -346,13 +344,6 @@ export function isSpecializedTransactionImplementation(callable) {
     const allowedOwners = SPECIALIZED_TRANSACTION_OWNERS.get(sourcePath(callable.getSourceFile()));
     const owner = declarationName(callable).length > 0 ? callable : namedContainingFunction(callable);
     return allowedOwners !== undefined && owner !== undefined && allowedOwners.has(declarationName(owner));
-}
-
-export function isUnresolvedCallableParameterInvocation(call) {
-    return callableParameterDeclarations(call.getExpression()).some((declaration) =>
-        !isPromiseSettlementParameter(declaration) &&
-        !isReviewedTransactionForwardingCallback(call, declaration.getName())
-    );
 }
 
 export function isReviewedCallableParameterInvocation(call) {

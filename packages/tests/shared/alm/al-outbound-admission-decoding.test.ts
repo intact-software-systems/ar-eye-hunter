@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import {
     describe,
     expect,
@@ -7,35 +6,68 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import {
-    claimOutboundTestWork,
-    peekOutboundWorkReadyAt
-} from './outbound-runtime-test-fixture.ts';
 
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import {
+    createALOutboundAdmissionStore,
+    type ALOutboundAdmissionStore,
+    type ALOutboundDurableEffect
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import { decodeALOutboundTransportMessage, toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    toResourceEntryWithKey,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
+import {
+    claimOutboundTestWork,
+    peekOutboundWorkReadyAt
+} from './outbound-runtime-test-fixture.ts';
+
 /** The key of an admitted canonical row, which is never a direct producer row. */
 const CANONICAL_ROW_KEY = { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'message', contextId: 'server' };
+
+interface OutboundAdmissionFixture {
+    readonly state: ALAdmissionMemoryState;
+    readonly backend: InMemoryAdmissionBackend;
+    readonly store: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+}
+
+interface OutboundEffectFixture {
+    readonly effectId: string;
+    readonly canonicalEntry: ResourceEntry;
+    readonly identityEntry: ResourceEntry;
+    readonly payload: Extract<ALOutboundDurableEffect<ALOutboundTransportMessage>, { kind: 'send-prepared'; }>;
+}
 
 describe('outbound admission persisted-record validation', () => {
     it('recovers a malformed reservation when persisting its terminal rejection fails', async () => {
@@ -51,7 +83,8 @@ describe('outbound admission persisted-record validation', () => {
             payload: { kind: 'unsupported' }
         });
         vi.spyOn(backend.workQueue, 'releaseEntries').mockRejectedValueOnce(new Error('Terminal write unavailable'));
-        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        onTestFinished(() => consoleError.mockRestore());
 
         await runOutboundWorkBatch(admission);
         expect(await backend.workQueue.getItem(entry.key))
@@ -261,7 +294,7 @@ describe('outbound admission persisted-record validation', () => {
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
-            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             sendPreparedMessage: async (_message, _phase, lifecycle) => {
@@ -280,7 +313,7 @@ describe('outbound admission persisted-record validation', () => {
                 .toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -318,7 +351,7 @@ describe('outbound admission persisted-record validation', () => {
             stores: admission.stores,
             outbox: new InMemoryQueueBox(new Map()),
             decodePreparedMessage: decodeALOutboundTransportMessage,
-            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+            toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             sendPreparedMessage: async () => {
@@ -334,7 +367,7 @@ describe('outbound admission persisted-record validation', () => {
                 .toMatchObject({ status: EntityStatus.NON_RETRYABLE });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -495,7 +528,7 @@ describe('outbound admission persisted-record validation', () => {
     });
 });
 
-function createAdmission() {
+function createAdmission(): OutboundAdmissionFixture {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const store = createALOutboundAdmissionStore({
@@ -515,7 +548,7 @@ function createAdmission() {
  * decode is rejected by the attempt, and a valid sibling in the same batch still runs.
  */
 async function runOutboundWorkBatch(
-    admission: ReturnType<typeof createAdmission>,
+    admission: OutboundAdmissionFixture,
     sent: string[] = []
 ): Promise<readonly string[]> {
     const runtime = createDefaultALOutboundMessageRuntime({
@@ -523,7 +556,7 @@ async function runOutboundWorkBatch(
         stores: admission.stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
-        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
+        toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessageValue(JSON.parse(entry.resource)),
         planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
         sendPreparedMessage: async (_message, _phase, lifecycle) => {
@@ -536,12 +569,12 @@ async function runOutboundWorkBatch(
         return sent;
     }
     finally {
-        runtime.dispose();
+        await runtime.dispose();
     }
 }
 
 async function scheduleNotYetInSyncRetry(
-    admission: ReturnType<typeof createAdmission>,
+    admission: OutboundAdmissionFixture,
     msgId: string
 ) {
     const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now, carrier: 'ws' });
@@ -570,11 +603,11 @@ function createMessage() {
     );
 }
 
-function createEffect(msg: ReturnType<typeof createMessage>) {
+function createEffect(msg: ALMessage): OutboundEffectFixture {
     const prepared = toALOutboundTransportMessage(msg);
     const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
     const canonicalEntry = {
-        ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        ...QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         key: toALOutboundCanonicalKey('outbound', msg),
         status: EntityStatus.COMPLETED
     };
@@ -608,8 +641,8 @@ async function writeRawOutboundWork(
         namespace?: unknown;
         effectId: unknown;
         payload: unknown;
-        canonicalEntry?: ReturnType<typeof createEffect>['canonicalEntry'];
-        identityEntry?: ReturnType<typeof createEffect>['identityEntry'];
+        canonicalEntry?: OutboundEffectFixture['canonicalEntry'];
+        identityEntry?: OutboundEffectFixture['identityEntry'];
     }>
 ) {
     if (raw.canonicalEntry) {

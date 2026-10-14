@@ -5,6 +5,7 @@ import type { RallarBlackBoxTestMessagesObserveResultValue } from '@shared-test/
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { RallarBlackBoxDistributedRunManifest, RallarBlackBoxDistributedRunState } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestMessagesReceiptsCommand,
     RallarBlackBoxTestRecipe,
@@ -64,14 +65,12 @@ for (const scheduled of [false, true]) {
         const [receiverReady] = service.takeDispatchableCommands(runId, agents[1]);
         assert(senderPrefix?.command.kind === 'recipe.run' && senderPrefix.command.recipe);
         assert(receiverReady?.command.kind === 'recipe.run' && receiverReady.command.recipe);
-        assert(
-            senderPrefix.command.recipe.recipeId !== 'alm-conformance-sender',
-            'generated hosted start must dispatch the held-original prefix, not the entire sender recipe'
-        );
-        assert(
-            receiverReady.command.recipe.recipeId !== 'alm-conformance-receiver',
-            'receiver readiness must finish before its separately gated absence window'
-        );
+        assertEquals(senderPrefix.command.recipe.recipeId, 'alm-conformance-sender');
+        assertEquals(receiverReady.command.recipe.recipeId, 'alm-conformance-receiver');
+        assertEquals(senderPrefix.recipeExecution?.segment?.start, 0);
+        assertEquals(senderPrefix.recipeExecution?.segment?.first, true);
+        assertEquals(receiverReady.recipeExecution?.segment?.start, 0);
+        assertEquals(receiverReady.recipeExecution?.segment?.first, true);
 
         const roots = service.snapshotRun(runId)!.commands.map((command) => command.envelope);
         const sender = roots.find((root) => root.command.kind === 'recipe.run' && root.command.recipe?.recipeId === 'alm-conformance-sender');
@@ -89,8 +88,13 @@ for (const scheduled of [false, true]) {
         assertEquals(pair.checkpoints.length, 3, 'one full reload specimen per supported carrier');
         assertEquals(sender.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(receiver.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
-        assertEquals(senderPrefix.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].senderPrefixEnd);
-        assertEquals(receiverReady.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].receiverReadyEnd);
+        assert(senderPrefix.recipeExecution?.segment);
+        assertEquals(senderPrefix.command.recipe.commands[senderPrefix.recipeExecution.segment.end - 1]?.commandId, pair.checkpoints[0].senderPrefixEnd);
+        assertEquals(senderPrefix.command.recipe, sender.command.recipe);
+        assert(receiverReady.recipeExecution?.segment);
+        assertEquals(receiverReady.command.recipe.commands[receiverReady.recipeExecution.segment.end - 1]?.commandId, pair.checkpoints[0].receiverReadyEnd);
+        assertEquals(receiverReady.command.recipe, receiver.command.recipe);
+        assertEquals(service.takeDispatchableCommands(runId, agents[1]), [], 'absence cannot execute before sender prefix receipt');
 
         let prefixStart = 0;
         const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
@@ -241,7 +245,7 @@ Deno.test('independent local ALM roots keep actual child evidence only within no
 });
 
 /** Synthetic lifecycle outcomes exercise identity/retention only; full reload uses the unmodified generated manifest above. */
-function toLifecycleManifest() {
+function toLifecycleManifest(): RallarBlackBoxDistributedRunManifest {
     const manifest = createAlmConformance2AgentEntry().manifest;
     const scenarios = (['ws', 'rtc', 'rtc-with-ws-fallback'] as const).map((carrier) =>
         createAlmConformanceRecipes({
@@ -272,8 +276,13 @@ function toLifecycleManifest() {
     };
 }
 
+interface LifecycleAssessmentOutcome {
+    readonly state: RallarBlackBoxDistributedRunState | undefined;
+    readonly ok: boolean | undefined;
+}
+
 /** Stages, releases and starts the three-role run, then answers each root with its own recipe evidence. */
-function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined) {
+function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined): LifecycleAssessmentOutcome {
     const manifest = toThreeRoleLifecycleManifest();
     const runId = manifest.controlRunId;
     const agents = ['controller-01', 'controller-02', 'controller-03'];
@@ -298,7 +307,7 @@ function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined) {
 }
 
 /** The lifecycle manifest with a third agent that runs what the receiver runs, as the declared `recipient-b`. */
-function toThreeRoleLifecycleManifest() {
+function toThreeRoleLifecycleManifest(): RallarBlackBoxDistributedRunManifest {
     const manifest = toLifecycleManifest();
     const receiver = manifest.recipes.find((selection) => selection.role === 'receiver')!;
     const recipientB = {

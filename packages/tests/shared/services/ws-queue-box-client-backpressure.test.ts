@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -14,7 +15,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES,
@@ -183,7 +184,7 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
         client.native.bufferedAmount = AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES;
         const message = roomSend('dequeued', 'at-least-once', REJECT_UNDER_CONGESTION);
 
-        await client.service.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX));
+        await client.service.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
         client.engine.wakeAfterExternalWrite();
         await expect.poll(() => readCongestion(client).length).toBeGreaterThanOrEqual(1);
         client.native.bufferedAmount = 0;

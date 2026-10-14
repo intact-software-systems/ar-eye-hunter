@@ -12,6 +12,7 @@ import {
 import { computeRtcDiagnostics, computeRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { computeDistributedRunArtifactAnalysis } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 /** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
 const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
@@ -44,6 +45,7 @@ function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>
 
 function emptyRtcState(): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture([]),
         status: 'completed',
         currentConfig: {
             runId: 'synthetic-control-run',
