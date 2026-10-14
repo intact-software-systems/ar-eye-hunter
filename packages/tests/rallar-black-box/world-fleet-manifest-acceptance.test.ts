@@ -177,9 +177,24 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the independent authored-byte workload identity', () => {
-        expect(source.byteLength).toBe(515978);
-        expect(createHash('sha256').update(source).digest('hex')).toBe('6dd898ab001a404c857e567ea42b41694c230df49e4b5e16bea2f2d8cc08d4c2');
+    it('keeps the authored workload identity while recording diagnostics for both roles', () => {
+        const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
+        expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([true, true]);
+        const workload = {
+            ...authored,
+            recipes: authored.recipes.map((selection) => ({
+                ...selection,
+                recipe: selection.recipe && {
+                    ...selection.recipe,
+                    commands: selection.recipe.commands.map((command) =>
+                        command.kind === 'rtc.connect'
+                            ? { ...command, rallar: { ...command.rallar, almDiagnostics: undefined } }
+                            : command
+                    )
+                }
+            }))
+        };
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('f2b10263fa80b80f60786a9f7e789ad942eb6c4134ef19601f43233a070d3112');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);

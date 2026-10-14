@@ -308,6 +308,7 @@ describe('Hetzner materialization contracts and effects', () => {
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const sourcePath = path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json');
         const sourceText = await readFile(sourcePath, 'utf8');
+        const expectedSourceManifestSha256 = createHash('sha256').update(sourceText).digest('hex');
         const source = await readManifest(sourcePath);
         const sourceCommands = source.recipes.flatMap((selection) => {
             if (!selection.recipe) {
@@ -327,17 +328,13 @@ describe('Hetzner materialization contracts and effects', () => {
 
         for (
             const mode of [
-                { agentSource: 'external', roomId: 'hetzner-headless-room', isolationMode: 'preserved' },
-                {
-                    agentSource: 'hetzner',
-                    roomId: 'hetzner-run-cc8ee5133b1e0e7c083986b2dbc6cf3916b0043df9e618c23181b4d58ae0e7ba',
-                    isolationMode: 'isolated'
-                }
+                { agentSource: 'external', isolationMode: 'preserved' },
+                { agentSource: 'hetzner', isolationMode: 'isolated' }
             ] as const
         ) {
             const outputPath = path.join(directory, `${mode.agentSource}.json`);
             const recordPath = path.join(directory, `${mode.agentSource}-record.json`);
-            await runMaterializer(context, {
+            const invocation = {
                 ...materializerInvocationDefaults,
                 sourcePath,
                 outputPath,
@@ -349,13 +346,31 @@ describe('Hetzner materialization contracts and effects', () => {
                 workflowRunId: '38133404936',
                 workflowRunAttempt: '1',
                 rtcCaptureMode: 'off'
-            });
+            } as const;
+            await runMaterializer(context, invocation);
             const manifest = await readManifest(outputPath);
-            expect(manifest.group).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: mode.roomId });
+            const roomId = manifest.group.groupId;
+            expect(manifest.group).toMatchObject({ applicationId: 'rallar-server', workspaceId: 'default' });
+            if (mode.agentSource === 'hetzner') {
+                expect(roomId).toMatch(/^hetzner-run-[a-f0-9]{64}$/);
+                expect(roomId).not.toBe(source.group.groupId);
+                const repeatedOutputPath = path.join(directory, 'repeated-hetzner.json');
+                await runMaterializer(context, {
+                    ...invocation,
+                    outputPath: repeatedOutputPath,
+                    recordPath: path.join(directory, 'repeated-hetzner-record.json')
+                });
+                expect((await readManifest(repeatedOutputPath)).group).toEqual(manifest.group);
+            }
+            else {
+                expect(manifest.group).toEqual(source.group);
+            }
             expect(manifest.groupAssertions).toEqual(source.groupAssertions);
             expect(JSON.parse(await readFile(recordPath, 'utf8'))).toMatchObject({
                 isolationMode: mode.isolationMode,
-                sourceManifestSha256: '6dd898ab001a404c857e567ea42b41694c230df49e4b5e16bea2f2d8cc08d4c2'
+                sourceGroupRef: source.group,
+                effectiveGroupRef: manifest.group,
+                sourceManifestSha256: expectedSourceManifestSha256
             });
             const commands = manifest.recipes.flatMap((selection) => {
                 if (!selection.recipe) {
@@ -397,7 +412,7 @@ describe('Hetzner materialization contracts and effects', () => {
                         throw new Error('Traffic preservation requires the complete original outgoing envelopes.');
                     }
                     expect({ ...send, roomRef: originalSend.roomRef, payload: originalSend.payload }).toEqual(originalSend);
-                    expect(send.roomRef).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: mode.roomId });
+                    expect(send.roomRef).toEqual({ applicationId: 'rallar-server', workspaceId: 'default', groupId: roomId });
                     expect({
                         ...send.payload,
                         roomId: originalSend.payload.roomId,
@@ -417,8 +432,8 @@ describe('Hetzner materialization contracts and effects', () => {
                     if (!isJsonRecordValue(payload) || !isJsonRecordValue(payload.payload)) {
                         throw new Error('Outgoing scale traffic requires its complete relay and game envelope.');
                     }
-                    expect(payload.roomId).toBe(mode.roomId);
-                    expect(payload.payload.roomId).toBe(mode.roomId);
+                    expect(payload.roomId).toBe(roomId);
+                    expect(payload.payload.roomId).toBe(roomId);
                     const child = toLoopChildCommand({
                         template: wait,
                         context: { loopCommandId: 'arrival-test', index: sequence - 1, iteration: sequence, elapsedMs: 0, commandIndex: index }
