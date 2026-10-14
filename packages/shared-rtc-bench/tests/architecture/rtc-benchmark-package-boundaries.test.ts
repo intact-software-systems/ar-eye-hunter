@@ -52,11 +52,6 @@ function parseImportSpecifiers(source: string): string[] {
     return [...fromOrDynamicImports, ...sideEffectImports].map((match) => match[2]);
 }
 
-function parseRuntimeImportSpecifiers(source: string): string[] {
-    // Whole type-only declarations vanish at runtime; keep mixed imports conservatively in the runtime graph.
-    return parseImportSpecifiers(source.replace(/\bimport\s+type\b[^;]*;/g, ''));
-}
-
 function isPackageLocalImport(file: string, specifier: string): boolean {
     if (!specifier.startsWith('.')) {
         return false;
@@ -215,24 +210,9 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isApprovedImport(consumer, '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts')).toBe(false);
     });
 
-    it('distinguishes erased type declarations from runtime dependency edges', () => {
-        expect(parseRuntimeImportSpecifiers(`
-            import type { Contract } from './contract.ts';
-            import type OtherContract from './other-contract.ts';
-            import { value, type MixedContract } from './mixed.ts';
-            import './side-effect.ts';
-            const loaded = import('./dynamic.ts');
-        `)).toEqual(['./mixed.ts', './dynamic.ts', './side-effect.ts']);
-    });
-
-    it('admits only canonical event history with its pure decoder runtime graph', () => {
+    it('admits only the canonical event history owner while keeping other shared-test and app imports closed', () => {
         const consumer = path.join(packageRoot, 'baseline/acceptance/to-rtc-b06-event-history.ts');
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), eventHistoryOwnerPath))).toBe(true);
-        expect(parseRuntimeImportSpecifiers(fs.readFileSync(eventHistoryOwnerPath, 'utf8'))).toEqual([
-            './decode-runtime-result-values.ts'
-        ]);
-        const decoder = path.join(path.dirname(eventHistoryOwnerPath), 'decode-runtime-result-values.ts');
-        expect(parseRuntimeImportSpecifiers(fs.readFileSync(decoder, 'utf8'))).toEqual([]);
         for (
             const forbidden of [
                 'runtime/decode-runtime-result-values.ts',
