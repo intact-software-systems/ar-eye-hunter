@@ -328,13 +328,17 @@ export class DequeueController<K, V, T> {
 function toValidatedLaneBudgets(budgets: DequeueController.LaneBudgets): DequeueController.LaneBudgets {
     const entries = Object.values(Reservator).map((lane) => {
         const budget = budgets?.[lane];
+        const snapshot = budget && {
+            maxToReserve: budget.maxToReserve,
+            maxNumToDequeue: budget.maxNumToDequeue
+        };
         if (
-            !budget ||
-            ![budget.maxToReserve, budget.maxNumToDequeue].every(isPositiveSafeInteger)
+            !snapshot ||
+            ![snapshot.maxToReserve, snapshot.maxNumToDequeue].every(isPositiveSafeInteger)
         ) {
             throw new TypeError(`Lane ${lane} requires positive safe-integer reservation and dequeue budgets`);
         }
-        return [lane, { maxToReserve: budget.maxToReserve, maxNumToDequeue: budget.maxNumToDequeue }] as const;
+        return [lane, snapshot] as const;
     });
     return Object.fromEntries(entries) as DequeueController.LaneBudgets;
 }
