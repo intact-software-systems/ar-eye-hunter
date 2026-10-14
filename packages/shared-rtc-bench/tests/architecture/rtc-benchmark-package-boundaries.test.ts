@@ -9,6 +9,7 @@ const browserSoakProducerPath = path.join(packageRoot, 'workloads/browser-lifecy
 const canonicalEitherPath = path.join(repoRoot, 'packages/shared/resilience/Either.ts');
 const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
 const browserRecordingContractPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts');
+const eventHistoryOwnerPath = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/runtime/event-history.ts');
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
 );
@@ -51,6 +52,11 @@ function parseImportSpecifiers(source: string): string[] {
     return [...fromOrDynamicImports, ...sideEffectImports].map((match) => match[2]);
 }
 
+function parseRuntimeImportSpecifiers(source: string): string[] {
+    // Whole type-only declarations vanish at runtime; keep mixed imports conservatively in the runtime graph.
+    return parseImportSpecifiers(source.replace(/\bimport\s+type\b[^;]*;/g, ''));
+}
+
 function isPackageLocalImport(file: string, specifier: string): boolean {
     if (!specifier.startsWith('.')) {
         return false;
@@ -68,7 +74,9 @@ function isApprovedImport(file: string, specifier: string): boolean {
     }
     if (
         specifier.startsWith('.') &&
-        [finiteIceFixturePolicyPath, browserRecordingContractPath, ...productionFixturePaths].includes(path.resolve(path.dirname(file), specifier))
+        [finiteIceFixturePolicyPath, browserRecordingContractPath, eventHistoryOwnerPath, ...productionFixturePaths].includes(
+            path.resolve(path.dirname(file), specifier)
+        )
     ) {
         return true;
     }
@@ -159,6 +167,8 @@ describe('shared RTC benchmark package boundaries', () => {
             ].every((specifier) => !isApprovedImport(packageFile, specifier))
         ).toBe(true);
         expect(isBenchmarkPackageSpecifier('@ar-eye-hunter/shared-rtc-bench/internal')).toBe(true);
+        expect(isBenchmarkPackageSpecifier('@ar-eye-hunter/shared-rtc-bench-other/internal')).toBe(false);
+        expect(isBenchmarkPackageSpecifier('@ar-eye-hunter/another-package')).toBe(false);
     });
 
     it('admits only the dependency-free finite ICE fixture data, without opening runner imports', () => {
@@ -203,6 +213,40 @@ describe('shared RTC benchmark package boundaries', () => {
             expect(isApprovedImport(consumer, `../../../shared-test/${forbidden}`)).toBe(false);
         }
         expect(isApprovedImport(consumer, '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts')).toBe(false);
+    });
+
+    it('distinguishes erased type declarations from runtime dependency edges', () => {
+        expect(parseRuntimeImportSpecifiers(`
+            import type { Contract } from './contract.ts';
+            import type OtherContract from './other-contract.ts';
+            import { value, type MixedContract } from './mixed.ts';
+            import './side-effect.ts';
+            const loaded = import('./dynamic.ts');
+        `)).toEqual(['./mixed.ts', './dynamic.ts', './side-effect.ts']);
+    });
+
+    it('admits only canonical event history with its pure decoder runtime graph', () => {
+        const consumer = path.join(packageRoot, 'baseline/acceptance/to-rtc-b06-event-history.ts');
+        expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), eventHistoryOwnerPath))).toBe(true);
+        expect(parseRuntimeImportSpecifiers(fs.readFileSync(eventHistoryOwnerPath, 'utf8'))).toEqual([
+            './decode-runtime-result-values.ts'
+        ]);
+        const decoder = path.join(path.dirname(eventHistoryOwnerPath), 'decode-runtime-result-values.ts');
+        expect(parseRuntimeImportSpecifiers(fs.readFileSync(decoder, 'utf8'))).toEqual([]);
+        for (
+            const forbidden of [
+                'runtime/decode-runtime-result-values.ts',
+                'runtime/execute-runtime-command.ts',
+                'rallar-black-box-test-contracts.ts',
+                'control-protocol.ts',
+                'browser/create-rallar-black-box-browser-test-runtime.ts',
+                'create-rallar-black-box-test-runtime.ts'
+            ]
+        ) {
+            expect(isApprovedImport(consumer, `../../../shared-test/rallar-bb-test/${forbidden}`)).toBe(false);
+        }
+        expect(isApprovedImport(consumer, '@shared-test/rallar-bb-test/runtime/event-history.ts')).toBe(false);
+        expect(isApprovedImport(consumer, '../../../apps/rallar-black-box/event-history.ts')).toBe(false);
     });
 
     it('scans performance script roots that exist', () => {
