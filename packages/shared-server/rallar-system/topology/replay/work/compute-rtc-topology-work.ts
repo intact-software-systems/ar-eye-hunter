@@ -75,15 +75,6 @@ export interface RtcTopologyWorkValidationIssue {
     readonly cause: Error;
 }
 
-interface ComputeFingerprintSkipInput {
-    readonly facts: RtcTopologyWorkFacts;
-    readonly mutationRead: RtcTopologyMutationRead;
-    readonly authority: GroupTopologyPlanningAuthority;
-    readonly inputFingerprint: string;
-    readonly promotionRead: TopologyPromotionRead | null;
-    readonly storedInputFingerprint: string | null;
-}
-
 interface ComputeAcceptedTopologyMutationInput {
     readonly facts: RtcTopologyWorkFacts;
     readonly mutationRead: RtcTopologyMutationRead;
@@ -187,16 +178,9 @@ async function computeAcceptedRtcTopologyWork(
 ): Promise<AcceptedRtcTopologyWork> {
     const { facts, read } = input;
     const work = facts.workEnvelope.data;
-    const { authority, promotion: promotionRead, storedInputFingerprint } = read;
+    const { authority, promotion: promotionRead } = read;
     const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
-    const fingerprintSkip = computeFingerprintSkip({
-        facts,
-        mutationRead: read.mutation,
-        authority,
-        inputFingerprint,
-        promotionRead,
-        storedInputFingerprint
-    });
+    const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
     if (fingerprintSkip !== null) {
         return fingerprintSkip;
     }
@@ -218,7 +202,11 @@ async function computeAcceptedRtcTopologyWork(
         };
     }
     const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
-    if (unchangedGated && read.mutation.snapshot !== null && !computedTopology.changed) {
+    if (
+        unchangedGated && read.mutation.snapshot !== null && !computedTopology.changed &&
+        read.mutation.snapshot.value.sourceGroupStateCausalRevision.presenceRevision ===
+            authority.group.causalRevision.presenceRevision
+    ) {
         return {
             decision: 'skipped-unchanged',
             work,
@@ -241,15 +229,18 @@ async function computeAcceptedRtcTopologyWork(
 }
 
 function computeFingerprintSkip(
-    input: ComputeFingerprintSkipInput
+    input: ComputeRtcTopologyWorkInput,
+    inputFingerprint: string
 ): Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null {
-    const { facts, mutationRead, authority, inputFingerprint, promotionRead, storedInputFingerprint } = input;
-    const work = facts.workEnvelope.data;
-    const snapshot = mutationRead.snapshot;
+    const { authority, promotion: promotionRead, storedInputFingerprint } = input.read;
+    const work = input.facts.workEnvelope.data;
+    const snapshot = input.read.mutation.snapshot;
     if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active') {
         return null;
     }
-    return storedInputFingerprint === inputFingerprint
+    return storedInputFingerprint === inputFingerprint &&
+            snapshot.value.sourceGroupStateCausalRevision.presenceRevision ===
+                authority.group.causalRevision.presenceRevision
         ? {
             decision: 'skipped-fingerprint',
             work,
