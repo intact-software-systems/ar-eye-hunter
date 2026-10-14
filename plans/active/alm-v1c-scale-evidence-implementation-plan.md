@@ -189,8 +189,10 @@ Deliver the existing implementation as a coherent reviewed increment:
 
 Review every changed human-authored file completely for behavior, necessity and current standards.
 Every support file modified by remediation enters closure recursively; independent untouched code
-stays outside. Complete production-legacy classification, owner-to-result navigation review and
-the manual five-landmark IDE probe using Go to Definition and Find Usages.
+stays outside. Complete production-legacy classification and owner-to-result navigation review.
+The maintainer is away from the Mac and explicitly postpones the manual five-landmark IDE probe
+to step 2 because local GUI access is unavailable. The probe has not been performed; automated
+checks do not replace it.
 Remove affected unneeded legacy and duplicate paths. Exact current source and meaningful existing
 review evidence may be reused; heuristic inventories and hash-only bindings do not prove semantic
 review. Keep the unrelated local scanner edit outside publication.
@@ -213,7 +215,14 @@ After step 1 is manually merged, work on a fresh non-default feature branch. Kee
 workload and unchanged benefit gates above as the completion criteria; six/eleven diagnostics
 remain supplemental, and V1d stays outcome-shaped.
 
-First narrow the measured admission/dequeue callback remainder at its existing owners. Recover
+Begin step 2 with the deferred manual 5/5 cold probe from the changed concrete AppInbox
+registrations, using only Go to Definition and Find Usages. Reach the concrete operation entry,
+domain or update policy, first conditional write guard, exact durable result and after-commit
+effect. Record search escapes, ambiguous pivots and named deferred boundaries. Complete this
+check before further step 2 production changes or scale acceptance; no passing result is claimed
+until the probe is performed.
+
+Then narrow the measured admission/dequeue callback remainder at its existing owners. Recover
 outbound commit-phase and sender-queue diagnostics; keep the original metrics sink active. A private
 reviewable checkpoint extends the existing bounded, guarded, deferred observer and safe codec.
 Its native observer fixture extension and complete independent review remain pending. Finish those
