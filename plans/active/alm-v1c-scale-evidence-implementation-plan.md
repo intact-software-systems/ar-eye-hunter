@@ -210,7 +210,7 @@ slice through the draft PR, keep this plan, and wait for the user's manual merge
 
 ### Step 2b: the engine, its fault tolerance and the handler cost, then 15 → 30 → 50
 
-After step 2a is manually merged, on a fresh non-default branch: D194 to D198 (a handler-finalized
+Step 2a is merged (#662 as `2c167a72`). On branch `claude/alm-v1c-step-2b-engine-topology` from that main: D194 to D198 (a handler-finalized
 success skips the post-commit release; the registration runnable wakes the engine after a batch
 that claimed work; typed retryable conflicts are not breaker failures, an open breaker reports no
 work and wakes at its reopen time, one task's `isWork` failure does not abort the pass, a reserve
