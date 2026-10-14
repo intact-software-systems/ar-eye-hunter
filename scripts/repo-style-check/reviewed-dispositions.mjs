@@ -1034,6 +1034,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // One heterogeneous admission row or checkpoint value stays raw in memory.
+    // read/list and write-buffer reads decode it with the caller's canonical
+    // decoder; the volatile sweep decodes it before any domain decision.
+    Object.freeze({
+        path: 'packages/shared/alm/al-admission-backend.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     Object.freeze({
         path: 'packages/shared/al-contracts/al-control.ts',
         rule: 'boundary.unknown',

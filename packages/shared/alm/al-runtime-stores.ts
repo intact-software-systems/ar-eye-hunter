@@ -15,6 +15,7 @@ import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '
 import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
 import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
 import type { ALInboundOrderingTracksReport } from './inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import { evictTerminalVolatileInboundMessages } from './inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -369,10 +370,16 @@ export function createVolatileALInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const admissionStore = createVolatileALInboundAdmissionStore(
+        toInMemoryALInboundAdmissionStoreInput(input, backend)
+    );
     return {
-        admissionStore: createVolatileALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
+        admissionStore,
         workQueue: backend.workQueue,
-        evictExpired: () => backend.evictExpired(),
+        evictExpired: () => {
+            backend.evictExpired();
+            evictTerminalVolatileInboundMessages(backend, admissionStore.namespace);
+        },
         budget
     };
 }

@@ -104,7 +104,12 @@ WS server and Node keep the always-owned default.
   or longer when the work the message owns does; a message with no expiry of its own has
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
-  own 60 s schedule; this is idempotent.
+  own 60 s schedule; this is idempotent. After the volatile pair's ordinary expiry sweep,
+  that same turn can also release a canonical envelope whose direct work has completed
+  ([`evictTerminalVolatileInboundMessages`](./admission/evict-terminal-volatile-inbound-messages.ts)) and
+  which no buffered slot or owed child-forwarding receipt still needs. Its owner, dedup and
+  control facts keep their original retention. A pending or queued admission write prevents
+  this early release; the durable and checkpoint pairs keep their existing policy.
 - **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
   track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
   (D181): a receiver that forgot a track would read the sender's next sequence as a gap
@@ -127,7 +132,8 @@ rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3
 An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile message
 ([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
 standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
-envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
+envelope while an owed child may still need forwarding, at most until the message deadline; its message-owner
+row lives until the deadline plus the 30 s receipt grace, and
 the dedup row for the longer of the 60 s dedup window and the deadline plus the grace (see the dedup retention
 below). Once its child's ACK arrives it adds an acknowledgement-history row, kept until the deadline plus the grace
 as well. Before S3c-ii the owner row stayed for an hour and the history row
@@ -648,7 +654,9 @@ and the canonical inbound message row
 envelope until the `retainUntilMs` its own row states — the latest deadline of the effects
 and slots that bundle owns, so a bundle owning neither writes no canonical row. Both must
 outlive the owned work the same bundle writes; a bundle whose provenance expires first is
-rejected.
+rejected. For the fresh volatile pair alone, `retainUntilMs` is an upper bound: its existing
+maintenance turn can remove the full envelope earlier once no live direct work, buffered
+slot or owed child-forwarding receipt requires it. Owner and receipt facts remain held.
 
 ## Replay authority and deadlines
 
