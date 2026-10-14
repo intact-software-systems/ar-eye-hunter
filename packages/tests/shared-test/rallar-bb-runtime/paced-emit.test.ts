@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PacedEmit } from '../../../apps/rallar-black-box/src/app/paced-emit.ts';
+import { PacedEmit } from '../../../shared-test/rallar-bb-test/runtime/paced-emit.ts';
 
 function createCountedPacedEmit(intervalMs: number): { readonly paced: PacedEmit; readonly emits: () => number; } {
     let emits = 0;

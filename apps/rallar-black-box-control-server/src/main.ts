@@ -6,6 +6,7 @@ import { readBlackBoxControlServerConfiguration } from './control-server-configu
 import { createRallarBlackBoxControlService } from './control-service.ts';
 import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins } from './cors.ts';
+import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
 import { createControlHttpResponses } from './http/control-http-responses.ts';
 import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
@@ -24,7 +25,8 @@ const controlService = createRallarBlackBoxControlService({
     dependencies: {
         now: () => Date.now(),
         createCommandId: () => crypto.randomUUID(),
-        createRunToken: () => crypto.randomUUID()
+        createRunToken: () => crypto.randomUUID(),
+        evaluateDistributedRun: toDistributedRunRollup
     },
     config: {
         redaction: undefined,

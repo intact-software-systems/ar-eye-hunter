@@ -20,6 +20,7 @@ import type {
     CreateRallarBlackBoxControlServiceInput,
     RallarBlackBoxControlService
 } from '../../src/control-service.ts';
+import { toDistributedRunRollup } from '../../src/distributed/distributed-run-evaluation.ts';
 
 export interface ControlServiceInputOverrides {
     readonly now?: () => number;
@@ -77,7 +78,8 @@ export function toControlServiceInput(
         dependencies: {
             now: overrides.now ?? (() => Date.now()),
             createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID()),
-            createRunToken: () => crypto.randomUUID()
+            createRunToken: () => crypto.randomUUID(),
+            evaluateDistributedRun: toDistributedRunRollup
         },
         config: {
             redaction: overrides.redaction,

@@ -12,6 +12,7 @@ import {
 import {
     parseControlClientMessage,
     parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES,
     type ControlCommandEnvelope,
     type ControlResultEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -875,7 +876,8 @@ class ControlClientWire implements RallarBlackBoxControlWebSocket {
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
             reconnectBaseMs: 600,
-            reconnectMaxMs: 5_000
+            reconnectMaxMs: 5_000,
+            maxFrameBytes: RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
         });
     }
 

@@ -24,6 +24,8 @@ import {
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
 
+const SNAPSHOT_SETTLE_MS = 300;
+
 function toStagedService(): RallarBlackBoxControlService {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     for (const agentId of ['agent-1', 'agent-2']) {
@@ -90,6 +92,41 @@ Deno.test('control snapshot restore brings back the runs and distributed runs th
     assertEquals(warnings, []);
     assertEquals(service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId), ['agent-1', 'agent-2']);
     assertEquals(service.snapshotDistributedRun('dist-1')?.manifest, persisted.distributedRuns?.[0]?.manifest);
+});
+
+Deno.test('control snapshot persistence writes compact JSON once per changed snapshot', async () => {
+    const service = toStagedService();
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-change-' });
+    const snapshotPath = `${storageDir}/control-snapshot.json`;
+    try {
+        const persistence = createControlSnapshotPersistence({
+            storageDir,
+            retentionMaxRuns: 50,
+            snapshotBounds: {},
+            controlService: service,
+            deleteRuns: () => undefined
+        });
+        persistence.persist();
+        const first = await readPersistedSnapshot(snapshotPath);
+
+        persistence.persist();
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_SETTLE_MS));
+        const unchanged = await Deno.readTextFile(snapshotPath);
+
+        service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-3', identity: toFleetIdentity('agent-3') }));
+        persistence.persist();
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_SETTLE_MS));
+        const changed = await Deno.readTextFile(snapshotPath);
+
+        assertEquals(unchanged, first, 'an unchanged snapshot is not rewritten');
+        assertEquals(first.includes('\n'), false, 'the snapshot file is compact');
+        const restored = await restoreSnapshotText(JSON.parse(changed).snapshot);
+        assertEquals(restored.warnings, []);
+        assertEquals(restored.service.snapshotRun('run-1')?.agents.map((agent) => agent.agentId).sort(), ['agent-1', 'agent-2', 'agent-3']);
+    }
+    finally {
+        await Deno.remove(storageDir, { recursive: true });
+    }
 });
 
 Deno.test('control snapshot restore rejects a distributed run whose manifest omits a now-required setting', async () => {

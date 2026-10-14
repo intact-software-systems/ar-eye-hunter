@@ -13,7 +13,7 @@ export interface ControlAgentIdentity {
 
 export type ControlAgentSocketService = Pick<
     RallarBlackBoxControlService,
-    'recordDuplicateAgentSocketReplacement' | 'takeDispatchableCommands' | 'takeBarrierResolutions'
+    'recordDuplicateAgentSocketReplacement' | 'takeDispatchableCommandsForAgents' | 'takeBarrierResolutions'
 >;
 
 const OPEN_SOCKET_STATE = 1;
@@ -79,21 +79,30 @@ export class ControlAgentSockets {
     }
 
     sendDispatchableCommands(agent: ControlAgentIdentity): void {
-        const socket = this.socketsByRun.get(agent.runId)?.get(agent.agentId);
-        if (!socket || socket.readyState !== OPEN_SOCKET_STATE) {
-            return;
-        }
-        for (const command of this.controlService.takeDispatchableCommands(agent.runId, agent.agentId)) {
-            socket.send(JSON.stringify(command));
-        }
-        for (const resolution of this.controlService.takeBarrierResolutions(agent.runId, agent.agentId)) {
-            socket.send(JSON.stringify(resolution));
-        }
+        this.sendDispatchableCommandsToAgents(agent.runId, [agent.agentId]);
     }
 
     sendDispatchableCommandsForRun(runId: string): void {
-        for (const agentId of this.socketsByRun.get(runId)?.keys() ?? []) {
-            this.sendDispatchableCommands({ runId, agentId });
+        this.sendDispatchableCommandsToAgents(runId, [...this.socketsByRun.get(runId)?.keys() ?? []]);
+    }
+
+    private sendDispatchableCommandsToAgents(runId: string, agentIds: readonly string[]): void {
+        const sockets = this.socketsByRun.get(runId);
+        const openSockets = new Map(agentIds.flatMap((agentId) => {
+            const socket = sockets?.get(agentId);
+            return socket?.readyState === OPEN_SOCKET_STATE ? [[agentId, socket] as const] : [];
+        }));
+        if (openSockets.size === 0) {
+            return;
+        }
+        const commandsByAgentId = this.controlService.takeDispatchableCommandsForAgents(runId, [...openSockets.keys()]);
+        for (const [agentId, socket] of openSockets) {
+            for (const command of commandsByAgentId.get(agentId) ?? []) {
+                socket.send(JSON.stringify(command));
+            }
+            for (const resolution of this.controlService.takeBarrierResolutions(runId, agentId)) {
+                socket.send(JSON.stringify(resolution));
+            }
         }
     }
 }

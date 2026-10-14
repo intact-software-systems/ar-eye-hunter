@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 
 import {
+    afterEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
-import { renderHeadlessStatus } from '../../../apps/rallar-black-box-headless/src/status-view.ts';
+import { HeadlessStatusView } from '../../../apps/rallar-black-box-headless/src/status-view.ts';
 import type { RallarBlackBoxBrowserControlAgentSnapshot } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
 import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
@@ -56,7 +58,60 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
     };
 }
 
+function renderHeadlessStatus(root: HTMLElement, rendered: RallarBlackBoxBrowserControlAgentSnapshot): void {
+    new HeadlessStatusView(root, () => rendered).render();
+}
+
 describe('headless status view', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('renders many snapshot changes inside one interval once, with the latest snapshot', () => {
+        vi.useFakeTimers();
+        const root = document.createElement('main');
+        let current = snapshot();
+        let reads = 0;
+        const view = new HeadlessStatusView(root, () => {
+            reads += 1;
+            return current;
+        });
+        view.render();
+        reads = 0;
+
+        for (let sentCount = 4; sentCount < 54; sentCount += 1) {
+            current = { ...current, control: { ...current.control, sentCount } };
+            view.requestRender();
+        }
+        vi.advanceTimersByTime(99);
+        expect(root.querySelector('[data-sent-count]')?.textContent).toBe('3');
+
+        vi.advanceTimersByTime(1);
+        expect(root.querySelector('[data-sent-count]')?.textContent).toBe('53');
+        expect(reads).toBe(1);
+    });
+
+    it('updates a changed value in place and leaves unchanged rows untouched', () => {
+        const root = document.createElement('main');
+        let current = snapshot();
+        const view = new HeadlessStatusView(root, () => current);
+        view.render();
+        const agentRow = root.querySelector('[data-agent-id]');
+        const sentRow = root.querySelector('[data-sent-count]');
+
+        current = { ...current, lastError: 'socket closed', control: { ...current.control, sentCount: 9 } };
+        view.render();
+
+        expect(root.querySelector('[data-agent-id]')).toBe(agentRow);
+        expect(root.querySelector('[data-sent-count]')).toBe(sentRow);
+        expect(sentRow?.textContent).toBe('9');
+        expect(root.querySelector('[data-last-error]')?.textContent).toBe('socket closed');
+
+        current = { ...current, lastError: undefined };
+        view.render();
+        expect(root.querySelector('[data-last-error]')).toBeNull();
+    });
+
     it('renders basic agent and control information for local inspection', () => {
         const root = document.createElement('main');
 

@@ -66,6 +66,12 @@ import {
 } from './control-evidence-compaction.ts';
 import { trimControlReportDedupeKeys, trimControlRunEvidence } from './control-runtime-retention.ts';
 import {
+    toControlServiceFailure,
+    toDistributedRunNotFound,
+    toDistributedRunTerminal,
+    type ControlServiceFailure
+} from './control-service-failure.ts';
+import {
     toControlCommandSnapshot,
     toControlRetentionRunSafety,
     toControlRunSnapshot,
@@ -93,7 +99,7 @@ import {
     toScheduledStartEpochMs,
     type DistributedPhaseCommand
 } from './distributed/distributed-run-commands.ts';
-import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
+import type { DistributedRunEvaluationInput } from './distributed/distributed-run-evaluation.ts';
 import {
     resolveDistributedRunAdvance,
     resolveDistributedRunStartStep,
@@ -124,8 +130,7 @@ import {
     computeControlRecipeReloadStep,
     computeReloadRootDeadline,
     toCancelledControlRecipeReload,
-    toControlRecipeReloadCancellationRoots,
-    toControlRecipeReloadDispatch
+    toControlRecipeReloadCancellationRoots
 } from './recipe-reload/compute-control-recipe-reload-step.ts';
 import {
     resolveControlRecipeReloadOwner,
@@ -144,23 +149,11 @@ import {
     toControlReloadCleanupSuccessor
 } from './recipe-reload/control-reload-cleanup.ts';
 
-export type ControlServiceFailureCode =
-    | 'command-kind-not-allowed'
-    | 'command-payload-conflict'
-    | 'command-rate-limited'
-    | 'distributed-run-exists'
-    | 'distributed-run-not-found'
-    | 'distributed-run-terminal';
-
-export interface ControlServiceFailure {
-    readonly code: ControlServiceFailureCode;
-    readonly message: string;
-}
-
 export interface RallarBlackBoxControlServiceDependencies {
     readonly now: () => number;
     readonly createCommandId: () => string;
     readonly createRunToken: () => string;
+    readonly evaluateDistributedRun: (input: DistributedRunEvaluationInput) => RallarBlackBoxDistributedRunRollup;
 }
 
 export interface RallarBlackBoxControlServiceConfig {
@@ -252,11 +245,14 @@ export class RallarBlackBoxControlService {
             deadlineEpochMs: input.deadlineEpochMs
         };
         if (hasControlReloadCleanup(envelope)) {
-            return toFailure('command-payload-conflict', 'Reload cleanup is owned by its paired control execution.');
+            return toControlServiceFailure(
+                'command-payload-conflict',
+                'Reload cleanup is owned by its paired control execution.'
+            );
         }
         const issues = validateControlRecipeReloadEnqueue(run, envelope);
         if (issues.length > 0) {
-            return toFailure('command-payload-conflict', issues.join(' '));
+            return toControlServiceFailure('command-payload-conflict', issues.join(' '));
         }
         const queued = this.queueCommand(run, agent, envelope);
         if (
@@ -335,7 +331,10 @@ export class RallarBlackBoxControlService {
         manifest: RallarBlackBoxDistributedRunManifest
     ): Either<ControlServiceFailure, ControlDistributedRunSnapshot> {
         if (this.distributedRuns.has(manifest.distributedRunId)) {
-            return toFailure('distributed-run-exists', `Distributed run ${manifest.distributedRunId} already exists.`);
+            return toControlServiceFailure(
+                'distributed-run-exists',
+                `Distributed run ${manifest.distributedRunId} already exists.`
+            );
         }
 
         const normalized = toNormalizedDistributedRunManifest(manifest);
@@ -466,11 +465,23 @@ export class RallarBlackBoxControlService {
     }
 
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
+        return this.takeDispatchableCommandsForAgents(runId, [agentId]).get(agentId) ?? [];
+    }
+
+    /** Refreshes the run's distributed rollups once, then takes each listed agent's due commands in order. */
+    takeDispatchableCommandsForAgents(
+        runId: string,
+        agentIds: readonly string[]
+    ): ReadonlyMap<string, readonly ControlCommandEnvelope[]> {
         this.refreshDistributedRunsForControlRun(runId);
         const run = this.runs.get(runId);
         if (!run) {
-            return [];
+            return new Map();
         }
+        return new Map(agentIds.map((agentId) => [agentId, this.takeAgentDispatchableCommands(run, agentId)]));
+    }
+
+    private takeAgentDispatchableCommands(run: ControlRunState, agentId: string): readonly ControlCommandEnvelope[] {
         this.advanceReloadRecipes(run);
         const agent = run.agents.get(agentId);
         if (!agent?.connected) {
@@ -694,7 +705,6 @@ export class RallarBlackBoxControlService {
         run.heartbeats.push(envelope);
         this.touch(run);
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
-        this.refreshDistributedRunsForControlRun(run.runId);
     }
 
     private receiveResult(envelope: ControlResultEnvelope): boolean {
@@ -745,7 +755,6 @@ export class RallarBlackBoxControlService {
         this.touch(run);
         this.advanceReloadRecipes(run);
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
-        this.refreshDistributedRunsForControlRun(run.runId);
         return true;
     }
 
@@ -1111,7 +1120,7 @@ export class RallarBlackBoxControlService {
 
         this.reconcileDistributedCommandLinks(distributedRun);
         this.advanceDistributedRun(distributedRun);
-        const evaluated = toDistributedRunRollup({
+        const evaluated = this.dependencies.evaluateDistributedRun({
             distributedRun,
             run: this.runs.get(distributedRun.controlRunId),
             redaction: this.config.redaction,
@@ -1208,22 +1217,4 @@ export function createRallarBlackBoxControlService(
     input: CreateRallarBlackBoxControlServiceInput
 ): RallarBlackBoxControlService {
     return new RallarBlackBoxControlService(input);
-}
-
-function toFailure<TValue>(code: ControlServiceFailureCode, message: string): Either<ControlServiceFailure, TValue> {
-    return Either.ofLeft({ code, message });
-}
-
-function toDistributedRunNotFound<TValue>(distributedRunId: string): Either<ControlServiceFailure, TValue> {
-    return toFailure('distributed-run-not-found', `Distributed run not found: ${distributedRunId}.`);
-}
-
-function toDistributedRunTerminal<TValue>(
-    distributedRun: ControlDistributedRunState,
-    action: ControlDistributedRunCommandPhase
-): Either<ControlServiceFailure, TValue> {
-    return toFailure(
-        'distributed-run-terminal',
-        `Cannot ${action} distributed run ${distributedRun.distributedRunId} in terminal state ${distributedRun.state}.`
-    );
 }

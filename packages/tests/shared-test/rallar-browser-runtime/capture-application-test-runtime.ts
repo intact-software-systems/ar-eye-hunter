@@ -36,6 +36,7 @@ import * as auth from '@shared/api/auth.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { createRallarBlackBoxControlService } from '../../../../apps/rallar-black-box-control-server/src/control-service.ts';
+import { toDistributedRunRollup } from '../../../../apps/rallar-black-box-control-server/src/distributed/distributed-run-evaluation.ts';
 import '../../setup-browser-indexeddb.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
@@ -108,7 +109,12 @@ export function createCaptureApplicationRuntime(
 
 export function createCaptureController() {
     return createRallarBlackBoxControlService({
-        dependencies: { now: () => 1_000, createCommandId: () => 'unused', createRunToken: () => 'unused' },
+        dependencies: {
+            now: () => 1_000,
+            createCommandId: () => 'unused',
+            createRunToken: () => 'unused',
+            evaluateDistributedRun: toDistributedRunRollup
+        },
         config: {
             redaction: undefined,
             allowedCommandKinds: undefined,

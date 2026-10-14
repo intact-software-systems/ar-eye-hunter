@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 export interface BlackBoxControlEnvironment {
@@ -54,7 +55,11 @@ export function readBlackBoxControlServerConfiguration(
     const allowedCommandKinds = readEnvironmentList(environment, 'RALLAR_BLACK_BOX_ALLOWED_COMMANDS');
     return {
         ...readAccessConfiguration(environment),
-        maxRequestBytes: readEnvironmentNumber(environment, 'RALLAR_BLACK_BOX_MAX_REQUEST_BYTES', 2_000_000),
+        maxRequestBytes: readEnvironmentNumber(
+            environment,
+            'RALLAR_BLACK_BOX_MAX_REQUEST_BYTES',
+            RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+        ),
         allowedCommandKinds: allowedCommandKinds.length > 0 ? allowedCommandKinds : undefined,
         commandRateLimitMax: readEnvironmentNumber(environment, 'RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_MAX', 120),
         commandRateLimitWindowMs: readEnvironmentNumber(

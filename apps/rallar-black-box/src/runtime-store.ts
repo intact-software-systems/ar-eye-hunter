@@ -45,6 +45,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { PacedEmit } from '@shared-test/rallar-bb-test/runtime/paced-emit.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
@@ -58,7 +59,6 @@ import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-import { PacedEmit } from './app/paced-emit.ts';
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type StoreListener = () => void;

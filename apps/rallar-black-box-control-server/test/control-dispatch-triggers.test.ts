@@ -24,7 +24,9 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
+import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
+import { toDistributedRunRollup } from '../src/distributed/distributed-run-evaluation.ts';
 import {
     isControlRecipeReloadRoot,
     toControlRecipeReloadCommands
@@ -33,8 +35,10 @@ import { registerAgent, waitForSocketOpen } from './support/control-api-test-age
 import { getJson, startControlServer } from './support/control-api-test-server.ts';
 import {
     assertRight,
+    registerFleetAgents,
     toCommandResultEnvelope,
     toControlServiceInput,
+    toDistributedManifest,
     toFleetIdentity,
     toRegisterEnvelope,
     toUnconfiguredAgentIdentity
@@ -118,6 +122,62 @@ Deno.test('register, result, heartbeat and barrier arrivals recompute dispatch; 
             report: false
         }
     );
+});
+
+// The rollup re-evaluates every participant, so the count of evaluations per envelope is the cost being bounded.
+Deno.test('one result envelope evaluates the distributed rollup once while every agent socket receives its start', () => {
+    const agentCount = 20;
+    let evaluations = 0;
+    const defaults = toControlServiceInput({ now: () => 1_000 });
+    const service = createRallarBlackBoxControlService({
+        ...defaults,
+        dependencies: {
+            ...defaults.dependencies,
+            evaluateDistributedRun: (input) => {
+                evaluations += 1;
+                return toDistributedRunRollup(input);
+            }
+        }
+    });
+    registerFleetAgents(service, agentCount);
+    const agentIds = Array.from({ length: agentCount }, (_, index) => `agent-${String(index + 1).padStart(2, '0')}`);
+    const sockets = new ControlAgentSockets(service);
+    const sent = new Map(agentIds.map((agentId) => [agentId, [] as ControlCommandEnvelope[]]));
+    for (const agentId of agentIds) {
+        sockets.register({
+            readyState: 1,
+            send: (text) => sent.get(agentId)!.push(JSON.parse(text)),
+            close: () => undefined
+        }, { runId: 'run-1', agentId });
+    }
+    assertRight(service.createDistributedRun(toDistributedManifest({
+        targetPolicy: { mode: 'selected-agents', agentIds }
+    }, { startMode: 'auto-after-ready' })));
+    assertRight(service.stageDistributedRun('dist-1'));
+    sockets.sendDispatchableCommandsForRun('run-1');
+    const stageCommands = agentIds.map((agentId) => sent.get(agentId)!.splice(0));
+    for (const [index, agentId] of agentIds.slice(0, -1).entries()) {
+        acceptSocketEnvelope(service, sockets, toCommandResultEnvelope({ runId: 'run-1', agentId, command: stageCommands[index][0], ok: true }));
+    }
+
+    evaluations = 0;
+    acceptSocketEnvelope(
+        service,
+        sockets,
+        toCommandResultEnvelope({
+            runId: 'run-1',
+            agentId: agentIds[agentCount - 1],
+            command: stageCommands[agentCount - 1][0],
+            ok: true
+        })
+    );
+
+    assertEquals(evaluations, 1);
+    assertEquals(
+        agentIds.map((agentId) => sent.get(agentId)!.map((command) => command.command.kind)),
+        agentIds.map(() => ['recipe.run'])
+    );
+    assertEquals(service.snapshotDistributedRun('dist-1')?.state, 'running');
 });
 
 Deno.test('a registration and a barrier arrival are answered on the socket at once, a diagnostic is not', async () => {
@@ -211,6 +271,17 @@ Deno.test('an expired reload readiness is judged at the next heartbeat, never at
         await server.stop();
     }
 });
+
+/** The socket route's order for one accepted client frame: receive, then dispatch to the run's sockets. */
+function acceptSocketEnvelope(
+    service: RallarBlackBoxControlService,
+    sockets: ControlAgentSockets,
+    envelope: ControlClientEnvelope
+): void {
+    if (service.receiveClientEnvelope(envelope).affectsDispatch) {
+        sockets.sendDispatchableCommandsForRun(envelope.runId);
+    }
+}
 
 function startCombinedRun(
     service: RallarBlackBoxControlService,

@@ -22,10 +22,10 @@ export function trimControlRunEvidence(
     }
     trimMapByInsertion(run.commands, bounds.commands, protectedCommandIds);
     trimMapByInsertion(run.results, bounds.results, protectedCommandIds);
-    run.events = [...toBoundedTail(run.events, bounds.events)];
-    run.stats = [...toBoundedTail(run.stats, bounds.stats)];
-    run.reports = [...toBoundedTail(run.reports, bounds.reports)];
-    run.heartbeats = [...toBoundedTail(run.heartbeats, bounds.heartbeats)];
+    trimArrayToTail(run.events, bounds.events);
+    trimArrayToTail(run.stats, bounds.stats);
+    trimArrayToTail(run.reports, bounds.reports);
+    trimArrayToTail(run.heartbeats, bounds.heartbeats);
 }
 
 export function trimControlReportDedupeKeys(run: ControlRunState): void {
@@ -56,6 +56,13 @@ export function toProtectedRuntimeCommandIds(
         distributedRun.commandLinks.forEach((link) => commandIds.add(link.commandId));
     }
     return commandIds;
+}
+
+function trimArrayToTail<T>(values: T[], limit: number | undefined): void {
+    if (limit === undefined || !Number.isFinite(limit) || limit < 0 || values.length <= limit) {
+        return;
+    }
+    values.splice(0, values.length - Math.floor(limit));
 }
 
 function trimMapByInsertion<T>(
