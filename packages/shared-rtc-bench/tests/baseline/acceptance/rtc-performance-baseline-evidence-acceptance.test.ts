@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
 import type { RtcBaselineAcceptedArtifact } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
@@ -110,6 +114,7 @@ const browserOwnership = 'Native-browser workloads must enter through record-bro
 const externalOwnership = 'Local-full-stack workloads must enter through external ingestion.';
 
 const completedNativeConnectCapture = {
+    almDiagnostics: true,
     runId: 'capture-run',
     agentId: 'agent-a',
     commandId: 'connect-a-realtime',
@@ -535,6 +540,11 @@ describe('RTC baseline evidence acceptance', () => {
                     field: 'rtcCaptureMode',
                     value: mode,
                     source: 'cli'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'almDiagnostics',
+                    value: true,
+                    source: 'default'
                 }]
             })
         }));
@@ -656,6 +666,11 @@ describe('RTC baseline evidence acceptance', () => {
                         field: 'rtcCaptureMode',
                         value: 'native',
                         source: 'cli'
+                    }, {
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'almDiagnostics',
+                        value: true,
+                        source: 'default'
                     }]
                 }),
                 writeAcceptedArtifact: collectWrites(writes)

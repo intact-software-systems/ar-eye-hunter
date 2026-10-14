@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
@@ -87,7 +92,6 @@ function createRecoveryFixture(): RecoveryFixture {
     let nowMs = 1_000;
     const recovery = new BrowserResyncRecovery({
         owners,
-        storage: (event) => storage.push(event),
         nowMs: () => nowMs
     });
     return {
@@ -109,8 +113,8 @@ describe('the browser resync recovery', () => {
         const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
         const again = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 301 }));
 
-        fixture.recovery.onResyncRequired(first);
-        fixture.recovery.onResyncRequired(again);
+        fixture.recovery.onResyncRequired(first, (event) => fixture.storage.push(event));
+        fixture.recovery.onResyncRequired(again, (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([first.cursor]);
         expect(fixture.storage).toEqual([{ kind: 'recovery-owner-invoked', ...first.cursor }]);
@@ -126,9 +130,9 @@ describe('the browser resync recovery', () => {
         const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
         const nextEpoch = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300, epoch: 1 }));
 
-        fixture.recovery.onResyncRequired(first);
-        fixture.recovery.onResyncRequired(nextEpoch);
-        fixture.recovery.onResyncRequired(nextEpoch);
+        fixture.recovery.onResyncRequired(first, (event) => fixture.storage.push(event));
+        fixture.recovery.onResyncRequired(nextEpoch, (event) => fixture.storage.push(event));
+        fixture.recovery.onResyncRequired(nextEpoch, (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([first.cursor, nextEpoch.cursor]);
         expect(fixture.storage.map((event) => event.kind === 'recovery-owner-invoked' ? event.epoch : event.kind)).toEqual([0, 1]);
@@ -139,11 +143,11 @@ describe('the browser resync recovery', () => {
         fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
         const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
 
-        fixture.recovery.onResyncRequired(first);
+        fixture.recovery.onResyncRequired(first, (event) => fixture.storage.push(event));
         fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS);
-        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 301 })));
+        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 301 })), (event) => fixture.storage.push(event));
         fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS);
-        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 302 })));
+        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 302 })), (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([first.cursor]);
     });
@@ -154,9 +158,9 @@ describe('the browser resync recovery', () => {
         const first = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
         const later = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 900 }));
 
-        fixture.recovery.onResyncRequired(first);
+        fixture.recovery.onResyncRequired(first, (event) => fixture.storage.push(event));
         fixture.advance(AL_VOLATILE_SESSION_MAX_AGE_MS + 1);
-        fixture.recovery.onResyncRequired(later);
+        fixture.recovery.onResyncRequired(later, (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([first.cursor, later.cursor]);
     });
@@ -165,11 +169,11 @@ describe('the browser resync recovery', () => {
         const fixture = createRecoveryFixture();
         fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
         for (let track = 0; track <= AL_INBOUND_MAX_ORDERING_TRACKS; track += 1) {
-            fixture.recovery.onResyncRequired(createTrackResync(track));
+            fixture.recovery.onResyncRequired(createTrackResync(track), (event) => fixture.storage.push(event));
         }
 
-        fixture.recovery.onResyncRequired(createTrackResync(AL_INBOUND_MAX_ORDERING_TRACKS));
-        fixture.recovery.onResyncRequired(createTrackResync(0));
+        fixture.recovery.onResyncRequired(createTrackResync(AL_INBOUND_MAX_ORDERING_TRACKS), (event) => fixture.storage.push(event));
+        fixture.recovery.onResyncRequired(createTrackResync(0), (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toHaveLength(AL_INBOUND_MAX_ORDERING_TRACKS + 2);
         expect(fixture.invocations.at(-1)?.orderingKey).toBe('track-0');
@@ -179,7 +183,7 @@ describe('the browser resync recovery', () => {
         const fixture = createRecoveryFixture();
         fixture.owners.setOwner(CHAT_ROUTE, fixture.owner);
 
-        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: 'chat.other.v1', seq: 300 })));
+        fixture.recovery.onResyncRequired(toResync(createResyncMessage({ typeId: 'chat.other.v1', seq: 300 })), (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([]);
         expect(fixture.storage).toEqual([]);
@@ -190,7 +194,7 @@ describe('the browser resync recovery', () => {
         fixture.owners.setOwner({ typeId: CHAT_ROUTE.typeId }, fixture.owner);
         const resync = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
 
-        fixture.recovery.onResyncRequired(resync);
+        fixture.recovery.onResyncRequired(resync, (event) => fixture.storage.push(event));
 
         expect(fixture.invocations).toEqual([resync.cursor]);
     });
@@ -208,7 +212,7 @@ describe('the browser resync recovery', () => {
         });
         const resync = toResync(createResyncMessage({ typeId: CHAT_ROUTE.typeId, seq: 300 }));
 
-        expect(() => fixture.recovery.onResyncRequired(resync)).not.toThrow();
+        expect(() => fixture.recovery.onResyncRequired(resync, (event) => fixture.storage.push(event))).not.toThrow();
 
         expect(reported).toEqual(['A channel recovery owner failed']);
         expect(fixture.storage).toEqual([{ kind: 'recovery-owner-invoked', ...resync.cursor }]);

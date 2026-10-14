@@ -1,11 +1,16 @@
 import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 
-import { expect, test, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    test,
+    type TestInfo
+} from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcLifecycleFailureInterval } from './live-rtc-agent-diagnostics.ts';
 import {
     agentAuth,
+    almDiagnostics,
     apiBaseUrl,
     applicationId,
     booleanEnv,
@@ -65,6 +70,7 @@ const liveRtcDeliveryOperations = createLiveRtcDeliveryOperations({
     messagesRtcTypeId,
     messagesRtcTopicId,
     rtcCaptureMode,
+    almDiagnostics,
     formation: createLiveRtcFormationOperations()
 });
 

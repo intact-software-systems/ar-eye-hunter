@@ -1,4 +1,3 @@
-import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
 import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
@@ -32,8 +31,7 @@ import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
 import type {
-    RallarBrowserFacadeRuntimeContext,
-    RallarConnectionRuntimePort
+    RallarBrowserFacadeRuntimeContext
 } from './browser-facade-runtime-state.ts';
 
 import type { BrowserStateComposition } from './browser-runtime-composition.ts';
@@ -68,7 +66,6 @@ export interface BrowserMediaComposition {
 }
 
 export interface CreateBrowserResyncRecoveryCompositionInput {
-    readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly nowMs: () => number;
 }
 
@@ -98,9 +95,6 @@ export function createBrowserResyncRecoveryComposition(
     const recoveryOwners = new BrowserChannelRecoveryOwners();
     const resyncRecovery = new BrowserResyncRecovery({
         owners: recoveryOwners,
-        // Read per event: `rallar.setup()` may replace the diagnostics ports after the facade is created.
-        storage: (event) =>
-            toRallarDiagnosticsPorts(input.connectionRuntime.readDefaults()?.diagnosticsPorts).storage(event),
         nowMs: input.nowMs
     });
     return { recoveryOwners, resyncRecovery };

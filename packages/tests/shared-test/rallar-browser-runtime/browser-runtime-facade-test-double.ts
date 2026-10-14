@@ -23,6 +23,10 @@ import {
     type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
@@ -230,6 +234,9 @@ export const facadeBehavior = {
     getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>()
 };
 
+let connectState: ReturnType<BlackBoxBrowserRallarRuntimeDependency['status']> = 'idle';
+let connectedDiagnosticsPorts: RallarDiagnosticsPorts | undefined;
+
 const auth: BlackBoxBrowserAuthDependency = {
     login: async (request, options) => {
         facadeRecords.loginAttempts.push([request, options]);
@@ -241,7 +248,13 @@ const auth: BlackBoxBrowserAuthDependency = {
     },
     logout: async (options) => {
         facadeRecords.logoutAttempts.push([options]);
-        await facadeBehavior.logout(options);
+        try {
+            await facadeBehavior.logout(options);
+        }
+        finally {
+            connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
+        }
     },
     restore: () => {
         facadeRecords.restoreCount += 1;
@@ -271,9 +284,8 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
         return await facadeBehavior.realtimeSend(input);
     },
     onJson: (laneId, handler) => {
-        const recordedHandler = toRecordedRealtimeHandler(handler);
-        facadeRecords.realtimeSubscriptions.push([laneId, recordedHandler]);
-        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, recordedHandler);
+        facadeRecords.realtimeSubscriptions.push([laneId, handler]);
+        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, handler);
         return () => {
             facadeRecords.realtimeUnsubscribeCount += 1;
             unsubscribe();
@@ -433,21 +445,39 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     },
     connect: async (options) => {
         facadeRecords.connectionAttempts.push([options]);
-        await facadeBehavior.connect(options);
+        const diagnosticsPorts = connectedDiagnosticsPorts ??
+            toRallarDiagnosticsPorts(facadeRecords.defaultWrites.at(-1)?.diagnosticsPorts);
+        connectState = 'connecting';
+        try {
+            await facadeBehavior.connect(options);
+            connectState = 'connected';
+            connectedDiagnosticsPorts = diagnosticsPorts;
+        }
+        catch (error) {
+            connectState = 'idle';
+            throw error;
+        }
         return Object.freeze<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>({
             rtcCapture: { status: 'unavailable', reason: 'absent' },
+            diagnosticsPorts,
             captureOwnershipFailure: () => undefined
         });
     },
     disconnect: async () => {
         facadeRecords.disconnectCount += 1;
-        await facadeBehavior.disconnect();
+        try {
+            await facadeBehavior.disconnect();
+        }
+        finally {
+            connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
+        }
     },
     refreshRoomState: async (roomRef, options) => {
         facadeRecords.roomStateRefreshes.push([roomRef, options]);
         await facadeBehavior.roomStateRefresh(roomRef, options);
     },
-    status: () => 'connected',
+    status: () => connectState,
     isConnected: () => facadeBehavior.isConnected(),
     session: () => facadeSession,
     auth,
@@ -465,6 +495,8 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
     vi.resetAllMocks();
+    connectState = 'idle';
+    connectedDiagnosticsPorts = undefined;
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
@@ -632,12 +664,9 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
     };
     return {
         send: async (payload, options) => {
-            const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
-            facadeRecords.typedSends.push([payload as RallarMessagePayload, sendOptions]);
-            return await facadeBehavior.typedSend(
-                payload as RallarMessagePayload,
-                sendOptions
-            );
+            const recordedPayload = toRecordedPayload(payload);
+            facadeRecords.typedSends.push([recordedPayload, options]);
+            return await facadeBehavior.typedSend(recordedPayload, options);
         },
         sendRtc: unsupported,
         sendWs: unsupported,
@@ -665,14 +694,21 @@ async function openCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatc
     options?: RallarCrdtOpenOptions<TValue, TPayload>
 ): Promise<RallarCrdtDocument<TValue, TPayload>> {
     facadeRecords.crdtOpens.push([name, options]);
-    const document = await facadeBehavior.crdtOpen(name, options);
-    return document as RallarCrdtDocument<TValue, TPayload>;
+    // Vitest's mock erases the SDK method's generic result; the fixture supplies this document's matching schema.
+    return await facadeBehavior.crdtOpen(name, options) as RallarCrdtDocument<TValue, TPayload>;
 }
 
-function toRecordedRealtimeHandler<T>(
-    handler: RallarRealtimeHandler<T>
-): RallarRealtimeHandler<never> {
-    return handler as RallarRealtimeHandler<never>;
+function toRecordedPayload<T>(payload: T): RallarMessagePayload {
+    if (payload === null) {
+        return null;
+    }
+    if (
+        typeof payload === 'object' || typeof payload === 'string' ||
+        typeof payload === 'number' || typeof payload === 'boolean'
+    ) {
+        return payload;
+    }
+    throw new Error('The facade test double records JSON-compatible message payloads only.');
 }
 
 function toRecordedMessageHandler<T>(

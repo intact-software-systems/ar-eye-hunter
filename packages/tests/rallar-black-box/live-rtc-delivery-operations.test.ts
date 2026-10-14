@@ -20,6 +20,7 @@ import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-r
 import { createLiveRtcFormationOperations } from '../../../tests/playwright/rallar-black-box/live-rtc-formation-operations.ts';
 
 const config = {
+    almDiagnostics: true,
     apiBaseUrl: 'http://localhost:18080',
     applicationId: 'app/a',
     workspaceId: 'work b',
@@ -30,6 +31,7 @@ const config = {
 
 const initialNativeConnectCaptures = [
     {
+        almDiagnostics: true,
         runId: 'retained-capture-run',
         agentId: 'A' as const,
         commandId: 'connect-a-messages-rtc-initial',
@@ -48,6 +50,7 @@ const initialNativeConnectCaptures = [
         }
     },
     {
+        almDiagnostics: true,
         runId: 'retained-capture-run',
         agentId: 'B' as const,
         commandId: 'connect-b-messages-rtc-initial',
@@ -66,6 +69,7 @@ const initialNativeConnectCaptures = [
         }
     },
     {
+        almDiagnostics: true,
         runId: 'retained-capture-run',
         agentId: 'C' as const,
         commandId: 'connect-c-messages-rtc-initial',
@@ -1324,6 +1328,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             result: {
                 value: {
                     body,
+                    ...(command.kind === 'rtc.connect' ? { almDiagnostics: true } : {}),
                     ...(command.kind === 'rtc.connect' && this.rtcCapture !== undefined ? { rtcCapture: normalizeJson(this.rtcCapture) } : {}),
                     ...(sessionId
                         ? {

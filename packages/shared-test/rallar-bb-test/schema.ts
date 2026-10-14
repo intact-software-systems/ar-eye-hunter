@@ -41,7 +41,7 @@ const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const rtcCaptureModeSchema: JsonSchema = { type: 'string', enum: ['off', 'signaling', 'native'] };
 const rallarConnectionSchema: JsonSchema = {
     type: 'object',
-    properties: { rtcCaptureMode: rtcCaptureModeSchema },
+    properties: { rtcCaptureMode: rtcCaptureModeSchema, almDiagnostics: booleanSchema },
     additionalProperties: true
 };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };

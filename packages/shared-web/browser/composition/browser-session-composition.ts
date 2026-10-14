@@ -17,6 +17,7 @@ import {
 } from '@shared-web/browser/session/session-identity.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
@@ -46,7 +47,7 @@ export interface CreateBrowserSessionCoreCompositionInput {
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     /** Each connect's inbound runtimes hand their resynchronizations here. */
-    readonly onResyncRequired: (resync: ALInboundResyncRequired) => void;
+    readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
 }

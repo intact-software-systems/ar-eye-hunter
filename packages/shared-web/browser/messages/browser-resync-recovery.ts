@@ -14,8 +14,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 export namespace BrowserResyncRecovery {
     export interface Input {
         readonly owners: BrowserChannelRecoveryOwners;
-        /** The browser's ALM diagnostics port, where every invocation is stated. */
-        readonly storage: ALStorageEventSink;
         readonly nowMs: () => number;
     }
 }
@@ -39,7 +37,7 @@ export class BrowserResyncRecovery {
         this.input = input;
     }
 
-    onResyncRequired(resync: ALInboundResyncRequired): void {
+    onResyncRequired(resync: ALInboundResyncRequired, storage: ALStorageEventSink): void {
         const owner = this.input.owners.getOwner(resync.msg);
         if (owner === undefined) {
             return;
@@ -56,7 +54,7 @@ export class BrowserResyncRecovery {
             return;
         }
         invokeRecoveryOwner(owner, resync.cursor);
-        this.input.storage({ kind: 'recovery-owner-invoked', ...resync.cursor });
+        storage({ kind: 'recovery-owner-invoked', ...resync.cursor });
     }
 }
 

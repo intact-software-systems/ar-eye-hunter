@@ -106,7 +106,8 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "almDiagnostics": true
             },
             "timeoutMs": 50000,
             "readiness": {
@@ -364,7 +365,8 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "almDiagnostics": true
             },
             "timeoutMs": 50000,
             "readiness": {

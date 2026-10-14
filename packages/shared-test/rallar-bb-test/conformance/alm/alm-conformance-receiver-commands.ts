@@ -6,7 +6,11 @@ import type {
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-import { toCommandId, toConnectionName, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import {
+    toCommandId,
+    toConnectionName,
+    toScenarioTypeId
+} from './alm-conformance-step-identities.ts';
 
 interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
     readonly count: number;
@@ -23,6 +27,21 @@ interface AlmConformancePayloadWaitInput {
     readonly name: string;
     readonly payload: Readonly<Record<string, string>>;
     readonly absent: boolean;
+}
+
+interface AlmConformanceControlAdmissionOutcomeInput {
+    readonly name: string;
+    readonly controlMsgId: string;
+    readonly controlTypeId: string;
+    readonly contains: string;
+    readonly timeoutMs: number;
+}
+
+interface AlmConformanceAdmissionOutcomeInput {
+    readonly name: string;
+    /** Omitted when the admission outcome's reason is unrestricted. */
+    readonly contains?: string;
+    readonly timeoutMs: number;
 }
 
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
@@ -51,7 +70,7 @@ export function toReceivedCommand(received: AlmConformanceReceivedInput): Rallar
 
 export function toPayloadWait(
     { step, name, payload, absent }: AlmConformancePayloadWaitInput
-): RallarBlackBoxTestCommand {
+): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
         commandId: toCommandId(step, name),
@@ -93,9 +112,7 @@ export function toSingleArrivalReceiverCommands(
  */
 export function toControlAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<
-        { name: string; controlMsgId: string; controlTypeId: string; contains: string; timeoutMs: number; }
-    >
+    outcome: AlmConformanceControlAdmissionOutcomeInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -116,7 +133,7 @@ export function toControlAdmissionOutcomeWait(
  */
 export function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<{ name: string; contains?: string; timeoutMs: number; }>
+    outcome: AlmConformanceAdmissionOutcomeInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',

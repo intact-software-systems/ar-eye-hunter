@@ -11,6 +11,7 @@ import {
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -156,6 +157,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime, readSession);
     const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue({
         middleware,
+        diagnosticsPorts: Object.freeze(toRallarDiagnosticsPorts(undefined)),
         rtcCapture: { status: 'unavailable', reason: 'absent' }
     });
     runtime.setConnectState('connected');

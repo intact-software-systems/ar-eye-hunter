@@ -31,7 +31,8 @@ const appliedNativeCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnost
     }
 };
 
-const capturedReplacement: LiveRtcControlClient.CapturedConnection = {
+const capturedReplacement: LiveRtcControlClient.CapturedConnection & { readonly almDiagnostics: boolean; } = {
+    almDiagnostics: true,
     runId: 'retained-native-run',
     agentId: 'agent-c',
     commandId: 'connect-c-realtime-retained',
@@ -81,6 +82,7 @@ const replacementCaptureConfig = {
     workspaceId: 'workspace',
     messagesRtcTypeId: 'type',
     messagesRtcTopicId: 'topic',
+    almDiagnostics: true,
     rtcCaptureMode: 'native' as const,
     formation: { readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => toReplacementFormationReadiness(input) }
 };
@@ -239,7 +241,7 @@ function successfulResult(
         agentId: input.agentId,
         commandId: input.commandId,
         ok: true,
-        result: { value }
+        result: { value: { ...(input.command.kind === 'rtc.connect' ? { almDiagnostics: true } : {}), ...value } }
     };
 }
 
@@ -314,6 +316,49 @@ function toReplacementFormationReadiness(
 }
 
 describe('group formation lifecycle driver', () => {
+    it.each([true, false])('routes and verifies ALM %s on a reconnect with retained history', async (almDiagnostics) => {
+        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
+        const executeOk = control.executeOk;
+        let connectPayload: LiveRtcControlClient.ExecuteInput['command'] | undefined;
+        control.executeOk = async (input) => {
+            connectPayload = input.command;
+            const result = await executeOk(input);
+            return { ...result, result: { value: { ...readResultValue(result), almDiagnostics } } };
+        };
+        const config = { ...replacementCaptureConfig, almDiagnostics };
+        const driver = createGroupFormationLifecycleDriver(config);
+        config.almDiagnostics = !almDiagnostics;
+        const result = await driver.reconnectAndWaitForPeerReadiness({ ...replacementCaptureInput, control });
+        expect(connectPayload).toMatchObject({ kind: 'rtc.connect', rallar: { almDiagnostics } });
+        expect(result.rtcCapture).toMatchObject({ almDiagnostics });
+    });
+
+    it.each(['missing', 'mismatch', 'foreign-command', 'foreign-agent'])('refuses %s ALM application before reconnect readiness', async (failure) => {
+        const control = createReconnectControl(normalizeJson(appliedNativeCapture));
+        const executeOk = control.executeOk;
+        control.executeOk = async (input) => {
+            const result = await executeOk(input);
+            return {
+                ...result,
+                commandId: failure === 'foreign-command' ? 'earlier-connect' : result.commandId,
+                agentId: failure === 'foreign-agent' ? 'other-agent' : result.agentId,
+                result: {
+                    value: {
+                        sessionId: readResultValue(result).sessionId,
+                        rtcCapture: readResultValue(result).rtcCapture ?? null,
+                        ...(failure === 'missing' ? {} : { almDiagnostics: failure === 'mismatch' })
+                    }
+                }
+            };
+        };
+        await expect(
+            createGroupFormationLifecycleDriver({ ...replacementCaptureConfig, almDiagnostics: false }).reconnectAndWaitForPeerReadiness({
+                ...replacementCaptureInput,
+                control
+            })
+        ).rejects.toThrow(/ALM.*unverified/);
+    });
+
     it.each([
         {
             mode: 'off' as const,
@@ -630,6 +675,7 @@ describe('group formation lifecycle driver', () => {
             workspaceId: 'workspace',
             messagesRtcTypeId: 'type',
             messagesRtcTopicId: 'topic',
+            almDiagnostics: true,
             rtcCaptureMode: 'native' as const,
             formation: {
                 readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
@@ -678,6 +724,7 @@ describe('group formation lifecycle driver', () => {
             workspaceId: 'workspace',
             messagesRtcTypeId: 'type',
             messagesRtcTopicId: 'topic',
+            almDiagnostics: true,
             rtcCaptureMode: 'native' as const,
             formation: {
                 readiness: async (input: Parameters<LiveRtcFormationOperations['readiness']>[0]) => {
@@ -702,7 +749,7 @@ describe('group formation lifecycle driver', () => {
         expect(readinessAgents).toEqual(['agent-a', 'agent-b', 'agent-c']);
     });
 
-    it('waits for exact current membership and accepts a newer active publication', async () => {
+    it.each([true, false])('waits for current membership and certifies initial ALM %s for every agent', async (almDiagnostics) => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
         const peerReadinessAgents: string[] = [];
         const canonicalRoomReadinessAgents: string[] = [];
@@ -720,7 +767,8 @@ describe('group formation lifecycle driver', () => {
                 commands.push(input);
                 if (input.command.kind === 'rtc.connect') {
                     return successfulResult(input, {
-                        sessionId: `session-${input.agentId.slice(-1)}`
+                        sessionId: `session-${input.agentId.slice(-1)}`,
+                        almDiagnostics
                     });
                 }
                 if (
@@ -837,6 +885,7 @@ describe('group formation lifecycle driver', () => {
             workspaceId: 'workspace',
             messagesRtcTypeId: 'type',
             messagesRtcTopicId: 'topic',
+            almDiagnostics,
             formation
         });
 
@@ -850,6 +899,11 @@ describe('group formation lifecycle driver', () => {
             readinessScope: 'owner'
         });
 
+        expect(
+            commands.filter((entry) => entry.command.kind === 'rtc.connect').map((entry) =>
+                entry.command.kind === 'rtc.connect' && entry.command.rallar?.almDiagnostics
+            )
+        ).toEqual([almDiagnostics, almDiagnostics, almDiagnostics]);
         const presenceReads = commands.filter((command) => command.commandId.startsWith('group-presence-'));
         const connectBIndex = commands.findIndex(
             (command) => command.agentId === 'agent-b' && command.command.kind === 'rtc.connect'

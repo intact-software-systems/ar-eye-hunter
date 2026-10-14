@@ -321,6 +321,99 @@ describe('governed RTC-B06 producer evidence', () => {
 });
 
 describe('RTC-B06 observation Deno runtime', () => {
+    it.each([true, false])('overrides conflicting inherited ALM recording with %s', (almDiagnostics) => {
+        const command = createRtcB06LiveProducerCommand({ repositoryRoot: '/repository', baselineId, attempt: attempt('retention-100'), almDiagnostics });
+        const child = execFileSync(command.executable, [
+            ...command.arguments.slice(0, command.arguments.indexOf('npm')),
+            process.execPath,
+            '--eval',
+            'process.stdout.write(process.env.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS ?? "unset")'
+        ], { encoding: 'utf8', env: { ...process.env, RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: String(!almDiagnostics) } });
+        expect(child).toBe(String(almDiagnostics));
+        expect(command.arguments).toContain('--retries=0');
+        expect(command.arguments).toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100');
+    });
+
+    it('uses the initialized per-case ALM policy for every producer despite ambient changes', async () => {
+        const observed: string[] = [];
+        const port = producerRuntime();
+        const adapters = createDenoRtcBaselineAdapters(port);
+        const environment = initializedProducerEnvironment();
+        const failures: string[] = [];
+        adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
+        adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
+        const runtime = createRtcB06ObservationDenoRuntime({
+            repositoryRoot: '/repository',
+            runtime: {
+                ...port,
+                envGet: () => 'true',
+                command: async (_executable, arguments_) => {
+                    observed.push(arguments_.find((argument) => argument.startsWith('RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=')) ?? '<unset>');
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            },
+            adapters,
+            envelope: createRtcBaselineDenoRuntime(adapters),
+            producerOutput: {
+                writeStdout: async () => {},
+                writeStderr: async (bytes) => {
+                    failures.push(new TextDecoder().decode(bytes));
+                }
+            }
+        });
+        for (const caseId of ['default', 'all-scenarios', 'retention-100'] as const) {
+            await runtime.runLiveRtcProducer({ baselineId, attempt: attempt(caseId) });
+        }
+        expect(failures).toEqual([]);
+        expect(observed).toEqual(['RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true', 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=true', 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=false']);
+    });
+
+    it.each(['missing', 'duplicate', 'wrong-baseline', 'wrong-environment'] as const)(
+        'refuses %s initialization before producer allocation or launch',
+        async (failure) => {
+            const port = {
+                ...producerRuntime(),
+                mkdir: async () => {
+                    throw new Error('Producer allocation is forbidden for an unverified initialized selection.');
+                },
+                command: async () => {
+                    throw new Error('Producer launch is forbidden for an unverified initialized selection.');
+                }
+            };
+            const adapters = createDenoRtcBaselineAdapters(port);
+            const environment = initializedProducerEnvironment();
+            const diagnostics: string[] = [];
+            if (failure === 'missing') {
+                environment.observation.resolvedConfiguration = [];
+            }
+            if (failure === 'duplicate') {
+                environment.observation.resolvedConfiguration.push(...environment.observation.resolvedConfiguration);
+            }
+            if (failure === 'wrong-baseline') {
+                environment.baselineId = `${baselineId}-repeat-01`;
+            }
+            if (failure === 'wrong-environment') {
+                environment.environmentId = 'E4-pg';
+            }
+            adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
+            adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
+            const runtime = createRtcB06ObservationDenoRuntime({
+                repositoryRoot: '/repository',
+                runtime: port,
+                adapters,
+                envelope: createRtcBaselineDenoRuntime(adapters),
+                producerOutput: {
+                    writeStdout: async () => {},
+                    writeStderr: async (bytes) => {
+                        diagnostics.push(new TextDecoder().decode(bytes));
+                    }
+                }
+            });
+            expect(await runtime.runLiveRtcProducer({ baselineId, attempt: attempt('retention-100') })).toEqual({ exitStatus: 1 });
+            expect(diagnostics.join('')).toContain('missing-alm-selection');
+        }
+    );
+
     it.each(
         [
             [undefined, 'signaling'],
@@ -465,6 +558,11 @@ describe('RTC-B06 observation Deno runtime', () => {
         const observed: string[] = [];
         const port = producerRuntime();
         const adapters = createDenoRtcBaselineAdapters(port);
+        adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
+        adapters.filePort.readFile = async (path) =>
+            new TextEncoder().encode(
+                JSON.stringify({ ...initializedProducerEnvironment(), baselineId: path.includes('-repeat-01/') ? `${baselineId}-repeat-01` : baselineId })
+            );
         const input: RtcB06ObservationDenoRuntimeInput = {
             repositoryRoot: '/repository',
             rtcCaptureMode: 'off',
@@ -647,6 +745,35 @@ function filesystemProducerRuntime(events: string[]): RtcBaselineDenoPort {
         remove: async (path, options) => {
             events.push(`remove:${path}`);
             await rm(path, options);
+        }
+    };
+}
+
+function initializedProducerEnvironment() {
+    return {
+        schema: 'rallar.rtc-baseline.environment.v1',
+        baselineId,
+        workloadIds: ['RTC-B06'],
+        environmentId: 'E3-memory',
+        repeatLink: null,
+        conditionalEnvironmentDecisions: [],
+        observation: {
+            git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'feature', clean: true },
+            runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '1' },
+            host: { os: 'test', kernel: 'test', architecture: 'test', logicalCpuCount: 1, cpuModel: 'test', totalMemoryBytes: 1, executionContext: 'local' },
+            timing: { startedAtUtc: '2026-08-16T10:00:00.000Z', endedAtUtc: '2026-08-16T10:00:00.000Z', monotonicDurationMs: 0, monotonicSource: 'test' },
+            deviations: [],
+            sourceHashes: [],
+            configurationInputs: [{ name: 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', value: 'false', secret: false }],
+            controllerInputs: [],
+            resolvedConfiguration: ['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'almDiagnostics',
+                value: caseId !== 'retention-100',
+                source: caseId === 'retention-100' ? 'environment' : 'default'
+            })),
+            workerCommand: { redactedArgv: { executable: 'npm', arguments: [] }, projection: { fixedWorkerFlags: [], configurationFlags: [] } },
+            allowlistedEnvironment: { RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'false' }
         }
     };
 }

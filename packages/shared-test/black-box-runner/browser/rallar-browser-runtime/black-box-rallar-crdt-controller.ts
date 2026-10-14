@@ -610,47 +610,66 @@ export class BlackBoxRallarCrdtController implements BlackBoxRallarCrdtRuntime {
             return { config: undefined, initialLiveAdmission: undefined };
         }
         if (!input.apiBaseUrl) {
-            if (this.#input.facade.isConnected()) {
-                const captured = toBrowserRtcCaptureIntent(input.rallar ?? {});
-                const completion = await this.#input.facade.connect(captured.options);
-                if (captured.requestedConfiguration) {
-                    const reason = resolveRequiredRtcCaptureFailure(
-                        captured.requestedConfiguration,
-                        completion.rtcCapture
-                    );
-                    if (reason) {
-                        throw new RallarRtcCaptureUnverifiedError({
-                            requestedConfiguration: captured.requestedConfiguration,
-                            rtcCapture: completion.rtcCapture,
-                            reason
-                        });
-                    }
-                }
-                const requestedConfiguration = captured.requestedConfiguration;
-                return {
-                    config: this.#input.currentConnectionConfig(),
-                    initialLiveAdmission: requestedConfiguration
-                        ? {
-                            readFailure: () => {
-                                const reason = completion.captureOwnershipFailure();
-                                return reason
-                                    ? new RallarRtcCaptureUnverifiedError({
-                                        requestedConfiguration,
-                                        rtcCapture: completion.rtcCapture,
-                                        reason
-                                    })
-                                    : undefined;
-                            }
-                        }
-                        : undefined
-                };
+            if (!this.#input.facade.isConnected()) {
+                throw new Error('crdt.open requires apiBaseUrl or an existing Rallar connection for live transports.');
             }
-            throw new Error('crdt.open requires apiBaseUrl or an existing Rallar connection for live transports.');
+            return await this.#acquireExistingCrdtConnection(input);
         }
 
         const config = this.#toCrdtConnectionConfig(input);
         await this.#input.ensureLiveConnection(config, input.transport ?? 'ws');
         return { config, initialLiveAdmission: undefined };
+    }
+
+    /** Attachment preserves existing ports; only an explicit ALM choice asks the configuration owner to verify them. */
+    async #acquireExistingCrdtConnection(
+        input: BlackBoxRallarCrdtOpenInput
+    ): Promise<BlackBoxRallarCrdtController.ConnectionAdmission> {
+        if (input.rallar?.almDiagnostics !== undefined) {
+            const current = this.#input.currentConnectionConfig();
+            if (!current) {
+                throw new Error(
+                    'ALM recording policy is unverified for the active SDK connection; close and reinitialize before configuring.'
+                );
+            }
+            await this.#input.ensureLiveConnection({
+                ...current,
+                rallar: { ...current.rallar, almDiagnostics: input.rallar?.almDiagnostics }
+            }, input.transport ?? 'ws');
+        }
+        const captured = toBrowserRtcCaptureIntent(input.rallar ?? {});
+        const completion = await this.#input.facade.connect(captured.options);
+        if (captured.requestedConfiguration) {
+            const reason = resolveRequiredRtcCaptureFailure(
+                captured.requestedConfiguration,
+                completion.rtcCapture
+            );
+            if (reason) {
+                throw new RallarRtcCaptureUnverifiedError({
+                    requestedConfiguration: captured.requestedConfiguration,
+                    rtcCapture: completion.rtcCapture,
+                    reason
+                });
+            }
+        }
+        const requestedConfiguration = captured.requestedConfiguration;
+        return {
+            config: this.#input.currentConnectionConfig(),
+            initialLiveAdmission: requestedConfiguration
+                ? {
+                    readFailure: () => {
+                        const reason = completion.captureOwnershipFailure();
+                        return reason
+                            ? new RallarRtcCaptureUnverifiedError({
+                                requestedConfiguration,
+                                rtcCapture: completion.rtcCapture,
+                                reason
+                            })
+                            : undefined;
+                    }
+                }
+                : undefined
+        };
     }
 
     #toCrdtDiagnostics(
