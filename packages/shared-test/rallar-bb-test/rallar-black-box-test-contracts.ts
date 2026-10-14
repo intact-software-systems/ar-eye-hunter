@@ -1215,9 +1215,8 @@ export interface RallarBlackBoxRtcCaptureSupport {
     readonly modes: readonly RtcSignalingDiagnostics.CaptureMode[];
 }
 
-/** Optional facts for one execution admission; the runtime snapshots them before registration and effects. */
+/** Optional third-argument facts for one owned recipe admission; snapshotted before registration and effects. */
 export interface RallarBlackBoxTestExecutionInput {
-    readonly controlIdentity?: ControlClientIdentity;
     readonly eventHistorySelection?: RecipeEventHistorySelection;
     readonly recipeExecution?: ControlCommandEnvelope['recipeExecution'];
 }
@@ -1225,9 +1224,10 @@ export interface RallarBlackBoxTestExecutionInput {
 export interface RallarBlackBoxTestRuntime {
     /** Absent for simulated, missing or unverified executors. Immutable for this runtime's lifetime. */
     readonly rtcCaptureSupport?: RallarBlackBoxRtcCaptureSupport;
-    /** A control address scopes the active result cache; omitted for ordinary local execution. */
+    /** The optional second argument scopes result caching; the third carries owned recipe facts. Both are snapshotted before callbacks. */
     execute(
         command: RallarBlackBoxTestCommand,
+        controlIdentity?: ControlClientIdentity,
         input?: RallarBlackBoxTestExecutionInput
     ): Promise<RallarBlackBoxTestResult>;
     /** Releases only this assignment's settled outer execution, including a terminal page replacement. */

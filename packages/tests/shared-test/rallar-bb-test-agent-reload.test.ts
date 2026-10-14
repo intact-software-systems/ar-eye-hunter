@@ -520,10 +520,8 @@ describe('browser control-agent reload', () => {
             release.resolve();
             await vi.waitFor(() => expect(runtime.state().resultCache.pending).toBeDefined());
             const configured = await runtime.execute({ kind: 'configure', config: { eventHistory: { mode: 'full' } } }, {
-                controlIdentity: {
-                    runId: 'run-reload',
-                    agentId: 'agent-reload'
-                }
+                runId: 'run-reload',
+                agentId: 'agent-reload'
             });
             expect(configured.status).toBe('ok');
             expect(readStoredResumeRecord()).toBeUndefined();

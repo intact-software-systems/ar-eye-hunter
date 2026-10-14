@@ -102,6 +102,7 @@ Deno.test('finite stored receipts preserve the actual accepted recipe segment an
                 commands: [{ kind: 'health', commandId: 'first' }, { kind: 'health', commandId: 'later' }]
             }
         },
+        undefined,
         { recipeExecution: { rootCommandId: 'receipt-owner', first: true, last: true, segment: { start: 0, end: 1, first: true } } }
     );
     assertEquals(result.status, 'ok');

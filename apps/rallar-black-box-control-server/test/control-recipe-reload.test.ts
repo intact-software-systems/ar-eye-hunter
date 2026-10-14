@@ -39,7 +39,7 @@ Deno.test('ALM reload dispatches only the prefix before replacing the page', asy
     assertEquals(dispatched[0].command.recipe?.commands, RELOAD_RECIPE.commands);
     assertEquals(dispatched[0].recipeExecution?.segment, { start: 0, end: 1, first: true });
     const runtime = createDefaultRallarBlackBoxTestRuntime();
-    const prefix = await runtime.execute(dispatched[0].command, { recipeExecution: dispatched[0].recipeExecution });
+    const prefix = await runtime.execute(dispatched[0].command, undefined, { recipeExecution: dispatched[0].recipeExecution });
     assertEquals(prefix.status, 'ok');
     assertEquals(runtime.state().resultCache['original-send']?.status, 'ok');
     assertEquals(runtime.state().resultCache['replace-page'], undefined);

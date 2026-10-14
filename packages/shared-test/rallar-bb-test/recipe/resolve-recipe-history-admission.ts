@@ -1,4 +1,4 @@
-import type { ControlCommandEnvelope } from '../control-protocol.ts';
+import type { ControlClientIdentity, ControlCommandEnvelope } from '../control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
@@ -127,9 +127,18 @@ export function snapshotAdmittedRecipeCommand(
 }
 
 /** Own finite admission facts before command-ID or executor callbacks can change caller data. */
-export function snapshotExecutionInput(input: RallarBlackBoxTestExecutionInput): RallarBlackBoxTestExecutionInput {
+export interface RecipeExecutionAdmissionSnapshot {
+    readonly controlIdentity: ControlClientIdentity | undefined;
+    readonly eventHistorySelection: RallarBlackBoxTestExecutionInput['eventHistorySelection'];
+    readonly recipeExecution: ControlCommandEnvelope['recipeExecution'];
+}
+
+export function snapshotExecutionInput(
+    controlIdentity: ControlClientIdentity | undefined,
+    input: RallarBlackBoxTestExecutionInput
+): RecipeExecutionAdmissionSnapshot {
     return Object.freeze({
-        controlIdentity: input.controlIdentity && Object.freeze({ ...input.controlIdentity }),
+        controlIdentity: controlIdentity && Object.freeze({ ...controlIdentity }),
         eventHistorySelection: input.eventHistorySelection && Object.freeze({
             ...input.eventHistorySelection,
             policy: Object.freeze({ ...input.eventHistorySelection.policy })

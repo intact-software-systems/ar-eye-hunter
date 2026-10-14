@@ -4,7 +4,7 @@ import {
     it
 } from 'vitest';
 
-import type { RallarBlackBoxTestResult } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestResult } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '../../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 const authored = {
@@ -249,6 +249,7 @@ describe('recipe event history admission', () => {
                         commands: [{ kind: 'health', commandId: 'forbidden-segment-effect' }]
                     }
                 },
+                undefined,
                 { recipeExecution: { rootCommandId: 'invalid-range', first: segment.first, last: false, segment } }
             );
             expect(result.status).toBe('failed');
@@ -267,7 +268,7 @@ describe('recipe event history admission', () => {
                 commands: [{ kind: 'health', commandId: 'prefix-health' }, { kind: 'health', commandId: 'suffix-health' }]
             }
         } as const;
-        const first = await runtime.execute(command, {
+        const first = await runtime.execute(command, undefined, {
             recipeExecution: {
                 rootCommandId: 'outer-owner',
                 first: true,
@@ -291,7 +292,7 @@ describe('recipe event history admission', () => {
             const refused = source === 'direct' ? await runtime.execute(configure) : await attempted.promise;
             expect(refused.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_POLICY_ACTIVE');
             expect(runtime.state().eventHistory.policy).toEqual({ mode: 'recent', maxEvents: 2 });
-            const suffix = await runtime.execute(command, {
+            const suffix = await runtime.execute(command, undefined, {
                 eventHistorySelection: { policy: { mode: 'recent', maxEvents: 2 }, runOverride: false },
                 recipeExecution: {
                     rootCommandId: 'outer-owner',
@@ -370,6 +371,7 @@ describe('recipe event history admission', () => {
                     ]
                 }
             },
+            undefined,
             {
                 eventHistorySelection: selection,
                 recipeExecution: { rootCommandId: 'unknown-owner', first: false, last: true, segment: { start: 1, end: 2, first: false } }
@@ -382,19 +384,22 @@ describe('recipe event history admission', () => {
 
     it('accepts named execution facts and runs only the admitted continuing range', async () => {
         const runtime = createDefaultRallarBlackBoxTestRuntime();
-        const result = await runtime.execute({
-            kind: 'recipe.run',
-            commandId: 'named-continuation',
-            recipe: {
-                schemaVersion: 1,
-                recipeId: 'named',
-                commands: [{ kind: 'health', commandId: 'skipped-prefix' }, { kind: 'health', commandId: 'actual-suffix' }]
+        const result = await runtime.execute(
+            {
+                kind: 'recipe.run',
+                commandId: 'named-continuation',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'named',
+                    commands: [{ kind: 'health', commandId: 'skipped-prefix' }, { kind: 'health', commandId: 'actual-suffix' }]
+                }
+            },
+            { runId: 'named-run', agentId: 'named-agent' },
+            {
+                eventHistorySelection: { policy: { mode: 'recent', maxEvents: 2 }, runOverride: false },
+                recipeExecution: { rootCommandId: 'named-root', first: false, last: true, segment: { start: 1, end: 2, first: false } }
             }
-        }, {
-            controlIdentity: { runId: 'named-run', agentId: 'named-agent' },
-            eventHistorySelection: { policy: { mode: 'recent', maxEvents: 2 }, runOverride: false },
-            recipeExecution: { rootCommandId: 'named-root', first: false, last: true, segment: { start: 1, end: 2, first: false } }
-        });
+        );
         expect(result.ok).toBe(true);
         expect(result.value).toMatchObject({ invocation: { eventHistory: { mode: 'recent', maxEvents: 2 }, segment: { start: 1, end: 2, first: false } } });
         expect(runtime.state().resultCache['skipped-prefix']).toBeUndefined();
@@ -415,17 +420,18 @@ describe('recipe event history admission', () => {
                 return `${prefix}-${sequence++}`;
             }
         });
-        const result = await runtime.execute({
-            kind: 'recipe.run',
-            recipe: {
-                schemaVersion: 1,
-                recipeId: 'snapshot',
-                commands: [{ kind: 'health', commandId: 'skipped' }, { kind: 'health', commandId: 'accepted' }]
-            }
-        }, {
-            eventHistorySelection: selection,
-            recipeExecution: { rootCommandId: 'snapshot-root', first: false, last: true, segment }
-        });
+        const result = await runtime.execute(
+            {
+                kind: 'recipe.run',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'snapshot',
+                    commands: [{ kind: 'health', commandId: 'skipped' }, { kind: 'health', commandId: 'accepted' }]
+                }
+            },
+            undefined,
+            { eventHistorySelection: selection, recipeExecution: { rootCommandId: 'snapshot-root', first: false, last: true, segment } }
+        );
         expect(result.ok).toBe(true);
         expect(result.value).toMatchObject({ invocation: { eventHistory: { mode: 'recent', maxEvents: 2 }, segment: { start: 1, end: 2, first: false } } });
         expect(runtime.state().resultCache.skipped).toBeUndefined();
@@ -444,40 +450,40 @@ describe('recipe event history admission', () => {
                 return command.kind === 'health' ? { status: 'ok' } : undefined;
             }
         });
-        const original = runtime.execute({
-            kind: 'recipe.run',
-            commandId: 'range-A',
-            eventHistory: { mode: 'recent', maxEvents: 2 },
-            recipe: {
-                schemaVersion: 1,
-                recipeId: 'A',
-                commands: [{ kind: 'health', commandId: 'held-A' }]
-            }
-        }, {
-            controlIdentity: { runId: 'A', agentId: 'agent' },
-            recipeExecution: { rootCommandId: 'shared-root', first: true, last: true, segment: { start: 0, end: 1, first: true } }
-        });
-        await entered.promise;
-        try {
-            const successor = await runtime.execute({
+        const original = runtime.execute(
+            {
                 kind: 'recipe.run',
-                commandId: 'range-B',
+                commandId: 'range-A',
                 eventHistory: { mode: 'recent', maxEvents: 2 },
                 recipe: {
                     schemaVersion: 1,
-                    recipeId: 'B',
-                    commands: [{ kind: 'health', commandId: 'actual-B' }, { kind: 'health', commandId: 'pending-B' }]
+                    recipeId: 'A',
+                    commands: [{ kind: 'health', commandId: 'held-A' }]
                 }
-            }, {
-                controlIdentity: { runId: 'B', agentId: 'agent' },
-                recipeExecution: { rootCommandId: 'shared-root', first: true, last: false, segment: { start: 0, end: 1, first: true } }
-            });
+            },
+            { runId: 'A', agentId: 'agent' },
+            { recipeExecution: { rootCommandId: 'shared-root', first: true, last: true, segment: { start: 0, end: 1, first: true } } }
+        );
+        await entered.promise;
+        try {
+            const successor = await runtime.execute(
+                {
+                    kind: 'recipe.run',
+                    commandId: 'range-B',
+                    eventHistory: { mode: 'recent', maxEvents: 2 },
+                    recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'B',
+                        commands: [{ kind: 'health', commandId: 'actual-B' }, { kind: 'health', commandId: 'pending-B' }]
+                    }
+                },
+                { runId: 'B', agentId: 'agent' },
+                { recipeExecution: { rootCommandId: 'shared-root', first: true, last: false, segment: { start: 0, end: 1, first: true } } }
+            );
             expect(successor.ok).toBe(true);
             release.resolve();
             await original;
-            const configured = await runtime.execute({ kind: 'configure', config: { eventHistory: { mode: 'full' } } }, {
-                controlIdentity: { runId: 'B', agentId: 'agent' }
-            });
+            const configured = await runtime.execute({ kind: 'configure', config: { eventHistory: { mode: 'full' } } }, { runId: 'B', agentId: 'agent' });
             expect(configured.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_POLICY_ACTIVE');
             expect(runtime.state().eventHistory.policy).toEqual({ mode: 'recent', maxEvents: 2 });
         }
@@ -486,6 +492,93 @@ describe('recipe event history admission', () => {
             await original;
             runtime.releaseRecipeExecution('shared-root', { runId: 'B', agentId: 'agent' });
         }
+    });
+
+    it.each(['close', 'recipe.cancel'] as const)('keeps the successor lease when a retired %s settles', async (kind) => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const hold = async () => {
+            entered.resolve();
+            await release.promise;
+        };
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            eventHistory: { mode: 'recent', maxEvents: 2 },
+            commandExecutor: async (command) => {
+                if (command.kind === 'close') {
+                    await hold();
+                    return { status: 'ok', value: { closed: true } };
+                }
+                return undefined;
+            },
+            cleanup: kind === 'recipe.cancel' ? hold : undefined
+        });
+        const retired = runtime.execute({ kind, commandId: 'retired-cleanup' }, { runId: 'A', agentId: 'agent' });
+        await entered.promise;
+        const firstCommand: RallarBlackBoxTestCommand = kind === 'close'
+            ? { kind: 'health', commandId: 'prefix' }
+            : { kind: 'agent.reload', commandId: 'prefix', readyTimeoutMs: 1_000 };
+        const root = {
+            kind: 'recipe.run',
+            eventHistory: { mode: 'recent', maxEvents: 2 },
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'successor',
+                commands: [firstCommand, { kind: 'health', commandId: 'suffix' }]
+            }
+        } as const;
+        const identity = { runId: 'B', agentId: 'agent' };
+        try {
+            // Leading reload admits an actual empty first range before physical replacement.
+            const end = kind === 'close' ? 1 : 0;
+            const prefix = await runtime.execute({ ...root, commandId: 'prefix-range' }, identity, {
+                recipeExecution: { rootCommandId: 'successor-root', first: true, last: false, segment: { start: 0, end, first: true } }
+            });
+            expect(prefix.ok).toBe(true);
+            expect(prefix.value).toMatchObject({ invocation: { eventHistory: { mode: 'recent', maxEvents: 2 }, segment: { start: 0, end, first: true } } });
+            const before = await runtime.execute({ kind: 'configure', commandId: 'before', config: { eventHistory: { mode: 'full' } } }, identity);
+            expect(before.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_POLICY_ACTIVE');
+            release.resolve();
+            const result = await retired;
+            expect(result.ok).toBe(true);
+            expect(result.value).toMatchObject(kind === 'close' ? { closed: true } : { cancelRequested: true });
+            const after = await runtime.execute({ kind: 'configure', commandId: 'after', config: { eventHistory: { mode: 'full' } } }, identity);
+            expect(after.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_POLICY_ACTIVE');
+            expect(runtime.state().eventHistory.policy).toEqual({ mode: 'recent', maxEvents: 2 });
+            const suffix = await runtime.execute({ ...root, commandId: 'suffix-range' }, identity, {
+                recipeExecution: { rootCommandId: 'successor-root', first: false, last: true, segment: { start: 1, end: 2, first: false } }
+            });
+            expect(suffix.ok).toBe(true);
+            expect(runtime.state().resultCache.suffix.ok).toBe(true);
+            expect(suffix.value).toMatchObject({ invocation: { eventHistory: { mode: 'recent', maxEvents: 2 }, segment: { start: 1, end: 2, first: false } } });
+        }
+        finally {
+            release.resolve();
+            await retired;
+            runtime.releaseRecipeExecution('successor-root', identity);
+        }
+    });
+
+    it.each(['close', 'recipe.cancel'] as const)('releases the same assignment lease after accepted %s cleanup', async (kind) => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        const prefix = await runtime.execute(
+            {
+                kind: 'recipe.run',
+                commandId: 'same-owner-prefix',
+                eventHistory: { mode: 'recent', maxEvents: 2 },
+                recipe: { schemaVersion: 1, recipeId: 'same-owner', commands: [{ kind: 'health' }, { kind: 'health' }] }
+            },
+            undefined,
+            { recipeExecution: { rootCommandId: 'same-owner-root', first: true, last: false, segment: { start: 0, end: 1, first: true } } }
+        );
+        expect(prefix.ok).toBe(true);
+        const before = await runtime.execute({ kind: 'configure', commandId: 'locked', config: { eventHistory: { mode: 'full' } } });
+        expect(before.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_POLICY_ACTIVE');
+        const cleanup = await runtime.execute({ kind, commandId: 'cleanup' });
+        expect(cleanup.ok).toBe(true);
+        expect(cleanup.value).toMatchObject(kind === 'close' ? { closed: true } : { cancelRequested: true });
+        const after = await runtime.execute({ kind: 'configure', commandId: 'released', config: { eventHistory: { mode: 'full' } } });
+        expect(after.ok).toBe(true);
+        expect(runtime.state().eventHistory.policy).toEqual({ mode: 'full' });
     });
 
     it('owns authored policy accepted by load and carries it across explicit reset generation', async () => {

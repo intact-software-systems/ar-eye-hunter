@@ -105,16 +105,14 @@ describe('the stats result rallar.alm block', () => {
         });
         const original = { runId: 'health-A', agentId: 'agent-A' };
         const current = reassigned ? { runId: 'health-B', agentId: 'agent-B' } : original;
-        expect((await runtime.execute({ kind: 'configure', commandId: 'A-config', config: original }, { controlIdentity: original })).ok).toBe(true);
+        expect((await runtime.execute({ kind: 'configure', commandId: 'A-config', config: original }, original)).ok).toBe(true);
         const originalFailure = new Error('original page Health failed');
-        const pending = runtime.execute({ kind: 'health', commandId: 'A-health' }, { controlIdentity: original });
+        const pending = runtime.execute({ kind: 'health', commandId: 'A-health' }, original);
         await entered.promise;
         try {
             if (reassigned) {
                 expect(
-                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, {
-                        controlIdentity: current
-                    })).ok
+                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok
                 )
                     .toBe(true);
                 expect(
@@ -122,9 +120,9 @@ describe('the stats result rallar.alm block', () => {
                         kind: 'recipe.load',
                         commandId: 'B-load',
                         recipe: { schemaVersion: 1, recipeId: 'B-body', commands: [{ kind: 'health', commandId: 'B-child' }] }
-                    }, { controlIdentity: current })).ok
+                    }, current)).ok
                 ).toBe(true);
-                expect((await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, { controlIdentity: current })).ok).toBe(true);
+                expect((await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, current)).ok).toBe(true);
                 runtime.recordEvent({ kind: 'event', topic: 'B-health-independent-observation' });
             }
             const before = runtime.state();
@@ -158,7 +156,7 @@ describe('the stats result rallar.alm block', () => {
             if (reassigned) {
                 expect(runtime.state()).toEqual(before);
                 expect(ledgerReads).toEqual(beforeLedgerReads);
-                const replay = await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, { controlIdentity: current });
+                const replay = await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, current);
                 expect(replay.replayed).toBe(true);
                 expect(replay.value).toEqual(before.resultCache['B-stats'].value);
             }
@@ -212,16 +210,14 @@ describe('the stats result rallar.alm block', () => {
         const original = { runId: 'ledger-A', agentId: 'agent-A' };
         const current = reassigned ? { runId: 'ledger-B', agentId: 'agent-B' } : original;
         const originalFailure = new Error(`original page ${source} read failed`);
-        expect((await runtime.execute({ kind: 'configure', commandId: 'A-config', config: original }, { controlIdentity: original })).ok)
+        expect((await runtime.execute({ kind: 'configure', commandId: 'A-config', config: original }, original)).ok)
             .toBe(true);
-        const pending = runtime.execute({ kind, commandId: 'A-read' }, { controlIdentity: original });
+        const pending = runtime.execute({ kind, commandId: 'A-read' }, original);
         await entered.promise;
         try {
             if (reassigned) {
                 expect(
-                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, {
-                        controlIdentity: current
-                    })).ok
+                    (await runtime.execute({ kind: 'configure', commandId: 'B-config', config: { ...current, defaults: { connection: 'B' } } }, current)).ok
                 )
                     .toBe(true);
                 expect(
@@ -229,9 +225,9 @@ describe('the stats result rallar.alm block', () => {
                         kind: 'recipe.load',
                         commandId: 'B-load',
                         recipe: { schemaVersion: 1, recipeId: 'B-body', commands: [{ kind: 'health', commandId: 'B-child' }] }
-                    }, { controlIdentity: current })).ok
+                    }, current)).ok
                 ).toBe(true);
-                expect((await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, { controlIdentity: current })).ok).toBe(true);
+                expect((await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, current)).ok).toBe(true);
                 runtime.recordEvent({ kind: 'event', topic: 'B-independent-observation' });
             }
             const before = runtime.state();
@@ -258,10 +254,10 @@ describe('the stats result rallar.alm block', () => {
                 expect.soft(runtime.state().currentConfig).toEqual(before.currentConfig);
                 expect.soft(runtime.state().loadedRecipe).toEqual(before.loadedRecipe);
                 expect.soft(runtime.state().status).toBe(before.status);
-                const replay = await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, { controlIdentity: current });
+                const replay = await runtime.execute({ kind: 'stats', commandId: 'B-stats' }, current);
                 expect(replay.replayed).toBe(true);
                 expect(replay.value).toEqual(before.resultCache['B-stats'].value);
-                const fresh = await runtime.execute({ kind: 'stats', commandId: 'B-fresh-stats' }, { controlIdentity: current });
+                const fresh = await runtime.execute({ kind: 'stats', commandId: 'B-fresh-stats' }, current);
                 expect(fresh.ok).toBe(true);
                 expect(fresh.value).toMatchObject({
                     ...current,

@@ -258,9 +258,7 @@ describe('accepted recipe capture structure', () => {
                     return { status: 'ok' };
                 }
             });
-            await runtime.execute({ kind: 'configure', commandId: 'initial-config', config: { rallar: { rtcCaptureMode: 'off' } } }, {
-                controlIdentity: CONTROL_A
-            });
+            await runtime.execute({ kind: 'configure', commandId: 'initial-config', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
             const reentered: ReturnType<typeof runtime.execute>[] = [];
             const current = owner === 'other' ? CONTROL_B : CONTROL_A;
             let armed = true;
@@ -271,14 +269,12 @@ describe('accepted recipe capture structure', () => {
                 armed = false;
                 if (owner === 'other') {
                     reentered.push(
-                        runtime.execute({ kind: 'configure', commandId: 'callback-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
-                            controlIdentity: current
-                        })
+                        runtime.execute({ kind: 'configure', commandId: 'callback-config', config: { rallar: { rtcCaptureMode: 'native' } } }, current)
                     );
                 }
-                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'callback-connect', connection: 'callback' }, { controlIdentity: current }));
+                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'callback-connect', connection: 'callback' }, current));
             };
-            const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'outer' }, { controlIdentity: CONTROL_A });
+            const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'outer' }, CONTROL_A);
             const callbackResults = await Promise.all(reentered);
             const state = runtime.state();
             const outerEvents = state.events.filter((event) => event.commandId === outer.commandId);
@@ -304,7 +300,7 @@ describe('accepted recipe capture structure', () => {
                 const callbackEvent = state.events.find((event) => event.topic === 'callback');
                 expect(callbackEvent?.control).toEqual({ ...current, rootCommandId: 'callback-connect' });
             }
-            const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-connect', connection: 'later' }, { controlIdentity: current });
+            const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-connect', connection: 'later' }, current);
             expect(later.ok).toBe(true);
             expect(observed.at(-1)?.rtcCapture?.step).toBe(owner === 'other' ? 'native' : 'off');
         }
@@ -330,21 +326,19 @@ describe('accepted recipe capture structure', () => {
                 return { status: 'ok' };
             }
         });
-        await runtime.execute({ kind: 'configure', commandId: 'initial-defaults', config: { rallar: { rtcCaptureMode: 'off' } } }, {
-            controlIdentity: CONTROL_A
-        });
+        await runtime.execute({ kind: 'configure', commandId: 'initial-defaults', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
         let reconfigured: ReturnType<typeof runtime.execute> | undefined;
         onCommandId = () => {
             if (callback && !reconfigured) {
                 reconfigured = runtime.execute(
                     { kind: 'configure', commandId: 'callback-defaults', config: { rallar: { rtcCaptureMode: 'native' } } },
-                    { controlIdentity: CONTROL_A }
+                    CONTROL_A
                 );
             }
         };
-        const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'first' }, { controlIdentity: CONTROL_A });
+        const outer = await runtime.execute({ kind: 'rtc.connect', connection: 'first' }, CONTROL_A);
         const configured = await reconfigured;
-        const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-defaults', connection: 'later' }, { controlIdentity: CONTROL_A });
+        const later = await runtime.execute({ kind: 'rtc.connect', commandId: 'later-defaults', connection: 'later' }, CONTROL_A);
         expect(outer.ok).toBe(true);
         expect(later.ok).toBe(true);
         expect(effects).toEqual(['first', 'later']);
@@ -385,20 +379,16 @@ describe('accepted recipe capture structure', () => {
                 return { status: 'ok' };
             }
         });
-        await runtime.execute({ kind: 'configure', commandId: 'event-A-config', config: { rallar: { rtcCaptureMode: 'off' } } }, {
-            controlIdentity: CONTROL_A
-        });
+        await runtime.execute({ kind: 'configure', commandId: 'event-A-config', config: { rallar: { rtcCaptureMode: 'off' } } }, CONTROL_A);
         onEventId = () => {
             if (reassigned) {
                 reentered.push(
-                    runtime.execute({ kind: 'configure', commandId: 'event-B-config', config: { rallar: { rtcCaptureMode: 'native' } } }, {
-                        controlIdentity: CONTROL_B
-                    })
+                    runtime.execute({ kind: 'configure', commandId: 'event-B-config', config: { rallar: { rtcCaptureMode: 'native' } } }, CONTROL_B)
                 );
-                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'event-B-connect', connection: 'event-B' }, { controlIdentity: CONTROL_B }));
+                reentered.push(runtime.execute({ kind: 'rtc.connect', commandId: 'event-B-connect', connection: 'event-B' }, CONTROL_B));
             }
         };
-        const outer = await runtime.execute({ kind: 'rtc.connect', commandId: 'event-A-connect', connection: 'event-A' }, { controlIdentity: CONTROL_A });
+        const outer = await runtime.execute({ kind: 'rtc.connect', commandId: 'event-A-connect', connection: 'event-A' }, CONTROL_A);
         const callbackResults = await Promise.all(reentered);
         const state = runtime.state();
         const owned = state.events.filter((event) => event.topic === 'owned-A-event');

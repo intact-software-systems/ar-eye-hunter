@@ -11,7 +11,7 @@ import {
     decodeControlAgentFleetLocation,
     toControlAgentIdentity
 } from './control-client/to-control-agent-identity.ts';
-import { toControlAgentReport } from './control-client/to-control-agent-report.ts';
+import { toControlAgentReport, toControlOwnedReportState } from './control-client/to-control-agent-report.ts';
 import {
     writeControlFinalReport,
     type RallarBlackBoxControlFetch
@@ -433,11 +433,8 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         const result: RallarBlackBoxTestResult = history.error === undefined
             ? await this.options.runtime.execute(
                 command,
-                {
-                    controlIdentity: identity,
-                    eventHistorySelection: history.selection,
-                    recipeExecution: envelope.recipeExecution
-                }
+                identity,
+                { eventHistorySelection: history.selection, recipeExecution: envelope.recipeExecution }
             )
             : toUnavailableRecipeHistoryResult(envelope, history.error, atEpochMs);
 
@@ -783,42 +780,15 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         }
     }
 
-    /** Control reports summarize roots admitted at this address; the runtime remains a local cumulative diagnostic surface. */
+    /** The client owns publication sets; the report core projects their actual admitted facts. */
     private toControlOwnedState(state = this.options.runtime.state()): RallarBlackBoxTestState {
-        const commandHistory = Object.values(state.resultCache).filter((result) =>
-            this.completedControlResults.has(result)
-        );
-        const activeCommand = this.admittedControlCommandIds.has(state.activeCommand?.commandId ?? '')
-            ? state.activeCommand
-            : undefined;
-        const latest = commandHistory.at(-1);
-        return {
-            ...state,
-            status: activeCommand ? 'running' : latest ? (latest.ok ? 'completed' : 'failed') : 'idle',
-            activeCommand,
-            activeCommandStartedAtEpochMs: activeCommand ? state.activeCommandStartedAtEpochMs : undefined,
-            commandHistory,
-            failures: commandHistory.filter((result) => !result.ok),
-            events: state.events.filter((event) => this.publishedEvents.has(event)),
-            eventHistory: this.toPublishedEventHistory(state),
-            latestStats: undefined
-        };
-    }
-
-    private toPublishedEventHistory(state: RallarBlackBoxTestState): RallarBlackBoxEventHistory {
-        const history = this.publishedHistory;
-        if (!history) {
-            return state.eventHistory;
-        }
-        const retainedEvents = state.events.filter((event) => this.publishedEvents.has(event)).length;
-        return {
-            ...state.eventHistory,
-            totalEvents: history.totalEvents,
-            countsByKind: history.countsByKind,
-            reconnects: history.reconnects,
-            retainedEvents,
-            evictedEvents: history.totalEvents - retainedEvents
-        };
+        return toControlOwnedReportState({
+            state,
+            admittedCommandIds: this.admittedControlCommandIds,
+            completedResults: this.completedControlResults,
+            publishedEvents: this.publishedEvents,
+            publishedHistory: this.publishedHistory
+        });
     }
 
     private sendTerminalReport(state: RallarBlackBoxTestState): void {

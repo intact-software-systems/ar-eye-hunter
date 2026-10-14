@@ -1,10 +1,19 @@
-import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    parseControlServerMessage,
+    type ControlClientIdentity,
+    type ControlCommandEnvelope,
+    type ControlResultEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { assertEquals } from '@std/assert';
+import { assert, assertEquals } from '@std/assert';
 
+import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { registerAgent, waitForJsonl, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
 import { getJson, startControlServer } from './support/control-api-test-server.ts';
 import { toRegisterEnvelope } from './support/control-service-test-fixtures.ts';
+import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
 
 Deno.test('the same socket cannot manufacture a later reload registration', async () => {
     const server = await startControlServer();
@@ -59,7 +68,7 @@ Deno.test('a new registered socket resumes the actual reload and receives only t
     const original = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     let replacement: WebSocket | undefined;
     try {
-        const prefixArrives = nextSocketCommand(original);
+        const prefixArrives = nextSocketCommand(original, { runId: 'run-1', agentId: 'agent-1' });
         const response = await fetch(server.baseUrl + '/runs/run-1/agents/agent-1/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -83,25 +92,33 @@ Deno.test('a new registered socket resumes the actual reload and receives only t
         assertEquals(response.status, 202);
         await response.json();
         const prefix = await prefixArrives;
-        const forgedRoot = socketCommandResult({ ...prefix, commandId: 'socket-root' });
+        const forgedRoot = await executeSocketCommand({ ...prefix, commandId: 'socket-root' });
         original.send(JSON.stringify(forgedRoot));
-        const reloadArrives = nextSocketCommand(original);
-        original.send(JSON.stringify(socketCommandResult(prefix)));
+        const reloadArrives = nextSocketCommand(original, { runId: 'run-1', agentId: 'agent-1' });
+        original.send(JSON.stringify(await executeSocketCommand(prefix)));
         const reload = await reloadArrives;
         assertEquals(reload.command.kind, 'agent.reload');
-        original.send(JSON.stringify(socketCommandResult(reload)));
+        original.send(JSON.stringify(await executeSocketCommand(reload)));
         replacement = new WebSocket(server.baseUrl.replace('http:', 'ws:') + '/control');
         await waitForSocketOpen(replacement);
-        const suffixArrives = nextSocketCommand(replacement);
+        const suffixArrives = nextSocketCommand(replacement, { runId: 'run-1', agentId: 'agent-1' });
         replacement.send(JSON.stringify(toRegisterEnvelope({ completedCommandIds: [reload.commandId] })));
         const suffix = await suffixArrives;
         assertEquals(suffix.command.kind, 'recipe.run');
         if (suffix.command.kind === 'recipe.run') {
-            assertEquals(suffix.command.recipe?.commands, [{ kind: 'health', commandId: 'after' }]);
+            assertEquals(suffix.command.recipe?.commands.map((child) => child.commandId), ['before', 'reload', 'after']);
+            assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
         }
-        replacement.send(JSON.stringify(socketCommandResult(suffix)));
+        replacement.send(JSON.stringify(await executeSocketCommand(suffix)));
         const recorded = await waitForJsonl(server.baseUrl, '/runs/run-1/results.jsonl', JSON.stringify(suffix.commandId));
-        assertEquals(recorded.split('\n').filter(Boolean).some((line) => JSON.parse(line).commandId === 'socket-root'), false);
+        assertEquals(
+            recorded.split('\n').filter(Boolean).some((line) => {
+                const row = decodeRecord(JSON.parse(line));
+                assert(typeof row.commandId === 'string', 'journal result row requires its command identity');
+                return row.commandId === 'socket-root';
+            }),
+            false
+        );
     }
     finally {
         original.close();
@@ -110,41 +127,33 @@ Deno.test('a new registered socket resumes the actual reload and receives only t
     }
 });
 
-function nextSocketCommand(socket: WebSocket): Promise<ControlCommandEnvelope> {
+function nextSocketCommand(socket: WebSocket, identity: ControlClientIdentity): Promise<ControlCommandEnvelope> {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Expected next reload command.')), 2_000);
         socket.addEventListener('message', (event) => {
             clearTimeout(timeout);
-            resolve(JSON.parse(String(event.data)));
+            const parsed = parseControlServerMessage(String(event.data), identity);
+            if (!parsed.ok) {
+                reject(new Error(parsed.error));
+                return;
+            }
+            resolve(parsed.envelope);
         }, { once: true });
     });
 }
 
-function socketCommandResult(command: ControlCommandEnvelope): ControlResultEnvelope {
-    const timestamp = Date.now();
-    const result = {
-        commandId: command.commandId,
-        kind: command.command.kind,
-        status: 'ok' as const,
-        ok: true,
-        startedAtEpochMs: timestamp,
-        endedAtEpochMs: timestamp,
-        durationMs: 0
-    };
-    const value = command.command.kind === 'recipe.run'
-        ? {
-            recipeId: command.command.recipe!.recipeId,
-            results: command.command.recipe!.commands.map((child) => ({ ...result, commandId: child.commandId, kind: child.kind }))
-        }
-        : { reloading: true };
+async function executeSocketCommand(command: ControlCommandEnvelope): Promise<ControlResultEnvelope> {
+    const result = command.command.kind === 'agent.reload'
+        ? toAgentReloadResult({ commandId: command.commandId, readyTimeoutMs: command.command.readyTimeoutMs, written: 'written', atEpochMs: Date.now() })
+        : await executeControlRuntimeCommand(createDefaultRallarBlackBoxTestRuntime(), command);
     return {
         kind: 'result',
         protocolVersion: 1,
         runId: command.runId,
         agentId: command.agentId!,
         commandId: command.commandId,
-        ok: true,
-        result: { ...result, value }
+        ok: result.ok,
+        result
     };
 }
 
@@ -154,7 +163,7 @@ Deno.test('NUL-containing run and agent identities keep distinct socket ownershi
     const second = await registerAgent(server.baseUrl, 'a\u0000b', 'c');
     try {
         assertEquals(first.readyState, WebSocket.OPEN);
-        const commandArrives = nextSocketCommand(first);
+        const commandArrives = nextSocketCommand(first, { runId: 'a', agentId: 'b\u0000c' });
         const response = await fetch(server.baseUrl + '/runs/a/agents/b%00c/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -169,7 +178,7 @@ Deno.test('NUL-containing run and agent identities keep distinct socket ownershi
         await deletion.text();
         await closed;
         assertEquals(second.readyState, WebSocket.OPEN);
-        const nextCommandArrives = nextSocketCommand(second);
+        const nextCommandArrives = nextSocketCommand(second, { runId: 'a\u0000b', agentId: 'c' });
         const nextResponse = await fetch(server.baseUrl + '/runs/a%00b/agents/c/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
