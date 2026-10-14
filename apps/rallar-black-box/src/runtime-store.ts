@@ -9,6 +9,7 @@ import {
     toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import { PacedEmit } from '@shared-test/rallar-bb-test/browser-control-agent/paced-emit.ts';
 import { readBrowserAuthSessionPresence } from '@shared-test/rallar-bb-test/browser-control-agent/read-browser-auth-session-presence.ts';
 import {
     toRallarBlackBoxFleetConfig,
@@ -45,7 +46,6 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-import { PacedEmit } from '@shared-test/rallar-bb-test/runtime/paced-emit.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA

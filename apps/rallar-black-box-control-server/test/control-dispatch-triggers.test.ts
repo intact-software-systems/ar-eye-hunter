@@ -44,6 +44,7 @@ import {
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 const AGENTS = ['controller-01', 'controller-02'] as const;
 /** A held durable send drains and probes about every 50 ms on the sender, 37 to 57 records a second. */
@@ -61,7 +62,7 @@ Deno.test('diagnostics during a held send leave the combined ALM dispatch plan e
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => clock.now }));
     const runId = manifest.controlRunId;
     startCombinedRun(service, manifest);
-    const firstSegments = AGENTS.map((agentId) => service.takeDispatchableCommands(runId, agentId));
+    const firstSegments = AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId));
     assertEquals(firstSegments.map((segments) => segments.length), [1, 1]);
     const before = service.snapshotRun(runId)!;
     const plans = toReloadPlans(before);
@@ -84,7 +85,7 @@ Deno.test('diagnostics during a held send leave the combined ALM dispatch plan e
     for (const [index, plan] of toReloadPlans(after).entries()) {
         assert(plan.segments === plans[index].segments, 'each root is segmented once, not per message');
     }
-    assertEquals(AGENTS.map((agentId) => service.takeDispatchableCommands(runId, agentId)), [[], []]);
+    assertEquals(AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId)), [[], []]);
 });
 
 Deno.test('register, result, heartbeat and barrier arrivals recompute dispatch; other events do not', () => {
@@ -125,7 +126,7 @@ Deno.test('register, result, heartbeat and barrier arrivals recompute dispatch; 
 });
 
 // The rollup re-evaluates every participant, so the count of evaluations per envelope is the cost being bounded.
-Deno.test('one result envelope evaluates the distributed rollup once while every agent socket receives its start', () => {
+Deno.test('one result envelope evaluates the distributed rollup once for every agent socket and every persistence flush', () => {
     const agentCount = 20;
     let evaluations = 0;
     const defaults = toControlServiceInput({ now: () => 1_000 });
@@ -133,7 +134,7 @@ Deno.test('one result envelope evaluates the distributed rollup once while every
         ...defaults,
         dependencies: {
             ...defaults.dependencies,
-            evaluateDistributedRun: (input) => {
+            toDistributedRunRollup: (input) => {
                 evaluations += 1;
                 return toDistributedRunRollup(input);
             }
@@ -171,8 +172,10 @@ Deno.test('one result envelope evaluates the distributed rollup once while every
             ok: true
         })
     );
+    const persisted = [service.snapshotForPersistence({}), service.snapshotForPersistence({})];
 
     assertEquals(evaluations, 1);
+    assertEquals(persisted.map((snapshot) => snapshot.distributedRuns?.[0]?.rollup.summary.passedRecipes), [0, 0]);
     assertEquals(
         agentIds.map((agentId) => sent.get(agentId)!.map((command) => command.command.kind)),
         agentIds.map(() => ['recipe.run'])
@@ -297,7 +300,7 @@ function startCombinedRun(
     assertRight(service.stageDistributedRun(manifest.distributedRunId));
     for (const _phase of ['stage', 'barrier']) {
         for (const agentId of AGENTS) {
-            for (const command of service.takeDispatchableCommands(runId, agentId)) {
+            for (const command of takeAgentDispatchableCommands(service, runId, agentId)) {
                 service.receiveClientEnvelope(toCommandResultEnvelope({ runId, agentId, command, ok: true }));
             }
         }

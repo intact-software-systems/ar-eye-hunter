@@ -33,6 +33,7 @@ import { createControlRunArtifactBundle } from '../../../../apps/rallar-black-bo
 
 import { createHttpCatchUpResponse } from '../../shared-web/crdt/rallar-crdt-test-runtime.ts';
 
+import { takeAgentDispatchableCommands } from '../../../../apps/rallar-black-box-control-server/test/support/take-agent-dispatchable-commands.ts';
 import {
     createCaptureApplicationRuntime,
     createCaptureController,
@@ -91,7 +92,7 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                     }
                 });
                 expect(queued.left).toBeUndefined();
-                const [dispatch] = service.takeDispatchableCommands('sdk-receipt-run', 'sdk-agent');
+                const [dispatch] = takeAgentDispatchableCommands(service, 'sdk-receipt-run', 'sdk-agent');
                 expect(dispatch?.commandId).toBe('sdk-recipe-root');
                 const { result, envelope } = await executeSerializedControllerCommand(runtime, dispatch);
                 expect(result).toMatchObject({ commandId: 'sdk-recipe-root', status: 'ok', ok: true });
@@ -232,12 +233,12 @@ describe('decoded recipe application through the SPA and SDK initializer', () =>
                 });
                 expect(created.left).toBeUndefined();
                 expect(service.stageDistributedRun('sdk-distributed').left).toBeUndefined();
-                const [stage] = service.takeDispatchableCommands('sdk-path-run', 'sdk-agent');
+                const [stage] = takeAgentDispatchableCommands(service, 'sdk-path-run', 'sdk-agent');
                 expect(stage?.command.kind).toBe('recipe.load');
                 const { envelope: stageEnvelope } = await executeSerializedControllerCommand(runtime, stage);
                 expect(service.receiveClientEnvelope(stageEnvelope).accepted).toBe(true);
                 expect(service.startDistributedRun('sdk-distributed').left).toBeUndefined();
-                const [start] = service.takeDispatchableCommands('sdk-path-run', 'sdk-agent');
+                const [start] = takeAgentDispatchableCommands(service, 'sdk-path-run', 'sdk-agent');
                 expect(start?.command.kind).toBe('recipe.run');
                 const { result } = await executeSerializedControllerCommand(runtime, start);
                 expect(result.ok).toBe(true);

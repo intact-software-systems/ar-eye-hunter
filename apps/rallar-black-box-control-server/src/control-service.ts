@@ -153,7 +153,7 @@ export interface RallarBlackBoxControlServiceDependencies {
     readonly now: () => number;
     readonly createCommandId: () => string;
     readonly createRunToken: () => string;
-    readonly evaluateDistributedRun: (input: DistributedRunEvaluationInput) => RallarBlackBoxDistributedRunRollup;
+    readonly toDistributedRunRollup: (input: DistributedRunEvaluationInput) => RallarBlackBoxDistributedRunRollup;
 }
 
 export interface RallarBlackBoxControlServiceConfig {
@@ -464,11 +464,6 @@ export class RallarBlackBoxControlService {
         return this.listFleetReports({});
     }
 
-    takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
-        return this.takeDispatchableCommandsForAgents(runId, [agentId]).get(agentId) ?? [];
-    }
-
-    /** Refreshes the run's distributed rollups once, then takes each listed agent's due commands in order. */
     takeDispatchableCommandsForAgents(
         runId: string,
         agentIds: readonly string[]
@@ -478,11 +473,11 @@ export class RallarBlackBoxControlService {
         if (!run) {
             return new Map();
         }
+        this.advanceReloadRecipes(run);
         return new Map(agentIds.map((agentId) => [agentId, this.takeAgentDispatchableCommands(run, agentId)]));
     }
 
     private takeAgentDispatchableCommands(run: ControlRunState, agentId: string): readonly ControlCommandEnvelope[] {
-        this.advanceReloadRecipes(run);
         const agent = run.agents.get(agentId);
         if (!agent?.connected) {
             return [];
@@ -608,16 +603,21 @@ export class RallarBlackBoxControlService {
 
     snapshot(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         const snapshot = this.snapshotForPersistence(bounds);
-        return { ...snapshot, fleetReports: this.listFleetReports({}).reports };
+        return {
+            ...snapshot,
+            distributedRuns: this.listDistributedRuns(),
+            fleetReports: this.listFleetReports({}).reports
+        };
     }
 
+    /** Carries each distributed run's latest rollup; every dispatch-affecting message has already refreshed it. */
     snapshotForPersistence(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
             runs: Array.from(
                 this.runs.values(),
                 (run) => toControlRunSnapshot(run, bounds, this.distributedRuns.values())
             ),
-            distributedRuns: this.listDistributedRuns(),
+            distributedRuns: Array.from(this.distributedRuns.values(), toPassiveDistributedRunSnapshot),
             fleetReports: Array.from(this.fleetReports.values())
         };
     }
@@ -1114,13 +1114,14 @@ export class RallarBlackBoxControlService {
     }
 
     private refreshDistributedRunState(distributedRun: ControlDistributedRunState): RallarBlackBoxDistributedRunRollup {
-        if (isDistributedRunTerminalState(distributedRun.state) && distributedRun.rollup) {
-            return distributedRun.rollup;
+        const latest = distributedRun.rollup;
+        if (isDistributedRunTerminalState(distributedRun.state) && latest?.state === distributedRun.state) {
+            return latest;
         }
 
         this.reconcileDistributedCommandLinks(distributedRun);
         this.advanceDistributedRun(distributedRun);
-        const evaluated = this.dependencies.evaluateDistributedRun({
+        const evaluated = this.dependencies.toDistributedRunRollup({
             distributedRun,
             run: this.runs.get(distributedRun.controlRunId),
             redaction: this.config.redaction,
@@ -1133,9 +1134,7 @@ export class RallarBlackBoxControlService {
                 distributedRun.completedAtEpochMs ??= this.dependencies.now();
             }
         }
-        if (isDistributedRunTerminalState(distributedRun.state)) {
-            distributedRun.rollup = evaluated;
-        }
+        distributedRun.rollup = evaluated;
         return evaluated;
     }
 

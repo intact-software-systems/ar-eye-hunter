@@ -79,7 +79,7 @@ export function toControlServiceInput(
             now: overrides.now ?? (() => Date.now()),
             createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID()),
             createRunToken: () => crypto.randomUUID(),
-            evaluateDistributedRun: toDistributedRunRollup
+            toDistributedRunRollup
         },
         config: {
             redaction: overrides.redaction,

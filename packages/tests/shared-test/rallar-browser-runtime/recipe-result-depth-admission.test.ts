@@ -5,6 +5,7 @@ import { parseControlClientMessage } from '@shared-test/rallar-bb-test/control-p
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { takeAgentDispatchableCommands } from '../../../../apps/rallar-black-box-control-server/test/support/take-agent-dispatchable-commands.ts';
 import {
     createCaptureApplicationRuntime,
     createCaptureController,
@@ -93,7 +94,7 @@ describe('recipe result depth admission', () => {
                 command: { kind: 'recipe.run', rtcCaptureMode: 'off', recipe: boundaryRecipe }
             });
             expect(queued.left).toBeUndefined();
-            const [dispatch] = controller.takeDispatchableCommands('depth-run', 'depth-agent');
+            const [dispatch] = takeAgentDispatchableCommands(controller, 'depth-run', 'depth-agent');
             if (dispatch === undefined) {
                 throw new Error('Boundary recipe was not dispatched.');
             }

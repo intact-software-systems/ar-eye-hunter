@@ -31,6 +31,7 @@ import {
     type RallarBlackBoxControlService
 } from '../src/control-service.ts';
 import { assertRight, toControlServiceInput, toRegisterEnvelope } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 const FAILURE: RallarBlackBoxTestCommand = {
     kind: 'assert',
@@ -96,7 +97,7 @@ for (
             }
         }));
         assert(parseControlServerMessage(JSON.stringify(queued), { runId: 'run-1', agentId: 'capture-agent' }).ok);
-        assertEquals(service.takeDispatchableCommands('run-1', 'capture-agent').map((command) => command.commandId), ['capture-root']);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'capture-agent').map((command) => command.commandId), ['capture-root']);
         const envelope = toRequiredCaptureEnvelope(scenario);
         const parsed = parseControlClientMessage(JSON.stringify(envelope));
         const accepted = parsed.ok && service.receiveClientEnvelope(parsed.envelope).accepted;
@@ -142,7 +143,7 @@ for (const required of [false, true]) {
                 }
             }
         }));
-        assertEquals(service.takeDispatchableCommands('run-1', 'capture-agent').length, 1);
+        assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'capture-agent').length, 1);
         const envelope = toRequiredCaptureEnvelope(required ? 'valid' : 'omitted intent');
         const parsed = parseControlClientMessage(JSON.stringify(envelope));
         assert(parsed.ok);
@@ -196,7 +197,7 @@ for (const reference of [false, true]) {
                 commandId: 'accepted-load',
                 command: { kind: 'recipe.load', recipe }
             }));
-            const [load] = service.takeDispatchableCommands('run-1', 'capture-agent');
+            const [load] = takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
             const result = await runtime.execute({ ...load.command, commandId: load.commandId });
             assertEquals(
                 service.receiveClientEnvelope({
@@ -217,7 +218,7 @@ for (const reference of [false, true]) {
             commandId: 'capture-root',
             command: { kind: 'recipe.run', rtcCaptureMode: 'off', recipe: reference ? undefined : recipe }
         }));
-        const [queued] = service.takeDispatchableCommands('run-1', 'capture-agent');
+        const [queued] = takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
         const result = await runtime.execute({ ...queued.command, commandId: queued.commandId });
         assertEquals(result.status, 'ok');
         assertEquals(result.ok, true);
@@ -265,7 +266,7 @@ for (
                 }
             }
         }));
-        service.takeDispatchableCommands('run-1', 'capture-agent');
+        takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
         if (completedCurrent) {
             assertEquals(service.receiveClientEnvelope(toRequiredCaptureEnvelope('valid')).accepted, true);
         }
@@ -341,7 +342,7 @@ Deno.test('nested inline recipe selection remains admissible with omitted outer 
             }
         }
     }));
-    const [queued] = service.takeDispatchableCommands('run-1', 'capture-agent');
+    const [queued] = takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
     const result = await runtime.execute({ ...queued.command, commandId: queued.commandId });
     assertEquals(result.ok, true);
     assertEquals(
@@ -510,7 +511,7 @@ async function toRuntimeCaptureExecution(command: RallarBlackBoxTestCommand): Pr
         commandId: 'capture-root',
         command
     }));
-    assertEquals(service.takeDispatchableCommands('run-1', 'capture-agent').length, 1);
+    assertEquals(takeAgentDispatchableCommands(service, 'run-1', 'capture-agent').length, 1);
     const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => 1_000,
         commandExecutor: (command) =>
@@ -543,7 +544,7 @@ for (const scenario of ['wrong parent', 'wrong path', 'wrong source path', 'wron
             ? { kind: 'parallel', groups: [{ groupId: 'owned', commands: [child] }] }
             : { kind: 'loop', count: 2, commands: [child] };
         const queued = assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'capture-agent', commandId: 'capture-composite', command }));
-        service.takeDispatchableCommands('run-1', 'capture-agent');
+        takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
         const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => 1_000,
             commandExecutor: (command) => command.kind === 'rtc.connect' ? { status: 'ok', value: { rtcCapture: APPLIED_OFF_RECEIPT } } : undefined
@@ -605,7 +606,7 @@ for (const native of [false, true]) {
                 }
             }
         }));
-        service.takeDispatchableCommands('run-1', 'capture-agent');
+        takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
         const envelope = JSON.parse(JSON.stringify(toRequiredCaptureEnvelope('valid')));
         envelope.result.value.invocation.run = mode;
         const receipt = envelope.result.value.results[0].value.rtcCapture;
@@ -725,7 +726,7 @@ Deno.test('actual client failed partial recipe evidence promptly terminates both
         }));
         assertRight(service.enqueueCommand({ ...pair.sender, agentId: 'sender' }));
         assertRight(service.enqueueCommand({ ...pair.receiver, agentId: 'receiver' }));
-        const [prefix] = service.takeDispatchableCommands('run-1', 'receiver');
+        const [prefix] = takeAgentDispatchableCommands(service, 'run-1', 'receiver');
         assert(prefix);
         const receipt = await receiver.execute(prefix);
         assertEquals(receipt.accepted, true, 'the actual failed wire result must be admitted, not lost until the root deadline');
@@ -738,7 +739,7 @@ Deno.test('actual client failed partial recipe evidence promptly terminates both
             { commandId: 'receiver-started', status: 'ok' },
             { commandId: 'missing-message', status: 'failed' }
         ]);
-        service.takeDispatchableCommands('run-1', 'sender');
+        takeAgentDispatchableCommands(service, 'run-1', 'sender');
         const snapshot = service.snapshotRun('run-1');
         assert(snapshot);
         const results = snapshot.results;
@@ -763,7 +764,7 @@ Deno.test('ordinary failed command and reconnect replay preserve the same actual
     try {
         wire.connect();
         assertRight(service.enqueueCommand({ runId: 'run-1', agentId: 'ordinary', commandId: 'missing-message', command: FAILURE }));
-        const [command] = service.takeDispatchableCommands('run-1', 'ordinary');
+        const [command] = takeAgentDispatchableCommands(service, 'run-1', 'ordinary');
         const immediate = await wire.execute(command);
         assertEquals(immediate.accepted, true);
         assert(immediate.envelope.result, 'ordinary failures retain the actual detailed result too');
@@ -804,7 +805,7 @@ Deno.test('cancelled recipe publication preserves cancellation and only the chil
                 }
             }
         }));
-        const [command] = service.takeDispatchableCommands('run-1', 'ordinary');
+        const [command] = takeAgentDispatchableCommands(service, 'run-1', 'ordinary');
         const receipt = await wire.execute(command);
         assertEquals(receipt.accepted, true);
         assert(receipt.envelope.result);
@@ -951,7 +952,7 @@ Deno.test('ordinary omitted intent compaction reports descendant retention limit
         commandId: 'finite-root',
         command: { kind: 'recipe.run', recipe }
     }));
-    service.takeDispatchableCommands('run-1', 'capture-agent');
+    takeAgentDispatchableCommands(service, 'run-1', 'capture-agent');
     const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) =>
             command.kind === 'rtc.connect' ? { status: 'ok', value: { rtcCapture: APPLIED_OFF_RECEIPT, arbitraryPayload: 'x'.repeat(100) } } : undefined

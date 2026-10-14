@@ -37,11 +37,10 @@ export function trimControlReportDedupeKeys(run: ControlRunState): void {
     }
 }
 
+/** A bounded tail is always a copy, so trimming the retained array in place never reaches a handed-out snapshot. */
 export function toBoundedTail<T>(values: readonly T[], limit: number | undefined): readonly T[] {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
-        return values;
-    }
-    return values.slice(Math.max(0, values.length - Math.floor(limit)));
+    const trimCount = computeTailTrimCount(values.length, limit);
+    return trimCount === undefined ? values : values.slice(trimCount);
 }
 
 export function toProtectedRuntimeCommandIds(
@@ -59,10 +58,10 @@ export function toProtectedRuntimeCommandIds(
 }
 
 function trimArrayToTail<T>(values: T[], limit: number | undefined): void {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0 || values.length <= limit) {
-        return;
+    const trimCount = computeTailTrimCount(values.length, limit);
+    if (trimCount !== undefined && trimCount > 0) {
+        values.splice(0, trimCount);
     }
-    values.splice(0, values.length - Math.floor(limit));
 }
 
 function trimMapByInsertion<T>(
@@ -70,16 +69,26 @@ function trimMapByInsertion<T>(
     limit: number | undefined,
     protectedKeys: ReadonlySet<string>
 ): void {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0 || values.size <= limit) {
+    const trimCount = computeTailTrimCount(values.size, limit);
+    if (trimCount === undefined || trimCount === 0) {
         return;
     }
 
+    const retainedSize = values.size - trimCount;
     for (const key of values.keys()) {
-        if (values.size <= limit) {
+        if (values.size <= retainedSize) {
             return;
         }
         if (!protectedKeys.has(key)) {
             values.delete(key);
         }
     }
+}
+
+/** Undefined when the limit leaves the collection unbounded. */
+function computeTailTrimCount(size: number, limit: number | undefined): number | undefined {
+    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
+        return undefined;
+    }
+    return Math.max(0, size - Math.floor(limit));
 }

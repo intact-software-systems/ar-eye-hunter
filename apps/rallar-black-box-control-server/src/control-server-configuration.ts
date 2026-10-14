@@ -10,10 +10,13 @@ export interface BlackBoxControlServerConfiguration {
     readonly requireTls: boolean;
     readonly requireRunToken: boolean;
     readonly requireReadToken: boolean;
+    /** Absent when no shared admin token is configured; with no operator secret either, admin routes are open. */
     readonly adminToken?: string;
+    /** Absent when operator tokens are not accepted. */
     readonly operatorTokenSecret?: string;
     readonly runTokenTtlMs: number;
     readonly maxRequestBytes: number;
+    /** Absent when every command kind is allowed. */
     readonly allowedCommandKinds?: readonly string[];
     readonly commandRateLimitMax: number;
     readonly commandRateLimitWindowMs: number;
@@ -21,6 +24,7 @@ export interface BlackBoxControlServerConfiguration {
     readonly httpAllowedOrigins: readonly string[];
     readonly wsAllowedHosts: readonly string[];
     readonly wsAllowedOrigins: readonly string[];
+    /** Absent when the server keeps no snapshot or artifact files. */
     readonly storageDir?: string;
     readonly retentionMaxRuns: number;
     readonly snapshotPersistenceBounds: ControlRunSnapshotBounds;
@@ -80,6 +84,16 @@ export function readBlackBoxControlServerConfiguration(
         ),
         runtimeRetentionBounds: readSnapshotBounds(environment, 'RUNTIME_RETAIN', DEFAULT_RUNTIME_RETENTION_BOUNDS)
     };
+}
+
+export function validateBlackBoxControlServerConfiguration(
+    configuration: BlackBoxControlServerConfiguration
+): readonly string[] {
+    return configuration.maxRequestBytes < RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+        ? [
+            `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES must be at least ${RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES}, the frame limit agents send to; got ${configuration.maxRequestBytes}.`
+        ]
+        : [];
 }
 
 function readAccessConfiguration(

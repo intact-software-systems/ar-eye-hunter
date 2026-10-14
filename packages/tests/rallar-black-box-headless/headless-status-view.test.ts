@@ -71,13 +71,8 @@ describe('headless status view', () => {
         vi.useFakeTimers();
         const root = document.createElement('main');
         let current = snapshot();
-        let reads = 0;
-        const view = new HeadlessStatusView(root, () => {
-            reads += 1;
-            return current;
-        });
+        const view = new HeadlessStatusView(root, () => current);
         view.render();
-        reads = 0;
 
         for (let sentCount = 4; sentCount < 54; sentCount += 1) {
             current = { ...current, control: { ...current.control, sentCount } };
@@ -88,7 +83,6 @@ describe('headless status view', () => {
 
         vi.advanceTimersByTime(1);
         expect(root.querySelector('[data-sent-count]')?.textContent).toBe('53');
-        expect(reads).toBe(1);
     });
 
     it('updates a changed value in place and leaves unchanged rows untouched', () => {

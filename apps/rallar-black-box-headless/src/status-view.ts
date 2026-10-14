@@ -1,42 +1,12 @@
 import type { RallarBlackBoxBrowserControlAgentSnapshot } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
-import { PacedEmit } from '@shared-test/rallar-bb-test/runtime/paced-emit.ts';
-
-type HeadlessStatusRowAttribute =
-    | 'data-agent-id'
-    | 'data-run-id'
-    | 'data-control-state'
-    | 'data-runtime-state'
-    | 'data-application-id'
-    | 'data-workspace-id'
-    | 'data-group-id'
-    | 'data-principal-id'
-    | 'data-client-id'
-    | 'data-session-id'
-    | 'data-fleet-region'
-    | 'data-fleet-provider'
-    | 'data-fleet-datacenter'
-    | 'data-fleet-host'
-    | 'data-last-heartbeat'
-    | 'data-reconnect-count'
-    | 'data-provider'
-    | 'data-transport'
-    | 'data-room-id'
-    | 'data-sent-count'
-    | 'data-received-count'
-    | 'data-latest-command-id'
-    | 'data-latest-event-topic';
+import { PacedEmit } from '@shared-test/rallar-bb-test/browser-control-agent/paced-emit.ts';
 
 type HeadlessStatusValue = string | number | undefined;
-
-interface HeadlessStatusRow {
-    readonly label: string;
-    readonly attribute: HeadlessStatusRowAttribute;
-}
 
 const STATUS_RENDER_INTERVAL_MS = 100;
 const FLEET_IDENTITY_WARNING =
     'Missing global fleet identity; this browser may not be targetable by world-fleet recipes.';
-const STATUS_ROWS: readonly HeadlessStatusRow[] = [
+const STATUS_ROWS = [
     { label: 'Agent', attribute: 'data-agent-id' },
     { label: 'Run', attribute: 'data-run-id' },
     { label: 'Control', attribute: 'data-control-state' },
@@ -60,9 +30,10 @@ const STATUS_ROWS: readonly HeadlessStatusRow[] = [
     { label: 'Received', attribute: 'data-received-count' },
     { label: 'Latest command', attribute: 'data-latest-command-id' },
     { label: 'Latest event', attribute: 'data-latest-event-topic' }
-];
+] as const;
 
-/** Builds the status page once, then rewrites only the text that changed, at most once per render interval. */
+type HeadlessStatusRowAttribute = typeof STATUS_ROWS[number]['attribute'];
+
 export class HeadlessStatusView {
     private readonly readSnapshot: () => RallarBlackBoxBrowserControlAgentSnapshot;
     private readonly pacedRender = new PacedEmit(STATUS_RENDER_INTERVAL_MS, () => this.render());

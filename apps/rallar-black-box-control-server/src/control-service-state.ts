@@ -106,6 +106,7 @@ export interface ControlDistributedRunState {
     controlRunId: string;
     manifest: RallarBlackBoxDistributedRunManifest;
     state: RallarBlackBoxDistributedRunState;
+    /** The latest evaluated rollup; absent until the run is first evaluated. */
     rollup?: RallarBlackBoxDistributedRunRollup;
     createdAtEpochMs: number;
     updatedAtEpochMs: number;

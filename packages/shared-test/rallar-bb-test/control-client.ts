@@ -117,7 +117,7 @@ export interface RallarBlackBoxControlClientOptions {
     readonly statsIntervalMs: number;
     readonly reconnectBaseMs: number;
     readonly reconnectMaxMs: number;
-    /** A larger serialized frame is not sent; a bounded diagnostic and a capture gap stand in for it. */
+    /** A larger serialized frame is not sent: a bounded diagnostic and a capture gap stand in for it, and a bounded failed result for a result. */
     readonly maxFrameBytes: number;
 }
 
@@ -154,7 +154,9 @@ interface ControlClientDiagnostic {
     readonly commandId?: string;
 }
 
-type ControlFrameSendOutcome = 'sent' | 'socket-closed' | 'oversize';
+type ControlFrameSendOutcome =
+    | Readonly<{ status: 'sent' | 'socket-closed'; }>
+    | Readonly<{ status: 'oversize'; frameBytes: number; }>;
 
 const OPEN_STATE = 1;
 const DEFAULT_RECONNECT_BASE_MS = 600;
@@ -188,7 +190,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private readonly completedControlCommandIds = new Set<string>();
     private readonly admittedControlCommandIds = new Set<string>();
     private completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
-    private oversizeControlResults = new WeakSet<RallarBlackBoxTestResult>();
+    private frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
     private assignmentGeneration = 0;
     private readonly recipeEventHistory = new ControlRecipeEventHistory();
     private observedRuntimeGeneration = 0;
@@ -245,7 +247,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.recipeEventHistory.restore(connection.recipeExecutions ?? {});
             this.completedControlCommandIds.clear();
             this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
-            this.oversizeControlResults = new WeakSet<RallarBlackBoxTestResult>();
+            this.frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
             this.admittedControlCommandIds.clear();
             this.publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
             this.lastTerminalReportKey = undefined;
@@ -670,33 +672,20 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         const cache = this.options.runtime.state().resultCache;
         for (const commandId of this.completedControlCommandIds) {
             const result = cache[commandId];
-            if (result && this.completedControlResults.has(result) && !this.oversizeControlResults.has(result)) {
-                this.sendResult(result, true);
+            if (result && this.completedControlResults.has(result)) {
+                this.sendResult(this.frameLimitedResults.get(result) ?? result, true);
             }
         }
     }
 
+    /** An oversize result is answered by a bounded failed result, which is also what a reconnect replays. */
     private sendResult(result: RallarBlackBoxTestResult, replayed: boolean): void {
         const connection = this.assertConnection();
-        const envelope: ControlResultEnvelope = {
-            kind: 'result',
-            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-            runId: connection.runId,
-            agentId: connection.agentId,
-            commandId: result.commandId,
-            ok: result.ok,
-            result: { ...result, replayed },
-            error: result.ok
-                ? undefined
-                : {
-                    code: result.error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED',
-                    message: result.error?.message ?? 'Command failed.',
-                    details: result.error?.details
-                },
-            replayed
-        };
-        if (this.sendEnvelope(envelope) === 'oversize') {
-            this.oversizeControlResults.add(result);
+        const outcome = this.sendEnvelope(toControlResultEnvelope(connection, result, replayed));
+        if (outcome.status === 'oversize') {
+            const limited = toFrameLimitedResult(result, outcome.frameBytes, this.options.maxFrameBytes);
+            this.frameLimitedResults.set(result, limited);
+            this.sendEnvelope(toControlResultEnvelope(connection, limited, replayed));
         }
     }
 
@@ -788,7 +777,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         const generation = this.assignmentGeneration;
         try {
             const outcome = this.sendEnvelope(toControlEventEnvelope(event, connection.runId, connection.agentId));
-            if (generation !== this.assignmentGeneration || outcome === 'oversize') {
+            if (generation !== this.assignmentGeneration || outcome.status === 'oversize') {
                 return;
             }
             this.publishedEvents.add(event);
@@ -814,6 +803,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             state,
             admittedCommandIds: this.admittedControlCommandIds,
             completedResults: this.completedControlResults,
+            frameLimitedResults: this.frameLimitedResults,
             publishedEvents: this.publishedEvents,
             publishedHistory: this.publishedHistory
         });
@@ -841,18 +831,18 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     private sendEnvelope(envelope: ControlClientEnvelope): ControlFrameSendOutcome {
         if (!this.socket || !this.isSocketOpen()) {
-            return 'socket-closed';
+            return { status: 'socket-closed' };
         }
 
         const frame = JSON.stringify(envelope);
         const oversizeFrameBytes = toOversizeFrameBytes(frame, this.options.maxFrameBytes);
         if (oversizeFrameBytes !== undefined) {
             this.recordOversizeFrame(envelope, oversizeFrameBytes);
-            return 'oversize';
+            return { status: 'oversize', frameBytes: oversizeFrameBytes };
         }
         this.socket.send(frame);
         this.publishSnapshotUpdate({ sentCount: this.snapshot.sentCount + 1 });
-        return 'sent';
+        return { status: 'sent' };
     }
 
     /** The server would close the socket on this frame, so a bounded record of it is published instead. */
@@ -919,6 +909,52 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         this.snapshot = { ...this.snapshot, ...patch };
         this.snapshotListeners.forEach((listener) => listener(this.snapshot));
     }
+}
+
+function toControlResultEnvelope(
+    connection: RallarBlackBoxControlConnectOptions,
+    result: RallarBlackBoxTestResult,
+    replayed: boolean
+): ControlResultEnvelope {
+    return {
+        kind: 'result',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: connection.runId,
+        agentId: connection.agentId,
+        commandId: result.commandId,
+        ok: result.ok,
+        result: { ...result, replayed },
+        error: result.ok
+            ? undefined
+            : {
+                code: result.error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                message: result.error?.message ?? 'Command failed.',
+                details: result.error?.details
+            },
+        replayed
+    };
+}
+
+function toFrameLimitedResult(
+    result: RallarBlackBoxTestResult,
+    frameBytes: number,
+    maxFrameBytes: number
+): RallarBlackBoxTestResult {
+    return {
+        commandId: result.commandId,
+        kind: result.kind,
+        status: 'failed',
+        ok: false,
+        startedAtEpochMs: result.startedAtEpochMs,
+        endedAtEpochMs: result.endedAtEpochMs,
+        durationMs: result.durationMs,
+        error: {
+            code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
+            message:
+                `The result frame of ${frameBytes} bytes exceeds the control frame limit of ${maxFrameBytes} bytes.`,
+            details: { frameBytes, maxFrameBytes }
+        }
+    };
 }
 
 /** UTF-8 spends at most three bytes per UTF-16 unit, so only a frame near the limit is encoded to measure it. */

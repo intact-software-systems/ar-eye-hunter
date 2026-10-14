@@ -113,7 +113,7 @@ export function createCaptureController() {
             now: () => 1_000,
             createCommandId: () => 'unused',
             createRunToken: () => 'unused',
-            evaluateDistributedRun: toDistributedRunRollup
+            toDistributedRunRollup
         },
         config: {
             redaction: undefined,

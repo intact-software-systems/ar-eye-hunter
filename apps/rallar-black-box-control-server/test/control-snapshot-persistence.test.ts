@@ -23,8 +23,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
-
-const SNAPSHOT_SETTLE_MS = 300;
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 function toStagedService(): RallarBlackBoxControlService {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
@@ -38,7 +37,7 @@ function toStagedService(): RallarBlackBoxControlService {
     }
     assertRight(service.createDistributedRun(toDistributedManifest()));
     assertRight(service.stageDistributedRun('dist-1'));
-    const [stageCommand] = service.takeDispatchableCommands('run-1', 'agent-1');
+    const [stageCommand] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
     service.receiveClientEnvelope(toCommandResultEnvelope({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -96,6 +95,7 @@ Deno.test('control snapshot restore brings back the runs and distributed runs th
 
 Deno.test('control snapshot persistence writes compact JSON once per changed snapshot', async () => {
     const service = toStagedService();
+    let snapshotReads = 0;
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-change-' });
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     try {
@@ -103,20 +103,29 @@ Deno.test('control snapshot persistence writes compact JSON once per changed sna
             storageDir,
             retentionMaxRuns: 50,
             snapshotBounds: {},
-            controlService: service,
+            controlService: {
+                applyRunRetention: (maxRuns) => service.applyRunRetention(maxRuns),
+                restoreSnapshot: (snapshot) => service.restoreSnapshot(snapshot),
+                snapshotForPersistence: (bounds) => {
+                    snapshotReads += 1;
+                    return service.snapshotForPersistence(bounds);
+                }
+            },
             deleteRuns: () => undefined
         });
         persistence.persist();
         const first = await readPersistedSnapshot(snapshotPath);
 
-        persistence.persist();
-        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_SETTLE_MS));
+        // Flushes run one at a time, so the third flush starting proves the second one finished.
+        for (const flush of [2, 3]) {
+            persistence.persist();
+            await waitFor(() => (snapshotReads === flush ? flush : undefined));
+        }
         const unchanged = await Deno.readTextFile(snapshotPath);
 
         service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-3', identity: toFleetIdentity('agent-3') }));
         persistence.persist();
-        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_SETTLE_MS));
-        const changed = await Deno.readTextFile(snapshotPath);
+        const changed = await readPersistedSnapshot(snapshotPath, first);
 
         assertEquals(unchanged, first, 'an unchanged snapshot is not rewritten');
         assertEquals(first.includes('\n'), false, 'the snapshot file is compact');
@@ -333,20 +342,35 @@ async function sha256(value: Uint8Array): Promise<string> {
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function readPersistedSnapshot(path: string): Promise<string> {
-    const deadline = Date.now() + 1_000;
-    while (Date.now() < deadline) {
-        try {
-            return await Deno.readTextFile(path);
+/** Waits for a snapshot file that differs from `previous`; with no previous text, for the first one. */
+function readPersistedSnapshot(path: string, previous?: string): Promise<string> {
+    return waitFor(async () => {
+        const text = await readSnapshotText(path);
+        return text === previous ? undefined : text;
+    });
+}
+
+async function readSnapshotText(path: string): Promise<string | undefined> {
+    try {
+        return await Deno.readTextFile(path);
+    }
+    catch (error) {
+        if (error instanceof Deno.errors.NotFound) {
+            return undefined;
         }
-        catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
-                throw error;
-            }
+        throw error;
+    }
+}
+
+async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>): Promise<T> {
+    const deadline = Date.now() + 2_000;
+    for (let value = await read(); Date.now() <= deadline; value = await read()) {
+        if (value !== undefined) {
+            return value;
         }
         await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error('Native persistence did not create its snapshot within the bounded test wait.');
+    throw new Error('Native persistence did not reach the awaited state within the bounded test wait.');
 }
 
 function assertSdkCaptureReceipts(result: RallarBlackBoxTestResult, receipt: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>): void {

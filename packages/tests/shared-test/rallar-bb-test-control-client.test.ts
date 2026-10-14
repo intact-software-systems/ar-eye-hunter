@@ -921,7 +921,7 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
-    it('replaces an oversize result frame with one bounded diagnostic and a capture gap, and never resends it', async () => {
+    it('replaces an oversize result frame with a bounded failed result that a reconnect replays and the report counts', async () => {
         vi.useFakeTimers();
         const maxFrameBytes = 4_000;
         const sockets: FakeControlSocket[] = [];
@@ -950,10 +950,34 @@ describe('shared rallar black-box control client', () => {
             sockets[0].open();
             sockets[0].publishMessage(JSON.stringify(toCommandEnvelope('configure-big', {
                 kind: 'configure',
-                config: { runId: 'run-1', agentId: 'agent-1', actor: 'x'.repeat(maxFrameBytes) }
+                config: { runId: 'run-1', agentId: 'agent-1', actor: 'alice', defaults: { note: 'x'.repeat(maxFrameBytes) } }
             })));
             await vi.waitFor(() => {
-                expect(oversizeResultDiagnostics()).toHaveLength(1);
+                expect(toResultEnvelopes(sockets[0], 'configure-big')).toHaveLength(1);
+            });
+            const executed = runtime.state().resultCache['configure-big'];
+            const [sent] = toResultEnvelopes(sockets[0], 'configure-big');
+            expect(sent).toMatchObject({
+                ok: false,
+                replayed: false,
+                error: {
+                    code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
+                    details: { maxFrameBytes }
+                },
+                result: {
+                    commandId: 'configure-big',
+                    kind: 'configure',
+                    status: 'failed',
+                    ok: false,
+                    startedAtEpochMs: executed.startedAtEpochMs,
+                    endedAtEpochMs: executed.endedAtEpochMs,
+                    error: { code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE' }
+                }
+            });
+            expect(sent.result).not.toHaveProperty('value');
+            expect(isJsonRecordValue(sent.error?.details) && Number(sent.error.details.frameBytes)).toBeGreaterThan(maxFrameBytes);
+            expect(toEventEnvelopes(sockets[0], 'report').at(-1)?.payload).toMatchObject({
+                payload: { summary: { status: 'failed', failures: 1, latestCommandId: 'configure-big' } }
             });
 
             sockets[0].close();
@@ -961,7 +985,11 @@ describe('shared rallar black-box control client', () => {
             sockets[1].open();
             await vi.advanceTimersByTimeAsync(0);
 
-            expect(sockets.flatMap((socket) => toResultEnvelopes(socket, 'configure-big'))).toEqual([]);
+            expect(toResultEnvelopes(sockets[1], 'configure-big')).toEqual([{
+                ...sent,
+                replayed: true,
+                result: { ...sent.result, replayed: true }
+            }]);
             expect(oversizeResultDiagnostics()).toHaveLength(1);
             expect(oversizeResultDiagnostics()[0]).toMatchObject({
                 payload: {

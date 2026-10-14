@@ -12,6 +12,7 @@ import {
     toFleetIdentity,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 Deno.test('distributed starts forward the actual run history choice to existing agents', async () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
@@ -22,11 +23,11 @@ Deno.test('distributed starts forward the actual run history choice to existing 
     };
     assertRight(service.createDistributedRun(manifest));
     assertRight(service.stageDistributedRun(manifest.distributedRunId));
-    for (const envelope of service.takeDispatchableCommands(manifest.controlRunId, 'agent-1')) {
+    for (const envelope of takeAgentDispatchableCommands(service, manifest.controlRunId, 'agent-1')) {
         service.receiveClientEnvelope(toCommandResultEnvelope({ runId: envelope.runId, agentId: 'agent-1', command: envelope, ok: true }));
     }
     assertRight(service.startDistributedRun(manifest.distributedRunId));
-    const commands = service.takeDispatchableCommands(manifest.controlRunId, 'agent-1');
+    const commands = takeAgentDispatchableCommands(service, manifest.controlRunId, 'agent-1');
     const start = commands.find((envelope) => envelope.command.kind === 'recipe.run');
     assert(start);
     assert(start.command.kind === 'recipe.run');
