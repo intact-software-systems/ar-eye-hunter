@@ -272,8 +272,15 @@ function toAlmConformanceCombinedCommands(
     scenarios: readonly AlmConformanceScenario[],
     role: AlmConformanceRole
 ): RallarBlackBoxTestRecipe['commands'] {
-    const rtc = toRoleRecipe(scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!, role);
-    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect')!;
+    const rtcScenario = scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc');
+    if (rtcScenario === undefined) {
+        throw new Error('Combined ALM recipes require an RTC scenario.');
+    }
+    const rtc = toRoleRecipe(rtcScenario, role);
+    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect');
+    if (rtcConnect === undefined) {
+        throw new Error(`Generated ALM recipe ${rtc.recipeId} has no rtc.connect prologue.`);
+    }
     const messageTypeIds = computeCombinedAlmMessageTypeIds(scenarios, role);
     const toConnect = (command: RallarBlackBoxTestRtcConnectCommand) =>
         toCombinedAlmConnect(command, rtcConnect.readiness, messageTypeIds);

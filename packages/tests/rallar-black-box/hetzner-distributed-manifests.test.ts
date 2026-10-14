@@ -103,7 +103,9 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('validates every checked-in manifest against schema and contract', async () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
-            const decoded = decodeDistributedRunManifest(JSON.parse(await readFile(path.join(repoRoot, entry.filePath), 'utf8')));
+            const decoded = decodeDistributedRunManifest(
+                JSON.parse(await readFile(path.join(repoRoot, entry.filePath), 'utf8'))
+            );
             expect(decoded.left, entry.filePath).toBeUndefined();
             const manifest = decoded.right;
             if (manifest === undefined) {
@@ -138,13 +140,20 @@ describe('Hetzner distributed manifest catalog', () => {
                     expectedParticipantCount: 3,
                     roles: { sender: ['controller-01'], receiver: ['controller-02'], 'recipient-b': ['controller-03'] }
                 });
-                expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver', 'recipient-b']);
+                expect(manifest.recipes.map((selection) => selection.role)).toEqual([
+                    'sender',
+                    'receiver',
+                    'recipient-b'
+                ]);
             }
             else if (
                 entry.filePath.includes('rtc-messages-principal-') ||
                 (entry.filePath.includes('alm-conformance') && entry.agentCount > 2)
             ) {
-                const receivers = Array.from({ length: entry.agentCount - 1 }, (_, index) => `controller-${String(index + 2).padStart(2, '0')}`);
+                const receivers = Array.from(
+                    { length: entry.agentCount - 1 },
+                    (_, index) => `controller-${String(index + 2).padStart(2, '0')}`
+                );
 
                 expect(manifest.targetPolicy).toMatchObject({
                     mode: 'role-map',
@@ -217,7 +226,7 @@ describe('Hetzner distributed manifest catalog', () => {
                     continue;
                 }
 
-                expect(command.rallar, entry.filePath).toEqual({
+                expect(command.rallar, entry.filePath).toMatchObject({
                     typeId: 'black-box.group.multicast.position',
                     topicId: 'black-box.group.multicast.position'
                 });
@@ -228,28 +237,94 @@ describe('Hetzner distributed manifest catalog', () => {
     it('requires explicit RTC readiness before non-diagnostic live manifests send RTC traffic', () => {
         const expectedReadyPeers = new Map([
             ['apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', { peers: 2, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/10-rtc-messages-principal-15-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/11-rtc-messages-principal-15-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/13-rtc-messages-principal-30-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json', { peers: 1, timeoutMs: 45_000 }],
-            ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', { peers: 1, timeoutMs: 45_000 }]
+            ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
+                peers: 2,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/10-rtc-messages-principal-15-agent-30s-20hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/11-rtc-messages-principal-15-agent-30s-20hz-mesh.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/13-rtc-messages-principal-30-agent-30s-20hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json', {
+                peers: 1,
+                timeoutMs: 10_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', {
+                peers: 1,
+                timeoutMs: 45_000
+            }]
         ]);
 
         for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
@@ -305,7 +380,10 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe;
-                if (!recipe || !toHetznerManifestCommands(entry.manifest).some((command) => command.kind === 'rtc.connect' && command.readiness)) {
+                if (
+                    !recipe ||
+                    !toHetznerManifestCommands(entry.manifest).some((command) => command.kind === 'rtc.connect' && command.readiness)
+                ) {
                     continue;
                 }
 
@@ -457,6 +535,9 @@ describe('Hetzner distributed manifest catalog', () => {
         const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/diagnostic/rtc-realtime-2-agent-20hz-stress.json'));
         expect(entry).toBeDefined();
+        if (entry === undefined) {
+            throw new Error('Expected catalog entry.');
+        }
         expect(entry?.diagnostic).toBe(true);
         expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(entry?.filePath);
         expect(entry?.manifest.metadata).toMatchObject({
@@ -465,7 +546,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expectedFailure: false
         });
 
-        const stream = toHetznerManifestCommands(entry!.manifest)
+        const stream = toHetznerManifestCommands(entry.manifest)
             .find((command) => command.kind === 'rtc.stream');
         expect(stream).toMatchObject({
             count: 100,
@@ -527,10 +608,11 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(JSON.stringify(parity?.manifest)).toContain('{rtc.readyPeerIds}');
         expect(JSON.stringify(parity?.manifest)).not.toContain('bob-session');
         expect(JSON.stringify(parity?.manifest)).not.toContain('charlie-session');
-        expect(parity?.manifest.recipes[0]?.recipe?.commands.find((command) => command.kind === 'rtc.connect')).toMatchObject({
-            timeoutMs: 15_000,
-            readiness: { timeoutMs: 10_000 }
-        });
+        expect(parity?.manifest.recipes[0]?.recipe?.commands.find((command) => command.kind === 'rtc.connect'))
+            .toMatchObject({
+                timeoutMs: 15_000,
+                readiness: { timeoutMs: 10_000 }
+            });
     });
 
     it('keeps provider parity peers alive through the readiness window before teardown', () => {

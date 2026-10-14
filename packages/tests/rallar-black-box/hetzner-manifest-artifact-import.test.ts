@@ -7,8 +7,12 @@ import {
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlQueuedCommandSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { toDistributedArtifactSnapshots } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     computeRtcDiagnostics,
@@ -16,7 +20,7 @@ import {
     DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 
-import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 interface RecordedControlResult extends ControlResultEnvelope {
     readonly ok: true;
@@ -55,7 +59,10 @@ describe('Hetzner artifact import', () => {
         const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/05-rtc-realtime-2-agent-5s.json'));
         expect(entry).toBeDefined();
-        const manifest = entry!.manifest;
+        if (entry === undefined) {
+            throw new Error('Expected catalog entry.');
+        }
+        const manifest = entry.manifest;
         const distributedRunId = 'dist-hetzner-ci-import';
         const controlRunId = 'gh-ci-import';
         const agentIds = ['controller-01', 'controller-02'];
@@ -75,10 +82,34 @@ describe('Hetzner artifact import', () => {
                 controlRunId
             },
             commandLinks: [
-                { phase: 'stage', agentId: 'controller-01', commandId: 'stage-controller-01', recipeId: 'rtc-realtime', queuedAtEpochMs: 1_210 },
-                { phase: 'stage', agentId: 'controller-02', commandId: 'stage-controller-02', recipeId: 'rtc-realtime', queuedAtEpochMs: 1_220 },
-                { phase: 'start', agentId: 'controller-01', commandId: 'start-controller-01', recipeId: 'rtc-realtime', queuedAtEpochMs: 2_010 },
-                { phase: 'start', agentId: 'controller-02', commandId: 'start-controller-02', recipeId: 'rtc-realtime', queuedAtEpochMs: 2_020 }
+                {
+                    phase: 'stage',
+                    agentId: 'controller-01',
+                    commandId: 'stage-controller-01',
+                    recipeId: 'rtc-realtime',
+                    queuedAtEpochMs: 1_210
+                },
+                {
+                    phase: 'stage',
+                    agentId: 'controller-02',
+                    commandId: 'stage-controller-02',
+                    recipeId: 'rtc-realtime',
+                    queuedAtEpochMs: 1_220
+                },
+                {
+                    phase: 'start',
+                    agentId: 'controller-01',
+                    commandId: 'start-controller-01',
+                    recipeId: 'rtc-realtime',
+                    queuedAtEpochMs: 2_010
+                },
+                {
+                    phase: 'start',
+                    agentId: 'controller-02',
+                    commandId: 'start-controller-02',
+                    recipeId: 'rtc-realtime',
+                    queuedAtEpochMs: 2_020
+                }
             ],
             rollup: {
                 state: 'passed',
@@ -125,20 +156,80 @@ describe('Hetzner artifact import', () => {
                 resumeCompletedCommandIds: []
             })),
             commands: [
-                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
-                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
+                toControlCommand({
+                    runId: controlRunId,
+                    agentId: 'controller-01',
+                    commandId: 'stage-controller-01',
+                    queuedAtEpochMs: 1_210,
+                    durationMs: 40
+                }),
+                toControlCommand({
+                    runId: controlRunId,
+                    agentId: 'controller-02',
+                    commandId: 'stage-controller-02',
+                    queuedAtEpochMs: 1_220,
+                    durationMs: 60
+                }),
+                toControlCommand({
+                    runId: controlRunId,
+                    agentId: 'controller-01',
+                    commandId: 'start-controller-01',
+                    queuedAtEpochMs: 2_010,
+                    durationMs: 180
+                }),
+                toControlCommand({
+                    runId: controlRunId,
+                    agentId: 'controller-02',
+                    commandId: 'start-controller-02',
+                    queuedAtEpochMs: 2_020,
+                    durationMs: 420
+                })
             ],
             results: [
-                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
-                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
+                toControlResult({
+                    runId: controlRunId,
+                    agentId: 'controller-01',
+                    commandId: 'stage-controller-01',
+                    endedAtEpochMs: 1_250,
+                    durationMs: 40
+                }),
+                toControlResult({
+                    runId: controlRunId,
+                    agentId: 'controller-02',
+                    commandId: 'stage-controller-02',
+                    endedAtEpochMs: 1_280,
+                    durationMs: 60
+                }),
+                toControlResult({
+                    runId: controlRunId,
+                    agentId: 'controller-01',
+                    commandId: 'start-controller-01',
+                    endedAtEpochMs: 2_190,
+                    durationMs: 180
+                }),
+                toControlResult({
+                    runId: controlRunId,
+                    agentId: 'controller-02',
+                    commandId: 'start-controller-02',
+                    endedAtEpochMs: 2_440,
+                    durationMs: 420
+                })
             ],
             events: [
-                toControlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
-                toControlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
+                toControlEvent({
+                    runId: controlRunId,
+                    agentId: 'controller-01',
+                    commandId: 'start-controller-01',
+                    topic: 'rtc.started',
+                    atEpochMs: 2_050
+                }),
+                toControlEvent({
+                    runId: controlRunId,
+                    agentId: 'controller-02',
+                    commandId: 'start-controller-02',
+                    topic: 'rtc.started',
+                    atEpochMs: 2_060
+                })
             ],
             stats: [],
             reports: [],
@@ -182,7 +273,9 @@ describe('Hetzner artifact import', () => {
     });
 });
 
-function toControlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput): ControlQueuedCommandSnapshot {
+function toControlCommand(
+    { runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput
+): ControlQueuedCommandSnapshot {
     return {
         envelope: {
             kind: 'command',
@@ -203,7 +296,9 @@ function toControlCommand({ runId, agentId, commandId, queuedAtEpochMs, duration
     };
 }
 
-function toControlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput): RecordedControlResult {
+function toControlResult(
+    { runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput
+): RecordedControlResult {
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -241,7 +336,9 @@ function toControlEvent({ runId, agentId, commandId, topic, atEpochMs }: Control
 }
 
 function toEmptySpaState(): RallarBlackBoxTestState {
+    const runtimeState = createRuntimeStateFixture();
     return {
+        ...runtimeState,
         status: 'completed',
         currentConfig: {
             runId: 'local',
@@ -263,6 +360,7 @@ function toEmptySpaState(): RallarBlackBoxTestState {
         failures: [],
         resultCache: {},
         latestStats: {
+            eventHistory: runtimeState.eventHistory,
             atEpochMs: 1,
             status: 'completed',
             counters: {

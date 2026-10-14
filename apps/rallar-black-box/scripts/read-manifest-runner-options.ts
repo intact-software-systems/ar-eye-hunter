@@ -16,7 +16,7 @@ export function readManifestRunnerOptions(
         }
         const key = arg.slice(2);
         const value = args[index + 1];
-        if (!value || value.startsWith('--')) {
+        if (value === undefined || value.startsWith('--') || (value === '' && key !== 'rtc-capture-mode')) {
             throw new Error(`Missing value for --${key}`);
         }
         values.set(key, value);
@@ -34,6 +34,7 @@ export function readManifestRunnerOptions(
         controlBaseUrl,
         manifestPath,
         controlRunId: values.get('control-run-id') ?? env.RALLAR_CONTROL_RUN_ID,
+        rtcCaptureMode: values.get('rtc-capture-mode'),
         token: values.get('token') ?? env.RALLAR_CONTROL_ADMIN_TOKEN,
         artifactDir: values.get('artifact-dir'),
         pollMs: positiveInteger(values.get('poll-ms'), 2_000),

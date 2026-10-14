@@ -4084,6 +4084,179 @@ moved or changed test.
         "requiredConstraint": "Once stop returns, late completion must not admit any further listing or re-arm a recurring timer.",
         "failureRationale": "Zero remaining timers alone could miss an unwanted listing admitted by a late continuation; the listing-port count establishes absence of post-stop database work."
       }
+    },
+    {
+      "id": "rtc-b05-command-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "One raw command has an override, invalid baseline and phase, missing case/input options, and an out-of-range ordinal. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "A raw command with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized manifest has independent identity, workload, repeat-link/multiplier, matrix, and requested-attempt failures. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized manifest with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-environment-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized environment has an incompatible environment identity and runtime controller provenance. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized environment with independent identity and provenance issues reports both and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "domain": "Shared RTC benchmark package dependency isolation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The benchmark package may consume the canonical portable browser recording protocol contract with only its shared JSON type dependency, while browser control and shared-test runner execution remain outside its approved dependency boundary.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency",
+      "coverageRelation": "The architecture test admits the exact canonical relative contract import and reads that actual module to assert its sole dependency is the canonical shared ApiJsonValue module. Independent negative controls reject the former browser owners, browser and runner runtimes, another fixture, and a shared-test alias. The source read supplies the dependency list needed to prove that an admitted contract cannot transitively reopen the excluded runtime boundary."
+    },
+    {
+      "id": "alm-sdk-replaced-consumed-ports-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "After an external connection consumes different diagnostics ports, a refused harness retry must leave SDK defaults untouched.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#refuses unverified $operation application when external $port replaces prepared $almDiagnostics",
+      "coverageRelation": "The test replaces each prepared ALM sink before actual SDK initialization, proves the frozen consumed fact reaches the real storage, WS and RTC consumers, rejects false certification, then retries and compares defaults writes.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "setDefaults changes the scope and diagnostics sinks used by a subsequent SDK connection.",
+        "requiredConstraint": "A retry refused as unverified adds zero defaults writes after the external replacement.",
+        "failureRationale": "A rejected promise and absent success event do not exclude a defaults mutation before refusal; that mutation can redirect the next SDK lifetime."
+      }
+    },
+    {
+      "id": "alm-sdk-unscoped-reuse-suppresses-defaults-write",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "An unscoped cached harness connection reuses its SDK lifetime without writing defaults again.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#preserves unscoped acquisition and reuse without certifying ALM intent %s",
+      "coverageRelation": "The first acquisition proves the undefined defaults payload, then the cached acquisition compares the prior write count and capture receipt while emitted events remain uncertified.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "An extra defaults reset would alter SDK defaults even though the cached middleware and receipt remain unchanged.",
+        "requiredConstraint": "Cached unscoped acquisition adds zero setDefaults writes; initial reset invocation count is unrestricted.",
+        "failureRationale": "The same cached receipt and absent certification events would still pass if reuse needlessly reset defaults used by a later connection."
+      }
+    },
+    {
+      "id": "alm-sdk-crdt-first-policy-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "A connection request conflicting with the policy first applied by CRDT must refuse before mutating SDK defaults.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#enforces the applied policy after CRDT establishes the first actual SDK connection",
+      "coverageRelation": "The test establishes a real SDK lifetime through CRDT with recording disabled, proves it is connected, and requests an incompatible enabled policy while observing defaults.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "A defaults write would change the sinks configured for the next SDK session despite the live CRDT session retaining its original sinks.",
+        "requiredConstraint": "The conflicting connect request performs zero setDefaults calls.",
+        "failureRationale": "The policy error alone could be raised after defaults were overwritten; connected state alone describes only the existing middleware."
+      }
+    },
+    {
+      "id": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "The harness must reject an externally created SDK lifetime without changing its defaults, both while connection is pending and after it becomes active.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration",
+      "coverageRelation": "The test blocks the real SDK connection at ICE discovery, refuses harness configuration, then releases connection and repeats refusal against the active lifetime beside the absence of application success events.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "Writing defaults would install harness scope or sinks in a lifetime whose consumed configuration it cannot verify.",
+        "requiredConstraint": "Neither the pending refusal nor the later active refusal may invoke setDefaults.",
+        "failureRationale": "Both calls could reject and emit no success while still poisoning the next SDK session through an earlier defaults write."
+      }
+    },
+    {
+      "id": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "Implicit CRDT attachment must preserve externally initialized SDK defaults, and a later explicit unverified policy request must refuse without changing them.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application",
+      "coverageRelation": "The test connects the real external SDK first, attaches CRDT without an API or ALM policy request, checks its original capture receipt and no application event, then rejects an explicit recording policy beside the same defaults observation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "setDefaults would replace external SDK scope or diagnostic port choices for its future lifetime.",
+        "requiredConstraint": "Neither implicit attachment nor the subsequent explicit unverified refusal may invoke setDefaults.",
+        "failureRationale": "Receipt identity and absent ALM events only describe the current connection; they do not exclude a change to future SDK defaults."
+      }
+    },
+    {
+      "id": "alm-sdk-host-capture-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "A HOST capture change requiring a new SDK connection must refuse before mutating defaults even when the ALM policy matches.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse",
+      "coverageRelation": "The test establishes the actual SDK with HOST capture off, requests native HOST capture during matching ALM reuse, and checks the typed new-connection-required error alongside zero defaults writes.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "A defaults write can change future capture and diagnostics configuration without changing the current capture receipt.",
+        "requiredConstraint": "An incompatible HOST capture request performs zero setDefaults calls.",
+        "failureRationale": "The compatibility error can be returned after a write, so the typed error alone does not prove refusal occurred before mutation."
+      }
+    },
+    {
+      "id": "agent-leading-reload-admitted-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An admitted leading reload requests exactly one physical page replacement. Executable assertion: “admits configured inheritance before a leading reload replaces the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "One physical page replacement follows the admitted leading reload before the successor is constructed.",
+        "requiredConstraint": "An admitted leading reload requests exactly one physical page replacement.",
+        "failureRationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement."
+      }
+    },
+    {
+      "id": "agent-unowned-reload-before-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An unowned reload continuation must not request physical page replacement. Executable assertion: “refuses an unowned reload continuation before replacing the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "Refusing an unowned continuation leaves the current page intact.",
+        "requiredConstraint": "An unowned reload continuation must not request physical page replacement.",
+        "failureRationale": "An error result or missing session record does not independently prove that the page destruction effect was absent."
+      }
     }
   ],
   "entries": [
@@ -9168,6 +9341,160 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "Both database listings have already entered before stop. Keeping the observed count at two after late completion and ten elapsed intervals directly proves no post-stop listing at the owned IndexedDB port, separately from timer readback.",
       "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts#does not re-arm when a stopped browser cleanup completes its in-flight database listing"
+    },
+    {
+      "id": "test-structure-coupling-5d72a75e78b20921",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-command-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch"
+    },
+    {
+      "id": "test-structure-coupling-816cf8ffd701175e",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together"
+    },
+    {
+      "id": "test-structure-coupling-ab8a4e6fa4e7eb7d",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-environment-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together"
+    },
+    {
+      "id": "test-structure-coupling-241b363ddfbea8ec",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reading the admitted protocol owner is necessary to detect a browser or runner dependency hidden behind an otherwise permitted import. The assertion permits only its canonical shared JSON type dependency and separately rejects excluded consumers and neighboring modules; receipt semantics alone cannot prove package dependency isolation. It does not pin parser bodies, receipt values, or internal helper symbols.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency"
+    },
+    {
+      "id": "test-structure-coupling-9f4d333d9b66fee9",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-replaced-consumed-ports-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The unchanged write count specifically proves the refused retry did not overwrite the externally supplied defaults; consumed-port identity and error assertions cannot detect a later defaults write.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#refuses unverified $operation application when external $port replaces prepared $almDiagnostics"
+    },
+    {
+      "id": "test-structure-coupling-c972dd52839a23b8",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unscoped-reuse-suppresses-defaults-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Only the difference from the first acquisition is constrained. The test permits equivalent initial configuration implementations while proving cached reuse performs no new defaults mutation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#preserves unscoped acquisition and reuse without certifying ALM intent %s"
+    },
+    {
+      "id": "test-structure-coupling-177d227faac9e6bf",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-crdt-first-policy-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This absence protects refusal before mutation for the distinct CRDT-first SDK lifetime; it does not pin which internal compatibility helper performs refusal.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#enforces the applied policy after CRDT establishes the first actual SDK connection"
+    },
+    {
+      "id": "test-structure-coupling-c37c17fae8dc69f5",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The first assertion proves no defaults mutation during the pending external SDK connection, before ICE discovery is released.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration"
+    },
+    {
+      "id": "test-structure-coupling-7e0b6b8fbaf00924",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The second assertion extends that guarantee to the active external SDK connection after pending initialization settles; pending-only protection would miss this separate branch.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration"
+    },
+    {
+      "id": "test-structure-coupling-dee214000de75c1a",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This assertion proves successful implicit CRDT attachment leaves the external owner’s defaults untouched; successful attachment and receipt reuse do not prove that absence.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application"
+    },
+    {
+      "id": "test-structure-coupling-2e7a89a95432a9f8",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This later assertion separately proves that an explicit unverified policy refusal does not mutate defaults after the permitted attachment.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application"
+    },
+    {
+      "id": "test-structure-coupling-8a5070ddc4fab99a",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-host-capture-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The absence assertion independently protects the capture-refusal boundary; it permits equivalent compatibility implementations without binding the test to their helper topology.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse"
+    },
+    {
+      "id": "test-structure-coupling-5cb6cc2126d09443",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-leading-reload-admitted-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page"
+    },
+    {
+      "id": "test-structure-coupling-646b3a6e3d89a52f",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-unowned-reload-before-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "An error result or missing session record does not independently prove that the page destruction effect was absent.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page"
     }
   ]
 }

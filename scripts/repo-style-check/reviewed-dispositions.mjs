@@ -5,6 +5,14 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: JavaScript construction/Configure input
+    // is untrusted until mode, legal keys and the positive safe-integer limit
+    // are checked; only issue strings leave this boundary, never raw policy.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateEventHistoryPolicy'
+    }),
     // One engine lifecycle owns registration fences, scheduling and bounded
     // raw-completion observation. Keeping settlement beside shutdown makes the
     // exact failure owner visible; this warning-tier cap approves no growth.
@@ -719,6 +727,33 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
+    // These exact generic JSON boundaries guard arrays, objects and primitives
+    // before recursive projection. Only comparison, serialization or its opaque
+    // representation leaves; no unknown input becomes trusted domain state.
+    // Persisted ordering preserves ALM fingerprint bytes and non-JSON conversion.
+    // The overflow cap covers its current magnitude; detailed findings have no
+    // numeric magnitude. Every future touched use still needs whole-owner review.
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonEquals'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stableJsonStringify'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toStableJson'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toOrderedJson',
+        maximumMagnitude: 3
+    }),
     // These exact JSON readers reject malformed input at the external boundary
     // and recursively produce only RtcBaselineJson. No unknown values propagate
     // into their callers or domain decisions.
@@ -1212,6 +1247,14 @@ export const reviewedDispositions = Object.freeze([
     // whose only shape is what decodeALMessageValue proves before any planning.
     Object.freeze({
         path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // One heterogeneous admission row or checkpoint value stays raw in memory.
+    // read/list and write-buffer reads decode it with the caller's canonical
+    // decoder; the volatile sweep decodes it before any domain decision.
+    Object.freeze({
+        path: 'packages/shared/alm/al-admission-backend.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),

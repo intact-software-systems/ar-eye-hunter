@@ -1,9 +1,14 @@
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { isRoutineBrowserDiagnostic } from '@shared-test/rallar-bb-test/browser/diagnostic-recording/is-routine-browser-diagnostic.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -12,6 +17,8 @@ import type {
 } from './black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
+import { toRtcNativeObservationProjection } from './rtc-native-observation-projection.ts';
 
 interface ConsoleWarning {
     readonly topic: string;
@@ -64,6 +71,20 @@ export class BlackBoxRallarRuntimeDiagnostics {
         this.emit({ kind: 'diagnostic', topic, ...this.context(config), data });
     };
 
+    emitRoutineDiagnostic = (config: BlackBoxRallarConnectionConfig, topic: string): void => {
+        this.emit({ kind: 'diagnostic', topic, ...this.context(config), routineBrowserDiagnostic: true });
+    };
+
+    emitLifecycleDiagnostic = (config: BlackBoxRallarConnectionConfig, topic: string, data: object): void => {
+        this.emit({
+            kind: 'diagnostic',
+            topic,
+            ...this.context(config),
+            data,
+            ...(isRoutineBrowserDiagnostic(topic, data) ? { routineBrowserDiagnostic: true as const } : {})
+        });
+    };
+
     emitError = (input: BlackBoxRallarRuntimeDiagnostics.ErrorInput): void => {
         this.emit({
             kind: 'diagnostic',
@@ -111,9 +132,10 @@ export class BlackBoxRallarRuntimeDiagnostics {
 
 export function createBlackBoxRallarDiagnosticsPorts(
     diagnostics: BlackBoxRallarRuntimeDiagnostics,
-    effects: BlackBoxBrowserDiagnosticsDependency
+    effects: BlackBoxBrowserDiagnosticsDependency,
+    almDiagnostics = true
 ): RallarDiagnosticsPorts {
-    return {
+    return toRallarDiagnosticsPorts({
         transportFaultPort: effects.faults,
         submissionReadinessFaultPort: effects.faults,
         indexedDbOperationObserver: {
@@ -124,36 +146,64 @@ export function createBlackBoxRallarDiagnosticsPorts(
         },
         outboundDiagnostics: (event) => {
             effects.congestion.observe(event);
-            diagnostics.emit({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                data: { ...event }
-            });
-        },
-        inboundDiagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) =>
-            diagnostics.emit({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                data: { ...event }
-            }), {
-            acknowledgementCapture: {
-                evidence: ALInboundAcknowledgementEvidence,
-                batchObservations: ALWorkBatchObservations
-            }
-        }),
-        storage: (event) => {
-            effects.orderingTracks.observe(event);
-            if (event.kind === 'reset') {
+            if (almDiagnostics) {
                 diagnostics.emit({
                     kind: 'diagnostic',
-                    topic: 'rallar.browser.alm.storage_reset',
-                    data: { ...event.event }
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    data: { ...event }
                 });
-                return;
             }
-            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage', data: { ...event } });
+        },
+        inboundDiagnostics: almDiagnostics
+            ? Object.assign((event: ALInboundRuntimeDiagnosticsEvent) =>
+                diagnostics.emit({
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    data: { ...event }
+                }), {
+                acknowledgementCapture: {
+                    evidence: ALInboundAcknowledgementEvidence,
+                    batchObservations: ALWorkBatchObservations
+                }
+            })
+            : undefined,
+        signalingDiagnostics: (event) => publishBlackBoxRallarSignalingDiagnostic(diagnostics, event),
+        storage: (event) => {
+            effects.orderingTracks.observe(event);
+            if (almDiagnostics) {
+                publishBlackBoxRallarStorageDiagnostic(diagnostics, event);
+            }
         }
-    };
+    });
+}
+
+function publishBlackBoxRallarSignalingDiagnostic(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics,
+    event: RtcSignalingDiagnostics.Event
+): void {
+    const native = toRtcNativeObservationProjection(event);
+    if (native.recognized && !native.event) {
+        return;
+    }
+    diagnostics.emit({
+        kind: 'diagnostic',
+        topic: 'rallar.browser.rtc.signaling_diagnostics',
+        data: native.event ?? { ...event },
+        ...(!native.recognized && isRoutineBrowserDiagnostic('rallar.browser.rtc.signaling_diagnostics', event)
+            ? { routineBrowserDiagnostic: true as const }
+            : {})
+    });
+}
+
+function publishBlackBoxRallarStorageDiagnostic(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics,
+    event: ALStorageEvent
+): void {
+    diagnostics.emit({
+        kind: 'diagnostic',
+        topic: event.kind === 'reset' ? 'rallar.browser.alm.storage_reset' : 'rallar.browser.alm.storage',
+        data: event.kind === 'reset' ? { ...event.event } : { ...event }
+    });
 }
 
 function toConsoleWarningPart(value: unknown): string {

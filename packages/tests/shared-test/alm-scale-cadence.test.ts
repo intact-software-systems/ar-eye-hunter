@@ -8,7 +8,10 @@ import {
 
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { createBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
-import type { BlackBoxBrowserMessagesDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import type {
+    BlackBoxBrowserMessagesDependency,
+    BlackBoxBrowserRallarRuntimeDependency
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
@@ -19,13 +22,17 @@ import {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
 import { decodeBarrierArrival, toBarrierResolvedEvent } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
-import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import type {
+    RallarBlackBoxBrowserRallarDirectorRuntime,
+    RallarBlackBoxBrowserTestRuntime
+} from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { createAlmScalePayload } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-payload.ts';
 import { createAlmScaleRecipes } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import type { RallarBlackBoxDistributedGroupAssertionResult } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
@@ -36,7 +43,12 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeJsonValue } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import type { RallarConnectStatus, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
@@ -73,7 +85,7 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-function openShot(payload: ScaleWirePayload, starts: ShotStart[]) {
+function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessageHandle {
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
     const handle = registry.open({
@@ -134,7 +146,7 @@ it('starts all six generated shots on five-second offsets despite two-second lea
     });
     vi.stubGlobal('window', { __blackBoxRallar: native });
     const bridge = createSpaBrowserRallarRuntime();
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: bridge, now: Date.now });
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ rallarRuntime: bridge, now: Date.now });
     const starts: ShotStart[] = [];
     facade.behavior.typedSend.mockImplementation(async (payload) => openShot(toScaleWirePayload(decodeJsonValue(payload)), starts));
     facade.behavior.directorStatus.mockReturnValue({
@@ -218,6 +230,9 @@ class ScaleActor {
     readonly starts: ShotStart[] = [];
     connectResult: RallarBlackBoxTestResult | undefined;
     private readonly cohort: ScaleCohort;
+    private sdkStatus: RallarConnectStatus = 'idle';
+    private sdkDefaults: RallarDefaults | undefined;
+    private connectedDiagnosticsPorts: RallarDiagnosticsPorts | undefined;
 
     constructor(cohort: ScaleCohort, index: number) {
         this.cohort = cohort;
@@ -238,8 +253,20 @@ class ScaleActor {
         return createBlackBoxRallarRuntime({
             facade: {
                 ...facade.rallar,
+                status: () => this.sdkStatus,
+                isConnected: () => this.sdkStatus === 'connected',
+                setDefaults: (defaults) => {
+                    this.sdkDefaults = defaults;
+                },
+                connect: () => this.startSdkConnection(),
+                disconnect: () => this.stopSdkConnection(),
                 session: () => this.session,
-                auth: { ...facade.rallar.auth, login: async () => this.session, restore: () => this.session },
+                auth: {
+                    ...facade.rallar.auth,
+                    login: async () => this.session,
+                    restore: () => this.session,
+                    logout: () => this.stopSdkConnection()
+                },
                 messages: {
                     ...facade.rallar.messages,
                     room: <T>(definition: Parameters<BlackBoxBrowserMessagesDependency['room']>[0]) => ({
@@ -258,8 +285,25 @@ class ScaleActor {
         });
     }
 
+    private async startSdkConnection(): Promise<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion> {
+        this.sdkStatus = 'connecting';
+        const diagnosticsPorts = this.connectedDiagnosticsPorts ?? toRallarDiagnosticsPorts(this.sdkDefaults?.diagnosticsPorts);
+        this.connectedDiagnosticsPorts = diagnosticsPorts;
+        this.sdkStatus = 'connected';
+        return Object.freeze<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>({
+            rtcCapture: { status: 'unavailable', reason: 'absent' },
+            diagnosticsPorts,
+            captureOwnershipFailure: () => undefined
+        });
+    }
+
+    private async stopSdkConnection(): Promise<void> {
+        this.sdkStatus = 'idle';
+        this.connectedDiagnosticsPorts = undefined;
+    }
+
     private createBrowserRuntime(): RallarBlackBoxBrowserTestRuntime {
-        return createRallarBlackBoxBrowserTestRuntime({
+        return createDefaultRallarBlackBoxBrowserTestRuntime({
             now: Date.now,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
@@ -299,29 +343,33 @@ class ScaleActor {
                 readStorageCounters: async (command) =>
                     this.native.readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(command))),
                 close: async () => this.native.close(),
-                director: {
-                    appoint: async () => {
-                        throw new Error('Appointment is established before traffic');
-                    },
-                    resign: async () => {
-                        throw new Error('No resignation in scale traffic');
-                    },
-                    relayStart: async () => {
-                        throw new Error('No relay control in scale traffic');
-                    },
-                    relayStop: async () => {
-                        throw new Error('No relay control in scale traffic');
-                    },
-                    intent: async () => {
-                        throw new Error('Scale uses typed shot sends');
-                    },
-                    syncRequest: async () => {
-                        throw new Error('No sync request in scale traffic');
-                    },
-                    status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } })
-                }
+                director: this.createDirectorPort()
             }
         });
+    }
+
+    private createDirectorPort(): RallarBlackBoxBrowserRallarDirectorRuntime {
+        return {
+            appoint: async () => {
+                throw new Error('Appointment is established before traffic');
+            },
+            resign: async () => {
+                throw new Error('No resignation in scale traffic');
+            },
+            relayStart: async () => {
+                throw new Error('No relay control in scale traffic');
+            },
+            relayStop: async () => {
+                throw new Error('No relay control in scale traffic');
+            },
+            intent: async () => {
+                throw new Error('Scale uses typed shot sends');
+            },
+            syncRequest: async () => {
+                throw new Error('No sync request in scale traffic');
+            },
+            status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } })
+        };
     }
 
     async connect(): Promise<void> {
@@ -330,7 +378,7 @@ class ScaleActor {
             throw new Error('Scale actor has no authored RTC connect command');
         }
         this.connectResult = await this.runtime.execute({ ...connect, readiness: undefined });
-        expect(this.connectResult).toMatchObject({ ok: true, value: { sessionId: this.session.sessionId } });
+        expect(this.connectResult, JSON.stringify(this.connectResult)).toMatchObject({ ok: true, value: { sessionId: this.session.sessionId } });
         expect(await this.runtime.execute({ kind: 'director.status', commandId: `alm-scale-${this.role}-ready-status`, roomRef: GROUP, refresh: true }))
             .toMatchObject({ ok: true });
         expect(await this.runtime.execute({ kind: 'storage.counters', commandId: `alm-scale-${this.role}-storage-reset`, reset: true })).toMatchObject({
@@ -477,7 +525,7 @@ class ScaleCohort {
         return await execution;
     }
 
-    evaluate(results: readonly RallarBlackBoxTestResult[]) {
+    evaluate(results: readonly RallarBlackBoxTestResult[]): readonly RallarBlackBoxDistributedGroupAssertionResult[] {
         const scale = createAlmScaleRecipes(INPUT);
         const participants = this.actors.map((actor) => ({ agentId: actor.agentId, roles: [actor.role === 'director' ? 'sender' : 'receiver'] }));
         const manifest: RallarBlackBoxDistributedRunManifest = {

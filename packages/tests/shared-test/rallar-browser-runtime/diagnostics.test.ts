@@ -8,6 +8,14 @@ import {
     vi
 } from 'vitest';
 
+import {
+    createBlackBoxRallarRuntime,
+    type BlackBoxRallarRuntimeInstallationTarget
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import type { RallarBlackBoxBrowserRallarEvent } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -40,6 +48,74 @@ afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     TestWebSocket.instances.length = 0;
+});
+
+it.each(['success', 'failure'] as const)('certifies only no-data connect progress on a real %s attempt', async (outcome) => {
+    if (outcome === 'failure') {
+        facade.behavior.login.mockRejectedValue(new Error('bad credentials'));
+    }
+    const recorder = createDefaultRallarBlackBoxBrowserTestRuntime({ routineBrowserDiagnostics: 'disabled' });
+    const published: RallarBlackBoxBrowserRallarEvent[] = [];
+    const target: BlackBoxRallarRuntimeInstallationTarget = {};
+    vi.stubGlobal('window', target);
+    const restoreBridge = installSpaBrowserRallarEventBridge({
+        receiveRallarBrowserEvent: (event) => {
+            published.push(event);
+            recorder.receiveRallarBrowserEvent(event);
+        }
+    });
+    const page = createBlackBoxRallarRuntime({
+        facade: facade.rallar,
+        volatileLimits: new BlackBoxRallarVolatileLimits(),
+        targetWindow: target,
+        clock: { now: Date.now },
+        readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),
+        delay: async () => undefined
+    });
+    onTestFinished(async () => {
+        try {
+            await page.close();
+        }
+        finally {
+            restoreBridge();
+        }
+    });
+    const attempt = page.connect({
+        connection: 'certified-progress',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret', almDiagnostics: false }
+    });
+    if (outcome === 'failure') {
+        await expect(attempt).rejects.toThrow('bad credentials');
+    }
+    else {
+        await expect(attempt).resolves.toMatchObject({ status: 'connected', almDiagnostics: false });
+    }
+
+    expect(published.filter((event) => event.routineBrowserDiagnostic === true).map((event) => event.topic))
+        .toEqual(['rallar.browser.connect_started']);
+    const health = await recorder.execute({ kind: 'health' });
+    expect(health.value).toMatchObject({
+        browserDiagnostics: { routineBrowserDiagnostics: 'disabled', omittedRoutineBrowserDiagnostics: 1 },
+        stats: { rallar: { connected: outcome === 'success' } }
+    });
+    if (outcome === 'success') {
+        expect(recorder.state().events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                topic: 'rallar.browser.connect_completed',
+                payload: expect.objectContaining({ data: expect.objectContaining({ status: 'connected' }) })
+            }),
+            expect.objectContaining({
+                topic: 'rallar.browser.connect.phase_completed',
+                payload: expect.objectContaining({ data: expect.objectContaining({ phase: 'rallar-connect', almDiagnostics: false }) })
+            })
+        ]));
+    }
+    else {
+        expect(recorder.state().events).toEqual(expect.arrayContaining([
+            expect.objectContaining({ topic: 'rallar.browser.auth.login_failed', severity: 'error' }),
+            expect.objectContaining({ topic: 'rallar.browser.connect_failed', severity: 'error' })
+        ]));
+    }
 });
 
 it('emits auth restore failure diagnostics when no session or credentials exist', async () => {
@@ -597,17 +673,17 @@ it('records synchronous connection producer diagnostics once across reconnect', 
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toHaveLength(2);
 });
 
-it('captures a real terminal ACK through the installed inbound capability and normalized agent event', async () => {
+it.each([undefined, true, false])('preserves real terminal ACK acceptance with ALM recording %s', async (almDiagnostics) => {
     const runtime = await loadRuntime();
     onTestFinished(async () => {
         await runtime.close();
     });
     await runtime.connect({
         connection: 'diagnostics',
-        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret', almDiagnostics }
     });
     const diagnostics = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.inboundDiagnostics;
-    expect(diagnostics?.acknowledgementCapture).toBeDefined();
+    expect(diagnostics?.acknowledgementCapture !== undefined).toBe(almDiagnostics !== false);
     const accepted: string[] = [];
     const inbound = createDefaultALInboundMessageRuntime({
         selfPeerId: 'origin',
@@ -637,6 +713,10 @@ it('captures a real terminal ACK through the installed inbound capability and no
     });
     expect((await inbound.admitIncomingMessage(ack, { kind: 'trusted-server' })).right).toEqual({ kind: 'control', handled: false });
     expect(accepted).toEqual(['received-upward-17']);
+    if (almDiagnostics === false) {
+        expect(events.filter((event) => event.topic?.startsWith('rallar.browser.alm.'))).toEqual([]);
+        return;
+    }
     const event = events.find((event) => decodeRecord(event.data).kind === 'acknowledgement-association');
     const normalized = toRallarBlackBoxRuntimeDiagnostic({ topic: event!.topic!, severity: 'info', source: 'browser-rallar', payload: event });
     expect(JSON.parse(JSON.stringify(normalized)).data).toMatchObject({
@@ -656,4 +736,67 @@ it('captures a real terminal ACK through the installed inbound capability and no
         }
     });
     expect(JSON.stringify(normalized)).not.toContain('secret');
+});
+
+it('preserves sanitized native signaling and live ordering usage through the same connection diagnostics ports', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    await runtime.connect({
+        connection: 'joint-diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
+    const native = {
+        kind: 'native-observation-status',
+        localSessionId: 'session-1',
+        peerSessionId: undefined,
+        signalType: undefined,
+        offerId: undefined,
+        atEpochMs: 123,
+        stage: 'initialized',
+        availability: { status: 'observed', value: 'enabled' },
+        capture: {
+            scopeId: { status: 'observed', value: 'capture-1' },
+            scope: 'active',
+            ordinaryRowsSuppressed: false,
+            admissionLimited: false,
+            payloadLimited: false
+        }
+    } as const;
+    ports?.signalingDiagnostics?.(native);
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'durable', tracks: 3 });
+    ports?.signalingDiagnostics?.({ ...native, offerId: 'untrusted-offer' });
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'volatile', tracks: 5 });
+    ports?.storage?.({ kind: 'ordering-tracks', storeId: 'durable', tracks: 4 });
+    ports?.storage?.({
+        kind: 'reset',
+        storeId: 'durable',
+        event: { dbName: 'joint', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+    });
+
+    expect(events.filter((event) => event.topic === 'rallar.browser.rtc.signaling_diagnostics').map((event) => event.data))
+        .toEqual([{
+            kind: 'native-observation-status',
+            localSessionId: 'session-1',
+            atEpochMs: 123,
+            stage: 'initialized',
+            availability: { status: 'observed', value: 'enabled' },
+            capture: {
+                scopeId: { status: 'observed', value: 'capture-1' },
+                scope: 'active',
+                ordinaryRowsSuppressed: false,
+                admissionLimited: false,
+                payloadLimited: false
+            }
+        }]);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage').map((event) => event.data)).toEqual([
+        { kind: 'ordering-tracks', storeId: 'durable', tracks: 3 },
+        { kind: 'ordering-tracks', storeId: 'volatile', tracks: 5 },
+        { kind: 'ordering-tracks', storeId: 'durable', tracks: 4 }
+    ]);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset').map((event) => event.data))
+        .toEqual([{ dbName: 'joint', schemaId: 'current', reason: 'schema-id-mismatch' }]);
+    await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 9 });
 });

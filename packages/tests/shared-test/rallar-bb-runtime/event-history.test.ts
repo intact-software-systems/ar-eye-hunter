@@ -124,6 +124,39 @@ describe('black-box runtime event history', () => {
         expect(assertion.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE');
     });
 
+    it.each([
+        { source: 'messages.0.payload.recipients', comparisonSource: 'config.defaults.recipients' },
+        { source: 'config.defaults.recipients', comparisonSource: 'messages.0.payload.recipients' },
+        { source: 'recentMessages.0.payload.recipients', comparisonSource: 'config.defaults.recipients' },
+        { source: 'config.defaults.recipients', comparisonSource: 'recentMessages.0.payload.recipients' }
+    ])('refuses set equality over truncated history in $source or $comparisonSource', async ({ source, comparisonSource }) => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime({ eventHistory: { mode: 'recent', maxEvents: 2 } });
+        await runtime.execute({ kind: 'configure', config: { defaults: { recipients: ['b'] } } });
+        runtime.recordEvent({ kind: 'message', topic: 'earlier.audience', payload: { recipients: ['a', 'b'] } });
+        runtime.recordEvent({ kind: 'message', topic: 'latest.audience', payload: { recipients: ['b'] } });
+        runtime.recordEvent({ kind: 'event', topic: 'later.event' });
+
+        const result = await runtime.execute({ kind: 'assert', source, operator: 'sameUniqueStringSet', comparisonSource });
+
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE');
+    });
+
+    it.each([
+        { source: 'recentMessages.0.payload.recipients', comparisonSource: 'config.defaults.recipients' },
+        { source: 'config.defaults.recipients', comparisonSource: 'recentMessages.0.payload.recipients' }
+    ])('compares covered recent message sets after other event kinds are evicted in $source or $comparisonSource', async ({ source, comparisonSource }) => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime({ eventHistory: { mode: 'recent', maxEvents: 2 } });
+        await runtime.execute({ kind: 'configure', config: { defaults: { recipients: ['b', 'a'] } } });
+        runtime.recordEvent({ kind: 'event', topic: 'earlier.event' });
+        runtime.recordEvent({ kind: 'message', topic: 'current.audience', payload: { recipients: ['a', 'b'] } });
+        runtime.recordEvent({ kind: 'event', topic: 'later.event' });
+
+        const result = await runtime.execute({ kind: 'assert', source, operator: 'sameUniqueStringSet', comparisonSource });
+
+        expect(result.ok).toBe(true);
+        expect(result.value).toMatchObject({ exists: true, comparisonExists: true, passed: true });
+    });
+
     it('matches a retained event using a covered inclusive time cursor', async () => {
         let now = 1_000;
         const runtime = createDefaultRallarBlackBoxTestRuntime({ now: () => now++, eventHistory: { mode: 'recent', maxEvents: 3 } });
