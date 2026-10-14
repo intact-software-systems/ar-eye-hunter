@@ -127,6 +127,42 @@ describe('computed atomic data validation', () => {
         )).toEqual([]);
     });
 
+    it.each([
+        ['Date', () => new Date(1_000)],
+        ['Instant', () => new Temporal.Instant(1n)],
+        ['PlainDateTime', () => new Temporal.PlainDateTime(2026, 1, 2)],
+        ['PlainTime', () => new Temporal.PlainTime(1, 2, 3)],
+        ['typed array', () => new Uint8Array([1, 2])],
+        ['DataView', () => new DataView(new Uint8Array([1, 2]).buffer)]
+    ])('compares the complete inert own data on equal %s values', (_name, createValue) => {
+        const marker = Symbol('marker');
+        const expected = createValue();
+        const equal = createValue();
+        for (const value of [expected, equal]) {
+            Object.defineProperties(value, {
+                required: { value: true, enumerable: true },
+                nested: { value: { count: 1 }, enumerable: true },
+                hidden: { value: 'expected' },
+                [marker]: { value: { count: 1 } }
+            });
+        }
+        const different = Object.defineProperties(createValue(), {
+            extra: { value: true, enumerable: true },
+            nested: { value: { count: 2 }, enumerable: true },
+            hidden: { value: 'different' },
+            [marker]: { value: { count: 2 } }
+        });
+
+        expect(validateComputedProjection(expected, equal, 'candidate')).toEqual([]);
+        expect(validateComputedProjection(expected, different, 'candidate').map((issue) => issue.path)).toEqual([
+            'candidate.required',
+            'candidate.nested.count',
+            'candidate.hidden',
+            'candidate.Symbol(marker).count',
+            'candidate.extra'
+        ]);
+    });
+
     it('preserves complete ordinary object and array comparisons', () => {
         const expected = { values: [1, undefined, { value: 'two' }], empty: Object.create(null) };
         expect(validateComputedProjection(expected, { values: [1, undefined, { value: 'two' }], empty: Object.create(null) }, 'candidate')).toEqual([]);

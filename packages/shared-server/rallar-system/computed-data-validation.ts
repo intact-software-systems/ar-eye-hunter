@@ -135,10 +135,8 @@ function compareComputedProjection<Expected, Candidate>(
         state.issues.push(toComputedDataValidationIssue(path, 'has a different data shape'));
         return;
     }
-    if (isAtomicComputedDataObject(expected)) {
-        if (!hasSameAtomicComputedDataValue(expected, candidate)) {
-            state.issues.push(toComputedDataValidationIssue(path, 'differs from the computed value'));
-        }
+    if (isAtomicComputedDataObject(expected) && !hasSameAtomicComputedDataValue(expected, candidate)) {
+        state.issues.push(toComputedDataValidationIssue(path, 'differs from the computed value'));
         return;
     }
     const compared = state.comparedCandidates.get(expected) ?? new WeakSet<object>();
