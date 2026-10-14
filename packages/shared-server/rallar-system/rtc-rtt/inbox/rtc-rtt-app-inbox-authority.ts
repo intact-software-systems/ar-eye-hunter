@@ -58,7 +58,7 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: await hashMutationCommand(
+        mutationCommandHash: hashMutationCommand(
             encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
         ),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
@@ -72,7 +72,7 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: await hashMutationCommand(
+        commandHash: hashMutationCommand(
             encodeJsonWireValue(stableCommand, 'RTC RTT stable command')
         )
     };
@@ -187,10 +187,10 @@ export async function verifyRtcRttAppInboxAuthority(
             'RTC RTT authority proof does not match the command.'
         );
     }
-    await verifyRtcRttCommandHashes(input.authority.command);
+    verifyRtcRttCommandHashes(input.authority.command);
 }
 
-async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promise<void> {
+function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): void {
     const canonicalStableCommand = {
         actor: command.actor,
         requestId: command.requestId,
@@ -198,10 +198,10 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
         rtt: command.rtt
     };
     if (
-        (await hashMutationCommand(
+        (hashMutationCommand(
                 encodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (await hashMutationCommand(encodeJsonWireValue({
+        (hashMutationCommand(encodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
             }, 'RTC RTT mutation command'))) !== command.mutationCommandHash

@@ -68,7 +68,7 @@ export class AuthInboxHandler {
             read.authoritativeState,
             read.facts
         );
-        const logoutProvenance = await computeAuthLogoutProvenance(computedMutation);
+        const logoutProvenance = computeAuthLogoutProvenance(computedMutation);
         const validationInput = {
             command: read.command,
             read: read.authoritativeState,

@@ -258,7 +258,7 @@ describe('AppClientInbox authentication', () => {
             clientStateEventStore: new InMemoryClientStateEventStore(),
             serviceId: 'server-12345678'
         });
-        const command = await toClientMutationCommand(
+        const command = toClientMutationCommand(
             toUpsertClientPrincipalMutationInput({
                 scope: CLIENT_STATE_TEST_SCOPE,
                 principalId: 'alice',

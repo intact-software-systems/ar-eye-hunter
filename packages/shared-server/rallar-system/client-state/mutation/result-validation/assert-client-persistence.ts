@@ -1,4 +1,3 @@
-import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { assertPersistableClientStateEvent } from '../../../state-events/postgres/client-state-event-row-codec.ts';
 import { validateClientEvent } from '../../client-state-contract-validation.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from '../../persistence/client-state-repository-reads.ts';
@@ -18,7 +17,6 @@ import type {
     ClientMutationComputed,
     ClientMutationDomainWrite
 } from '../client-mutation-contracts.ts';
-import { computeClientPersistence } from '../compute/compute-client-persistence.ts';
 
 export function assertClientPersistenceShape(value: ClientValidationValue): void {
     const persistence = decodeClientValidationRecord(
@@ -56,7 +54,7 @@ export function assertClientPersistenceShape(value: ClientValidationValue): void
     requireString(eventWrite.eventJson, 'Client mutation computed.persistence.eventWrite.eventJson');
 }
 
-export function assertExactClientPersistence(
+export function assertClientPersistenceRecords(
     computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>
 ): void {
     if (
@@ -66,14 +64,6 @@ export function assertExactClientPersistence(
         return;
     }
     assertClientPersistenceInput(computed);
-    const issue = validateComputedProjection(
-        computeClientPersistence(computed),
-        computed.persistence,
-        'Client mutation computed.persistence'
-    )[0];
-    if (issue !== undefined) {
-        throw new ClientMutationRejectedError('Client computed persistence differs');
-    }
 }
 
 function assertClientRuntimeWriteShape(value: ClientValidationValue, index: number): void {

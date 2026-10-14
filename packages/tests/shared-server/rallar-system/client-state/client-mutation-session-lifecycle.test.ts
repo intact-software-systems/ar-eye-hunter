@@ -63,8 +63,8 @@ function requireExpiry(command: ClientMutationCommand) {
 }
 
 describe('client session lifecycle compute', () => {
-    it('routes connect and heartbeat directly to their named family owners', async () => {
-        const connect = requireConnect(await connectCommand());
+    it('routes connect and heartbeat directly to their named family owners', () => {
+        const connect = requireConnect(connectCommand());
         const connectRead = emptyRead(connect);
         const connected = requireWrite(
             computeClientSessionConnect({
@@ -81,7 +81,7 @@ describe('client session lifecycle compute', () => {
             expiresAtEpochMs: 8_000
         });
 
-        const heartbeat = requireHeartbeat(await heartbeatCommand());
+        const heartbeat = requireHeartbeat(heartbeatCommand());
         const heartbeatRead = readAfterWrite(heartbeat, connected);
         const heartbeated = requireWrite(
             computeClientSessionHeartbeat({
@@ -97,15 +97,15 @@ describe('client session lifecycle compute', () => {
         });
     });
 
-    it('routes disconnect and expiry while rejecting stale generations as non-persisted no-ops', async () => {
-        const connect = await connectCommand();
+    it('routes disconnect and expiry while rejecting stale generations as non-persisted no-ops', () => {
+        const connect = connectCommand();
         const connected = requireWrite(
             computeClientMutation({
                 command: connect,
                 read: emptyRead(connect)
             })
         );
-        const disconnect = requireDisconnect(await disconnectCommand());
+        const disconnect = requireDisconnect(disconnectCommand());
         const disconnectRead = readAfterWrite(disconnect, connected);
         const disconnected = requireWrite(
             computeClientSessionDisconnect({
@@ -123,7 +123,7 @@ describe('client session lifecycle compute', () => {
         });
 
         const stale = requireDisconnect(
-            await disconnectCommand('disconnect-stale', 'generation-stale')
+            disconnectCommand('disconnect-stale', 'generation-stale')
         );
         expect(
             computeClientSessionDisconnect({
@@ -132,7 +132,7 @@ describe('client session lifecycle compute', () => {
             })
         ).toMatchObject({ outcome: 'no-op', persistIdempotency: false });
 
-        const expiry = requireExpiry(await expiryCommand());
+        const expiry = requireExpiry(expiryCommand());
         const expiryRead = readAfterWrite(expiry, connected);
         const expired = requireWrite(computeClientSessionExpiry({ command: expiry, read: expiryRead }));
         expect(computeClientMutation({ command: expiry, read: expiryRead })).toEqual(expired);

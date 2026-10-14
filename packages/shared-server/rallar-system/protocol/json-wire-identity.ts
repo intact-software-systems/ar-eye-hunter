@@ -1,4 +1,4 @@
-import { serializeCanonicalJson, sha256CanonicalJson } from './canonical-json.ts';
+import { computeSha256CanonicalJson, serializeCanonicalJson } from './canonical-json.ts';
 
 export type JsonWireValue = null | boolean | number | string | readonly JsonWireValue[] | JsonWireObject;
 
@@ -11,7 +11,16 @@ interface InspectedJsonArray {
 }
 
 export function decodeJsonWireValue(value: unknown, label = 'JSON wire value'): JsonWireValue {
-    assertJsonWireValue(value, label);
+    let issue: string | undefined;
+    try {
+        issue = decodeJsonSafetyIssue(value, '$', new Set<object>());
+    }
+    catch {
+        issue = 'value could not be inspected without executing custom behavior';
+    }
+    if (issue) {
+        throw new TypeError(`${label} must be JSON-safe: ${issue}`);
+    }
     return value as JsonWireValue;
 }
 
@@ -20,32 +29,18 @@ export function decodeJsonWireText(serialized: string, label = 'JSON wire value'
 }
 
 export function encodeJsonWireValue<Value>(value: Value, label = 'JSON wire value'): JsonWireValue {
-    assertJsonWireValue(value, label);
-    return value as JsonWireValue;
+    return decodeJsonWireValue(value, label);
 }
 
-export async function hashMutationCommand(command: JsonWireValue): Promise<string> {
-    return `sha256:${await sha256CanonicalJson(command)}`;
+export function hashMutationCommand(command: JsonWireValue): string {
+    return `sha256:${computeSha256CanonicalJson(command)}`;
 }
 
 export function serializeCanonicalMutationCommand(command: JsonWireValue): string {
     return serializeCanonicalJson(command);
 }
 
-function assertJsonWireValue(value: unknown, label: string): void {
-    let issue: string | undefined;
-    try {
-        issue = findJsonSafetyIssue(value, '$', new Set<object>());
-    }
-    catch {
-        issue = 'value could not be inspected without executing custom behavior';
-    }
-    if (issue) {
-        throw new TypeError(`${label} must be JSON-safe: ${issue}`);
-    }
-}
-
-function findJsonSafetyIssue(
+function decodeJsonSafetyIssue(
     value: unknown,
     path: string,
     activeObjects: Set<object>
@@ -109,7 +104,7 @@ function findJsonArraySafetyIssue(
         if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
             return `${path}[${key}] is an accessor property`;
         }
-        const issue = findJsonSafetyIssue(descriptor.value, `${path}[${key}]`, activeObjects);
+        const issue = decodeJsonSafetyIssue(descriptor.value, `${path}[${key}]`, activeObjects);
         if (issue) {
             return issue;
         }
@@ -138,7 +133,7 @@ function findJsonObjectSafetyIssue(
         if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
             return `${propertyPath} is an accessor property`;
         }
-        const issue = findJsonSafetyIssue(descriptor.value, propertyPath, activeObjects);
+        const issue = decodeJsonSafetyIssue(descriptor.value, propertyPath, activeObjects);
         if (issue) {
             return issue;
         }

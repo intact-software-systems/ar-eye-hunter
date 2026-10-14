@@ -112,6 +112,7 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
             'idempotency',
             'stateSync',
             'outboxWrites',
+            'outboxMessages',
             'principalAudienceSessionIds',
             'persistence'
         ],
@@ -153,6 +154,9 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
     }
     if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length < 2) {
         rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
+    }
+    if (!Array.isArray(value.outboxMessages) || value.outboxMessages.length !== value.outboxWrites.length) {
+        rejectClientMutation('Client mutation computed outboxMessages must pair every outbox write');
     }
     const principalAudienceSessionIds = value.principalAudienceSessionIds;
     if (

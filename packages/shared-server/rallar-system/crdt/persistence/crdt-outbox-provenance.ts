@@ -30,9 +30,9 @@ export interface CrdtOutboxProvenanceInsert {
     readonly expiresAt: string;
 }
 
-export async function computeCrdtOutboxProvenance(
+export function computeCrdtOutboxProvenance(
     mutation: CrdtMutationComputed
-): Promise<readonly CrdtOutboxProvenanceInsert[]> {
+): readonly CrdtOutboxProvenanceInsert[] {
     const wsWrites = mutation.outboxWrites.filter((write) => write.entry.typeId === EnqueuedType.WS_OUTBOX);
     if (wsWrites.length === 0) {
         return [];
@@ -68,7 +68,7 @@ export async function computeCrdtOutboxProvenance(
             key: toWsOutboxProvenanceKey(write.entry.key),
             value: JSON.stringify({
                 ...facts,
-                digest: await computeWsOutboxProvenanceDigest(write.entry, facts)
+                digest: computeWsOutboxProvenanceDigest(write.entry, facts)
             }),
             expiresAt: write.expiresAt
         });

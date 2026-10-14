@@ -2,7 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import {
@@ -10,8 +11,10 @@ import {
     type AppInboxExecutionMetadata
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
+    assertAuthorisedWsConnectOperation,
     assertClientMutationOperation,
     assertExpiredSessionsOperation,
+    computeAuthorisedWsConnectOperation,
     computeClientMutationOperation,
     computeExpiredSessionsOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
@@ -27,16 +30,15 @@ import {
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-result.ts';
-import {
-    assertClientMutation,
-    assertClientMutationComparison
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
+import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
+import { validateComputedProjection } from '@shared-server/rallar-system/computed-data-validation.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import {
+    authorisedConnectOperationInput,
     connectCommand,
     emptyRead,
     entryValue,
@@ -46,9 +48,14 @@ import {
     requireWrite
 } from './client-mutation-compute-test-fixtures.ts';
 
+vi.mock('@shared-server/rallar-system/computed-data-validation.ts', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@shared-server/rallar-system/computed-data-validation.ts')>();
+    return { ...original, validateComputedProjection: vi.fn(original.validateComputedProjection) };
+});
+
 describe('client mutation result validation', () => {
-    it('keeps missing authority as policy issues after asserting a canonical result', async () => {
-        const command = await principalCommand();
+    it('keeps missing authority as policy issues after asserting a canonical result', () => {
+        const command = principalCommand();
         const read = { ...emptyRead(command), authoritySession: null };
         const computed = computeClientMutation({ command, read });
 
@@ -57,8 +64,8 @@ describe('client mutation result validation', () => {
             .toEqual(['read.authoritySession']);
     });
 
-    it('returns both actor denials as policy issues rather than invariant exceptions', async () => {
-        const original = await connectCommand();
+    it('returns both actor denials as policy issues rather than invariant exceptions', () => {
+        const original = connectCommand();
         if (original.operation !== 'connectSession') {
             throw new Error('Expected a connect command');
         }
@@ -74,16 +81,16 @@ describe('client mutation result validation', () => {
             .toEqual(['command.input.actorPrincipalId', 'command.input.actorSessionId']);
     });
 
-    it('accepts the canonical computed result', async () => {
-        const command = await principalCommand();
+    it('accepts the canonical computed result', () => {
+        const command = principalCommand();
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
 
         assertClientMutation({ command, read, computed });
     });
 
-    it('rejects altered outbox values, page membership, and receipt identities', async () => {
-        const command = await principalCommand();
+    it('rejects altered outbox values, page membership, and receipt identities', () => {
+        const command = principalCommand();
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
         const [first, ...remaining] = computed.outboxWrites;
@@ -109,8 +116,8 @@ describe('client mutation result validation', () => {
         }
     });
 
-    it('rejects an accessor-backed computed result without invoking the accessor', async () => {
-        const command = await principalCommand('accessor-backed-computed');
+    it('rejects an accessor-backed computed result without invoking the accessor', () => {
+        const command = principalCommand('accessor-backed-computed');
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
         let accessorRead = false;
@@ -127,8 +134,8 @@ describe('client mutation result validation', () => {
         expect(accessorRead).toBe(false);
     });
 
-    it('preserves structural result validation order and exact error details', async () => {
-        const command = await principalCommand();
+    it('preserves structural result validation order and exact error details', () => {
+        const command = principalCommand();
         const computed = requireWrite(
             computeClientMutation({
                 command,
@@ -147,8 +154,8 @@ describe('client mutation result validation', () => {
         );
     });
 
-    it('accepts a canonical idempotency conflict as validated data', async () => {
-        const command = await principalCommand();
+    it('accepts a canonical idempotency conflict as validated data', () => {
+        const command = principalCommand();
         const applied = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (!applied.idempotency) {
             throw new Error('Expected idempotency record');
@@ -166,8 +173,8 @@ describe('client mutation result validation', () => {
         assertClientMutation({ command: conflicting, read, computed });
     });
 
-    it('rejects self-consistent state sync and outbox values that differ from canonical computation', async () => {
-        const command = await principalCommand();
+    it('rejects self-consistent state sync and outbox values that differ from canonical computation', () => {
+        const command = principalCommand();
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
         const shiftedStateSync = computed.stateSync.map((stateSync) => ({
@@ -179,7 +186,7 @@ describe('client mutation result validation', () => {
             stateSync: shiftedStateSync,
             outboxWrites: shiftedStateSync
                 .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
-                .map(computeAppOutboxInsert)
+                .map(({ entry }) => computeAppOutboxInsert(entry))
         };
 
         expect(() =>
@@ -197,8 +204,25 @@ describe('client mutation result validation', () => {
 });
 
 describe('client mutation operation validation', () => {
-    it('rejects an unexpected unicast row even when accepted state sync has no live session', async () => {
-        const command = await principalCommand();
+    it('projects an authorised connect once and still rejects a changed candidate', () => {
+        const input = authorisedConnectOperationInput();
+        const computed = computeAuthorisedWsConnectOperation(input);
+        if (computed.outcome !== 'completed' || computed.mutation.outcome !== 'write') {
+            throw new Error('Expected a completed authorised connect write');
+        }
+        vi.mocked(validateComputedProjection).mockClear();
+
+        assertAuthorisedWsConnectOperation({ ...input, computed });
+
+        // Each projection walks the complete operation; one walk over one full recompute is the validation cost contract.
+        expect(validateComputedProjection).toHaveBeenCalledTimes(1);
+        const changed = { ...computed.mutation, outboxMessages: computed.mutation.outboxMessages.slice(1) };
+        expect(() => assertAuthorisedWsConnectOperation({ ...input, computed: { ...computed, mutation: changed } }))
+            .toThrow(/outboxMessages/);
+    });
+
+    it('rejects an unexpected unicast row even when accepted state sync has no live session', () => {
+        const command = principalCommand();
         const read = emptyRead(command);
         const input = {
             command,
@@ -206,7 +230,7 @@ describe('client mutation operation validation', () => {
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = await computeClientMutationOperation(input);
+        const computed = computeClientMutationOperation(input);
         if (computed.outcome !== 'completed' || computed.mutation.outcome !== 'write') {
             throw new Error('Expected completed mutation');
         }
@@ -218,25 +242,27 @@ describe('client mutation operation validation', () => {
             resource: JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'late-session' } })
         });
         const forgedMutation = { ...mutation, outboxWrites: [unexpectedUnicast, ...mutation.outboxWrites.slice(1)] };
-        await expect(assertClientMutationOperation({
-            ...input,
-            computed: {
-                ...computed,
-                mutation: forgedMutation,
-                writes: [forgedMutation]
-            }
-        })).rejects.toThrow(/outboxWrites/);
+        expect(() =>
+            assertClientMutationOperation({
+                ...input,
+                computed: {
+                    ...computed,
+                    mutation: forgedMutation,
+                    writes: [forgedMutation]
+                }
+            })
+        ).toThrow(/outboxWrites/);
     });
 
-    it('rejects missing, duplicated, wrong-scope and wrong-recipient snapshot proof writes before transaction entry', async () => {
-        const command = await connectCommand();
+    it('rejects missing, duplicated, wrong-scope and wrong-recipient snapshot proof writes before transaction entry', () => {
+        const command = connectCommand();
         const input = {
             command,
             read: emptyRead(command),
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = await computeClientMutationOperation(input);
+        const computed = computeClientMutationOperation(input);
         if (computed.outcome !== 'completed') {
             throw new Error('Expected a completed mutation');
         }
@@ -266,13 +292,13 @@ describe('client mutation operation validation', () => {
             )
         ];
         for (const sidecarWrites of variants) {
-            await expect(assertClientMutationOperation({ ...input, computed: { ...computed, sidecarWrites } }))
-                .rejects.toThrow(/sidecarWrites/);
+            expect(() => assertClientMutationOperation({ ...input, computed: { ...computed, sidecarWrites } }))
+                .toThrow(/sidecarWrites/);
         }
     });
 
-    it('retains no sidecar writes when a fresh inbox delivery replays a durable client command', async () => {
-        const command = await connectCommand();
+    it('retains no sidecar writes when a fresh inbox delivery replays a durable client command', () => {
+        const command = connectCommand();
         const connected = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (connected.idempotency === null) {
             throw new Error('Expected an idempotent command');
@@ -283,61 +309,67 @@ describe('client mutation operation validation', () => {
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = await computeClientMutationOperation(input);
-        await assertClientMutationOperation({ ...input, computed });
+        const computed = computeClientMutationOperation(input);
+        assertClientMutationOperation({ ...input, computed });
         expect(computed).toMatchObject({ outcome: 'completed', mutation: { outcome: 'replay' }, writes: [], sidecarWrites: [] });
     });
 
-    it('compares a mutation against the owner-computed value and rejects a changed prepared payload', async () => {
-        const command = await principalCommand();
-        const read = emptyRead(command);
-        const expected = requireWrite(computeClientMutation({ command, read }));
-        assertClientMutationComparison({ command, read, expected, computed: expected });
-
-        const [first, ...remaining] = expected.outboxWrites;
-        if (!first) {
-            throw new Error('Expected a state-sync write');
-        }
-        const computed = {
-            ...expected,
-            outboxWrites: [{ ...first, entry: { ...first.entry, resource: 'altered' } }, ...remaining]
-        };
-        expect(() => assertClientMutationComparison({ command, read, expected, computed }))
-            .toThrowError(ClientMutationRejectedError);
-    });
-
-    it('rejects altered completion, write membership and committed snapshots', async () => {
-        const command = await principalCommand();
+    it('rejects a changed prepared payload at the operation projection', () => {
+        const command = principalCommand();
         const input = {
             command,
             read: emptyRead(command),
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = await computeClientMutationOperation(input);
+        const computed = computeClientMutationOperation(input);
+        if (computed.outcome !== 'completed' || computed.mutation.outcome !== 'write') {
+            throw new Error('Expected a completed mutation');
+        }
+        const [first, ...remaining] = computed.mutation.outboxWrites;
+        if (!first) {
+            throw new Error('Expected a state-sync write');
+        }
+        const mutation = {
+            ...computed.mutation,
+            outboxWrites: [{ ...first, entry: { ...first.entry, resource: 'altered' } }, ...remaining]
+        };
+        expect(() => assertClientMutationOperation({ ...input, computed: { ...computed, mutation, writes: [mutation] } }))
+            .toThrow(/outboxWrites/);
+    });
+
+    it('rejects altered completion, write membership and committed snapshots', () => {
+        const command = principalCommand();
+        const input = {
+            command,
+            read: emptyRead(command),
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            lifecycle: undefined
+        };
+        const computed = computeClientMutationOperation(input);
         if (computed.outcome !== 'completed') {
             throw new Error('Expected a completed operation');
         }
-        await assertClientMutationOperation({ ...input, computed });
+        assertClientMutationOperation({ ...input, computed });
         const variants = [
             { ...computed, completion: { ...computed.completion, encodedResult: 'altered' } },
             { ...computed, writes: [] },
             { ...computed, committedSnapshots: [] }
         ];
         for (const candidate of variants) {
-            await expect(assertClientMutationOperation({ ...input, computed: candidate })).rejects.toThrow(TypeError);
+            expect(() => assertClientMutationOperation({ ...input, computed: candidate })).toThrow(TypeError);
         }
     });
 
-    it('rejects an accessor-backed mutation before reading it', async () => {
-        const command = await principalCommand();
+    it('rejects an accessor-backed mutation before reading it', () => {
+        const command = principalCommand();
         const input = {
             command,
             read: emptyRead(command),
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = await computeClientMutationOperation(input);
+        const computed = computeClientMutationOperation(input);
         let accessorRead = false;
         const candidate = Object.defineProperty({ ...computed }, 'mutation', {
             get: () => {
@@ -345,15 +377,15 @@ describe('client mutation operation validation', () => {
                 return computed.mutation;
             }
         });
-        await expect(assertClientMutationOperation({ ...input, computed: candidate }))
-            .rejects.toThrow('Client mutation operation computed.mutation must be a data property');
+        expect(() => assertClientMutationOperation({ ...input, computed: candidate }))
+            .toThrow('Client mutation operation computed.mutation must be a data property');
         expect(accessorRead).toBe(false);
     });
 
-    it('rejects missing or duplicate expired mutations before validating individual reads', async () => {
-        const connectedCommand = await connectCommand();
+    it('rejects missing or duplicate expired mutations before validating individual reads', () => {
+        const connectedCommand = connectCommand();
         const connected = requireWrite(computeClientMutation({ command: connectedCommand, read: emptyRead(connectedCommand) }));
-        const command = await expiryCommand();
+        const command = expiryCommand();
         const context = createExecutionMetadata();
         const input = {
             context,
@@ -374,14 +406,14 @@ describe('client mutation operation validation', () => {
             reads: [{ command, read: readAfterWrite(command, connected) }],
             completionFacts: { entry: context.entry, completedAtEpochMs: 8_000 }
         };
-        const computed = await computeExpiredSessionsOperation(input);
+        const computed = computeExpiredSessionsOperation(input);
         if (computed.outcome !== 'completed') {
             throw new Error('Expected completed expiry');
         }
-        await assertExpiredSessionsOperation({ ...input, computed });
+        assertExpiredSessionsOperation({ ...input, computed });
         for (const mutations of [[], [...computed.mutations, ...computed.mutations]]) {
-            await expect(assertExpiredSessionsOperation({ ...input, computed: { ...computed, mutations } }))
-                .rejects.toThrow(/Expired client sessions operation computed.mutations/);
+            expect(() => assertExpiredSessionsOperation({ ...input, computed: { ...computed, mutations } }))
+                .toThrow(/Expired client sessions operation computed.mutations/);
         }
     });
 });

@@ -28,7 +28,9 @@ import {
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import {
+    assertAuthorisedWsConnectOperation,
     assertClientMutationOperation,
+    computeAuthorisedWsConnectOperation,
     computeClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import {
@@ -76,6 +78,7 @@ import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-s
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
 import {
+    authorisedConnectOperationInput,
     connectCommand,
     disconnectCommand,
     emptyRead,
@@ -113,12 +116,12 @@ const CURRENT_AUDIT: AuditStamp = {
 };
 
 describe('ClientStateInboxHandler phases', () => {
-    it('rejects a disconnect candidate whose lifecycle write is missing', async () => {
-        const connectedCommand = await connectCommand();
+    it('rejects a disconnect candidate whose lifecycle write is missing', () => {
+        const connectedCommand = connectCommand();
         const connected = requireWrite(
             computeClientMutation({ command: connectedCommand, read: emptyRead(connectedCommand) })
         );
-        const command = await disconnectCommand();
+        const command = disconnectCommand();
         const read = readAfterWrite(command, connected);
         const context = createContext<ClientStateWritten>({
             type: AppInboxType.CLIENT_SESSION_DISCONNECT,
@@ -153,7 +156,7 @@ describe('ClientStateInboxHandler phases', () => {
             }, false)
         } as const;
         const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000 };
-        const computed = await computeClientMutationOperation({
+        const computed = computeClientMutationOperation({
             command,
             read,
             completionFacts,
@@ -163,7 +166,7 @@ describe('ClientStateInboxHandler phases', () => {
             throw new TypeError('Expected a completed disconnect computation');
         }
 
-        await expect(
+        expect(() =>
             assertClientMutationOperation({
                 command,
                 read,
@@ -171,7 +174,22 @@ describe('ClientStateInboxHandler phases', () => {
                 lifecycle,
                 computed: { ...computed, lifecycleComputed: undefined }
             })
-        ).rejects.toThrow(/lifecycleComputed/);
+        ).toThrow(/lifecycleComputed/);
+    });
+
+    it('computes and validates an authorised connect without yielding to the event loop', () => {
+        const input = authorisedConnectOperationInput();
+        let sentinelFired = false;
+        const sentinel = setTimeout(() => {
+            sentinelFired = true;
+        }, 0);
+
+        const computed = computeAuthorisedWsConnectOperation(input);
+        assertAuthorisedWsConnectOperation({ ...input, computed });
+        clearTimeout(sentinel);
+
+        expect(sentinelFired).toBe(false);
+        expect(computed.outcome === 'completed' ? computed.sidecarWrites.length : 0).toBeGreaterThan(0);
     });
 
     it.each([
@@ -420,7 +438,7 @@ describe('ClientStateInboxHandler phases', () => {
         }
     ])('rejects $path at the handler policy boundary before writing', async ({ actorPrincipalId, actorSessionId, message }) => {
         const fixture = createHandlerFixture({ generationClosed: false, sessionPresent: false });
-        const original = await connectCommand('rejected-actor');
+        const original = connectCommand('rejected-actor');
         if (original.operation !== 'connectSession') {
             throw new Error('Expected a connect command');
         }

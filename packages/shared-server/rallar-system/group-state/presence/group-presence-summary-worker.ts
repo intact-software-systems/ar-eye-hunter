@@ -202,7 +202,7 @@ export class GroupPresenceSummaryWork {
         }, this.now());
         const computed = this.compute(work, read);
         this.validateComputed(work, read, computed);
-        const proofs = await computeGroupDeltaProvenance(computed);
+        const proofs = computeGroupDeltaProvenance(computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
             await writeGroupDeltaProvenance(transaction, proofs);

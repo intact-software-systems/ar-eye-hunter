@@ -76,7 +76,7 @@ describe('client mutation command and request projection', () => {
         ).toThrow(ClientMutationRejectedError);
     });
 
-    it('hashes the exact input and authority before adding persisted facts', async () => {
+    it('hashes the exact input and authority before adding persisted facts', () => {
         const input = toConnectClientSessionMutationInput({
             operation: 'connectSession',
             scope,
@@ -107,14 +107,14 @@ describe('client mutation command and request projection', () => {
             expireAtEpochMs: 10_000
         };
 
-        const command = await toClientMutationCommand(input, facts, authority);
+        const command = toClientMutationCommand(input, facts, authority);
         if (command.operation !== 'connectSession') {
             throw new Error(`Expected a connectSession command, received ${command.operation}`);
         }
 
         expect(command.facts).toEqual({
             ...facts,
-            commandHash: await hashMutationCommand(
+            commandHash: hashMutationCommand(
                 decodeJsonWireValue({ ...input, authority }, 'Client mutation command identity')
             )
         });
@@ -202,7 +202,7 @@ const malformedCommandActor = {
     traceId: null
 } as const;
 
-function malformedAuthoritativeCommands(): readonly unknown[] {
+function malformedAuthoritativeCommands(): readonly object[] {
     return [
         [],
         malformedPrincipalCommand(),

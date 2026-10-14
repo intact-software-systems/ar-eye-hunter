@@ -1,4 +1,4 @@
-import { sha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import type { GroupMutationDescriptor } from './group-state-service-contracts.ts';
 
 const GROUP_APP_INBOX_COMMAND_ID_PREFIX = 'group-app-inbox:';
@@ -17,11 +17,11 @@ export function isScopedGroupMutationCommandId(commandId: string): boolean {
     return commandId.startsWith(GROUP_APP_INBOX_COMMAND_ID_PREFIX);
 }
 
-export async function toScopedGroupMutationCommandId(
+export function toScopedGroupMutationCommandId(
     descriptor: GroupMutationDescriptor,
     callerPrincipalId: string
-): Promise<string> {
-    return await toScopedGroupMutationCommandIdFromIdentity({
+): string {
+    return toScopedGroupMutationCommandIdFromIdentity({
         operation: descriptor.operation,
         scope: descriptor.scope,
         groupId: descriptor.groupId,
@@ -32,10 +32,10 @@ export async function toScopedGroupMutationCommandId(
     });
 }
 
-export async function toScopedGroupMutationCommandIdFromIdentity(
+export function toScopedGroupMutationCommandIdFromIdentity(
     identity: ScopedGroupMutationCommandIdentityInput
-): Promise<string> {
-    const digest = await sha256CanonicalJson({
+): string {
+    const digest = computeSha256CanonicalJson({
         domain: 'group-app-inbox-command-id',
         version: 1,
         ...identity

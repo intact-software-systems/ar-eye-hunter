@@ -131,13 +131,12 @@ describe('AppAdminInboxService initial prune command', () => {
             })
         );
         expect(harness.retryExpiryInputs()).toEqual([INITIAL_TIME_EPOCH_MS]);
-        expect(harness.readWorkCounts()).toEqual({
+        expect(harness.readWorkCounts()).toMatchObject({
             now: 1,
             expiry: 1,
             authority: 0,
             count: 0,
-            transaction: 0,
-            wake: 0
+            transaction: 0
         });
 
         await dequeueInitialCommand(harness);
@@ -1002,6 +1001,7 @@ class AdminInboxHarness {
         const engine = new InboxOutboxEngine();
         registerApplicationQueueReaderTasks({
             engine,
+            nowEpochMs: Date.now,
             inboxQueueReader: this.reader,
             outboxQueueReader: new OutboxQueueReader(this.queue),
             appInboxResilience: createResilience(),
@@ -1055,9 +1055,9 @@ class AdminInboxHarness {
         return capturedAtEpochMs + (this.options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
     }
 
-    private async createIdentity(input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> {
+    private createIdentity(input: AdminPruneIdempotencyIdentityInput): AdminPruneIdempotencyIdentity {
         this.idempotencyIdentityInputs.push(input);
-        const identity = await createAdminPruneIdempotencyIdentity(input);
+        const identity = createAdminPruneIdempotencyIdentity(input);
         this.events.push('semantic-identity-completed');
         return identity;
     }

@@ -27,7 +27,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { WsOutboxProducerAuthority } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { sha256CanonicalJson } from '../../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../../protocol/canonical-json.ts';
 import { validateWsOutboxProvenanceTarget } from './validate-ws-outbox-provenance-target.ts';
 
 export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
@@ -124,7 +124,7 @@ export class WsOutboxProvenanceReader {
             if (issues.length > 0 || stored.expireAtTimestamp !== proof.expiresAtMs) {
                 throw new TypeError(issues.join('; ') || 'WS provenance storage expiry differs');
             }
-            if (proof.digest !== await computeWsOutboxProvenanceDigest(entry, proof)) {
+            if (proof.digest !== computeWsOutboxProvenanceDigest(entry, proof)) {
                 throw new TypeError('WS producer provenance digest differs from its exact row');
             }
             if (proof.expiresAtMs <= this.dependencies.nowMs()) {
@@ -174,11 +174,11 @@ export function toWsOutboxProvenanceKey(key: Key): string {
 }
 
 /** Exact serialized payload and immutable audit facts are bound; queue attempts and DB metadata are not. */
-export async function computeWsOutboxProvenanceDigest(
+export function computeWsOutboxProvenanceDigest(
     entry: ResourceEntry,
     proof: Omit<WsOutboxProvenance, 'digest'>
-): Promise<string> {
-    return await sha256CanonicalJson({
+): string {
+    return computeSha256CanonicalJson({
         version: proof.version,
         producerKind: proof.producerKind,
         queueKey: proof.queueKey,

@@ -183,7 +183,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             topicId: ADMIN_APP_INBOX_TOPIC,
             contextId: logicalContextId
         });
-        const jobId = await toAdminPruneJobId(physicalKey);
+        const jobId = toAdminPruneJobId(physicalKey);
         const command = await createAdminPruneCommand({
             jobId,
             requestedBy,

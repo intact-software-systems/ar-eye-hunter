@@ -1,4 +1,5 @@
 import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type {
     ClientEvent,
     ClientInstance,
@@ -273,6 +274,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     idempotency: ClientMutationIdempotencyRecord | null;
     stateSync: readonly ComputedClientStateSync[];
     outboxWrites: readonly AppOutboxInsert[];
+    outboxMessages: readonly ALMessage[];
     principalAudienceSessionIds: readonly string[];
 }>;
 

@@ -1,4 +1,4 @@
-import { sha256CanonicalJson } from '../protocol/canonical-json.ts';
+import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
 import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
@@ -97,7 +97,7 @@ type InternalMutationIngressCapture = (
     command: GroupMutationCommand,
     authority: Exclude<GroupMutationFacts['internalAuthority'], 'none'>,
     atEpochMs: number
-) => Promise<GroupMutationIngress>;
+) => GroupMutationIngress;
 
 interface GroupStateRuntimeOwners {
     readonly dependencies: GroupStateServiceDependencies;
@@ -129,9 +129,9 @@ function createAuthorityDependencies(
 function createInternalMutationIngressCapture(
     dependencies: GroupStateServiceDependencies
 ): InternalMutationIngressCapture {
-    return async (command, internalAuthority, atEpochMs) => {
+    return (command, internalAuthority, atEpochMs) => {
         assertGroupMutationCommand(command);
-        const commandHash = await hashMutationCommand(
+        const commandHash = hashMutationCommand(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );
         const facts: Omit<GroupMutationFacts, 'attemptCount'> = {
@@ -151,7 +151,7 @@ function createInternalMutationIngressCapture(
         // retries into a terminal failure. attemptCount is a placeholder the
         // matrix never reads.
         assertGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
-        const causalToken = await sha256CanonicalJson({ command, facts });
+        const causalToken = computeSha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,
             descriptor: null,
@@ -190,33 +190,29 @@ function createIngressCaptureOperations(
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions()).filter(
                 (session) => session.disconnectedAtEpochMs === null && session.expiresAtEpochMs <= atEpochMs
             );
-            return await Promise.all(
-                candidates.map((session) =>
-                    captureInternalMutationIngress(toExpiryCommand(session, atEpochMs), 'expiry', atEpochMs)
-                )
+            return candidates.map((session) =>
+                captureInternalMutationIngress(toExpiryCommand(session, atEpochMs), 'expiry', atEpochMs)
             );
         },
         captureFormationCriterionMutationIngress: async (command, atEpochMs) =>
-            await captureInternalMutationIngress(command, 'formation-criterion', atEpochMs),
+            captureInternalMutationIngress(command, 'formation-criterion', atEpochMs),
         captureFormationAutomationMutationIngress: async (command, atEpochMs) =>
-            await captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
+            captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
         captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
-            await captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
+            captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
-            await captureInternalMutationIngress(command, 'activation-status', atEpochMs),
+            captureInternalMutationIngress(command, 'activation-status', atEpochMs),
         captureSessionCleanupMutationIngresses: async (input) => {
             const candidates = await readGroupSessionCleanupCandidates(
                 repositoryFor(runtime),
                 dependencies.authSessionRepository,
                 input
             );
-            return await Promise.all(
-                candidates.map((session) =>
-                    captureInternalMutationIngress(
-                        toSessionCleanupCommand(session, input.disconnectedAtEpochMs),
-                        'session-cleanup',
-                        input.disconnectedAtEpochMs
-                    )
+            return candidates.map((session) =>
+                captureInternalMutationIngress(
+                    toSessionCleanupCommand(session, input.disconnectedAtEpochMs),
+                    'session-cleanup',
+                    input.disconnectedAtEpochMs
                 )
             );
         }

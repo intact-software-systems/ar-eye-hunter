@@ -29,6 +29,7 @@ const NEVER_EXPIRES_MS = Number.MAX_SAFE_INTEGER;
 
 class PrincipalReadRuntime extends FakeRuntimeStateRepository {
     readonly batches: (readonly RuntimeStateReadBatchSelector[])[] = [];
+    readonly scannedSuffixRangeRows: number[] = [];
     afterBatch?: (selectors: readonly RuntimeStateReadBatchSelector[]) => Promise<boolean>;
 
     override async readRuntimeStateBatch(
@@ -41,6 +42,13 @@ class PrincipalReadRuntime extends FakeRuntimeStateRepository {
             throw new Error('The principal read requested every group-state row in the scope');
         }
         this.batches.push(selectors);
+        for (const selector of selectors) {
+            if (selector.kind === 'prefix-suffix') {
+                this.scannedSuffixRangeRows.push(
+                    (await this.findEntriesByPrefix(selector.namespace, selector.keyPrefix)).length
+                );
+            }
+        }
         const selections = await super.readRuntimeStateBatch(selectors);
         if (this.afterBatch !== undefined && await this.afterBatch(selectors)) {
             this.afterBatch = undefined;
@@ -91,6 +99,30 @@ describe('group-state snapshots for a principal', () => {
             ['key', 'key']
         ]);
     });
+
+    it.each([0, 8, 32])(
+        'scans every member row of the scope twice per principal read beside %i unrelated groups',
+        async (unrelatedGroupCount) => {
+            const { runtime, groups } = createRuntime();
+            await seedGroup(groups, { groupId: 'room-one', ownerId: 'alice', activeIds: ['bob'], leftIds: [] });
+            for (let index = 0; index < unrelatedGroupCount; index += 1) {
+                await seedGroup(groups, {
+                    groupId: `unrelated-${index}`,
+                    ownerId: `owner-${index}`,
+                    activeIds: [`member-${index}`],
+                    leftIds: []
+                });
+            }
+            const batchesBefore = runtime.batches.length;
+            const scansBefore = runtime.scannedSuffixRangeRows.length;
+
+            await groups.listSnapshotsForPrincipal(SCOPE, 'alice');
+
+            const scopeMemberRows = 2 + 2 * unrelatedGroupCount;
+            expect(runtime.batches.length - batchesBefore).toBe(5);
+            expect(runtime.scannedSuffixRangeRows.slice(scansBefore)).toEqual([scopeMemberRows, scopeMemberRows]);
+        }
+    );
 
     it('omits memberships in another scope, expired member rows, and purged or expired groups', async () => {
         const { runtime, groups } = createRuntime();

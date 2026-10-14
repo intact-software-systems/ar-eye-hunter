@@ -38,7 +38,7 @@ export async function executeRtcRttMutation(
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId
     };
-    const commandHash = await hashMutationCommand(
+    const commandHash = hashMutationCommand(
         encodeJsonWireValue(request, 'test RTC RTT stable request')
     );
     const read = await readRtcRttMutation(input.repository, request);

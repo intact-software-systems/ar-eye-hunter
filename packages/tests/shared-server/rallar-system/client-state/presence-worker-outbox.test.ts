@@ -24,13 +24,13 @@ import {
 it.each(['client-heartbeat', 'client-reconnect', 'client-disconnect'] as const)(
     'checks receipt-linked broadcast, live unicast and event rows for %s',
     async (operation) => {
-        const connectedCommand = await connectCommand();
+        const connectedCommand = connectCommand();
         const connected = requireWrite(computeClientMutation({ command: connectedCommand, read: emptyRead(connectedCommand) }));
         const command = operation === 'client-heartbeat'
-            ? await heartbeatCommand()
+            ? heartbeatCommand()
             : operation === 'client-reconnect'
-            ? await connectCommand('reconnect', 'generation-2')
-            : await disconnectCommand();
+            ? connectCommand('reconnect', 'generation-2')
+            : disconnectCommand();
         const computed = requireWrite(computeClientMutation({ command, read: readAfterWrite(command, connected) }));
         const messages = computed.outboxWrites.map(({ entry }) => decodePersistedALMessage(entry.resource));
         const snapshots = messages.filter((message) => message.route.topicId === AppTopics.clientStateSnapshot);

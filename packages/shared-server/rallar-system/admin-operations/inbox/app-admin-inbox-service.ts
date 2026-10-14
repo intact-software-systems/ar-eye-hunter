@@ -104,7 +104,7 @@ export interface AppAdminInboxServiceDependencies {
     readonly computeRetryExpiryAtEpochMs: (capturedAtEpochMs: number) => number;
     readonly createAdminPruneIdempotencyIdentity: (
         input: AdminPruneIdempotencyIdentityInput
-    ) => Promise<AdminPruneIdempotencyIdentity>;
+    ) => AdminPruneIdempotencyIdentity;
 }
 
 export interface AppAdminInboxServiceConfig {
@@ -172,7 +172,7 @@ export class AppAdminInboxService {
         input: AppAdminPruneExpiredInput
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         const normalizedRequest = decodeAdminPruneRequest(input.request);
-        const identity = await this.dependencies.createAdminPruneIdempotencyIdentity({
+        const identity = this.dependencies.createAdminPruneIdempotencyIdentity({
             requestId: input.requestId,
             requestedBy: input.adminSession.clientId,
             requestedSessionId: input.adminSession.sessionId,
@@ -197,7 +197,7 @@ export class AppAdminInboxService {
             async () => await this.createMaterializedPruneEntry(identity, key)
         );
         const command = decodeAdminPruneCommand(reservation.enqueue.data);
-        await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
+        assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
         const enqueued = await this.resultWaiter.waitForReservedResult<AdminPruneEnqueueResult>(
             reservation,
@@ -240,7 +240,7 @@ export class AppAdminInboxService {
         context: AppInboxExecutionMetadata
     ): Promise<AdminPruneEnqueueResult> {
         const command = decodeAdminPruneCommand(value);
-        await assertAdminPruneQueueIdentity(command, context);
+        assertAdminPruneQueueIdentity(command, context);
 
         const read = await this.timeAdminPrunePhase(
             'read',

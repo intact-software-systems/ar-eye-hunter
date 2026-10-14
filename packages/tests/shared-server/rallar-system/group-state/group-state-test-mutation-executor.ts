@@ -97,7 +97,7 @@ export class GroupStateTestMutationExecutor {
         atEpochMs: number,
         attemptCount: number
     ): Promise<Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>> {
-        const commandHash = await hashMutationCommand(
+        const commandHash = hashMutationCommand(
             decodeJsonWireValue(command, 'Group maintenance command')
         );
         const read = await readGroupMutation(this.repository(), command);

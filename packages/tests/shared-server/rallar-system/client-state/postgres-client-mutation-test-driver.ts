@@ -101,7 +101,7 @@ function createPostgresClientMutationExecutor(
         const attempt = (attemptsByCommandId.get(commandInput.commandId) ?? 0) + 1;
         attemptsByCommandId.set(commandInput.commandId, attempt);
         try {
-            const command = await toClientMutationCommand(
+            const command = toClientMutationCommand(
                 commandInput,
                 {
                     nowEpochMs: options.atEpochMs,

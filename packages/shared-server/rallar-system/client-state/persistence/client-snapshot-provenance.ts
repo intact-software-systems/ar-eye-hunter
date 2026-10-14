@@ -1,18 +1,19 @@
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { isExactAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
-import { computeClientStateSyncEntries } from '../../state-sync/state-sync-entry-computation.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
     computeWsOutboxProvenanceDigest,
     toWsOutboxProvenanceKey,
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     type WsOutboxProvenance
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
-import type { ClientMutationComputed } from '../mutation/client-mutation-contracts.ts';
+import type {
+    ClientMutationComputed,
+    ClientMutationDomainAppliedWrite
+} from '../mutation/client-mutation-contracts.ts';
 
 export interface ClientSnapshotProvenanceInsert {
     readonly queueKey: ResourceEntry['key'];
@@ -23,46 +24,24 @@ export interface ClientSnapshotProvenanceInsert {
 }
 
 /** Prepares canonical mutation output; the AppInbox owner must validate the complete operation before writing. */
-export async function computeClientSnapshotProvenance(
-    mutation: ClientMutationComputed,
-    senderId: string
-): Promise<readonly ClientSnapshotProvenanceInsert[]> {
+export function computeClientSnapshotProvenance(
+    mutation: ClientMutationComputed
+): readonly ClientSnapshotProvenanceInsert[] {
     if (mutation.outcome !== 'write') {
         return [];
     }
-    const entries = mutation.stateSync.flatMap((sync) => computeClientStateSyncEntries(sync, senderId));
-    if (entries.length !== mutation.outboxWrites.length) {
-        throw new TypeError('Client snapshot outbox write set differs from accepted state sync');
-    }
-    const proofs: ClientSnapshotProvenanceInsert[] = [];
-    for (const [index, entry] of entries.entries()) {
-        const write = mutation.outboxWrites[index]!;
-        if (
-            !isExactAppOutboxInsert(entry, write) ||
-            entry.audit.date.toString() !== write.entry.audit.date.toString() ||
-            entry.audit.createdTs.toString() !== write.entry.audit.createdTs.toString() ||
-            entry.audit.expiryTs.toString() !== write.entry.audit.expiryTs.toString()
-        ) {
-            throw new TypeError('Client snapshot outbox row differs from accepted state sync');
-        }
-        const proof = await computeClientSnapshotProvenanceInsert(
-            write,
-            mutation.snapshot.principal,
-            mutation.principalAudienceSessionIds
-        );
-        if (proof !== null) {
-            proofs.push(proof);
-        }
-    }
-    return proofs;
+    return mutation.outboxWrites.flatMap((write, index) => {
+        const proof = computeClientSnapshotProvenanceInsert(write, mutation.outboxMessages[index]!, mutation);
+        return proof === null ? [] : [proof];
+    });
 }
 
-async function computeClientSnapshotProvenanceInsert(
+function computeClientSnapshotProvenanceInsert(
     write: AppOutboxInsert,
-    principalRef: ClientPrincipalRef,
-    principalAudienceSessionIds: readonly string[]
-): Promise<ClientSnapshotProvenanceInsert | null> {
-    const message = decodePersistedALMessage(write.entry.resource);
+    message: ALMessage,
+    mutation: ClientMutationDomainAppliedWrite
+): ClientSnapshotProvenanceInsert | null {
+    const principalRef = mutation.snapshot.principal;
     const targets = message.targets;
     if (targets?.mode !== 'unicast' && !(targets?.mode === 'broadcast' && targets.scope === 'principal')) {
         return null;
@@ -101,12 +80,12 @@ async function computeClientSnapshotProvenanceInsert(
                     workspaceId: principalRef.workspaceId,
                     principalId: principalRef.principalId
                 },
-                admittedAudience: principalAudienceSessionIds
+                admittedAudience: mutation.principalAudienceSessionIds
             }
     };
     const proof: WsOutboxProvenance = {
         ...facts,
-        digest: await computeWsOutboxProvenanceDigest(write.entry, facts)
+        digest: computeWsOutboxProvenanceDigest(write.entry, facts)
     };
     return {
         queueKey: write.entry.key,

@@ -316,7 +316,7 @@ describe('RTC RTT repository convergence', () => {
                 version: 1
             };
             const receiptId = toRtcRttMutationReceiptId(baseRtt);
-            const commandHash = await hashMutationCommand({
+            const commandHash = hashMutationCommand({
                 rtt: baseRtt,
                 alSenderId: 'session-a'
             } as JsonWireValue);

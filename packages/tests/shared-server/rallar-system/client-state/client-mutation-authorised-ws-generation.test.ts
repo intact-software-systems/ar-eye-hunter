@@ -107,6 +107,23 @@ it('orders websocket generations by their server-owned start tuple and bootstrap
     await expectRestGenerationOrdering(scenario);
 });
 
+it('emits a full snapshot page for every live session of the shared principal on each authorised connect', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const service = createClientStateTestDriver({ runtimeRepository, now: () => 5_000, serviceId: 'client-service' });
+    const outboxRowsPerConnect: number[] = [];
+    for (let index = 0; index < 4; index += 1) {
+        const outboxBefore = getClientStateTestOutbox(runtimeRepository).length;
+        await service.registerAuthorisedWsClientSession(
+            { clientId: 'alice', username: 'alice', accessToken: 'token', sessionId: `shared-session-${index}`, expiresAtEpochMs: 60_000 },
+            `shared-generation-${index}`,
+            { ...CLIENT_MUTATION_SERVICE_SCOPE, connectedAtEpochMs: 100 + index, expiresAtEpochMs: Date.now() + 60_000 }
+        );
+        outboxRowsPerConnect.push(getClientStateTestOutbox(runtimeRepository).length - outboxBefore);
+    }
+
+    expect(outboxRowsPerConnect).toEqual([3, 4, 5, 6]);
+});
+
 interface GenerationAdvanceScenario {
     readonly authSession: AuthSession;
     readonly first: ClientStateWritten;

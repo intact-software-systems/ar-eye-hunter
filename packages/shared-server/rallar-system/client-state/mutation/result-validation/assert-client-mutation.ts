@@ -12,7 +12,7 @@ import {
 import { computeClientMutation } from '../compute/compute-client-mutation.ts';
 import { assertClientMutationRead } from './assert-client-mutation-read.ts';
 import { assertClientMutationResult } from './assert-client-mutation-result.ts';
-import { assertExactClientPersistence } from './assert-client-persistence.ts';
+import { assertClientPersistenceRecords } from './assert-client-persistence.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -41,36 +41,35 @@ export interface ClientMutationAssertionInput {
     readonly computed: ClientMutationComputed;
 }
 
-export interface ClientMutationComparisonInput extends ClientMutationAssertionInput {
-    readonly expected: ClientMutationComputed;
-}
-
 export function assertClientMutation(
     input: ClientMutationAssertionInput
 ): void {
     const { command, read, computed } = input;
-    const expected = computeClientMutation({ command, read });
-    assertClientMutationComparison({ command, read, computed, expected });
-}
-
-/** The owning computation supplies expected; this boundary asserts data equivalence and programmer invariants. */
-export function assertClientMutationComparison(
-    input: ClientMutationComparisonInput
-): void {
-    const { command, read, computed, expected } = input;
-    assertClientMutationCommand(command);
-    assertClientMutationFacts(command.facts);
-    const issue = validateComputedProjection(expected, computed, 'Client mutation computed')[0];
+    const issue = validateComputedProjection(
+        computeClientMutation({ command, read }),
+        computed,
+        'Client mutation computed'
+    )[0];
     if (issue) {
         throw new ClientMutationRejectedError(issue.message);
     }
+    assertClientMutationInvariants(input);
+}
+
+/** The caller has proved computed equal to a complete recompute; these are the identity and guard invariants. */
+export function assertClientMutationInvariants(
+    input: ClientMutationAssertionInput
+): void {
+    const { command, read, computed } = input;
+    assertClientMutationCommand(command);
+    assertClientMutationFacts(command.facts);
     assertClientMutationResult(computed);
     assertClientMutationIdentity(command);
     assertClientMutationRead(command, read);
     assertClientSessionIdentity(command);
     if (computed.outcome !== 'idempotency-conflict') {
         assertClientMutationReceiptIdentity(command, computed);
-        assertExactClientPersistence(computed);
+        assertClientPersistenceRecords(computed);
         if (computed.outcome === 'write') {
             assertEffectfulClientMutation(read, computed);
         }

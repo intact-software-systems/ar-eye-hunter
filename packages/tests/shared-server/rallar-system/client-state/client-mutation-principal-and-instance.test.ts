@@ -42,8 +42,8 @@ function requireInstanceCommand(command: ClientMutationCommand): InstanceCommand
 }
 
 describe('client principal and instance mutation compute', () => {
-    it('creates the exact principal candidate through its named family owner', async () => {
-        const command = requirePrincipalCommand(await principalCommand());
+    it('creates the exact principal candidate through its named family owner', () => {
+        const command = requirePrincipalCommand(principalCommand());
         const read = emptyRead(command);
 
         const direct = computeClientPrincipalMutation({ command, read });
@@ -68,15 +68,15 @@ describe('client principal and instance mutation compute', () => {
         });
     });
 
-    it('preserves semantic principal no-op and instance registration decisions', async () => {
-        const firstCommand = await principalCommand('principal-seed');
+    it('preserves semantic principal no-op and instance registration decisions', () => {
+        const firstCommand = principalCommand('principal-seed');
         const first = requireWrite(
             computeClientMutation({
                 command: firstCommand,
                 read: emptyRead(firstCommand)
             })
         );
-        const sameCommand = requirePrincipalCommand(await principalCommand('principal-same'));
+        const sameCommand = requirePrincipalCommand(principalCommand('principal-same'));
         const sameRead = readAfterWrite(sameCommand, first);
 
         expect(computeClientPrincipalMutation({ command: sameCommand, read: sameRead })).toMatchObject({
@@ -85,7 +85,7 @@ describe('client principal and instance mutation compute', () => {
             event: null
         });
 
-        const nextCommand = requireInstanceCommand(await instanceCommand());
+        const nextCommand = requireInstanceCommand(instanceCommand());
         const nextRead = readAfterWrite(nextCommand, first);
         const direct = computeClientInstanceMutation({ command: nextCommand, read: nextRead });
         expect(computeClientMutation({ command: nextCommand, read: nextRead })).toEqual(direct);
@@ -97,8 +97,8 @@ describe('client principal and instance mutation compute', () => {
         });
     });
 
-    it('emits canonical principal property order from a valid noncanonical aggregate ref', async () => {
-        const canonical = requirePrincipalCommand(await principalCommand('principal-property-order'));
+    it('emits canonical principal property order from a valid noncanonical aggregate ref', () => {
+        const canonical = requirePrincipalCommand(principalCommand('principal-property-order'));
         const command = {
             ...canonical,
             aggregateRef: {

@@ -154,7 +154,7 @@ async function prepareClientStateTestMutation(
     attempt: number
 ): Promise<ClientMutationComputed> {
     const authority = await toTestAuthority(context.authSessions, input, context.serviceId);
-    const command = await toClientMutationCommand(
+    const command = toClientMutationCommand(
         input,
         {
             nowEpochMs: context.nowEpochMs(),

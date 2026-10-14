@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+import { createHash } from 'node:crypto';
 import {
     describe,
     expect,
@@ -11,6 +13,7 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { computeClientMutationOperation } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { computeClientSnapshotProvenance } from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
 import {
@@ -28,11 +31,12 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
-import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
+import { computeStateSnapshotPages, decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -52,6 +56,12 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
+import { connectCommand, emptyRead } from './client-mutation-compute-test-fixtures.ts';
+
+vi.mock('@shared/api/state-snapshot-page.ts', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@shared/api/state-snapshot-page.ts')>();
+    return { ...original, computeStateSnapshotPages: vi.fn(original.computeStateSnapshotPages) };
+});
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -396,6 +406,60 @@ describe('client snapshot producer provenance', () => {
     });
 });
 
+describe('client snapshot provenance computation', () => {
+    it('builds the snapshot pages once per operation compute and keeps the sidecar bytes', () => {
+        const command = connectCommand();
+        const completionEntry: ResourceEntry = {
+            key: { topicId: 'app-inbox.client-state', resourceId: 'provenance-golden', contextId: 'client-state' },
+            resource: '{}',
+            typeId: EnqueuedType.APP_INBOX,
+            audit: {
+                date: Temporal.PlainTime.from('00:00:01'),
+                createdBy: 'client-service',
+                createdTs: Temporal.PlainDateTime.from('1970-01-01T00:00:01'),
+                expiryTs: NEVER_EXPIRE_TS
+            },
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 1 }
+        };
+        vi.mocked(computeStateSnapshotPages).mockClear();
+
+        const computed = computeClientMutationOperation({
+            command,
+            read: emptyRead(command),
+            completionFacts: { entry: completionEntry, completedAtEpochMs: 8_000 },
+            lifecycle: undefined
+        });
+
+        // Every page build re-serializes the whole principal snapshot; one build per compute is the cost contract.
+        expect(computeStateSnapshotPages).toHaveBeenCalledTimes(1);
+        const sidecarWrites = computed.outcome === 'completed' ? computed.sidecarWrites : [];
+        expect(sidecarWrites.map((write) => ({
+            resourceId: write.queueKey.resourceId,
+            targetKind: JSON.parse(write.value).target.kind,
+            digest: JSON.parse(write.value).digest
+        }))).toEqual([
+            {
+                resourceId: '--snapshot-page--------3l3eod9ywabyf',
+                targetKind: 'scoped-principal-broadcast',
+                digest: '944b7465e368453a3792d4935a1766428c985c72a33cf03720a47a8f59471bec'
+            },
+            {
+                resourceId: '--snapshot-page--------24zodg2oyjb9e',
+                targetKind: 'scoped-unicast',
+                digest: 'd63bc9e0f1fffe4f06360c0a103ee7bfe4c457b1ab8044ddac761e7f2b570a26'
+            },
+            {
+                resourceId: 'connect-1-principal-st-2r959tktplfmi',
+                targetKind: 'scoped-principal-broadcast',
+                digest: '62ce0a30664f70c5f7a92da4194dfae0827302125b008cb01cd518d11e586dd6'
+            }
+        ]);
+        expect(createHash('sha256').update(JSON.stringify(sidecarWrites)).digest('hex'))
+            .toBe('3e06f98302c30781e81e570bb06be9125dc5ca281e1dbac54bed3c0914c05e11');
+    });
+});
+
 function readUnicastEntries(producer: SnapshotProducerFixture): ResourceEntry[] {
     return [...producer.database.outboxEntries.values()].map(toStoredEntry)
         .filter((entry) => decodePersistedALMessage(entry.resource).targets?.mode === 'unicast');
@@ -461,7 +525,7 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
                 const read = await durable.read(command);
                 if (command.requestId === options.collideOnRequestId) {
                     const mutation = computeClientMutation({ command, read });
-                    const [proof] = await computeClientSnapshotProvenance(mutation, command.facts.serviceId);
+                    const [proof] = computeClientSnapshotProvenance(mutation);
                     if (!proof) {
                         throw new Error('Expected an exact principal proof collision candidate');
                     }

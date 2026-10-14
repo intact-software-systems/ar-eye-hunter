@@ -34,7 +34,7 @@ export async function executeRtcRttMutation(
     input: ExecuteRtcRttMutationInput
 ): Promise<ExecuteRtcRttMutationResult> {
     const stableRequest = input.request;
-    const commandHash = await hashMutationCommand(
+    const commandHash = hashMutationCommand(
         encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
     );
     const read = await readRtcRttMutation(input.repository, stableRequest);

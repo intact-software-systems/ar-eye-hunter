@@ -23,8 +23,8 @@ import {
 import { clientMutationPrincipalRef } from './client-mutation-validation-test-fixtures.ts';
 
 describe('client mutation pure retry compute', () => {
-    it('is deterministic and does not mutate a frozen command or read', async () => {
-        const command = deepFreeze(await principalCommand());
+    it('is deterministic and does not mutate a frozen command or read', () => {
+        const command = deepFreeze(principalCommand());
         const read = deepFreeze(emptyRead(command));
 
         const first = computeClientMutation({ command, read });
@@ -62,7 +62,7 @@ describe('client mutation stable-read concurrency', () => {
         if (!session) {
             throw new Error('Expected a stored client session');
         }
-        const command = await toClientMutationCommand(
+        const command = toClientMutationCommand(
             toExpireClientSessionMutationInput(toClientSessionExpiryCandidate(session)),
             {
                 nowEpochMs: session.expiresAtEpochMs,
