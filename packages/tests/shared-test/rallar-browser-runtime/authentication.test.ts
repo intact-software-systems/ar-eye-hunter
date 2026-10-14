@@ -1,4 +1,5 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { facade, loadRuntime as loadOptionalAuthenticationRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
 
@@ -66,6 +67,39 @@ it('authenticates without initializing realtime middleware or connected runtime 
         'rallar.browser.authenticate_completed'
     ]));
     expect(topics()).not.toContain('rallar.browser.connect_started');
+});
+
+it('names the refused registration before the failed fallback login', async () => {
+    const runtime = await loadRuntime();
+    facade.behavior.registerAndLogin.mockRejectedValueOnce(
+        toApiMutationHttpError('/api/auth/register', 429, 'rate-limited', 'Too many registration attempts')
+    );
+    facade.behavior.login.mockRejectedValueOnce(
+        toApiMutationHttpError('/api/auth/login', 401, 'authentication-required', 'Invalid username or password')
+    );
+
+    await expect(runtime.authenticate({
+        connection: 'aliceHttp',
+        rallar: { apiBaseUrl: 'https://api.example.test', username: 'alice', password: 'secret', register: 'if-needed' }
+    })).rejects.toThrow(
+        'Registration refused: 429 rate-limited Too many registration attempts; ' +
+            'login failed: 401 authentication-required Invalid username or password'
+    );
+});
+
+it('signs an existing user in when registration is refused and the fallback login succeeds', async () => {
+    const runtime = await loadRuntime();
+    facade.behavior.registerAndLogin.mockRejectedValueOnce(
+        toApiMutationHttpError('/api/auth/register', 429, 'rate-limited', 'Too many registration attempts')
+    );
+
+    const diagnostics = await runtime.authenticate({
+        connection: 'aliceHttp',
+        rallar: { apiBaseUrl: 'https://api.example.test', username: 'alice', password: 'secret', register: 'if-needed' }
+    });
+
+    expect(diagnostics).toMatchObject({ status: 'authenticated', sessionId: 'session-1', username: 'alice' });
+    expect(facade.records.loginAttempts).toHaveLength(1);
 });
 
 it('requires connected runtime cleanup before a fresh auth-only login', async () => {
@@ -360,3 +394,17 @@ it('clears failed auth bootstrap state before retrying the same identity', async
     expect(facade.records.loginAttempts).toHaveLength(2);
     expect(topics()).toContain('rallar.browser.authenticate_failed');
 });
+
+function toApiMutationHttpError(path: string, status: number, code: string, message: string): ApiHttpError {
+    const failure = {
+        type: 'api-mutation-failure',
+        version: 'canonical.v2',
+        code,
+        status,
+        message,
+        issues: null,
+        denial: null,
+        retry: null
+    };
+    return new ApiHttpError('POST', path, status, JSON.stringify(failure));
+}

@@ -1,4 +1,6 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -29,6 +31,11 @@ export namespace BlackBoxRallarAuthentication {
     export interface Provenance {
         readonly key: string;
         readonly session: BlackBoxRallarConnectionState.Session;
+    }
+    export interface RefusedRegistration {
+        readonly username: string;
+        readonly password: string;
+        readonly refusal: Error;
     }
     export interface Dependencies {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
@@ -63,19 +70,36 @@ export class BlackBoxRallarAuthentication {
         if (!username || !password) {
             return this.#restoreRequiredSession(config);
         }
-        if (register === true || register === 'if-needed') {
-            const registered = await this.#tryRegistration(config, { username, password, displayName }, signal);
-            if (registered) {
-                return registered;
-            }
+        if (register !== true && register !== 'if-needed') {
+            return this.#login(config, { username, password }, signal);
         }
-        return this.#login(config, { username, password }, signal);
+        const registration = await this.#tryRegistration(config, { username, password, displayName }, signal);
+        return await registration.fold(
+            (refusal) => this.#loginAfterRefusedRegistration(config, { username, password, refusal }, signal),
+            async (registered) => registered
+        );
     };
+    async #loginAfterRefusedRegistration(
+        config: BlackBoxRallarConnectionConfig,
+        attempt: BlackBoxRallarAuthentication.RefusedRegistration,
+        signal?: AbortSignal
+    ): Promise<LoginResponse> {
+        try {
+            return await this.#login(config, { username: attempt.username, password: attempt.password }, signal);
+        }
+        catch (loginFailure) {
+            throw new Error(
+                `Registration refused: ${toAuthFailureSummary(attempt.refusal)}; ` +
+                    `login failed: ${toAuthFailureSummary(toError(loginFailure))}`,
+                { cause: loginFailure }
+            );
+        }
+    }
     async #tryRegistration(
         config: BlackBoxRallarConnectionConfig,
         credentials: RegisterRequest,
         signal?: AbortSignal
-    ): Promise<LoginResponse | undefined> {
+    ): Promise<Either<Error, LoginResponse>> {
         const { register, timeoutMs } = config.rallar;
         this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_started', {
             username: credentials.username,
@@ -89,7 +113,7 @@ export class BlackBoxRallarAuthentication {
             this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_completed', {
                 session: toBlackBoxRallarSessionDiagnostic(registered)
             });
-            return registered;
+            return Either.ofRight(registered);
         }
         catch (caught) {
             const error = toError(caught);
@@ -107,7 +131,7 @@ export class BlackBoxRallarAuthentication {
                 'rallar.browser.register_failed_login_fallback',
                 { error: toBlackBoxRallarSerializedError(error) }
             );
-            return undefined;
+            return Either.ofLeft(error);
         }
     }
     async #login(
@@ -319,4 +343,9 @@ export class BlackBoxRallarAuthentication {
             throw error;
         }
     };
+}
+
+function toAuthFailureSummary(error: Error): string {
+    const failure = error instanceof ApiHttpError ? error.mutationFailure : undefined;
+    return failure === undefined ? error.message : `${failure.status} ${failure.code} ${failure.message}`;
 }
