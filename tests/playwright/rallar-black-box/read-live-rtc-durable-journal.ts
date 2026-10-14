@@ -17,7 +17,8 @@ export interface LiveRtcDurableJournalInput {
     readonly storageDirectory: string;
     readonly rawPath: string;
     readonly rawRelativePath: string;
-    readonly boundaries: readonly RtcB06BrowserRecordingReading[];
+    readonly runId: string;
+    readonly boundaries: readonly RtcB06BrowserRecordingReading[] | undefined;
 }
 
 export interface LiveRtcDurableJournal {
@@ -38,8 +39,8 @@ export interface LiveRtcJournalFailure {
 export async function readLiveRtcDurableJournal(
     journal: LiveRtcDurableJournalInput
 ): Promise<Either<LiveRtcJournalFailure, LiveRtcDurableJournal>> {
-    const runId = journal.boundaries[0]?.runId;
-    if (runId === undefined || !/^[a-z0-9-]+$/.test(runId)) {
+    const runId = journal.runId;
+    if (!/^[a-z0-9-]+$/.test(runId)) {
         return Either.ofLeft({ reason: 'journal-unsupported-run-directory', source: null });
     }
     let file: FileHandle | undefined;
@@ -47,7 +48,11 @@ export async function readLiveRtcDurableJournal(
         const path = resolve(journal.storageDirectory, 'runs', runId, 'events.jsonl');
         file = await readConfinedJournalFile(journal.repoRoot, path);
         const size = (await file.stat()).size;
-        const proof = await readRtcB06Journal(readFileChunks(file, size), journal.boundaries);
+        const proof: Either<string, RtcB06JournalProof> = journal.boundaries === undefined
+            ? Either.ofLeft('journal-terminal-health-unavailable')
+            : journal.boundaries.some((boundary) => boundary.runId !== runId)
+            ? Either.ofLeft('journal-run-identity-mismatch')
+            : await readRtcB06Journal(readFileChunks(file, size), journal.boundaries);
         const bytes = proof.right?.bytes ?? size;
         const reference = await writeJournalPrefix(file, { ...journal, bytes });
         if (proof.left !== undefined) {

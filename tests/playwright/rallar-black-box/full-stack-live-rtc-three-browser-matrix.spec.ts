@@ -390,6 +390,7 @@ async function writeAttemptEvidence(
         repoRoot: input.context.repoRoot,
         baselineId: input.context.baselineId,
         relativePath: input.context.locator.rawResultRelativePath,
+        runId: input.runId,
         evidence: attempt
     });
     await writeLiveRtcRetentionCohortIfComplete(input.context);

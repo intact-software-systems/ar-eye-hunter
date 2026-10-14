@@ -612,6 +612,7 @@ export async function writeLiveRtcRetentionCohortIfComplete(
     );
     const cohort = buildLiveRtcRetentionCohort({ identity, attempts });
     return writeLiveRtcPerformanceEvidence({
+        runId: null,
         repoRoot: context.repoRoot,
         baselineId: context.baselineId,
         relativePath: `artifacts/staging/${identity.cohortId}.json`,

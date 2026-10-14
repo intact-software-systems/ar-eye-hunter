@@ -48,8 +48,8 @@ async function writeJournalSample(
         ? checkpoints.find((checkpoint) => jsonRecord(checkpoint)?.cycle === 100)
         : undefined;
     const boundaries = terminal === undefined ? undefined : toRtcB06BrowserRecordingReadings(terminal);
-    if (boundaries === undefined) {
-        return toJournalFailure(sample, 'journal-terminal-health-unavailable', null);
+    if (input.runId === null) {
+        return toJournalFailure(sample, 'journal-owned-run-unavailable', null);
     }
     const identity = sample.identity;
     const storageDirectory =
@@ -60,6 +60,7 @@ async function writeJournalSample(
         storageDirectory,
         rawRelativePath,
         rawPath: `${input.repoRoot}/tmp/perf/rtc-baseline/${input.baselineId}/${rawRelativePath}`,
+        runId: input.runId,
         boundaries
     });
     if (result.left !== undefined) {

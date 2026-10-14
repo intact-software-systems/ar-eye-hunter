@@ -15,6 +15,7 @@ export interface WriteLiveRtcPerformanceEvidenceInput {
     repoRoot: string;
     baselineId: string;
     relativePath: string;
+    runId: string | null;
     evidence: RtcBaselineExternalAttemptDto | RtcBaselineExternalCohortDto;
 }
 
