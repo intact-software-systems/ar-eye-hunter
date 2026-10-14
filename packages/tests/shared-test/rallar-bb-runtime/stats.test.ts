@@ -388,3 +388,27 @@ describe('the stats result rallar.congestion block', () => {
         );
     });
 });
+
+it('browser Health carries one nested history snapshot before its own stats and result events', async () => {
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ eventHistory: { mode: 'recent', maxEvents: 64 } });
+    expect((await runtime.execute({ kind: 'reset', commandId: 'reset-before-capture' })).ok).toBe(true);
+    runtime.recordEvent({ kind: 'event', topic: 'bootstrap-before-assignment' });
+    runtime.beginEventCapture({ runId: 'run', agentId: 'agent' });
+    const result = await runtime.execute({ kind: 'health', commandId: 'actual-health' }, { runId: 'run', agentId: 'agent' });
+    expect(result.ok).toBe(true);
+    expect(result.value).not.toHaveProperty('eventHistory');
+    expect(result.value).toMatchObject({
+        stats: {
+            eventHistory: {
+                policy: { mode: 'recent', maxEvents: 64 },
+                generation: 1,
+                totalEvents: 2,
+                retainedEvents: 2,
+                evictedEvents: 0,
+                countsByKind: { event: 1, result: 1, stats: 0, diagnostic: 0, message: 0, report: 0, state: 0 },
+                capture: { status: 'continuous', identity: { runId: 'run', agentId: 'agent' }, start: { generation: 1, ordinal: 3 } }
+            }
+        }
+    });
+    expect(runtime.state().eventHistory).toMatchObject({ generation: 1, totalEvents: 4, countsByKind: { event: 1, result: 2, stats: 1 } });
+});

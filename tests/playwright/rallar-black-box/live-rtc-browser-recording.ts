@@ -78,7 +78,8 @@ export class LiveRtcBrowserRecording {
                 commandId,
                 command: { kind: 'health' }
             });
-            const receipt = toBrowserDiagnosticsReceipt(jsonRecord(result.result?.value)?.browserDiagnostics);
+            const health = jsonRecord(result.result?.value);
+            const receipt = toBrowserDiagnosticsReceipt(health?.browserDiagnostics);
             if (
                 !result.ok || result.agentId !== agent.agentId || result.commandId !== commandId ||
                 receipt === undefined || receipt.routineBrowserDiagnostics !== input.mode ||
@@ -86,7 +87,7 @@ export class LiveRtcBrowserRecording {
             ) {
                 throw new Error('Browser recording admission requires attributed actual Health in the selected mode.');
             }
-            const eventHistory = toRtcB06EventHistory(jsonRecord(result.result?.value)?.eventHistory);
+            const eventHistory = toRtcB06EventHistory(jsonRecord(health?.stats)?.eventHistory);
             if (
                 eventHistory === undefined ||
                 !isSameEventHistoryPolicy(agent.eventHistory ?? { mode: 'full' }, eventHistory.policy) ||
@@ -130,14 +131,15 @@ export class LiveRtcBrowserRecording {
         if (lifetime === undefined) {
             return undefined;
         }
-        const receipt = toBrowserDiagnosticsReceipt(jsonRecord(result.result?.value)?.browserDiagnostics);
+        const health = jsonRecord(result.result?.value);
+        const receipt = toBrowserDiagnosticsReceipt(health?.browserDiagnostics);
         if (
             !result.ok || runId !== lifetime.admission.runId || receipt === undefined ||
             validateBrowserDiagnosticsLifetime(lifetime.current, receipt).length > 0
         ) {
             throw new Error('Browser recording Health does not preserve the admitted adapter lifetime.');
         }
-        const eventHistory = toRtcB06EventHistory(jsonRecord(result.result?.value)?.eventHistory);
+        const eventHistory = toRtcB06EventHistory(jsonRecord(health?.stats)?.eventHistory);
         if (
             eventHistory === undefined ||
             !isRtcB06EventHistoryContinuous(lifetime.eventHistory, eventHistory)
