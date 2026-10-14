@@ -121,6 +121,18 @@ tree depth (topology planning), (2) per-hop ALM cost and retry churn at hub rela
 diagnostic volume making the evidence lossy, (4) unobserved limiter/breaker/queue state needing a
 diagnostic before it can be ruled in or out.
 
+### 1.7 Measured on the hosted plane during step 2b
+
+| Head                                              | Hosted 15 (manifest 19)     | What the artifacts show                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bf29cf846` (engine + handler cost)               | failed at setup             | no more 503s; 8 player connects hit the recipe command timeout in the room-join phase and the director timed out on RTC readiness; every agent signed in as the one shared operator user, so each WebSocket connect fanned out 1+N snapshot pages for that principal (§1.2 W6)                                    |
+| `cbe594790` (one user per agent, `controller-NN`) | failed at the first command | the fan-out is gone; the 15 registrations (`register: 'if-needed'`, PBKDF2-SHA256 at 120,000 iterations) serialize on the AppInbox at ≈350 ms each inside the first HTTP command's 5 s allowance, so the agents at the back of the queue are cancelled (one registered in 4.9 s and passed, the next was cut off) |
+
+The sign-in therefore becomes an explicit first recipe step under the 45 s setup allowance (an
+`http.request` to an authenticated read; the group requests keep their 5 s allowance), which is
+the design's phase-budget rule applied to authentication. The registration cost itself is the
+password derivation's security parameter and stays; a cohort of 50 then signs in within ≈18 s.
+
 ## 2. GitHub Free review
 
 The repository is public, so standard-runner minutes are free; the hard limits are ≈20 concurrent
