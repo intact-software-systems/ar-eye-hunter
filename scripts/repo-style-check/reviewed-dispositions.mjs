@@ -991,6 +991,79 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'validateExpectedLayout'
     }),
+    // Raw state-write options stay inside this one validation/snapshot boundary.
+    // Every consumed scalar, array, effect map and nested fixture field validates
+    // before the named spec handoff; optional collections are then copied. The
+    // warning-tier cap records this cohesive grammar, not future growth.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toApiV1StateWriteEvidenceSpec',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateStateWriteEvidenceSpecShape',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateOverdueRecoveryFixtureShape',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord',
+        maximumMagnitude: 1
+    }),
+    // These raw SQL options go directly to the complete spec boundary above,
+    // before the first query. No unvalidated input feeds SQL or fixture policy.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts',
+        rule: 'boundary.unknown',
+        symbol: 'collectApiV1StateWriteEvidenceFromSql',
+        maximumMagnitude: 1
+    }),
+    // The parsed message envelope is narrowed by object, presence and string
+    // checks; only the two checked identity strings leave this pure boundary.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toEvidenceMessageIdentity',
+        maximumMagnitude: 1
+    }),
+    // Intermediate mutation rows are opaque SQL evidence: only array length
+    // and unchanged artifact retention are used, never domain field decisions.
+    // Undefined names the exact contract owner, not named-function immunity.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'deriveApiV1StateWriteEvidence',
+        maximumMagnitude: 1
+    }),
+    // Deliberately malformed JSON enters the real SQL option validator. The
+    // test asserts refusal before any query; raw input never becomes authority.
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts',
         rule: 'boundary.unknown',
