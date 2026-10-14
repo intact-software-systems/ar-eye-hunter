@@ -208,7 +208,7 @@ describe('ALM delivery diagnostic selection', () => {
         expect(toMergedRuntimeConfig(config, { rallar: { typeId: 'next' } }).rallar?.almDiagnostics).toBeUndefined();
     });
 
-    it('keeps the executable ALM manifests explicitly On through their generator', () => {
+    it('keeps the conformance ALM manifests explicitly On and the canonical scale manifests explicitly Off through their generator', () => {
         const entries = createHetznerDistributedManifestCatalog().filter((entry) => /\/(18|19|20|21|22)-alm-/.test(entry.filePath));
         expect(entries).toHaveLength(5);
         for (const entry of entries) {
@@ -219,7 +219,8 @@ describe('ALM delivery diagnostic selection', () => {
                 const connects = toNestedCommands(recipe.recipe.commands).filter((command) => command.kind === 'rtc.connect');
                 expect(connects.length).toBeGreaterThan(0);
                 for (const connect of connects) {
-                    expect(connect.kind === 'rtc.connect' && connect.rallar?.almDiagnostics, entry.filePath).toBe(true);
+                    expect(connect.kind === 'rtc.connect' && connect.rallar?.almDiagnostics, entry.filePath)
+                        .toBe(/\/(18|22)-alm-/.test(entry.filePath));
                 }
             }
         }

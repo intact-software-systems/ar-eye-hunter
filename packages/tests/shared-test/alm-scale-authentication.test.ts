@@ -111,7 +111,7 @@ async function bootstrapWorkerBrowser(): Promise<RallarBlackBoxBrowserTestRuntim
 it.each(['director', 'player'] as const)('restores the authenticated %s worker identity through the browser connect boundary', async (role) => {
     const browser = await bootstrapWorkerBrowser();
 
-    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, role);
+    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false }, role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
     if (connect?.kind !== 'rtc.connect') {
         throw new Error('The scale setup has no connect command.');
@@ -156,7 +156,7 @@ it.each<AlmScalePhaseCase>([
         await sleep(phaseCase.readinessDelayMs, options?.signal);
         return readyRoom;
     });
-    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, phaseCase.role);
+    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false }, phaseCase.role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
     if (connect?.kind !== 'rtc.connect') {
         throw new Error('The scale setup has no connect command.');

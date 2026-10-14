@@ -88,6 +88,18 @@ green run order:
 | `diagnostic/rtc-messages-all-peer-50-agent-30s-20hz-tree.json`          |     50 | 20 Hz all-peer multicast over a forced tree.                                          |
 | `diagnostic/rtc-messages-{all-peer,principal}-50-agent-60m-*-tree.json` |     50 | 60-minute tree soaks at 5, 10, or 20 Hz.                                              |
 | `diagnostic/matrix/*.json`                                              |  10–30 | Principal and all-peer tree matrix at 10/15/20/30 agents, 30 s or 5 min, 10 or 20 Hz. |
+| `diagnostic/alm-conformance-{6,11}-agent-30s.json`                      |   6/11 | The ALM scale workload at six and eleven browsers, with the ALM diagnostic stream on. |
+
+The ALM scale manifests share one recipe builder and differ in the connect's
+`almDiagnostics` flag. The canonical 15/30/50-agent manifests (19–21) connect
+with it off: no scale assertion reads the `rallar.browser.alm.*` topics, and at
+50 agents that stream was measured at about 9,000 events per second, 94 % of the
+harness events, with 75 % of events reaching the control server more than a second
+late and 13 agents' recipe results lost. The congestion, hand-off refusal and
+ordering-track counters the assertions and samplers read are counted before the
+flag, so they hold with the stream off. The 6- and 11-browser diagnostic
+checkpoints keep it on, for the per-message inbound and ACK evidence a diagnosis
+needs.
 
 Regenerate or verify the checked-in JSON from the TypeScript catalog:
 
@@ -397,7 +409,9 @@ backpressure count counts frames a carrier refused at admission for its own rate
 limit or open circuit (`rate-limited`, `circuit-open`), not channel
 backpressure: a carrier at its high watermark refuses an ALM send `congested`
 or holds it `not-ready`, which the agent's `stats.rallar.congestion` counters
-read.
+read. The same block counts the refused hand-offs per reason (`rateLimited`,
+`circuitOpen`) and the most bytes an RTC data channel held queued at a
+submission (`queuedBytesHighWater`).
 
 ## SPA Review
 

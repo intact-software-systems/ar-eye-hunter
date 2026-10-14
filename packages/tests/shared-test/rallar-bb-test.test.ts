@@ -104,7 +104,7 @@ describe('runtime construction', () => {
             limits: AL_VOLATILE_SESSION_LIMITS,
             overloaded: false
         };
-        const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4 };
+        const initialCongestion = { dropped: 2, deferred: 3, handedOver: 4, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
         const input = {
             eventHistory: { mode: 'full' } as const,
             now: () => 1_000,
@@ -133,7 +133,7 @@ describe('runtime construction', () => {
             resources.push('replacement');
         };
         input.readAlmUsage = async () => ({ ...initialLedger, usage: { admissions: 99, bytes: 99, oldestAgeMs: 99, tracks: 99 } });
-        input.readCongestionCounters = async () => ({ dropped: 99, deferred: 99, handedOver: 99 });
+        input.readCongestionCounters = async () => ({ dropped: 99, deferred: 99, handedOver: 99, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 });
         runtime.recordEvent({ kind: 'event', topic: 'snapshot' });
         expect(runtime.state().events[0]).toMatchObject({ atEpochMs: 1_000, eventId: expect.stringMatching(/^event-initial-/) });
         expect((await runtime.execute({ kind: 'health' })).commandId).toMatch(/^command-initial-/);

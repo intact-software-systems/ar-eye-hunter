@@ -136,9 +136,10 @@ every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
-  `receipt-confirmation`, or `congestion`
+  `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
+  `rtc-handoff-refusal`, or `rtc-queued-bytes-high-water`
 - `durationMs`: how long that phase took, on every kind but `commit-phases`,
-  `control-admission`, `receipt-confirmation` and `congestion`: `commit-phases` splits its own into the two halves
+  `control-admission`, `receipt-confirmation`, `congestion` and the three `rtc-*` kinds: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
   storage read cost
@@ -177,6 +178,15 @@ every session the page opens. The event's `data` is the event itself:
   store-level counter before and after its own chain and reports the window
   delta — a concurrent commit on the same store (another sender, or the same
   sender's drain) lands in that window and is counted too
+
+- `rtc-handoff-refusal` carries `reason` (`rate-limited` or `circuit-open`) and
+  `messageCount`: one event for each hand-off of the page's own sends or
+  controls that the RTC carrier's per-session rate limiter or open circuit
+  breaker refused before admission. `rtc-queued-bytes-high-water` carries
+  `queuedBytes`: one event each time a submission reads an RTC data channel
+  holding more queued bytes than any earlier submission of that connection, so
+  the peak is observable without one event per send. The harness counts both
+  into `stats.rallar.congestion` whatever `almDiagnostics` says
 
 - `commit-phases`, `effect-drain` and `readiness-probe` carry `lane`: `durable`
   when the owner runs over the IndexedDB pair, `volatile` when it runs over the

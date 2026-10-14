@@ -60,7 +60,7 @@ import {
 } from './rallar-browser-runtime/browser-rallar-runtime-test-harness.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
-const INPUT = { participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 } as const;
+const INPUT = { participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false } as const;
 
 interface ScaleWirePayload extends RallarBlackBoxTestRecord {
     readonly typeId: string;
@@ -339,7 +339,7 @@ class ScaleActor {
                     overloaded: false,
                     orderingTracks: 85
                 }),
-                readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0 }),
+                readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>
                     this.native.readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(command))),
                 close: async () => this.native.close(),

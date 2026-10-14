@@ -99,7 +99,14 @@ it.each([undefined, true, false])('applies ALM recording %s while preserving obs
             'rallar.browser.alm.storage_reset'
         ]
     );
-    await expect(runtime.readCongestionCounters()).resolves.toEqual({ dropped: 0, deferred: 1, handedOver: 0 });
+    await expect(runtime.readCongestionCounters()).resolves.toEqual({
+        dropped: 0,
+        deferred: 1,
+        handedOver: 0,
+        rateLimited: 0,
+        circuitOpen: 0,
+        queuedBytesHighWater: 0
+    });
     await expect(runtime.readAlmUsage()).resolves.toMatchObject({ orderingTracks: 3 });
     expect(events).toContainEqual(expect.objectContaining({
         topic: 'rallar.browser.connect.phase_completed',

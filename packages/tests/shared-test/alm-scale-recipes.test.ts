@@ -99,7 +99,7 @@ function createExpectedMatchResults(): NonNullable<ArenaMatchState['results']> {
 
 describe('ALM scale recipes', () => {
     it.each([15, 30, 50] as const)('declares complete receipt audiences and valid commands for %i participants', (participantCount) => {
-        const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000 });
+        const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
 
         expect(scale.recipes.map((recipe) => recipe.recipeId)).toEqual(['alm-scale-director', 'alm-scale-player']);
         expect(scale.metadata).toMatchObject({
@@ -205,8 +205,16 @@ describe('ALM scale recipes', () => {
         }
     });
 
+    it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {
+        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics });
+
+        const connects = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
+            .filter((command) => command.kind === 'rtc.connect');
+        expect(connects.map((command) => command.rallar?.almDiagnostics)).toEqual([almDiagnostics, almDiagnostics]);
+    });
+
     it('authors coherent AR Eye shot and completed-match wire specimens', () => {
-        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 });
+        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const playerCommands = flattenCommands(scale.recipes[1].commands);
         const shots = playerCommands.filter((command) => command.kind === 'messages.send');
         expect(shots).toHaveLength(6);

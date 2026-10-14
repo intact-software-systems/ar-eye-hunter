@@ -104,7 +104,7 @@ const READY_ROOM: RallarRoomTransportStatus = {
 };
 
 function getSampler(role: 'director' | 'player'): RallarBlackBoxTestCommand {
-    const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 });
+    const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
     const traffic = scale.recipes[role === 'director' ? 0 : 1].commands.find((command) => command.kind === 'parallel');
     if (traffic?.kind !== 'parallel') {
         throw new Error('Missing scale traffic');
@@ -153,7 +153,11 @@ describe('ALM scale sampled acceptance', () => {
     afterEach(() => vi.useRealTimers());
 
     it.each(['director', 'player'] as const)('checks seven readings across 30 seconds on the %s page', async (role) => {
-        const { result, elapsedMs, sampleStartsMs } = await runSampler({ role, readings: [HEALTHY], congestion: { dropped: 0, deferred: 2, handedOver: 1 } });
+        const { result, elapsedMs, sampleStartsMs } = await runSampler({
+            role,
+            readings: [HEALTHY],
+            congestion: { dropped: 0, deferred: 2, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        });
         expect(result.ok).toBe(true);
         expect(result.value).toMatchObject({ groupCount: 7, maxConcurrency: 7, passed: 90, failed: 0, cancelled: false });
         expect(elapsedMs).toBe(30_000);
@@ -164,7 +168,7 @@ describe('ALM scale sampled acceptance', () => {
         const { result, sampleStartsMs } = await runSampler({
             role,
             readings: [HEALTHY],
-            congestion: { dropped: 0, deferred: 2, handedOver: 1 },
+            congestion: { dropped: 0, deferred: 2, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 },
             readLatencyMs: 1_000
         });
         expect(result.ok).toBe(true);
@@ -176,7 +180,7 @@ describe('ALM scale sampled acceptance', () => {
         const { result, sampleStartsMs } = await runSampler({
             role: 'player',
             readings: [HEALTHY, { ...HEALTHY, own: { admissions: 1_001, bytes: 3_000 } }, HEALTHY],
-            congestion: { dropped: 0, deferred: 0, handedOver: 0 },
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 },
             readLatencyMs: 6_000
         });
         expect(sampleStartsMs).toEqual([0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000]);
@@ -188,7 +192,7 @@ describe('ALM scale sampled acceptance', () => {
         const { result, final } = await runSampler({
             role,
             readings: [HEALTHY, { ...HEALTHY, own: { admissions: 1_001, bytes: 3_000 } }, EMPTY],
-            congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
         });
         expect(final.value).toMatchObject({ rallar: { alm: { own: { admissions: 0 } } } });
         expect(result.ok).toBe(false);
@@ -196,27 +200,47 @@ describe('ALM scale sampled acceptance', () => {
     });
 
     it.each([
-        { name: 'missing ledger', reading: undefined, congestion: { dropped: 0, deferred: 0, handedOver: 0 } },
+        {
+            name: 'missing ledger',
+            reading: undefined,
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        },
         { name: 'missing congestion', reading: HEALTHY, congestion: undefined },
-        { name: 'own byte excess', reading: { ...HEALTHY, own: { admissions: 6, bytes: 4_194_305 } }, congestion: { dropped: 0, deferred: 0, handedOver: 0 } },
+        {
+            name: 'own byte excess',
+            reading: { ...HEALTHY, own: { admissions: 6, bytes: 4_194_305 } },
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        },
         {
             name: 'oldest counted age excess',
             reading: { ...HEALTHY, usage: { ...HEALTHY.usage, oldestAgeMs: 300_001 } },
-            congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
         },
         {
             name: 'own ordering track excess',
             reading: { ...HEALTHY, usage: { ...HEALTHY.usage, tracks: 65 } },
-            congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
         },
-        { name: 'ordering snapshot excess', reading: { ...HEALTHY, orderingTracks: 513 }, congestion: { dropped: 0, deferred: 0, handedOver: 0 } },
-        { name: 'overload', reading: { ...HEALTHY, overloaded: true }, congestion: { dropped: 0, deferred: 0, handedOver: 0 } },
+        {
+            name: 'ordering snapshot excess',
+            reading: { ...HEALTHY, orderingTracks: 513 },
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        },
+        {
+            name: 'overload',
+            reading: { ...HEALTHY, overloaded: true },
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        },
         {
             name: 'relaxed runtime limit',
             reading: { ...HEALTHY, limits: { ...HEALTHY.limits, maxTracks: 128 } },
-            congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+            congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
         },
-        { name: 'congestion drop', reading: HEALTHY, congestion: { dropped: 1, deferred: 0, handedOver: 0 } }
+        {
+            name: 'congestion drop',
+            reading: HEALTHY,
+            congestion: { dropped: 1, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+        }
     ])('fails closed on $name', async ({ reading, congestion }) => {
         const { result } = await runSampler({ role: 'player', readings: [reading], congestion });
         expect(result.ok).toBe(false);
@@ -224,7 +248,7 @@ describe('ALM scale sampled acceptance', () => {
 });
 
 function recordTrafficArrivals(runtime: RallarBlackBoxBrowserTestRuntime, scenario: TrafficScenario): void {
-    const input = { participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000 } as const;
+    const input = { participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false } as const;
     const prefix = `alm-scale-${scenario.role}`;
     const shotCount = (input.participantCount - 1) * 6;
     const payloads = scenario.role === 'player'
@@ -320,7 +344,7 @@ function createTrafficRuntime(scenario: TrafficScenario): RallarBlackBoxBrowserT
             close: async () => ({}),
             health: async () => ({ connected: true }),
             readAlmUsage: async () => HEALTHY,
-            readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0 }),
+            readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
             sendMessage: async (command) => ({ handleId: command.handleId, carrier: command.carrier, status: 'acknowledged' }),
             observeDelivery: async (command) => {
                 await sleep(scenario.ackDelayMs ?? 0);
@@ -354,7 +378,7 @@ async function runTrafficScenario(scenario: TrafficScenario): Promise<RallarBlac
             })
     });
     const runtime = createTrafficRuntime(scenario);
-    const recipe = createAlmScaleRecipes({ participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000 })
+    const recipe = createAlmScaleRecipes({ participantCount: scenario.participantCount ?? 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false })
         .recipes[scenario.role === 'director' ? 0 : 1];
     await runtime.execute(recipe.commands.find((command) => command.kind === 'rtc.connect')!);
     await runtime.execute({ kind: 'director.status', commandId: 'alm-scale-player-ready-status', roomRef: GROUP, refresh: true });
@@ -500,7 +524,9 @@ function createEvidence(input: ControllerEvidenceInput): DistributedGroupAsserti
                     : []),
                 createSamplerTrafficEvidence(prefix, samplerEvidence),
                 ...createWorkloadEvidence(prefix, director, workloadEvidence),
-                createEvidenceResult(`${prefix}-final-stats`, 'stats', { rallar: { alm: HEALTHY, congestion: { dropped: 0, deferred: 0, handedOver: 0 } } }),
+                createEvidenceResult(`${prefix}-final-stats`, 'stats', {
+                    rallar: { alm: HEALTHY, congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 } }
+                }),
                 createEvidenceResult(`${prefix}-storage`, 'storage.counters', {
                     byOwner: { 'al-admission': 0, 'al-work': 5 },
                     workProbeCount: 5,
@@ -560,7 +586,7 @@ function createSamplerTrafficEvidence(prefix: string, samplerEvidence: SamplerEv
                     alm: samplerEvidence.overLimitSampleSlot === index + 1
                         ? { ...HEALTHY, own: { ...HEALTHY.own, admissions: 1_001 } }
                         : HEALTHY,
-                    congestion: { dropped: 0, deferred: 0, handedOver: 0 }
+                    congestion: { dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
                 }
             });
             return {
@@ -634,7 +660,7 @@ function createLifecycleReceiptEvidence(
 }
 
 function evaluateEvidence(evidence: readonly DistributedGroupAssertionRecipeEvidence[]) {
-    const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 });
+    const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
     const participants = Array.from(
         { length: 15 },
         (_, index) => ({ agentId: `controller-${String(index + 1).padStart(2, '0')}`, roles: [index === 0 ? 'sender' : 'receiver'] })

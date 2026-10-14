@@ -177,9 +177,9 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity while recording diagnostics for both roles', () => {
+    it('keeps the authored workload identity with the ALM diagnostic stream off for both roles', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
-        expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([true, true]);
+        expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
             ...authored,
             recipes: authored.recipes.map((selection) => ({

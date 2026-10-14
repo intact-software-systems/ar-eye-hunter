@@ -13,7 +13,10 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 const COUNTER_NAMES: Readonly<Record<keyof ALCongestionCounters, string>> = {
     dropped: 'dropped',
     deferred: 'deferred',
-    handedOver: 'handed-over'
+    handedOver: 'handed-over',
+    rateLimited: 'rate-limited',
+    circuitOpen: 'circuit-open',
+    queuedBytesHighWater: 'queued-bytes-high-water'
 };
 
 /**

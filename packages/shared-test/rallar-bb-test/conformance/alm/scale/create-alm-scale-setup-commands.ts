@@ -68,7 +68,7 @@ function createConnectCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
         readiness: { minReadyPeers: 1, timeoutMs: input.readyTimeoutMs, intervalMs: 100 },
         rallar: {
             ...RESTORED_SESSION_RALLAR,
-            almDiagnostics: true,
+            almDiagnostics: input.almDiagnostics,
             username: '{auth.username}',
             timeoutMs: input.readyTimeoutMs,
             typeId: 'room.ar-eye-hunter.director.intent.v1',
