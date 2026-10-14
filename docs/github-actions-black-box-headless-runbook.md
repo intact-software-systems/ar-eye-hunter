@@ -27,13 +27,38 @@ contexts. It uses no deployment, production secrets or external control operatio
 The shared queued concurrency group and exact `${{ github.sha }}` checkout apply
 to both modes. The registered manual workflow can run the feature branch before merge.
 
-For a local rehearsal, allocate fresh recorder storage before services start:
+For a local rehearsal, run the same steps the workflow runs: admit the manifest
+(which writes `source-manifest.json` into fresh recorder storage), then the
+Playwright lifecycle with the variables the spec requires. The ports are the
+workflow's; any free loopback ports work when another session holds them.
 
 ```sh
+N=15   # 15, 30 or 50
+case $N in
+  15) M=apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json;;
+  30) M=apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json;;
+  50) M=apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json;;
+esac
+export MANIFEST_PATH=$M TARGET_AGENT_COUNT=$N BROWSER_ENGINE=chromium REGISTER_BEFORE_LOGIN=true
 mkdir -p tmp/alm-v1c
-ALM_LOCAL_RECORDER_DIR="$(mktemp -d "$PWD/tmp/alm-v1c/all-local-recorder.XXXXXX")"
-CI=1 RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_FULL_STACK_HEADLESS=1 RALLAR_BLACK_BOX_API_MODE=memory RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=16 RALLAR_BLACK_BOX_STORAGE_DIR="$ALM_LOCAL_RECORDER_DIR" RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=unbounded RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=unbounded npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
+export RALLAR_BLACK_BOX_STORAGE_DIR="$(mktemp -d "$PWD/tmp/alm-v1c/all-local-recorder.XXXXXX")"
+node apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs
+node --import tsx apps/rallar-black-box/scripts/select-all-local-alm-manifest.mjs --admit
+CI=1 RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_FULL_STACK_HEADLESS=1 \
+RALLAR_BLACK_BOX_API_MODE=memory RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=$((N + 1)) \
+RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=unbounded RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=unbounded \
+RALLAR_BLACK_BOX_MANIFEST_PATH=$MANIFEST_PATH RALLAR_BLACK_BOX_EXPECTED_AGENT_COUNT=$N \
+VITE_RALLAR_API_BASE_URL=http://127.0.0.1:8080 VITE_RALLAR_SPA_BASE_URL=http://127.0.0.1:5176 \
+RALLAR_BLACK_BOX_CONTROL_BASE_URL=http://127.0.0.1:5180 \
+npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts \
+  tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts --retries=0
+npx tsx apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts \
+  --artifact-dir "$RALLAR_BLACK_BOX_STORAGE_DIR/observation"
 ```
+
+The verdict is `observation/distributed-run.json` (`state`, `rollup.ok`, `rollup.summary`
+with N/N participants and recipes and 231/231 passed group assertions); the analyzer
+writes `observation/analysis/{summary,fix-proposal,performance}.md` beside it.
 
 Retain the recorder directory after every attempt. GitHub always uploads
 `all-local-alm-<run_id>-<run_attempt>` with runner resources/runtime versions,
@@ -75,9 +100,12 @@ comparison; success cannot establish CPU-only causality or replace hosted scale 
   production branch or branches so only commits from those branches can read
   production secrets.
 - The selected manifest role map matches the workflow `agent_prefix`.
-- GitHub Actions minutes are available. GitHub Free includes 2,000 included minutes
-  per month for private repositories, and long 50-agent runs can use a large
-  share of that quickly.
+- GitHub Actions minutes are available. This repository is public, so standard
+  GitHub-hosted runner minutes are not billed; the 2,000 included minutes per
+  month apply only to private repositories. The binding limits are the roughly
+  20 concurrent jobs per account shared with all CI (every agent shard must run
+  at once, so a 50-agent run needs an otherwise idle account), the 4 vCPU /
+  16 GiB standard runner, and the single shared concurrency group.
 
 ## Dispatch Values
 
@@ -147,6 +175,34 @@ terminal_timeout_seconds=300
 5. Run the 50-agent 60-minute tree,
    `apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json`,
    only after the 30-second run is stable and identity checks pass.
+
+## ALM Scale Cohorts (manifests 19, 20 and 21)
+
+Run each cohort locally first (the all-local rehearsal above) and dispatch it
+through the workflow only after a local pass. In `hetzner-control` mode the
+three cohorts need input changes only:
+
+```text
+manifest_path=apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json
+target_agent_count=15   agents_per_job=3   max_parallel_jobs=5
+manifest_path=apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json
+target_agent_count=30   agents_per_job=2   max_parallel_jobs=15
+manifest_path=apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json
+target_agent_count=50   agents_per_job=3   max_parallel_jobs=17
+```
+
+All three set `metadata.rtcTopologyEnv` (mesh min size N + 1), so
+`rollout_control_plane=true` is required, and `register_before_login=true`.
+The 30- and 50-agent runs occupy 16 and 18 of the account's roughly 20
+concurrent jobs, so dispatch them when no other workflow is running. TURN is
+configured on the Hetzner plane, so cross-runner RTC edges form.
+
+In `all-local` mode only manifest 19 is a meaningful dispatch: the 4 vCPU
+runner already fails the 15-agent window while 6 agents pass, and 30 or 50
+browser contexts beside the API and control server exceed it. Carrying those
+cohorts all-local would need a larger or self-hosted runner (a `runs-on` input)
+and a production-built SPA instead of the Vite dev server; browsers cannot be
+sharded across runners while the API stays on one runner's loopback.
 
 ## Prefix And Role Map
 
