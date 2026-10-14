@@ -9,8 +9,9 @@ import {
 
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
+import { COALESCED_APP_OUTBOX_WORK_FIELD, type ComputedCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupPresenceSummaryComputed } from '@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     decodeJsonWireText,
@@ -49,8 +50,8 @@ import {
 } from '@shared/mod.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -80,6 +81,11 @@ interface ComputeLatestPresenceTopologyWorkInput {
     readonly repository: ReturnType<typeof createTestGroupStateRepository>;
     readonly ref: GroupRef;
     readonly nowEpochMs: number;
+}
+
+interface LatestPresenceTopologyWork {
+    readonly work: ComputedCoalescedAppOutboxWork;
+    readonly summaryOutcome: GroupPresenceSummaryComputed['outcome'];
 }
 
 afterEach(() => {
@@ -869,7 +875,7 @@ async function computeLatestPresenceTopologyWork({
     repository,
     ref,
     nowEpochMs
-}: ComputeLatestPresenceTopologyWorkInput) {
+}: ComputeLatestPresenceTopologyWorkInput): Promise<LatestPresenceTopologyWork> {
     const event = (await repository.listEvents(ref)).at(-1);
     if (!event) {
         throw new Error('Expected a group event for automatic presence-summary work');
@@ -916,10 +922,6 @@ async function entriesIn(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(
         (entries) => entries.filter((entry) => entry !== undefined)
     );
-}
-
-function readStoredALMessage(entry: { resource: string; }): ALMessage {
-    return decodePersistedALMessage(entry.resource);
 }
 
 function readJsonObject(serialized: string, label: string): JsonWireObject {

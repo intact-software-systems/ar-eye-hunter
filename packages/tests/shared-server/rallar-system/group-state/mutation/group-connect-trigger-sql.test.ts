@@ -25,7 +25,6 @@ import {
     computeAppOutboxInsert,
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import type { GroupMutationComputedWrite } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
@@ -35,6 +34,7 @@ import {
     GroupConnectTriggerLatchRepository,
     type GroupConnectTriggerIdentity
 } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     toRtcRttMutationReceiptId,
     toRtcRttTopologyOutboxId

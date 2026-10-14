@@ -25,12 +25,16 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type {
     GroupPresenceSummary,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
