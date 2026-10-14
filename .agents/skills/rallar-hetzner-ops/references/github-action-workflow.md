@@ -39,11 +39,11 @@ Use that full-rollout form for the first run after a code change or fresh VM
 setup. For repeated runs after the selected ref is already deployed, use the
 fast path:
 
-The dispatch helper defaults `register_before_login=true` because Hetzner runs
-currently target a memory-backed API and full rollout clears disposable auth
-users. Override it with `--register-before-login false` only for persistent
-pre-provisioned users; the workflow input itself still defaults to `false` for
-manual compatibility.
+The dispatch helper and the workflow input both default `register_before_login=true`
+because Hetzner runs currently target a memory-backed API and full rollout clears
+disposable auth users; with registration on, each headless agent gets its own
+`<prefix>-NN` user. Override it with `--register-before-login false` only for
+persistent pre-provisioned users signing in as the shared account.
 
 ```sh
 scripts/hosted-rallar/dispatch-distributed-recipe.sh \
@@ -104,8 +104,8 @@ TLS requirement.
 - `ready_timeout_seconds`: agent and distributed readiness timeout.
 - `terminal_timeout_seconds`: distributed recipe terminal-state timeout.
 - `register_before_login`: use for memory-backed API redeploys with disposable
-  users; the helper defaults this to `true`, while manual workflow dispatch
-  defaults to `false`.
+  users; the helper and the workflow both default this to `true`, and each agent
+  then registers its own `<prefix>-NN` user.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected. Default: `true`.
 
