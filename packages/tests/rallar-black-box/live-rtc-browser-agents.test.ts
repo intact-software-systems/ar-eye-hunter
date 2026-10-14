@@ -87,3 +87,11 @@ describe('live RTC browser agent startup', () => {
         expect(errors.map((error) => error.message)).toEqual(['close-failed']);
     });
 });
+
+it('carries initialized history through the canonical browser launch decoder', async () => {
+    const { resolveRallarBlackBoxBootstrapConfig } = await import('../../shared-test/rallar-bb-test/browser-control-agent-config.ts');
+    const query = toLiveRtcBrowserAgentQuery({ ...agentInput, config: { ...agentInput.config, eventHistory: { mode: 'recent', maxEvents: 64 } } });
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(`?${query}`, { VITE_RALLAR_EVENT_HISTORY: 'full' }, '');
+    expect(bootstrap.issues).toEqual([]);
+    expect(bootstrap.eventHistory).toEqual({ mode: 'recent', maxEvents: 64 });
+});

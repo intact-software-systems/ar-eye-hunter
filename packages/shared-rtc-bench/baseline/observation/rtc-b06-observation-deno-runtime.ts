@@ -4,6 +4,8 @@ import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagn
 import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import { FULL_STACK_RTC_ICE_FIXTURE_POLICIES } from '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts';
 
+import type { RallarBlackBoxEventHistoryPolicy } from '../../../shared-test/rallar-bb-test/runtime/event-history.ts';
+
 import { createRtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
 import { RTC_BASELINE_DENO_ROOT_PATH } from '../runtime/rtc-baseline-deno-runtime.ts';
@@ -26,6 +28,7 @@ import {
 export interface RtcB06LiveProducerCommandInput {
     readonly repositoryRoot: string;
     readonly baselineId: string;
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     readonly almDiagnostics?: boolean;
     readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
@@ -67,6 +70,9 @@ const liveRtcCommand = ['npm', 'run', 'test:rallar:full-stack:memory:live-rtc-3'
 const liveRtcProducerPath = 'tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts';
 
 const inheritedConfiguration = [
+    'VITE_RALLAR_EVENT_HISTORY',
+    'VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS',
+    'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE',
     'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
     'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
     'DATABASE_URL',
@@ -223,10 +229,15 @@ async function verifyPrivateProductionBuildOwnership(
 export function createRtcB06LiveProducerCommand(
     input: RtcB06LiveProducerCommandInput
 ): RtcB06LiveProducerCommand {
+    const eventHistory = input.eventHistory ?? { mode: 'full' };
     return {
         executable: 'env',
         arguments: [
             ...inheritedConfiguration.flatMap((name) => ['-u', name]),
+            `VITE_RALLAR_EVENT_HISTORY=${eventHistory.mode}`,
+            ...(eventHistory.mode === 'recent'
+                ? [`VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS=${eventHistory.maxEvents}`]
+                : []),
             `RALLAR_BLACK_BOX_ALM_DIAGNOSTICS=${input.almDiagnostics ?? true}`,
             `RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS=${input.routineBrowserDiagnostics ?? 'enabled'}`,
             `RALLAR_BLACK_BOX_RTC_BASELINE_ID=${input.baselineId}`,

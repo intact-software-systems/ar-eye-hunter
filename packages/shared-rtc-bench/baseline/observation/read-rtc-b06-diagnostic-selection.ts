@@ -1,4 +1,9 @@
 import {
+    validateEventHistoryPolicy,
+    type RallarBlackBoxEventHistoryPolicy
+} from '../../../shared-test/rallar-bb-test/runtime/event-history.ts';
+
+import {
     toRallarBlackBoxRoutineBrowserDiagnostics,
     type RallarBlackBoxRoutineBrowserDiagnostics
 } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
@@ -13,6 +18,7 @@ import type {
 import type { RtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 
 export interface RtcB06DiagnosticSelection {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly almDiagnostics: boolean;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
 }
@@ -54,7 +60,19 @@ export function resolveRtcB06DiagnosticSelection(
             }]
         };
     }
-    return { ok: true, value: { almDiagnostics: alm[0].value, routineBrowserDiagnostics } };
+    const history = resolveRtcB06EventHistorySelection(selected);
+    if (!history.ok) {
+        return history;
+    }
+
+    return {
+        ok: true,
+        value: {
+            eventHistory: history.value,
+            almDiagnostics: alm[0].value,
+            routineBrowserDiagnostics
+        }
+    };
 }
 
 export async function readRtcB06DiagnosticSelection(
@@ -81,4 +99,28 @@ export async function readRtcB06DiagnosticSelection(
         };
     }
     return resolveRtcB06DiagnosticSelection(environment.value.observation?.resolvedConfiguration ?? [], attempt);
+}
+
+function resolveRtcB06EventHistorySelection(
+    selected: readonly RtcBaselineResolvedConfigurationValueDto[]
+): RtcBaselineResult<RallarBlackBoxEventHistoryPolicy> {
+    const historyMode = selected.filter((entry) => entry.field === 'eventHistoryMode');
+    const historyBound = selected.filter((entry) => entry.field === 'eventHistoryMaxEvents');
+    const eventHistory = historyMode[0]?.value === 'full'
+        ? { mode: 'full' as const }
+        : { mode: historyMode[0]?.value, maxEvents: historyBound[0]?.value };
+    if (
+        historyMode.length !== 1 || historyBound.length !== 1 || validateEventHistoryPolicy(eventHistory).length > 0 ||
+        (historyMode[0]?.value === 'full' && historyBound[0]?.value !== 0)
+    ) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-event-history-selection',
+                message: 'RTC-B06 requires one complete initialized canonical event history policy for its exact case.'
+            }]
+        };
+    }
+    return { ok: true, value: Object.freeze(eventHistory as RallarBlackBoxEventHistoryPolicy) };
 }

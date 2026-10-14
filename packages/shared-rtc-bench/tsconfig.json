@@ -10,6 +10,7 @@
     "allowImportingTsExtensions": true,
     "types": ["node", "vitest/globals", "@types/deno"],
     "paths": {
+      "@shared-test/*": ["../../packages/shared-test/*"],
       "@shared-graph/*": ["../../packages/shared-graph/*"],
       "@shared-server/*": ["../../packages/shared-server/*"],
       "@shared-web/*": ["../../packages/shared-web/*"],

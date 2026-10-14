@@ -1,9 +1,20 @@
 import {
+    isSameEventHistoryPolicy,
+    type RallarBlackBoxEventHistory,
+    type RallarBlackBoxEventHistoryPolicy
+} from '@shared-test/rallar-bb-test/runtime/event-history.ts';
+
+import {
     toBrowserDiagnosticsReceipt,
     validateBrowserDiagnosticsLifetime,
     type BrowserDiagnosticsReceipt,
     type RallarBlackBoxRoutineBrowserDiagnostics
 } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+
+import {
+    isRtcB06EventHistoryContinuous,
+    toRtcB06EventHistory
+} from '../../../packages/shared-rtc-bench/baseline/acceptance/to-rtc-b06-event-history.ts';
 
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord } from './live-rtc-evidence-json.ts';
@@ -12,12 +23,14 @@ export namespace LiveRtcBrowserRecording {
     export interface Agent {
         readonly agentId: string;
         readonly page: object;
+        readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     }
     export interface Admission {
         readonly runId: string;
         readonly agentId: string;
         readonly commandId: string;
         readonly receipt: BrowserDiagnosticsReceipt;
+        readonly eventHistory: RallarBlackBoxEventHistory;
     }
     export interface AdmitInput {
         readonly runId: string;
@@ -25,6 +38,7 @@ export namespace LiveRtcBrowserRecording {
         readonly mode: RallarBlackBoxRoutineBrowserDiagnostics;
     }
     export interface Evidence {
+        readonly eventHistory: RallarBlackBoxEventHistory;
         readonly browserDiagnosticsAdmission: Admission;
         readonly browserDiagnosticsHealth: {
             readonly runId: string;
@@ -36,6 +50,7 @@ export namespace LiveRtcBrowserRecording {
         readonly page: object;
         readonly admission: Admission;
         readonly current: BrowserDiagnosticsReceipt;
+        readonly eventHistory: RallarBlackBoxEventHistory;
     }
 }
 
@@ -71,10 +86,30 @@ export class LiveRtcBrowserRecording {
             ) {
                 throw new Error('Browser recording admission requires attributed actual Health in the selected mode.');
             }
+            const eventHistory = toRtcB06EventHistory(jsonRecord(result.result?.value)?.eventHistory);
+            if (
+                eventHistory === undefined ||
+                !isSameEventHistoryPolicy(agent.eventHistory ?? { mode: 'full' }, eventHistory.policy) ||
+                eventHistory.capture.status !== 'continuous' ||
+                eventHistory.capture.identity.runId !== input.runId ||
+                eventHistory.capture.identity.agentId !== agent.agentId ||
+                admitted.some((lifetime) => lifetime.eventHistory.runtimeId === eventHistory.runtimeId)
+            ) {
+                throw new Error(
+                    'Browser recording admission requires the selected history on distinct attributed runtimes.'
+                );
+            }
             admitted.push({
                 page: agent.page,
-                admission: { runId: input.runId, agentId: result.agentId, commandId: result.commandId, receipt },
-                current: receipt
+                admission: {
+                    runId: input.runId,
+                    agentId: result.agentId,
+                    commandId: result.commandId,
+                    receipt,
+                    eventHistory
+                },
+                current: receipt,
+                eventHistory
             });
         }
         for (const lifetime of admitted) {
@@ -102,8 +137,18 @@ export class LiveRtcBrowserRecording {
         ) {
             throw new Error('Browser recording Health does not preserve the admitted adapter lifetime.');
         }
-        this.#lifetimes.set(lifetime.admission.agentId, { ...lifetime, current: receipt });
+        const eventHistory = toRtcB06EventHistory(jsonRecord(result.result?.value)?.eventHistory);
+        if (
+            eventHistory === undefined ||
+            !isRtcB06EventHistoryContinuous(lifetime.eventHistory, eventHistory)
+        ) {
+            throw new Error(
+                'Browser recording Health does not preserve admitted event history publication continuity.'
+            );
+        }
+        this.#lifetimes.set(lifetime.admission.agentId, { ...lifetime, current: receipt, eventHistory });
         return {
+            eventHistory,
             browserDiagnosticsAdmission: lifetime.admission,
             browserDiagnosticsHealth: { runId, agentId: lifetime.admission.agentId, commandId: result.commandId }
         };

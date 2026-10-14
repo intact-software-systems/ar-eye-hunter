@@ -77,9 +77,79 @@ it.each(['missing', 'duplicate', 'wrong-case', 'unsupported', 'disabled-default'
     const caseKey = { workloadId: 'RTC-B06', caseId: failure === 'disabled-default' ? 'default' : 'retention-100', inputKey: 'input' } as const;
     const recording = { caseKey, field: 'routineBrowserDiagnostics', value: failure === 'unsupported' ? 'off' : 'disabled', source: 'environment' as const };
     const entries = [
+        { caseKey, field: 'eventHistoryMode', value: 'full', source: 'default' as const },
+        { caseKey, field: 'eventHistoryMaxEvents', value: 0, source: 'default' as const },
         { caseKey, field: 'almDiagnostics', value: true, source: 'default' as const },
         ...(failure === 'missing' ? [] : [failure === 'wrong-case' ? { ...recording, caseKey: { ...caseKey, caseId: 'other' } } : recording]),
         ...(failure === 'duplicate' ? [recording] : [])
     ];
     expect(resolveRtcB06DiagnosticSelection(entries, caseKey)).toMatchObject({ ok: false });
 });
+
+it('binds full default history and recent/64 retention in initialized configuration', () => {
+    const result = createRtcBaselineRuntimeObservationInput(request, workloadEnvironment);
+    if (!result.ok) {
+        throw new Error(JSON.stringify(result.issues));
+    }
+    expect(
+        result.value.observation.resolvedConfiguration.filter((entry) => entry.field === 'eventHistoryMode').map((
+            entry
+        ) => [entry.caseKey.caseId, entry.value, entry.source])
+    )
+        .toEqual([['default', 'full', 'default'], ['all-scenarios', 'full', 'default'], ['retention-100', 'recent', 'default']]);
+    expect(result.value.observation.resolvedConfiguration.filter((entry) => entry.field === 'eventHistoryMaxEvents').map((entry) => entry.value)).toEqual([
+        0,
+        0,
+        64
+    ]);
+});
+
+it('executes the frozen recent/64 producer selection after stripping conflicting ambient history', () => {
+    const command = createRtcB06LiveProducerCommand({
+        repositoryRoot: '/repository',
+        baselineId: 'history',
+        eventHistory: { mode: 'recent', maxEvents: 64 },
+        attempt: {
+            workloadId: 'RTC-B06',
+            caseId: 'retention-100',
+            inputKey: 'e3-memory-retention-100',
+            intendedPhase: 'retained',
+            outerOrdinal: 1,
+            environmentId: 'E3-memory',
+            rawResultRelativePath: 'artifacts/staging/attempt.json'
+        }
+    });
+    const value = execFileSync(command.executable, [
+        ...command.arguments.slice(0, command.arguments.indexOf('npm')),
+        process.execPath,
+        '--eval',
+        'process.stdout.write(JSON.stringify([process.env.VITE_RALLAR_EVENT_HISTORY, process.env.VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS]))'
+    ], {
+        encoding: 'utf8',
+        env: { ...process.env, VITE_RALLAR_EVENT_HISTORY: 'full', VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS: '999' }
+    });
+    expect(JSON.parse(value)).toEqual(['recent', '64']);
+});
+
+it.each(['missing-mode', 'missing-bound', 'duplicate', 'wrong-case', 'invalid-mode', 'fractional', 'full-bound'])(
+    'rejects %s initialized history selection',
+    async (failure) => {
+        const { resolveRtcB06DiagnosticSelection } = await import('../../../baseline/observation/read-rtc-b06-diagnostic-selection.ts');
+        const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-memory-retention-100' } as const;
+        const mode = {
+            caseKey,
+            field: 'eventHistoryMode',
+            value: failure === 'invalid-mode' ? 'invalid' : failure === 'full-bound' ? 'full' : 'recent',
+            source: 'default' as const
+        };
+        const bound = { caseKey, field: 'eventHistoryMaxEvents', value: failure === 'fractional' ? 64.5 : 64, source: 'default' as const };
+        const entries = [
+            { caseKey, field: 'almDiagnostics', value: false, source: 'environment' as const },
+            { caseKey, field: 'routineBrowserDiagnostics', value: 'disabled', source: 'environment' as const },
+            ...(failure === 'missing-mode' ? [] : [failure === 'wrong-case' ? { ...mode, caseKey: { ...caseKey, caseId: 'other' } } : mode]),
+            ...(failure === 'missing-bound' ? [] : [bound]),
+            ...(failure === 'duplicate' ? [mode] : [])
+        ];
+        expect(resolveRtcB06DiagnosticSelection(entries, caseKey)).toMatchObject({ ok: false, issues: [{ code: 'invalid-event-history-selection' }] });
+    }
+);

@@ -446,7 +446,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 ...initialized.value,
                 resolvedConfiguration: [
                     ...initialized.value.resolvedConfiguration.filter((entry) =>
-                        entry.field === 'almDiagnostics' || entry.field === 'routineBrowserDiagnostics'
+                        ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents'].includes(entry.field)
                     ),
                     ...['default', 'all-scenarios', 'retention-100'].map((caseId) => ({
                         caseKey: { workloadId: 'RTC-B06' as const, caseId, inputKey: `e3-memory-${caseId}` },

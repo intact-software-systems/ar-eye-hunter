@@ -4,7 +4,7 @@ import { buildLiveRtcAgentDiagnostics } from '../../../tests/playwright/rallar-b
 import { LiveRtcBrowserRecording } from '../../../tests/playwright/rallar-black-box/live-rtc-browser-recording.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 
-const agents = ['a', 'b', 'c'].map((agentId) => ({ agentId, page: {} }));
+const agents = ['a', 'b', 'c'].map((agentId) => ({ agentId, page: {}, eventHistory: { mode: 'recent' as const, maxEvents: 64 } }));
 const receipt = { routineBrowserDiagnostics: 'disabled', omittedRoutineBrowserDiagnostics: 1, forwardedBrowserDiagnostics: 2 };
 it.each(['missing', 'wrong-mode', 'wrong-agent', 'malformed'])('blocks all initial mutations when C Health is %s', async (failure) => {
     const commands: string[] = [];
@@ -17,6 +17,7 @@ it.each(['missing', 'wrong-mode', 'wrong-agent', 'malformed'])('blocks all initi
                 commandId: input.commandId,
                 result: {
                     value: {
+                        eventHistory: history(input.agentId, 1),
                         browserDiagnostics: input.agentId !== 'c' ? receipt : failure === 'missing'
                             ? null
                             : failure === 'wrong-mode'
@@ -41,7 +42,7 @@ it('retains initial receipt and monotonic counters on the same page, refusing a 
             ok: true,
             agentId: input.agentId,
             commandId: input.commandId,
-            result: { value: { browserDiagnostics: receipt } }
+            result: { value: { browserDiagnostics: receipt, eventHistory: history(input.agentId, 1) } }
         })
     };
     const recording = new LiveRtcBrowserRecording(control);
@@ -50,7 +51,7 @@ it('retains initial receipt and monotonic counters on the same page, refusing a 
         ok: true,
         agentId: 'c',
         commandId: 'checkpoint-c',
-        result: { value: { browserDiagnostics: { ...receipt, omittedRoutineBrowserDiagnostics: 50 } } }
+        result: { value: { browserDiagnostics: { ...receipt, omittedRoutineBrowserDiagnostics: 50 }, eventHistory: history('c', 100) } }
     };
     recording.assertAgent(agents[2]!);
     expect(recording.observe('run', current)).toMatchObject({
@@ -71,3 +72,85 @@ it('preserves the actual root Health receipt in checkpoint details', () => {
     });
     expect(result.details).toMatchObject({ browserDiagnostics: receipt });
 });
+
+it.each(['missing', 'policy', 'identity', 'duplicate-runtime', 'gap'])('refuses %s admitted history before initial mutations', async (failure) => {
+    const recording = new LiveRtcBrowserRecording({
+        executeOk: async (input) => ({
+            ok: true,
+            agentId: input.agentId,
+            commandId: input.commandId,
+            result: {
+                value: {
+                    browserDiagnostics: receipt,
+                    eventHistory: input.agentId !== 'c'
+                        ? history(input.agentId, 1)
+                        : failure === 'missing'
+                        ? null
+                        : failure === 'policy'
+                        ? { ...history('c', 1), policy: { mode: 'full' } }
+                        : failure === 'identity'
+                        ? history('a', 1)
+                        : failure === 'duplicate-runtime'
+                        ? {
+                            ...history('c', 1),
+                            runtimeId: 'runtime-a',
+                            capture: { ...history('c', 1).capture, start: { runtimeId: 'runtime-a', generation: 0, ordinal: 1 } }
+                        }
+                        : { ...history('c', 1), capture: { status: 'gap' } }
+                }
+            }
+        })
+    });
+    await expect(
+        recording.admit({ runId: 'run', agents: agents.map((agent) => ({ ...agent, eventHistory: { mode: 'recent', maxEvents: 64 } })), mode: 'disabled' })
+    ).rejects.toThrow(/recording/i);
+});
+
+it('snapshots admitted history and refuses a substituted lifetime at a subsequent checkpoint', async () => {
+    const initial = history('c', 1);
+    const recording = new LiveRtcBrowserRecording({
+        executeOk: async (input) => ({
+            ok: true,
+            agentId: input.agentId,
+            commandId: input.commandId,
+            result: { value: { browserDiagnostics: receipt, eventHistory: input.agentId === 'c' ? initial : history(input.agentId, 1) } }
+        })
+    });
+    await recording.admit({ runId: 'run', agents: agents.map((agent) => ({ ...agent, eventHistory: { mode: 'recent', maxEvents: 64 } })), mode: 'disabled' });
+    initial.countsByKind.event = 999;
+    initial.capture.identity.runId = 'mutated';
+    const evidence = recording.observe('run', {
+        ok: true,
+        agentId: 'c',
+        commandId: 'checkpoint',
+        result: { value: { browserDiagnostics: receipt, eventHistory: history('c', 100) } }
+    });
+    expect(evidence?.browserDiagnosticsAdmission.eventHistory).toMatchObject({
+        totalEvents: 1,
+        countsByKind: { event: 1 },
+        capture: { identity: { runId: 'run' } }
+    });
+    expect(() =>
+        recording.observe('run', {
+            ok: true,
+            agentId: 'c',
+            commandId: 'next',
+            result: { value: { browserDiagnostics: receipt, eventHistory: { ...history('c', 101), generation: 1 } } }
+        })
+    ).toThrow(/continuity/);
+});
+
+function history(agentId: string, totalEvents: number) {
+    return {
+        runtimeId: `runtime-${agentId}`,
+        generation: 0,
+        policy: { mode: 'recent', maxEvents: 64 },
+        totalEvents,
+        retainedEvents: Math.min(totalEvents, 64),
+        evictedEvents: Math.max(0, totalEvents - 64),
+        evictedThroughEpochMs: totalEvents > 64 ? totalEvents : null,
+        countsByKind: { event: totalEvents, diagnostic: 0, message: 0, stats: 0, report: 0, result: 0, state: 0 },
+        reconnects: 0,
+        capture: { status: 'continuous', identity: { runId: 'run', agentId }, start: { runtimeId: `runtime-${agentId}`, generation: 0, ordinal: 1 } }
+    };
+}

@@ -768,6 +768,16 @@ function initializedProducerEnvironment() {
             controllerInputs: [],
             resolvedConfiguration: ['default', 'all-scenarios', 'retention-100'].flatMap((caseId) => [{
                 caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'eventHistoryMode',
+                value: caseId === 'retention-100' ? 'recent' : 'full',
+                source: 'default'
+            }, {
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'eventHistoryMaxEvents',
+                value: caseId === 'retention-100' ? 64 : 0,
+                source: 'default'
+            }, {
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
                 field: 'almDiagnostics',
                 value: caseId !== 'retention-100',
                 source: caseId === 'retention-100' ? 'environment' : 'default'

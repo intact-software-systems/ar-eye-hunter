@@ -1,8 +1,12 @@
 import {
+    isSameEventHistoryPolicy,
+    type RallarBlackBoxEventHistory
+} from '../../../shared-test/rallar-bb-test/runtime/event-history.ts';
+
+import {
     toBrowserDiagnosticsReceipt,
     validateBrowserDiagnosticsLifetime,
-    type BrowserDiagnosticsReceipt,
-    type RallarBlackBoxRoutineBrowserDiagnostics
+    type BrowserDiagnosticsReceipt
 } from '../../../shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 
 import type {
@@ -11,18 +15,23 @@ import type {
     RtcBaselineSampleDto
 } from '../contracts/rtc-baseline-contracts.ts';
 
+import type { RtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
+import { isRtcB06EventHistoryContinuous, toRtcB06EventHistory } from './to-rtc-b06-event-history.ts';
+
 interface BrowserRecordingReading {
     readonly agentId: string;
     readonly runId: string;
     readonly admissionCommandId: string;
     readonly healthCommandId: string;
+    readonly initialHistory: RallarBlackBoxEventHistory;
+    readonly currentHistory: RallarBlackBoxEventHistory;
     readonly initial: BrowserDiagnosticsReceipt;
     readonly current: BrowserDiagnosticsReceipt;
 }
 
 export function validateRtcB06BrowserRecording(
     sample: RtcBaselineSampleDto,
-    mode: RallarBlackBoxRoutineBrowserDiagnostics,
+    selection: RtcB06DiagnosticSelection,
     captures: readonly RtcBaselineJson[]
 ): readonly RtcBaselineIssueDto[] {
     const raw = toRecord(sample.rawEvidence);
@@ -38,7 +47,7 @@ export function validateRtcB06BrowserRecording(
         expected.set(value.agentId, value.runId);
     }
     const diagnostics = raw?.diagnostics;
-    if (!Array.isArray(diagnostics) || !hasVerifiedCheckpointReadings(diagnostics, expected, mode)) {
+    if (!Array.isArray(diagnostics) || !hasVerifiedCheckpointReadings(diagnostics, expected, selection)) {
         return recordingIssue();
     }
     if (sample.identity.caseId === 'retention-100') {
@@ -46,7 +55,7 @@ export function validateRtcB06BrowserRecording(
         if (
             expected.size !== 3 || !Array.isArray(checkpoints) || checkpoints.length !== 11 ||
             checkpoints.some((checkpoint, index) => toRecord(checkpoint)?.cycle !== index * 10) ||
-            !hasVerifiedCheckpointReadings(checkpoints, expected, mode) ||
+            !hasVerifiedCheckpointReadings(checkpoints, expected, selection) ||
             !hasMatchingCheckpointEvidence(diagnostics, checkpoints)
         ) {
             return recordingIssue();
@@ -80,26 +89,22 @@ function hasMatchingCheckpointEvidence(
 function hasVerifiedCheckpointReadings(
     checkpoints: readonly RtcBaselineJson[],
     expected: ReadonlyMap<string, string>,
-    mode: RallarBlackBoxRoutineBrowserDiagnostics
+    selection: RtcB06DiagnosticSelection
 ): boolean {
+    const mode = selection.routineBrowserDiagnostics;
     const previous = new Map<string, BrowserRecordingReading>();
     const commandIds = new Set<string>();
     const admissionCommandIds = new Set<string>();
     for (const checkpoint of checkpoints) {
-        const agents = toRecord(checkpoint)?.agents;
-        if (!Array.isArray(agents) || agents.length !== 3) {
-            return false;
-        }
-        const readings = agents.map(toBrowserRecordingReading);
-        if (
-            readings.some((reading) => reading === undefined) ||
-            new Set(readings.map((reading) => reading?.agentId)).size !== 3
-        ) {
+        const readings = toVerifiedBrowserRecordingReadings(checkpoint);
+        if (readings === undefined) {
             return false;
         }
         for (const reading of readings) {
             if (
                 reading === undefined || expected.get(reading.agentId) !== reading.runId ||
+                !isSameEventHistoryPolicy(reading.initialHistory.policy, selection.eventHistory) ||
+                !isRtcB06EventHistoryContinuous(reading.initialHistory, reading.currentHistory) ||
                 reading.initial.routineBrowserDiagnostics !== mode ||
                 reading.current.routineBrowserDiagnostics !== mode ||
                 validateBrowserDiagnosticsLifetime(reading.initial, reading.current).length > 0 ||
@@ -117,7 +122,9 @@ function hasVerifiedCheckpointReadings(
             if (
                 prior !== undefined && (prior.admissionCommandId !== reading.admissionCommandId ||
                     JSON.stringify(prior.initial) !== JSON.stringify(reading.initial) ||
-                    validateBrowserDiagnosticsLifetime(prior.current, reading.current).length > 0)
+                    validateBrowserDiagnosticsLifetime(prior.current, reading.current).length > 0 ||
+                    JSON.stringify(prior.initialHistory) !== JSON.stringify(reading.initialHistory) ||
+                    !isRtcB06EventHistoryContinuous(prior.currentHistory, reading.currentHistory))
             ) {
                 return false;
             }
@@ -138,6 +145,8 @@ function toBrowserRecordingReading(agent: RtcBaselineJson): BrowserRecordingRead
     const details = toRecord(record?.details);
     const admission = toRecord(details?.browserDiagnosticsAdmission);
     const health = toRecord(details?.browserDiagnosticsHealth);
+    const initialHistory = toRtcB06EventHistory(admission?.eventHistory);
+    const currentHistory = toRtcB06EventHistory(details?.eventHistory);
     const initial = toBrowserDiagnosticsReceipt(admission?.receipt);
     const current = toBrowserDiagnosticsReceipt(details?.browserDiagnostics);
     if (
@@ -147,7 +156,13 @@ function toBrowserRecordingReading(agent: RtcBaselineJson): BrowserRecordingRead
         admission.commandId.length === 0 ||
         typeof health.commandId !== 'string' || health.commandId.length === 0 ||
         health.commandId === admission.commandId ||
-        initial === undefined || current === undefined
+        initial === undefined || current === undefined || initialHistory === undefined ||
+        currentHistory === undefined ||
+        initialHistory.capture.status !== 'continuous' || currentHistory.capture.status !== 'continuous' ||
+        initialHistory.capture.identity.runId !== admission.runId ||
+        initialHistory.capture.identity.agentId !== record.agentId ||
+        currentHistory.capture.identity.runId !== admission.runId ||
+        currentHistory.capture.identity.agentId !== record.agentId
     ) {
         return undefined;
     }
@@ -156,6 +171,8 @@ function toBrowserRecordingReading(agent: RtcBaselineJson): BrowserRecordingRead
         runId: admission.runId,
         admissionCommandId: admission.commandId,
         healthCommandId: health.commandId,
+        initialHistory,
+        currentHistory,
         initial,
         current
     };
@@ -172,4 +189,24 @@ function recordingIssue(): readonly RtcBaselineIssueDto[] {
         message:
             'Actual attributed Health must prove the initialized recording mode and the same adapter lifetime at every required checkpoint.'
     }];
+}
+
+function toVerifiedBrowserRecordingReadings(
+    checkpoint: RtcBaselineJson
+): readonly BrowserRecordingReading[] | undefined {
+    const agents = toRecord(checkpoint)?.agents;
+    if (!Array.isArray(agents) || agents.length !== 3) {
+        return undefined;
+    }
+    const readings = agents.map(toBrowserRecordingReading);
+    if (
+        readings.some((reading) => reading === undefined) ||
+        new Set(readings.map((reading) => reading?.agentId)).size !== 3
+    ) {
+        return undefined;
+    }
+    if (new Set(readings.map((reading) => reading?.currentHistory.runtimeId)).size !== 3) {
+        return undefined;
+    }
+    return readings as readonly BrowserRecordingReading[];
 }

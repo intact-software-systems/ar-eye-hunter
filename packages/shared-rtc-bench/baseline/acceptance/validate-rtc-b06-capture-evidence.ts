@@ -53,7 +53,7 @@ export function validateRtcB06CaptureEvidence(
     const almIssues = validateAlmCapturePolicy(selection.value.almDiagnostics, captures);
     return almIssues.length > 0
         ? almIssues
-        : validateRtcB06BrowserRecording(sample, selection.value.routineBrowserDiagnostics, captures);
+        : validateRtcB06BrowserRecording(sample, selection.value, captures);
 }
 
 function validateAlmCapturePolicy(
