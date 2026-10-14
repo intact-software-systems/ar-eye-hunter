@@ -3462,21 +3462,6 @@ moved or changed test.
       }
     },
     {
-      "id": "state-write-evidence-invalid-input-no-sql",
-      "domain": "API-v1 state-write evidence input validation",
-      "owner": "Rallar shared-test maintainers",
-      "summary": "Malformed raw evidence input is rejected before any query reaches the external database port.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts#keeps raw JSON evidence inputs untrusted until the SQL validator runs",
-      "coverageRelation": "The test passes a raw JSON object with an empty match to the real SQL evidence collector, verifies its validation error, and observes that the SQL query port receives no invocation.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ApiV1StateWriteEvidenceSql database query callable",
-        "observableEffect": "A query invocation sends database work through the evidence collector's owned SQL port.",
-        "requiredConstraint": "An invalid empty match must reject before invoking the SQL query port.",
-        "failureRationale": "The final validation error alone permits an implementation to issue unintended database work before rejecting the raw input."
-      }
-    },
-    {
       "id": "relic-runtime-hydration-registers-each-listener-once",
       "domain": "Relic Hunters browser runtime hydration",
       "owner": "Relic Hunters maintainers",
@@ -8403,17 +8388,6 @@ moved or changed test.
       "owner": "Rallar shared-web maintainers",
       "rationale": "The ensureAllGroupsConnected absence directly guards the owned topology side-effect boundary during cache-only freshness renewal; content and event assertions alone cannot establish that absence.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts#emits only truthful Refreshed and preserves content without downstream topology work"
-    },
-    {
-      "id": "test-structure-coupling-6725710d19e85de6",
-      "path": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "state-write-evidence-invalid-input-no-sql",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared-test maintainers",
-      "rationale": "The absence assertion observes the external SQL port: invalid raw evidence input must not issue database work even if a later error is correct.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts#keeps raw JSON evidence inputs untrusted until the SQL validator runs"
     },
     {
       "id": "test-structure-coupling-3ec1adc4c7e8a4f2",

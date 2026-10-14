@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import {
     type ApiV1StateWriteEvidence,
     type ApiV1StateWriteEvidenceQuery,
@@ -14,9 +16,75 @@ import {
 } from './api-v1-state-write-evidence-derivation.ts';
 import { readPersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { readIntermediateMutationIntents } from './read-intermediate-mutation-intents.ts';
+import { toApiV1StateWriteEvidenceSpec } from './to-api-v1-state-write-evidence-spec.ts';
 import { toExactPersistedEvidenceMatches } from './to-exact-persisted-evidence-matches.ts';
+import { toStateWriteEvidenceInstant } from './to-state-write-evidence-instant.ts';
 
 export type ApiV1StateWriteEvidenceSqlSpec = ApiV1StateWriteEvidenceSpec;
+
+interface FixtureCompletionWaitInput {
+    readonly sql: ApiV1StateWriteEvidenceQuery;
+    readonly row: ParsedInboxRow;
+    readonly timeoutMs: number;
+    readonly now: () => number;
+}
+
+export async function collectApiV1StateWriteEvidenceFromSql(
+    input: unknown,
+    sql: ApiV1StateWriteEvidenceSql
+): Promise<ApiV1StateWriteEvidence> {
+    const spec = toApiV1StateWriteEvidenceSpec(input);
+    const rows = await readRows(sql, spec.match);
+    const minimum = spec.minimumMatchedRows ?? 1;
+    const matching = rows
+        .map((row) => parseApiV1StateWriteEvidenceRow(row))
+        .filter(
+            (row) =>
+                (!spec.commandTypes?.length ||
+                    spec.commandTypes.includes(row.commandType)) &&
+                (!spec.commandIdPrefixes?.length ||
+                    row.commandIds.some((id) => spec.commandIdPrefixes?.some((prefix) => id.startsWith(prefix))))
+        );
+    if (matching.length < minimum) {
+        throw new Error(
+            `Expected at least ${minimum} matching AppInbox rows; found ${matching.length}.`
+        );
+    }
+    const intermediate = await readIntermediateMutationIntents(sql, spec.match);
+    const naturalRetryEvidence = spec.overdueRecoveryFixture
+        ? await readNaturalRetryEvidence(sql, spec, rows)
+        : undefined;
+    const overdueRecovery = spec.overdueRecoveryFixture
+        ? await runOverdueRecoveryFixture(sql, rows, spec.overdueRecoveryFixture)
+        : undefined;
+    const finalRows = overdueRecovery ? await readRows(sql, spec.match) : rows;
+    const commandEvidence = await Promise.all(
+        finalRows.map((row) => readPersistedCommandEvidence(sql, row))
+    );
+    const outboxRows = await readOutboxRows(sql, [
+        spec.match,
+        ...commandEvidence.flatMap((evidence) => evidence.commandIds)
+    ]);
+    const finalEvidence = deriveApiV1StateWriteEvidence(
+        spec,
+        finalRows,
+        outboxRows,
+        intermediate,
+        overdueRecovery,
+        commandEvidence
+    );
+    return {
+        ...finalEvidence,
+        ...(naturalRetryEvidence
+            ? {
+                naturalBoundedRetryCount: naturalRetryEvidence.naturalBoundedRetryCount,
+                naturalBoundedRetries: naturalRetryEvidence.naturalBoundedRetries,
+                naturalBoundedRetryObserved: naturalRetryEvidence.naturalBoundedRetryObserved,
+                naturalRetryEvidenceGap: naturalRetryEvidence.naturalRetryEvidenceGap
+            }
+            : {})
+    };
+}
 
 async function readOutboxRows(
     sql: ApiV1StateWriteEvidenceQuery,
@@ -70,14 +138,10 @@ async function readRows(
     `;
 }
 
-async function waitForFixtureCompletion(
-    sql: ApiV1StateWriteEvidenceQuery,
-    row: ParsedInboxRow,
-    timeoutMs: number
-): Promise<InboxRow> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        const rows = await sql<InboxRow[]>`
+async function waitForFixtureCompletion(input: FixtureCompletionWaitInput): Promise<InboxRow> {
+    const deadline = input.now() + input.timeoutMs;
+    while (input.now() < deadline) {
+        const rows = await input.sql<InboxRow[]>`
             select i.ri_row_id, i.ri_resource_id, i.ri_topic_id, i.fk_ext_bank_id,
                    i.ri_resource, i.ri_status, i.ri_attempts, i.start_ts, i.end_ts, i.next_ts,
                    r.ris_status as result_status, r.ris_resource as result_resource
@@ -85,7 +149,7 @@ async function waitForFixtureCompletion(
             left join resource_inbox_results r
               on r.fk_ext_bank_id = i.fk_ext_bank_id
              and r.ris_resource_id = i.ri_resource_id and r.ris_topic_id = i.ri_topic_id
-            where i.ri_row_id = ${row.rowId}
+            where i.ri_row_id = ${input.row.rowId}
         `;
         const current = rows[0];
         if (current?.ri_status === 'COMPLETED' && current.result_status === 'COMPLETED') {
@@ -93,7 +157,7 @@ async function waitForFixtureCompletion(
         }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new Error(`Overdue fairness fixture did not complete within ${timeoutMs}ms.`);
+    throw new Error(`Overdue fairness fixture did not complete within ${input.timeoutMs}ms.`);
 }
 
 async function runOverdueRecoveryFixture(
@@ -107,35 +171,26 @@ async function runOverdueRecoveryFixture(
         (row) =>
             row.status === 'COMPLETED' &&
             row.resultStatus === 'COMPLETED' &&
-            (!commandIdPrefix || row.commandIds.some((id) => id.startsWith(commandIdPrefix))) &&
+            (!commandIdPrefix ||
+                row.commandIds.some((id) => id.startsWith(commandIdPrefix))) &&
             (!fixture.commandType || row.commandType === fixture.commandType)
     );
     if (!selected) {
-        throw new Error('No completed AppInbox row is available for the overdue fairness fixture.');
+        throw new Error(
+            'No completed AppInbox row is available for the overdue fairness fixture.'
+        );
     }
     const overdueByMs = Math.max(30_000, fixture.overdueByMs ?? 65_000);
-    let dueAt = new Date(0);
-    await sql.begin(async (transaction) => {
-        await transaction`
-            delete from resource_inbox_results
-            where fk_ext_bank_id = ${selected.contextId}
-              and ris_resource_id = ${selected.resourceId} and ris_topic_id = ${selected.topicId}
-        `;
-        const updated = await transaction<{ next_ts: Date | string; }[]>`
-            update resource_inbox set ri_status = 'RETRY', start_ts = null, end_ts = null,
-                next_ts = current_timestamp - ${overdueByMs} * interval '1 millisecond'
-            where ri_row_id = ${selected.rowId} and ri_status = 'COMPLETED'
-            returning next_ts
-        `;
-        if (!updated[0]) {
-            throw new Error('Overdue fairness fixture row was not rescheduled.');
-        }
-        dueAt = new Date(updated[0].next_ts);
+    const dueAt = await rescheduleOverdueFixture(sql, selected, overdueByMs);
+    const afterRaw = await waitForFixtureCompletion({
+        sql,
+        row: selected,
+        timeoutMs: fixture.timeoutMs ?? 20_000,
+        now: Date.now
     });
-    const afterRaw = await waitForFixtureCompletion(sql, selected, fixture.timeoutMs ?? 20_000);
     const after = parseApiV1StateWriteEvidenceRow(afterRaw);
-    const claimedAt = after.startAt ? new Date(after.startAt) : new Date(0);
-    const dueAgeAtClaimMs = claimedAt.getTime() - dueAt.getTime();
+    const claimedAt = toStateWriteEvidenceInstant(after.startAt ?? new Date(0));
+    const dueAgeAtClaimMs = claimedAt.epochMilliseconds - dueAt.epochMilliseconds;
     return {
         fixtureKind: 'isolated-overdue-reschedule',
         mutatesCompletionHistory: true,
@@ -143,60 +198,52 @@ async function runOverdueRecoveryFixture(
         commandType: selected.commandType,
         beforeStatus: selected.status,
         beforeAttempts: selected.attempts,
-        injectedDueAt: dueAt.toISOString(),
+        injectedDueAt: dueAt.toString(),
         overdueByMs,
         afterStatus: after.status,
         afterResultStatus: after.resultStatus,
         afterAttempts: after.attempts,
-        claimedAt: claimedAt.toISOString(),
+        claimedAt: claimedAt.toString(),
         dueAgeAtClaimMs,
         notBeforeSatisfied: dueAgeAtClaimMs >= 0,
         overdueAtClaim: dueAgeAtClaimMs >= 30_000,
-        recovered: after.status === 'COMPLETED' && after.resultStatus === 'COMPLETED'
+        recovered: after.status === 'COMPLETED' &&
+            after.resultStatus === 'COMPLETED'
     };
 }
 
-export async function collectApiV1StateWriteEvidenceFromSql(
-    input: unknown,
-    sql: ApiV1StateWriteEvidenceSql
+async function rescheduleOverdueFixture(
+    sql: ApiV1StateWriteEvidenceSql,
+    selected: ParsedInboxRow,
+    overdueByMs: number
+): Promise<Temporal.Instant> {
+    let dueAt = Temporal.Instant.fromEpochMilliseconds(0);
+    await sql.begin(async (transaction) => {
+        await transaction`
+            delete from resource_inbox_results
+            where fk_ext_bank_id = ${selected.contextId}
+              and ris_resource_id = ${selected.resourceId} and ris_topic_id = ${selected.topicId}
+        `;
+        const updated = await transaction<{ next_ts: Date | string; }[]>`
+            update resource_inbox set ri_status = 'RETRY',
+                next_ts = (current_timestamp at time zone 'UTC') - ${overdueByMs} * interval '1 millisecond'
+            where ri_row_id = ${selected.rowId} and ri_status = 'COMPLETED'
+            returning next_ts
+        `;
+        if (!updated[0]) {
+            throw new Error('Overdue fairness fixture row was not rescheduled.');
+        }
+        dueAt = toStateWriteEvidenceInstant(updated[0].next_ts);
+    });
+    return dueAt;
+}
+
+/** Capture real natural observations before the isolated fixture changes completion history. */
+async function readNaturalRetryEvidence(
+    sql: ApiV1StateWriteEvidenceQuery,
+    spec: ApiV1StateWriteEvidenceSpec,
+    rows: readonly InboxRow[]
 ): Promise<ApiV1StateWriteEvidence> {
-    const spec = input as ApiV1StateWriteEvidenceSqlSpec;
-    if (!spec || typeof spec.match !== 'string' || spec.match.length === 0) {
-        throw new Error('stateWriteEvidence.match must be a non-empty string.');
-    }
-    const rows = await readRows(sql, spec.match);
-    const minimum = spec.minimumMatchedRows ?? 1;
-    const matching = rows
-        .map((row) => parseApiV1StateWriteEvidenceRow(row))
-        .filter(
-            (row) =>
-                (!spec.commandTypes?.length || spec.commandTypes.includes(row.commandType)) &&
-                (!spec.commandIdPrefixes?.length ||
-                    row.commandIds.some((id) => spec.commandIdPrefixes?.some((prefix) => id.startsWith(prefix))))
-        );
-    if (matching.length < minimum) {
-        throw new Error(
-            `Expected at least ${minimum} matching AppInbox rows; found ${matching.length}.`
-        );
-    }
-    const intermediate = await readIntermediateMutationIntents(sql, spec.match);
-    const overdueRecovery = spec.overdueRecoveryFixture
-        ? await runOverdueRecoveryFixture(sql, rows, spec.overdueRecoveryFixture)
-        : undefined;
-    const finalRows = overdueRecovery ? await readRows(sql, spec.match) : rows;
-    const commandEvidence = await Promise.all(
-        finalRows.map((row) => readPersistedCommandEvidence(sql, row))
-    );
-    const outboxRows = await readOutboxRows(sql, [
-        spec.match,
-        ...commandEvidence.flatMap((evidence) => evidence.commandIds)
-    ]);
-    return deriveApiV1StateWriteEvidence(
-        spec,
-        finalRows,
-        outboxRows,
-        intermediate,
-        overdueRecovery,
-        commandEvidence
-    );
+    const commandEvidence = await Promise.all(rows.map((row) => readPersistedCommandEvidence(sql, row)));
+    return deriveApiV1StateWriteEvidence(spec, rows, undefined, undefined, undefined, commandEvidence);
 }
