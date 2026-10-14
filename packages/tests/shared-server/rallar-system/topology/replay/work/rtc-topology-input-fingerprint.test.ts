@@ -9,11 +9,12 @@ import {
     type RtcTopologyInputFingerprintFacts
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
-import type { Group } from '@shared/api/group-types.ts';
+import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createRtcTopologyGroupSnapshot, toRtcTopologyGroupWithDirector } from '../../rtc-topology-test-fixtures.ts';
 
 const GROUP_REF = {
     applicationId: 'app-1',
@@ -102,20 +103,20 @@ describe('RTC topology input fingerprint inputs', () => {
     // otherwise read as a fresh authority. The digest hashes the planning
     // inputs alone, so a pause leaves change suppression latched and an
     // outstanding connect fence still names the stored plan (decision 25).
-    it('is unchanged by a transport halt and its snapshot version bump', async () => {
-        const flowing = await computeRtcTopologyInputFingerprint(
+    it('is unchanged by a transport halt and its snapshot version bump', () => {
+        const flowing = computeRtcTopologyInputFingerprint(
             fingerprintFacts({ transportState: 'flowing', snapshotVersion: 4 })
         );
-        const halted = await computeRtcTopologyInputFingerprint(
+        const halted = computeRtcTopologyInputFingerprint(
             fingerprintFacts({ transportState: 'halted', snapshotVersion: 5 })
         );
 
         expect(halted).toBe(flowing);
     });
 
-    it('changes when a planning input changes', async () => {
-        const narrow = await computeRtcTopologyInputFingerprint(fingerprintFacts({}));
-        const wide = await computeRtcTopologyInputFingerprint({
+    it('changes when a planning input changes', () => {
+        const narrow = computeRtcTopologyInputFingerprint(fingerprintFacts({}));
+        const wide = computeRtcTopologyInputFingerprint({
             ...fingerprintFacts({}),
             effectiveConfig: { ...EFFECTIVE_CONFIG, degreeLimit: EFFECTIVE_CONFIG.degreeLimit + 1 }
         });
@@ -123,9 +124,22 @@ describe('RTC topology input fingerprint inputs', () => {
         expect(wide).not.toBe(narrow);
     });
 
-    it('changes when the RTT reporting limit changes', async () => {
-        const narrow = await computeRtcTopologyInputFingerprint(fingerprintFacts({}));
-        const wide = await computeRtcTopologyInputFingerprint({
+    it('changes when the present appointed director changes', () => {
+        const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
+        const fingerprintOf = (snapshot: GroupSnapshot) => computeRtcTopologyInputFingerprint({ ...fingerprintFacts({}), group: snapshot });
+
+        const leaderless = fingerprintOf(group);
+        const firstDirector = fingerprintOf(toRtcTopologyGroupWithDirector(group, 'peer-2'));
+        const secondDirector = fingerprintOf(toRtcTopologyGroupWithDirector(group, 'peer-3'));
+        const absentDirector = fingerprintOf(toRtcTopologyGroupWithDirector(group, 'peer-4'));
+
+        expect(new Set([leaderless, firstDirector, secondDirector]).size).toBe(3);
+        expect(absentDirector).toBe(leaderless);
+    });
+
+    it('changes when the RTT reporting limit changes', () => {
+        const narrow = computeRtcTopologyInputFingerprint(fingerprintFacts({}));
+        const wide = computeRtcTopologyInputFingerprint({
             ...fingerprintFacts({}),
             rttReportingDegreeLimit: 6
         });

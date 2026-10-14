@@ -113,7 +113,7 @@ describe('RTC topology publication repository', () => {
                 throw new Error('Expected topology snapshot seed to be accepted');
             }
             const receipt = createRtcTopologyExecutionReceipt(publication, {
-                commandHash: await hashRtcTopologyExecutionCommand(publication),
+                commandHash: hashRtcTopologyExecutionCommand(publication),
                 attemptCount: 1,
                 acceptedStorageRevision: guard.storageRevision
             });

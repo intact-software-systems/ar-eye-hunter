@@ -214,7 +214,7 @@ export class TopologyInboxService {
             reserved.enqueue.resourceId !== key.resourceId ||
             reserved.enqueue.contextId !== key.contextId ||
             reserved.enqueue.senderId !== reservation.callerId ||
-            (await toPersistedTopologyHttpMutationSemanticHash(command)) !== reservation.semanticHash
+            (toPersistedTopologyHttpMutationSemanticHash(command)) !== reservation.semanticHash
         ) {
             throw new AppInboxIdempotencyConflictError(
                 reservation.requestId,

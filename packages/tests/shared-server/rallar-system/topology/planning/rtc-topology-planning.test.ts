@@ -6,7 +6,14 @@ import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planni
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
-import { createCentralRtcTopologyRttMeasurements, createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds } from '../rtc-topology-test-fixtures.ts';
+import {
+    computeRtcTopologyHopEccentricity,
+    computeRtcTopologyHopRadius,
+    createCentralRtcTopologyRttMeasurements,
+    createRtcTopologyGroupSnapshot,
+    createRtcTopologyMemberIds,
+    toRtcTopologyGroupWithDirector
+} from '../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology planning options and revisions', () => {
     it('plans a star topology through the dedicated planning owner', () => {
@@ -55,6 +62,60 @@ describe('RTC topology planning options and revisions', () => {
             weightedPlanCount: 1,
             weightedRoomGraphBuildCount: 1
         });
+    });
+
+    it('roots a weighted tree at the appointed director', () => {
+        const planner = new RtcTopologyPlanner({ topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 15 }, {
+            metrics: new RtcTopologyMetrics(),
+            durationNowMs: () => 0
+        });
+        const memberSessionIds = createRtcTopologyMemberIds(16);
+        const group = toRtcTopologyGroupWithDirector(
+            createRtcTopologyGroupSnapshot('planner-director', memberSessionIds),
+            'peer-12'
+        );
+
+        const planned = planner.plan({
+            group,
+            rttMeasurements: createCentralRtcTopologyRttMeasurements(memberSessionIds, 'no-central-session'),
+            previous: undefined,
+            updateOptions: {},
+            nowEpochMs: 100
+        });
+
+        const nextHopsBySessionId = planned.snapshot.nextHopsBySessionId;
+        expect(nextHopsBySessionId['peer-12']).toHaveLength(5);
+        expect(computeRtcTopologyHopEccentricity(nextHopsBySessionId, 'peer-12')).toBe(2);
+        expect(computeRtcTopologyHopRadius(nextHopsBySessionId)).toBe(2);
+    });
+
+    it('rebuilds a membership-delta plan around a director appointed after the accepted layout', () => {
+        const metrics = new RtcTopologyMetrics();
+        const planner = new RtcTopologyPlanner({ topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 15 }, { metrics, durationNowMs: () => 0 });
+        const memberSessionIds = createRtcTopologyMemberIds(16);
+        const rttMeasurements = createCentralRtcTopologyRttMeasurements(memberSessionIds, 'no-central-session');
+        const leaderless = createRtcTopologyGroupSnapshot('planner-appointment', memberSessionIds);
+        const accepted = planner.plan({
+            group: leaderless,
+            rttMeasurements,
+            previous: undefined,
+            updateOptions: { planningIntent: 'membership-delta' },
+            nowEpochMs: 100
+        });
+
+        const appointed = planner.plan({
+            group: toRtcTopologyGroupWithDirector(leaderless, 'peer-12'),
+            rttMeasurements,
+            previous: accepted.snapshot,
+            updateOptions: { planningIntent: 'membership-delta' },
+            nowEpochMs: 200
+        });
+
+        expect(computeRtcTopologyHopEccentricity(accepted.snapshot.nextHopsBySessionId, 'peer-12')).toBeGreaterThan(2);
+        expect(appointed.changed).toBe(true);
+        expect(appointed.snapshot.nextHopsBySessionId['peer-12']).toHaveLength(5);
+        expect(computeRtcTopologyHopEccentricity(appointed.snapshot.nextHopsBySessionId, 'peer-12')).toBe(2);
+        expect(metrics.read(0)).toMatchObject({ incrementalPlanCount: 0, incrementalPlanFallbackFullCount: 1 });
     });
 
     it('records direct incremental planning, ordinary fallback, and hysteresis hold', () => {

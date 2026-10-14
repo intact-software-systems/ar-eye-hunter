@@ -301,7 +301,7 @@ describe('TopologyAppInboxHandler', () => {
 async function topologyContext(
     phases: string[]
 ): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
-    const command = await toTopologyAppInboxCommand({
+    const command = toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
             applicationId: 'app-1',
@@ -328,7 +328,7 @@ async function topologyContext(
 async function reconfigureTopologyContext(
     phases: string[]
 ): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
-    const command = await toTopologyAppInboxCommand({
+    const command = toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
             applicationId: 'app-1',

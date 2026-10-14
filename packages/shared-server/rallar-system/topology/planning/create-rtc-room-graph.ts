@@ -86,6 +86,7 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
     const fallbackNextHops = computeNoRttTopologyNextHops({
         topology: input.seedTopology,
         activeSessionIds: input.activeSessionIds,
+        preferredSourceSessionId: undefined,
         degreeLimit: input.degreeLimit,
         meshParamK: input.meshParamK
     });

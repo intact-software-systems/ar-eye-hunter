@@ -7,6 +7,7 @@ import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
+import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
@@ -43,6 +44,7 @@ const DEFAULT_MESH_PARAM_K = 2;
 
 interface RtcTopologyPlanInput {
     readonly group: GroupSnapshot;
+    readonly leaderSessionId: string | undefined;
     readonly activeSessionIds: readonly string[];
     readonly relevantRttMeasurements: readonly RttMeasurementInfo[];
     readonly topology: RallarRtcTopologyKind;
@@ -54,6 +56,7 @@ interface RtcTopologyPlanInput {
 interface CreateWeightedTopologyNextHopsInput {
     readonly topology: RallarRtcTopologyKind;
     readonly group: GroupSnapshot;
+    readonly leaderSessionId: string | undefined;
     readonly activeSessionIds: readonly string[];
     readonly globalGraph: WeightedGraph;
     readonly options: RallarRtcTopologyServiceOptions;
@@ -186,6 +189,7 @@ export class RtcTopologyPlanner {
         const nextHopsBySessionId = this.computePlannedNextHops(
             {
                 group: input.group,
+                leaderSessionId: resolveRallarGroupLeaderSessionId(input.group),
                 activeSessionIds: input.activeSessionIds,
                 relevantRttMeasurements: input.relevantRttMeasurements,
                 topology,
@@ -294,6 +298,7 @@ export class RtcTopologyPlanner {
         return this.createNextHopMap({
             topology: plan.topology,
             group: plan.group,
+            leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
             globalGraph: this.createMeasuredRoomGraph(
                 {
@@ -313,6 +318,7 @@ export class RtcTopologyPlanner {
         const nextHopsBySessionId = computeNoRttTopologyNextHops({
             topology: plan.topology,
             activeSessionIds: plan.activeSessionIds,
+            preferredSourceSessionId: undefined,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
         });
@@ -335,6 +341,7 @@ export class RtcTopologyPlanner {
         const evolved = computeEvolvedTopologyNextHops({
             previous: plan.previous,
             group: plan.group,
+            leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
             globalGraph: this.createMeasuredRoomGraph(
                 {
@@ -362,6 +369,7 @@ export class RtcTopologyPlanner {
         const nextHopsBySessionId = computeNoRttTopologyNextHops({
             topology: plan.topology,
             activeSessionIds: plan.activeSessionIds,
+            preferredSourceSessionId: plan.leaderSessionId,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
         });
@@ -411,7 +419,8 @@ export class RtcTopologyPlanner {
             ? createGroupTree({
                 group: input.group,
                 globalGraph: input.globalGraph,
-                maxDegree: this.readDegreeLimit(input.options)
+                maxDegree: this.readDegreeLimit(input.options),
+                preferredSource: input.leaderSessionId
             }).tree
             : createGroupMesh({
                 group: input.group,

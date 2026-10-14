@@ -45,7 +45,7 @@ export interface ValidateCurrentTopologySessionInput {
 export async function createAuthenticatedTopologyEnqueue(
     input: CreateAuthenticatedTopologyEnqueueInput
 ): Promise<AppInboxEnqueueInput> {
-    const command = await readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
+    const command = readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
     const currentSession = await readAndValidateCurrentTopologySession({
         principalId: command.actor.principalId,
         claimedAuthority: input.claimedAuthority,
@@ -64,7 +64,7 @@ export async function createAuthenticatedTopologyEnqueueFromValidatedSession(
         currentSession: PersistedAuthSession;
     }>
 ): Promise<AppInboxEnqueueInput> {
-    const command = await readTopologyCommandForValidatedSession(input.enqueue, {
+    const command = readTopologyCommandForValidatedSession(input.enqueue, {
         principalId: input.currentSession.clientId,
         sessionId: input.currentSession.sessionId
     });
@@ -129,7 +129,7 @@ export async function verifyTopologyAppInboxAuthority(
     }
     const command = input.authority.command;
     if (
-        (await hashMutationCommand({
+        (hashMutationCommand({
             actor: command.actor,
             groupRef: command.groupRef,
             requestId: command.requestId,

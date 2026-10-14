@@ -27,7 +27,7 @@ describe('topology AppInbox authority', () => {
     it('binds enqueue authority to the current session and rechecks it on every attempt', async () => {
         let persistedSession: PersistedAuthSession | undefined = await toPersistedSession(ISSUED_SESSION);
         const groupStateService = sessionReader(() => persistedSession);
-        const command = await topologyCommand();
+        const command = topologyCommand();
         const enqueue = await createAuthenticatedTopologyEnqueue({
             enqueue: {
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -75,7 +75,7 @@ describe('topology AppInbox authority', () => {
     it('rejects proof, command-hash, and durable authority corruption', async () => {
         const persistedSession = await toPersistedSession(ISSUED_SESSION);
         const groupStateService = sessionReader(() => persistedSession);
-        const command = await topologyCommand();
+        const command = topologyCommand();
         const prepared = await createAuthenticatedTopologyEnqueue({
             enqueue: {
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -137,8 +137,8 @@ describe('topology AppInbox authority', () => {
     });
 });
 
-async function topologyCommand() {
-    return await toTopologyAppInboxCommand({
+function topologyCommand() {
+    return toTopologyAppInboxCommand({
         actor: { principalId: ISSUED_SESSION.clientId, sessionId: ISSUED_SESSION.sessionId },
         groupRef: {
             applicationId: 'app-1',

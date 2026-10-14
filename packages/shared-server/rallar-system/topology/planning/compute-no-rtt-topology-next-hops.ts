@@ -7,6 +7,7 @@ import { computeNoRttTreeNextHops } from './compute-no-rtt-tree-next-hops.ts';
 export interface ComputeNoRttTopologyNextHopsInput {
     readonly topology: RallarRtcTopologyKind;
     readonly activeSessionIds: readonly string[];
+    readonly preferredSourceSessionId: string | undefined;
     readonly degreeLimit: number;
     readonly meshParamK: number;
 }
@@ -22,6 +23,7 @@ export function computeNoRttTopologyNextHops(
             input.activeSessionIds,
             computeNoRttTreeNextHops({
                 activeSessionIds: input.activeSessionIds,
+                preferredSourceSessionId: input.preferredSourceSessionId,
                 degreeLimit: input.degreeLimit
             })
         );

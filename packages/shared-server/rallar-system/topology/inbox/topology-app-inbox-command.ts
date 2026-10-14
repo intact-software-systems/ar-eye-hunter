@@ -38,9 +38,9 @@ interface TopologyAppInboxCommandIdentity {
     readonly capturedAtEpochMs: number;
 }
 
-export async function toTopologyAppInboxCommand(
+export function toTopologyAppInboxCommand(
     input: CreateTopologyAppInboxCommandInput
-): Promise<TopologyAppInboxCommand> {
+): TopologyAppInboxCommand {
     const actor = readTopologyActor(
         decodeJsonWireValue(input.actor, 'Topology AppInbox actor')
     );
@@ -68,30 +68,30 @@ export async function toTopologyAppInboxCommand(
             groupRef,
             requestId: input.requestId,
             capturedAtEpochMs: input.capturedAtEpochMs,
-            commandHash: await hashMutationCommand(stableCommand)
+            commandHash: hashMutationCommand(stableCommand)
         },
         payload
     );
 }
 
-export async function toTopologyHttpMutationSemanticHash(
+export function toTopologyHttpMutationSemanticHash(
     input: Readonly<{
         principalId: string;
         groupRef: TopologyAppInboxCommand['groupRef'];
         requestId: string;
         payload: TopologyAppInboxRequestPayload;
     }>
-): Promise<string> {
-    return await hashTopologyHttpMutationSemantic({
+): string {
+    return hashTopologyHttpMutationSemantic({
         ...input,
         payload: toCanonicalTopologyAppInboxPayload(input.payload)
     });
 }
 
-export async function toPersistedTopologyHttpMutationSemanticHash(
+export function toPersistedTopologyHttpMutationSemanticHash(
     command: TopologyAppInboxCommand
-): Promise<string> {
-    return await hashTopologyHttpMutationSemantic({
+): string {
+    return hashTopologyHttpMutationSemantic({
         principalId: command.actor.principalId,
         groupRef: command.groupRef,
         requestId: command.requestId,
@@ -99,15 +99,15 @@ export async function toPersistedTopologyHttpMutationSemanticHash(
     });
 }
 
-async function hashTopologyHttpMutationSemantic(
+function hashTopologyHttpMutationSemantic(
     input: Readonly<{
         principalId: string;
         groupRef: TopologyAppInboxCommand['groupRef'];
         requestId: string;
         payload: TopologyAppInboxPayload;
     }>
-): Promise<string> {
-    return await hashMutationCommand({
+): string {
+    return hashMutationCommand({
         operation: input.payload.operation,
         requestId: input.requestId,
         callerId: input.principalId,
@@ -116,20 +116,20 @@ async function hashTopologyHttpMutationSemantic(
     });
 }
 
-export async function readAuthenticatedTopologyCommand(
+export function readAuthenticatedTopologyCommand(
     enqueue: AppInboxEnqueueInput,
     authority: IssuedAuthSession
-): Promise<TopologyAppInboxCommand> {
-    return await readTopologyCommandForValidatedSession(enqueue, {
+): TopologyAppInboxCommand {
+    return readTopologyCommandForValidatedSession(enqueue, {
         principalId: authority.clientId,
         sessionId: authority.sessionId
     });
 }
 
-export async function readTopologyCommandForValidatedSession(
+export function readTopologyCommandForValidatedSession(
     enqueue: AppInboxEnqueueInput,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
-): Promise<TopologyAppInboxCommand> {
+): TopologyAppInboxCommand {
     const command = readDurableTopologyAppInboxCommand(enqueue.data);
     if (
         command.actor.principalId !== expectedActor.principalId ||
@@ -147,7 +147,7 @@ export async function readTopologyCommandForValidatedSession(
         operation: command.operation,
         payload: command.payload
     };
-    if ((await hashMutationCommand(stableCommand)) !== command.commandHash) {
+    if (hashMutationCommand(stableCommand) !== command.commandHash) {
         throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
     }
     return command;

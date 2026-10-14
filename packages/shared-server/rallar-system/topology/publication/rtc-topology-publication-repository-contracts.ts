@@ -37,16 +37,16 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
-export async function hashRtcTopologyExecutionCommand(
+export function hashRtcTopologyExecutionCommand(
     publication: RtcTopologyPublication
-): Promise<string> {
+): string {
     validateRtcTopologyPublication(publication, publication.groupRef);
     const command: PersistedBoundaryValue = {
         kind: 'rtc-topology-execution',
         schemaVersion: 1,
         publication
     };
-    return await hashMutationCommand(
+    return hashMutationCommand(
         encodeJsonWireValue(command, 'RTC topology execution command')
     );
 }

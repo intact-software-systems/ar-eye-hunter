@@ -523,14 +523,14 @@ describe('computeRtcTopologyInputFingerprint', () => {
     } as const;
     const KIND_HYSTERESIS_WIDTHS = { meshExitWidth: 4, treeExitWidth: 0 } as const;
 
-    it('is deterministic and insensitive to session order', async () => {
-        const forward = await computeRtcTopologyInputFingerprint({
+    it('is deterministic and insensitive to session order', () => {
+        const forward = computeRtcTopologyInputFingerprint({
             group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b']),
             effectiveConfig: EFFECTIVE_CONFIG,
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
             rttReportingDegreeLimit: 5
         });
-        const reversed = await computeRtcTopologyInputFingerprint({
+        const reversed = computeRtcTopologyInputFingerprint({
             group: withSessions(createGroupSnapshot(4, 3), ['session-b', 'session-a']),
             effectiveConfig: EFFECTIVE_CONFIG,
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
@@ -541,21 +541,21 @@ describe('computeRtcTopologyInputFingerprint', () => {
         expect(reversed).toBe(forward);
     });
 
-    it('changes when sessions, display name, or effective config change', async () => {
-        const base = await computeRtcTopologyInputFingerprint({
+    it('changes when sessions, display name, or effective config change', () => {
+        const base = computeRtcTopologyInputFingerprint({
             group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b']),
             effectiveConfig: EFFECTIVE_CONFIG,
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
             rttReportingDegreeLimit: 5
         });
-        const grownSessions = await computeRtcTopologyInputFingerprint({
+        const grownSessions = computeRtcTopologyInputFingerprint({
             group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b', 'session-c']),
             effectiveConfig: EFFECTIVE_CONFIG,
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
             rttReportingDegreeLimit: 5
         });
         const renamedGroup = createGroupSnapshot(4, 3);
-        const renamed = await computeRtcTopologyInputFingerprint({
+        const renamed = computeRtcTopologyInputFingerprint({
             group: {
                 ...renamedGroup,
                 group: { ...renamedGroup.group, displayName: 'Renamed room' }
@@ -564,7 +564,7 @@ describe('computeRtcTopologyInputFingerprint', () => {
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
             rttReportingDegreeLimit: 5
         });
-        const reconfigured = await computeRtcTopologyInputFingerprint({
+        const reconfigured = computeRtcTopologyInputFingerprint({
             group: createGroupSnapshot(4, 3),
             effectiveConfig: { ...EFFECTIVE_CONFIG, degreeLimit: 4 },
             kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
@@ -574,7 +574,7 @@ describe('computeRtcTopologyInputFingerprint', () => {
         expect(new Set([base, grownSessions, renamed, reconfigured]).size).toBe(4);
     });
 
-    it('ignores lease-only differences between identical session sets', async () => {
+    it('ignores lease-only differences between identical session sets', () => {
         const snapshot = createGroupSnapshot(4, 3);
         const renewed: GroupSnapshot = {
             ...snapshot,
@@ -586,14 +586,14 @@ describe('computeRtcTopologyInputFingerprint', () => {
         };
 
         expect(
-            await computeRtcTopologyInputFingerprint({
+            computeRtcTopologyInputFingerprint({
                 group: renewed,
                 effectiveConfig: EFFECTIVE_CONFIG,
                 kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,
                 rttReportingDegreeLimit: 5
             })
         ).toBe(
-            await computeRtcTopologyInputFingerprint({
+            computeRtcTopologyInputFingerprint({
                 group: snapshot,
                 effectiveConfig: EFFECTIVE_CONFIG,
                 kindHysteresisWidths: KIND_HYSTERESIS_WIDTHS,

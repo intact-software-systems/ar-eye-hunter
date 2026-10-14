@@ -93,14 +93,14 @@ export async function writeRtcTopologyPublicationTransaction(
     }
 }
 
-export async function computeRtcTopologyPublicationDeliveryWrite(
+export function computeRtcTopologyPublicationDeliveryWrite(
     publication: RtcTopologyPublication,
     publisherStreamId: string | undefined
-): Promise<RtcTopologyPublicationDeliveryWrite> {
+): RtcTopologyPublicationDeliveryWrite {
     const outboxWrites = computeRtcTopologyPublicationOutboxWrites(publication);
     return {
         outboxWrites,
-        provenanceWrites: await computeRtcTopologyOutboxProvenance(publication, outboxWrites),
+        provenanceWrites: computeRtcTopologyOutboxProvenance(publication, outboxWrites),
         deliveryAppend: publisherStreamId === undefined
             ? null
             : computeRtcTopologyDeliveryAppend(

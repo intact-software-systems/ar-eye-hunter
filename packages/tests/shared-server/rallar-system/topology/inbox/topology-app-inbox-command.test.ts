@@ -93,8 +93,8 @@ describe('topology AppInbox durable command contract', () => {
             payload: TopologyAppInboxRequestPayload;
             target: 'config' | 'override' | null;
         }>[]
-    )('binds $operation to its exact queue type and durable payload', async (testCase) => {
-        const command = await toTopologyAppInboxCommand({
+    )('binds $operation to its exact queue type and durable payload', (testCase) => {
+        const command = toTopologyAppInboxCommand({
             actor: { principalId: 'owner', sessionId: 'owner-session' },
             groupRef: {
                 applicationId: 'app-1',
@@ -108,7 +108,7 @@ describe('topology AppInbox durable command contract', () => {
         const durable = structuredClone(command);
 
         expect(readDurableTopologyAppInboxCommand(durable)).toStrictEqual(durable);
-        await expect(
+        expect(
             readAuthenticatedTopologyCommand(
                 {
                     type: testCase.type,
@@ -117,8 +117,8 @@ describe('topology AppInbox durable command contract', () => {
                 },
                 topologyAuthority(command)
             )
-        ).resolves.toStrictEqual(command);
-        await expect(
+        ).toStrictEqual(command);
+        expect(() =>
             readAuthenticatedTopologyCommand(
                 {
                     type: AppInboxType.GROUP_UPDATE,
@@ -127,7 +127,7 @@ describe('topology AppInbox durable command contract', () => {
                 },
                 topologyAuthority(command)
             )
-        ).rejects.toThrow(/does not match authenticated authority/i);
+        ).toThrow(/does not match authenticated authority/i);
 
         if (testCase.target === null) {
             expect(() => toTopologyConfigMutationCommand(command)).toThrow(
@@ -145,9 +145,9 @@ describe('topology AppInbox durable command contract', () => {
         }
     });
 
-    it('keeps HTTP topology identity stable across retry clocks and durable preparation changes', async () => {
-        const first = await topologyCommand(1_000);
-        const replay = await topologyCommand(9_000);
+    it('keeps HTTP topology identity stable across retry clocks and durable preparation changes', () => {
+        const first = topologyCommand(1_000);
+        const replay = topologyCommand(9_000);
         expect(replay.commandHash).toBe(first.commandHash);
 
         const firstIdentity = logicalIdentity({
@@ -173,9 +173,9 @@ describe('topology AppInbox durable command contract', () => {
         expect(replayIdentity).toBe(firstIdentity);
     });
 
-    it('collides divergent stable topology semantics behind the same request id', async () => {
-        const first = await topologyCommand(1_000);
-        const divergent = await toTopologyAppInboxCommand({
+    it('collides divergent stable topology semantics behind the same request id', () => {
+        const first = topologyCommand(1_000);
+        const divergent = toTopologyAppInboxCommand({
             actor: first.actor,
             groupRef: first.groupRef,
             requestId: first.requestId,
@@ -202,13 +202,13 @@ describe('topology AppInbox durable command contract', () => {
         );
     });
 
-    it('rejects unknown sparse request keys before durable enqueue', async () => {
+    it('rejects unknown sparse request keys before durable enqueue', () => {
         const config = {
             topologyKind: 'tree',
             unexpected: true
         } as const;
 
-        await expect(
+        expect(() =>
             toTopologyAppInboxCommand({
                 actor: { principalId: 'owner', sessionId: 'owner-session' },
                 groupRef: {
@@ -223,17 +223,17 @@ describe('topology AppInbox durable command contract', () => {
                     config
                 }
             })
-        ).rejects.toThrow(/contains .* fields: unexpected/i);
+        ).toThrow(/contains .* fields: unexpected/i);
     });
 
-    it('rejects predecessor identity fields before constructing a durable command', async () => {
+    it('rejects predecessor identity fields before constructing a durable command', () => {
         const actor = {
             principalId: 'owner',
             sessionId: 'owner-session',
             predecessorPrincipalId: 'legacy-owner'
         };
 
-        await expect(
+        expect(() =>
             toTopologyAppInboxCommand({
                 actor,
                 groupRef: {
@@ -245,13 +245,13 @@ describe('topology AppInbox durable command contract', () => {
                 capturedAtEpochMs: 1_000,
                 payload: { operation: 'deleteConfig', target: 'config' }
             })
-        ).rejects.toThrow(/actor.*missing or unexpected fields/i);
+        ).toThrow(/actor.*missing or unexpected fields/i);
     });
 
-    it('rejects predecessor fields before authenticated durable enqueue', async () => {
-        const command = await topologyCommand(1_000);
+    it('rejects predecessor fields before authenticated durable enqueue', () => {
+        const command = topologyCommand(1_000);
 
-        await expect(
+        expect(() =>
             readAuthenticatedTopologyCommand(
                 {
                     type: AppInboxType.TOPOLOGY_CONFIG_PUT,
@@ -260,7 +260,7 @@ describe('topology AppInbox durable command contract', () => {
                 },
                 topologyAuthority(command)
             )
-        ).rejects.toThrow(/missing or unexpected fields/i);
+        ).toThrow(/missing or unexpected fields/i);
     });
 
     it('canonicalizes omitted, set, and JSON-null clear actions exactly', () => {
@@ -296,9 +296,9 @@ describe('topology AppInbox durable command contract', () => {
         ).toThrow(/exactly|missing/i);
     });
 
-    it('treats set and clear as divergent stable topology semantics', async () => {
-        const set = await topologyCommand(1_000);
-        const clear = await toTopologyAppInboxCommand({
+    it('treats set and clear as divergent stable topology semantics', () => {
+        const set = topologyCommand(1_000);
+        const clear = toTopologyAppInboxCommand({
             actor: set.actor,
             groupRef: set.groupRef,
             requestId: set.requestId,
@@ -313,8 +313,8 @@ describe('topology AppInbox durable command contract', () => {
     });
 });
 
-async function topologyCommand(capturedAtEpochMs: number) {
-    return await toTopologyAppInboxCommand({
+function topologyCommand(capturedAtEpochMs: number) {
+    return toTopologyAppInboxCommand({
         actor: { principalId: 'owner', sessionId: 'owner-session' },
         groupRef: {
             applicationId: 'app-1',

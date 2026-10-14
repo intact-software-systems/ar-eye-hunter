@@ -86,7 +86,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
                 'RTC topology execution receipt effects differ from publication'
             );
         }
-        const commandHash = await hashRtcTopologyExecutionCommand(publication);
+        const commandHash = hashRtcTopologyExecutionCommand(publication);
         if (claim.value.commandHash !== commandHash) {
             throw publicationCorruption(
                 claim.entry.key,

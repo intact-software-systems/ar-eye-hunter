@@ -85,8 +85,7 @@ describe('shared-graph tree service orchestration', () => {
         expect(mockState.insert).toHaveBeenCalledWith(
             groupGraph,
             globalGraph,
-            'peer-c',
-            expect.any(Function)
+            'peer-c'
         );
         expect(mockState.remove).not.toHaveBeenCalled();
         expect(result.reconfigured).toBe(false);
@@ -169,8 +168,7 @@ describe('shared-graph tree service orchestration', () => {
         expect(mockState.remove).toHaveBeenCalledWith(
             removedTree,
             globalGraph,
-            'peer-c',
-            expect.any(Function)
+            'peer-c'
         );
         expect(mockState.mddl).toHaveBeenCalledWith(
             globalGraph,
@@ -195,15 +193,15 @@ describe('shared-graph tree service orchestration', () => {
             ]
         );
 
-        const result = computeReconfig(
+        const result = computeReconfig({
             tree,
-            new Set(['peer-a', 'peer-b', 'peer-z']),
-            tree,
-            {
+            members: new Set(['peer-a', 'peer-b', 'peer-z']),
+            globalGraph: tree,
+            globalArgs: {
                 diameterBound: 1,
                 reconfigAlgo: ReconfigAlgo.TEST_OPTIMAL_PAIR_WISE
             }
-        );
+        });
 
         expect(result.left).toBe(false);
         expect(result.right).toBeUndefined();
