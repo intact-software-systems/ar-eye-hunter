@@ -43,7 +43,8 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import type WsQueueBoxClientService from '@shared/services/ws-queue-box-client-service.ts';
+import { createScriptedTransportFaultPort, type ScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -55,24 +56,32 @@ import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
-beforeEach(() => {
-    vi.stubGlobal('localStorage', new TestAuthStorage());
-    configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
-});
+interface RecoveryOwner {
+    readonly engine: InboxOutboxEngine;
+    readonly native: TestWebSocket;
+    readonly service: WsQueueBoxClientService;
+    readonly settlements: readonly ALDeliverySettlement[];
+    drain(): Promise<void>;
+}
 
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Advancing retry/TTL timers must advance epoch reads without replacing native Date values.
+    vi.spyOn(Date, 'now').mockImplementation(() => vi.getMockedSystemTime()!.getTime());
+    vi.stubGlobal('localStorage', new TestAuthStorage());
+    configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+
     onTestFinished(() => {
         clearSession();
         vi.clearAllTimers();
-        vi.useRealTimers();
         vi.restoreAllMocks();
+        vi.useRealTimers();
         vi.unstubAllGlobals();
         TestWebSocket.instances.length = 0;
     });
 });
 
 it('a fresh WS owner recovers the same pending IndexedDB original with a fresh fault map and no second enqueue', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
     configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
@@ -185,7 +194,6 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
 });
 
 it('retains the restored room original until actual scoped presence authorizes its sender', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
     const principalId = 'reload-sender';
@@ -311,7 +319,6 @@ it('retains the restored room original until actual scoped presence authorizes i
 });
 
 it('keeps another scoped room and canonical bootstrap/control traffic moving while one room waits', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -345,7 +352,6 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
 });
 
 it('rechecks current room presence and auth after same-document reopen without latching old readiness', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -395,7 +401,6 @@ it('rechecks current room presence and auth after same-document reopen without l
 });
 
 it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work after %s while authority is missing', async (ending) => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -422,7 +427,6 @@ it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work af
 });
 
 it('does not invent an unsubmitted refusal after the default callback writes and a later observer removes authority', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -472,8 +476,8 @@ function createRoomOriginal(sessionId: string, ref: GroupRef): ALMessage {
 async function openRecoveryOwner(
     sessionId: string,
     principalId: string,
-    faults: ReturnType<typeof createScriptedTransportFaultPort>
-) {
+    faults: ScriptedTransportFaultPort
+): Promise<RecoveryOwner> {
     configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const engine = new InboxOutboxEngine();
     const drain = captureOutboundWorkRunnable(engine);
