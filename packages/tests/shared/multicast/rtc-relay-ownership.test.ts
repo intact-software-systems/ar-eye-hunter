@@ -255,7 +255,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
         c.acceptSnapshot(createOriginSnapshot(['a', 's', 'c', 'd'], 5));
         await vi.advanceTimersByTimeAsync(1);
         await c.receive(copy, 's');
-        expect(readAckTuples(await c.readSent('s'))).toEqual([['c', 'subtree-complete'], ['c', 'accepted']]);
+        expect(readAckTuples(await c.readSent('s')).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete']]);
         const toLeaf = await c.readSent('d');
         expect(readCopies(toLeaf, message)).toBe(2);
         await d.receive(toLeaf.at(-1)!, 'c');

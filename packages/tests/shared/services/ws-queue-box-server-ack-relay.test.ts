@@ -275,20 +275,19 @@ describe('WS server ACK relay across instances', () => {
             .toHaveLength(msgIds.length);
     });
 
-    it('refuses an ACK it could not hand to the other instances, so the sender is not told it was relayed', async () => {
+    it('admits where it arrived an ACK it could not hand to the other instances, counting it nowhere', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const inboundStores = createSharedInboundStores();
         const owner = await createServerInstance({ peerIds: ['a', 'b'], relay: 'none', peers: [], inboundStores, roomAudience: ['a', 'b', 'c'] });
         const other = await createServerInstance({ peerIds: ['c'], relay: 'fails', peers: [owner], inboundStores, roomAudience: ['a', 'b', 'c'] });
         await admitRoomMessage(owner, Date.now() + 30_000);
 
-        const refused = await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
+        const admitted = await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
 
-        expect(refused.left).toEqual({
-            code: 'unsupported',
-            message: 'AL acknowledgement could not be relayed to the instance that aggregates it: notice channel is down'
-        });
+        expect(admitted.left).toBeUndefined();
+        expect(admitted.right?.kind).toBe('control');
         expect(other.relayed.map((message) => message.id.msgId)).toEqual(['ack-c']);
+        expect(readReceipts(owner.sockets.a!)).toEqual([{ phase: 'admitted', expected: ['b', 'c'], confirmed: [] }]);
     });
 
     it('ends the receipt timed out, naming the recipient, when the relay could not be sent', async () => {
@@ -317,7 +316,7 @@ describe('WS server ACK relay across instances', () => {
         await admitRoomMessage(owner, Date.now() + 30_000);
         await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
 
-        expect((await other.service.acceptIncomingMessage(receiverAck('c'), 'c')).left?.code).toBe('unsupported');
+        expect((await other.service.acceptIncomingMessage(receiverAck('c'), 'c')).left).toBeUndefined();
         vi.setSystemTime(Date.now() + 30_001);
         owner.engine.wake();
 

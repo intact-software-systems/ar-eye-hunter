@@ -49,7 +49,7 @@ export function computeALInboundControlAdmission(
 ): ALInboundControlAdmissionCandidate {
     const retainedAcks = read.acks.slice(-(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1));
     const acks = [...retainedAcks, read.ack];
-    const transition = acceptALPendingAckPayload({ current: read.pending, ack: read.ack });
+    const transition = acceptALPendingAckPayload({ current: read.pending, acks: read.acks, ack: read.ack });
     const completed = transition.completed;
     return {
         read,

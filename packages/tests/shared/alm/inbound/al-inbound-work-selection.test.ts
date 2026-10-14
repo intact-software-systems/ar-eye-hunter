@@ -14,6 +14,7 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
@@ -357,28 +358,35 @@ describe('ALInboundWorkSelector eligibility reads', () => {
 });
 
 describe('ALInboundWorkSelector claim order', () => {
-    it.each(['memory', 'indexeddb'] as const)(
-        'sends the acknowledgement before it dispatches the acknowledged message over %s',
-        async (storage) => {
+    it.each(
+        [
+            { lane: 'volatile', durability: undefined, sequence: ['control-sent', 'dispatched'] },
+            { lane: 'durable', durability: 'local-inbox', sequence: ['dispatched', 'control-sent'] }
+        ] as const
+    )(
+        'runs the acknowledgement and the dispatch of one $lane admission as $sequence',
+        async ({ durability, sequence }) => {
             const fixture = createInboundTestRuntime({
                 carrier: 'ws',
                 stores: createInboundTestStores({
                     namespace: 'claim-order',
-                    storage,
+                    storage: 'indexeddb',
                     observer: createPassThroughIndexedDbOperationObserver()
                 }),
+                volatileStores: createVolatileALInboundRuntimeStores({ namespace: 'claim-order-volatile' }, undefined),
                 effectWorkerId: 'al-inbound:claim-order'
             });
             await fixture.runtime.ready();
 
             await fixture.runtime.admitIncomingMessage(
-                createInboundTestMessage({ msgId: 'claim-order', acknowledged: true }),
+                createInboundTestMessage({ msgId: 'claim-order', acknowledged: true, durability }),
                 INBOUND_TEST_SOURCE
             );
 
-            // One commit, one batch: both rows are on the page that batch reads. An ACK confirms the
-            // admission, never the handler, so it does not wait behind the dispatch.
-            await expect.poll(() => fixture.sequence).toEqual(['control-sent', 'dispatched']);
+            // One commit, one batch: both rows are on the page that batch reads. On the memory pair an ACK
+            // confirms the admission without waiting behind the dispatch; on the durable pair its commit
+            // must not delay the delivery.
+            await expect.poll(() => fixture.sequence).toEqual(sequence);
         }
     );
 
@@ -389,7 +397,7 @@ describe('ALInboundWorkSelector claim order', () => {
 
             await runRotationUntilControlSent(fixture);
 
-            await expect.poll(() => fixture.sequence).toEqual(['control-sent', 'dispatched', 'dispatched']);
+            await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'dispatched', 'control-sent']);
             expect(
                 fixture.controlSends.map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg)))
             ).toEqual([['first-acknowledged', 'second-acknowledged']]);
@@ -498,7 +506,7 @@ describe('ALInboundWorkSelector claim order', () => {
         }
     );
 
-    it('claims a control send ahead of a full page of buffered releases', () => {
+    it('claims a volatile control send ahead of a full page of buffered releases', () => {
         const releases = Array.from({ length: AL_INBOUND_WORK_PAGE_SIZE - 1 }, (_, index) => createTestClaim(`release-${index}`));
         const control = createTestClaim('send-control');
         const effectKinds = new Map<ResourceEntryKeyString, ALInboundDurableEffect['kind']>([
@@ -506,12 +514,23 @@ describe('ALInboundWorkSelector claim order', () => {
             [toKeyAsString(control.entry.key), 'send-control']
         ]);
 
-        const ordered = computeALInboundClaimOrder([...releases, control], effectKinds);
+        const ordered = computeALInboundClaimOrder([...releases, control], effectKinds, 'volatile');
 
         expect(ordered[0]?.entry.key.resourceId).toBe('send-control');
     });
 
-    it('ranks control sends first, then page deliveries, then admission replays and undecoded rows, then forwards', () => {
+    it.each(
+        [
+            {
+                lane: 'volatile',
+                order: ['send-control', 'release-buffered', 'dispatch-local', 'undecoded', 'admit-control', 'admit-message', 'forward-message']
+            },
+            {
+                lane: 'durable',
+                order: ['release-buffered', 'dispatch-local', 'undecoded', 'admit-control', 'admit-message', 'forward-message', 'send-control']
+            }
+        ] as const
+    )('ranks the claims of a $lane batch as $order', ({ lane, order }) => {
         const claims = [
             createTestClaim('forward-message'),
             createTestClaim('send-control'),
@@ -530,17 +549,9 @@ describe('ALInboundWorkSelector claim order', () => {
             [toKeyAsString(claims[6]!.entry.key), 'dispatch-local']
         ]);
 
-        const ordered = computeALInboundClaimOrder(claims, effectKinds);
+        const ordered = computeALInboundClaimOrder(claims, effectKinds, lane);
 
-        expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual([
-            'send-control',
-            'release-buffered',
-            'dispatch-local',
-            'undecoded',
-            'admit-control',
-            'admit-message',
-            'forward-message'
-        ]);
+        expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual(order);
     });
 });
 
@@ -569,7 +580,7 @@ function createSelectorFixture(): SelectorFixture {
     return {
         namespace,
         port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: () => NOW_MS }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS, lane: 'durable' })
     };
 }
 
@@ -615,7 +626,7 @@ function createTimedSelectorFixture(): SelectorFixture {
                 return claims;
             }
         },
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs })
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs, lane: 'durable' })
     };
 }
 
@@ -648,7 +659,7 @@ function createCostBoundaryFixture(): CostBoundaryFixture {
         port,
         nowMs,
         advance,
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs })
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs, lane: 'durable' })
     };
 }
 
@@ -907,7 +918,7 @@ async function createDispatchPageFixture(rowCount: number = DISPATCH_PAGE_ROWS):
     return {
         delivery,
         port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now }),
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now, lane: 'durable' }),
         effects
     };
 }

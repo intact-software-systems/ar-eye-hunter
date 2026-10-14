@@ -421,7 +421,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
         const now = this.now();
         const candidates: [ResourceEntryKeyString, ResourceEntry][] = [];
-        for (const candidate of this.readRetryExhaustionCandidates(typeIds, options, now)) {
+        for (const candidate of this.getRetryExhaustionCandidates(typeIds, options, now)) {
             if (candidates.length >= options.maxToReserve) {
                 break;
             }
@@ -488,7 +488,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         if (!typeIds.has(EnqueuedType.APP_INBOX)) {
             return false;
         }
-        const candidates = this.readRetryExhaustionCandidates(
+        const candidates = this.getRetryExhaustionCandidates(
             new Set([EnqueuedType.APP_INBOX]),
             { processingAttempts, staleAfterMs },
             this.now()
@@ -500,13 +500,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
      * The live stale exhausted reservations of these types, lazily, read through the work index: a sweep visits
      * the RESERVED rows alone, never the completed rows an owner retains until they expire.
      */
-    private *readRetryExhaustionCandidates(
+    private *getRetryExhaustionCandidates(
         typeIds: ReadonlySet<string>,
         criteria: Pick<ResourceInboxFinalizationReservationOptions, 'processingAttempts' | 'staleAfterMs'>,
         now: Temporal.Instant
     ): Generator<[ResourceEntryKeyString, ResourceEntry]> {
         const staleBefore = now.subtract({ milliseconds: criteria.staleAfterMs });
-        for (const [key, entry] of this.readIndexedEntries(typeIds, EntityStatus.RESERVED)) {
+        for (const [key, entry] of this.getIndexedEntries(typeIds, EntityStatus.RESERVED)) {
             if (
                 !isExpiredResourceEntry(entry, now) &&
                 entry.dequeueAudit.attempts >= criteria.processingAttempts &&
@@ -519,7 +519,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    private *readIndexedEntries(
+    private *getIndexedEntries(
         typeIds: ReadonlySet<string>,
         status: EntityStatus
     ): Generator<[ResourceEntryKeyString, ResourceEntry]> {

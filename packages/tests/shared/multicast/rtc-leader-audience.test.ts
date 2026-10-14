@@ -41,8 +41,6 @@ type LeaderAudience = 'room multicast' | 'room broadcast' | 'room except' | 'pri
 const LEADER_FLOORS = { minSnapshotVersion: 4, rosterVersion: 4 } as const;
 /** A `command` send's first ACK timeout: a receipt confirmed before it needed no retransmission. */
 const LEADER_ACK_TIMEOUT_MS = 2_000;
-/** Long enough for every leaf ACK the director admitted to travel on to the origin, were it relayed. */
-const TREE_SETTLE_MS = 250;
 
 describe('the RTC leg of a group-leader room send', () => {
     beforeEach(() => {
@@ -190,7 +188,6 @@ describe('the RTC leg of a group-leader room send', () => {
     });
 
     it('confirms a leader receipt from a director that relays to a silent leaf, with one ACK reaching the origin', async () => {
-        vi.useRealTimers();
         const message = newALMulticastMessage(
             'origin',
             { topicId: 'room.ar-eye-hunter.director', resourceId: 'internal-director-shot', contextId: room.groupId },
@@ -199,7 +196,7 @@ describe('the RTC leg of a group-leader room send', () => {
             { kind: 'player-shot-intent', senderId: 'origin', seq: 1 },
             { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
         );
-        const receipt = Promise.withResolvers<ALDeliverySettlement>();
+        const receipts: ALDeliverySettlement[] = [];
         const topology = [
             ['origin', ['relay']],
             ['relay', ['origin', 'director']],
@@ -210,8 +207,8 @@ describe('the RTC leg of a group-leader room send', () => {
         const endpoints = topology.map(([sessionId, peerIds]) => {
             const endpoint = new RtcEndpointFixture(sessionId, peerIds, {
                 outboundSettlements: (settlement) => {
-                    if (settlement.kind === 'acknowledgement' && settlement.msgId === message.id.msgId && settlement.complete) {
-                        receipt.resolve(settlement);
+                    if (settlement.kind === 'acknowledgement' && settlement.msgId === message.id.msgId) {
+                        receipts.push(settlement);
                     }
                 }
             });
@@ -235,20 +232,18 @@ describe('the RTC leg of a group-leader room send', () => {
             .mockReturnValue({ status: 'sent', bufferedAmount: 0 });
 
         const admitted = await bySession.get('origin')!.multicast.enqueueIfAbsent(message);
-        const confirmed = await Promise.race([
-            receipt.promise,
-            new Promise<'ack-timeout'>((resolve) => setTimeout(() => resolve('ack-timeout'), LEADER_ACK_TIMEOUT_MS))
-        ]);
+        await vi.advanceTimersByTimeAsync(LEADER_ACK_TIMEOUT_MS - 1);
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-        expect(confirmed).toMatchObject({
-            mode: 'leader',
-            expectedRecipientPeerIds: ['director'],
-            confirmedRecipientPeerIds: ['director'],
-            complete: true
-        });
-        await expect.poll(() => readAckSenders(bySession.get('director')!, message)).toEqual(['leaf-a', 'leaf-b']);
-        await new Promise((resolve) => setTimeout(resolve, TREE_SETTLE_MS));
+        expect(receipts.filter((receipt) => receipt.kind === 'acknowledgement' && receipt.complete)).toEqual([
+            expect.objectContaining({
+                mode: 'leader',
+                expectedRecipientPeerIds: ['director'],
+                confirmedRecipientPeerIds: ['director'],
+                complete: true
+            })
+        ]);
+        expect(readAckSenders(bySession.get('director')!, message)).toEqual(['leaf-a', 'leaf-b']);
         expect(readAckSenders(bySession.get('origin')!, message)).toEqual(['relay']);
     });
 

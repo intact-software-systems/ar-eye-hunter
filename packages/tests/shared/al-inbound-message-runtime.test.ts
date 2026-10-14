@@ -455,16 +455,15 @@ describe('ALInboundMessageRuntime', () => {
         await pendingRelease;
         await expect.poll(() => releaseConflictObserved).toBe(true);
         vi.setSystemTime(Date.now() + 100);
-        // The relay relays `peer-2`, then names itself in its terminal ACK.
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
+        // The relay relays `peer-2`, confirms itself once its buffered copy is delivered, then ends its subtree.
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(3);
 
         const ackPayloads = readAckPayloads(controlMessages);
 
         expect(releaseConflictObserved).toBe(true);
-        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
-        // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
             ['peer-2', 'forwarded'],
+            ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
         for (const ack of ackPayloads) {

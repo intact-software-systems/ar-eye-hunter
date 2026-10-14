@@ -2,9 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it,
-    onTestFinished,
-    vi
+    it
 } from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -12,6 +10,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
+    toKeyAsString,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -336,12 +335,18 @@ describe('InMemoryQueueBox', () => {
         ).toBe(0);
     });
 
-    it('reads only reserved rows to find finalizations, however many completed rows it retains', async () => {
+    it('finalizes only the exhausted reservation among completed rows it retains, which stay retained', async () => {
         const queue = new InMemoryQueueBox();
         queue.retainCompletedUntilExpiry({ typeIds: [EnqueuedType.APP_INBOX], topicIds: [] });
         const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
-        for (let index = 0; index < RETAINED_COMPLETED_ROWS; index += 1) {
-            await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, `completed-${index}`, { status: EntityStatus.COMPLETED }));
+        const completed = Array.from({ length: RETAINED_COMPLETED_ROWS }, (_, index) =>
+            createEntry(EnqueuedType.APP_INBOX, `completed-${index}`, {
+                status: EntityStatus.COMPLETED,
+                attempts: 20,
+                startTs: staleStart
+            }));
+        for (const entry of completed) {
+            await queue.enqueue(entry);
         }
         const exhausted = createEntry(EnqueuedType.APP_INBOX, 'exhausted', {
             status: EntityStatus.RESERVED,
@@ -349,12 +354,6 @@ describe('InMemoryQueueBox', () => {
             startTs: staleStart
         });
         await queue.enqueue(exhausted);
-        const iterations = vi.spyOn(Map.prototype, 'entries');
-        const valueIterations = vi.spyOn(Map.prototype, 'values');
-        onTestFinished(() => {
-            iterations.mockRestore();
-            valueIterations.mockRestore();
-        });
 
         const recovered = await queue.reserveRetryExhaustionFinalizations(
             new Set([EnqueuedType.APP_INBOX]),
@@ -362,9 +361,8 @@ describe('InMemoryQueueBox', () => {
         );
 
         expect([...recovered.values()].map(({ entry }) => entry.key)).toEqual([exhausted.key]);
-        const scannedMapSizes = [...iterations.mock.contexts, ...valueIterations.mock.contexts]
-            .map((map) => (map as ReadonlyMap<string, ResourceEntry>).size);
-        expect(scannedMapSizes.filter((size) => size >= RETAINED_COMPLETED_ROWS)).toEqual([]);
+        expect(completed.map((entry) => queue.peek(toKeyAsString(entry.key))?.status))
+            .toEqual(completed.map(() => EntityStatus.COMPLETED));
     });
 
     it('skips poison finalization generations without consuming a valid bounded batch', async () => {

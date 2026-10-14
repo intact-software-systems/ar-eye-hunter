@@ -458,7 +458,9 @@ completion ACK (a leaf's `delivered`, a relay's terminal `subtree-complete`), ne
 logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
-no write and no version bump. The `acknowledgement`
+no write and no version bump. The exception is the completion ACK of a next hop still open whose
+`accepted` ACK the receipt already counted: it enters the ACK history without moving the receipt,
+so the hop reads complete and a retry never resends into its subtree. The `acknowledgement`
 settlement carries the `mode`, so `complete` under `receiver` is logical completion, and under
 `leader` it is the confirmation of the one director session the carrier froze at admission (D164). A
 `receiver` room send frozen to an empty audience (an origin alone in its room) is admitted and
@@ -637,15 +639,18 @@ authenticated session, the ACK speaks for itself and is addressed to the origin 
 [`relayed-ack-notice.ts`](../../../shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts)); its ingress
 answers an unhandled `control` instead of a refusal. The instance that holds the aggregate counts it with the same
 checks as a local ACK; any other instance drops it, and nothing relays it again. The notice is best effort and one
-attempt: a lost one leaves the recipient unconfirmed, and the receipt ends `timed-out` naming it. The relay runs
+attempt: a lost one leaves the recipient unconfirmed until the origin's retry, and the receipt ends `timed-out` naming it
+when none confirms it. The relay runs
 only with Postgres pub/sub; a single instance still refuses an ACK it holds no aggregate for. An ACK addressed to
 the server is never relayed: the server's own pending row lives in the shared outbound admission store. The relay is
 bounded twice before it publishes, each refusal a typed value at ingress. First the inbound admission store, which every
 instance shares, must hold the message the ACK names, sent by the origin it names, with the ACK's sender in the audience
 frozen at ingress (`readIngressAudience`); a forged ACK (unknown message, sender outside the audience, another origin) is
 refused after one store read and costs no notice. The outbound admission store cannot answer this, because it records an
-admitted audience only for a message the router enqueued on an `outbox` topic. Then each session may hand over 60 ACKs per
-minute, so a genuine ACK stream is bounded as well.
+admitted audience only for a message the router enqueued on an `outbox` topic. Then each session may hand over 8 ACKs per
+admitted message per minute, its ACK of every copy a retrying origin sends, so a genuine ACK stream is bounded as well; a
+session whose ACKs fail the store proof 60 times per minute has its unowned ACKs refused before that read. A notice that
+cannot be published is admitted where it arrived, where it counts nothing, and the origin's ACK-timeout retry recovers it.
 
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
@@ -721,8 +726,8 @@ the message receives it. The server sends to that audience only and a `receiver`
 never a session that joined after admission (D24, D43); a `hop` or `subtree` row expects the hops this
 instance sent to. WS never re-routes, so a retry or a repair of any receipt mode keeps every peer the row expects and
 every one that confirmed, and resends only to a failed peer the message was admitted to (R-S3c-i-31). A multicast frozen by its origin and sent without a router keeps planning against its
-own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
-naming the message and its origin.
+own `recipientPeerIds`. A receipt that runs out of receipt-admission attempts is retained as
+pending-control work and replayed until its deadline.
 
 The server's own room notifications carry receipts too (D58, D77), and so does every server or proxy publish that
 names its room (D104). The router freezes any publish that carries a `groupRef`, a multicast or a room broadcast at

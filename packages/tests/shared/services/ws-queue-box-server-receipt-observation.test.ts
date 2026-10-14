@@ -870,7 +870,7 @@ describe('owned ACK relay observation', () => {
         expect(events).toHaveLength(1);
     });
 
-    it('records a failed publication and refuses the ACK it could not hand over', async () => {
+    it('records a failed publication and leaves the ACK it could not hand over to this instance', async () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const { aggregation } = createObservedAggregation((event) => events.push(event), async () => {
             throw new Error('no receipt expected');
@@ -889,7 +889,7 @@ describe('owned ACK relay observation', () => {
             throw new Error('test ACK malformed');
         }
         const remote = newALAckControlMessage(message.id, { ...control.payload, ackedMsgId: 'other-subject' });
-        expect((await relay.relayUnownedAck(remote)).left?.code).toBe('unsupported');
+        expect((await relay.relayUnownedAck(remote)).right).toBe(false);
         expect(events).toEqual([
             expect.objectContaining({
                 kind: 'ack-relay',

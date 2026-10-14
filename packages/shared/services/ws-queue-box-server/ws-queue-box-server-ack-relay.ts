@@ -20,6 +20,7 @@ const RELAY_BUDGET_WINDOW_MS = 60_000;
 const RELAY_BUDGET_PER_AGGREGATE = 8;
 /** ACKs whose admission a session may fail to prove per window before its unowned ACKs are refused unread. */
 const UNPROVEN_RELAY_BUDGET_PER_SESSION = 60;
+/** Budgets the map holds before a spend sweeps the expired ones, which it does at most once per window. */
 const RELAY_BUDGET_SWEEP_SIZE = 1_024;
 
 interface WsQueueBoxServerAckRelayRefusal {
@@ -69,6 +70,7 @@ export class WsQueueBoxServerAckRelay {
     readonly #clock: { nowMs(): number; };
     readonly #readIngressAudience: WsQueueBoxServerAckRelay.Dependencies['readIngressAudience'];
     readonly #budgets = new Map<string, { windowEndsAtMs: number; used: number; }>();
+    #nextSweepAtMs = Number.NEGATIVE_INFINITY;
 
     constructor(dependencies: WsQueueBoxServerAckRelay.Dependencies) {
         this.#serverPeerId = dependencies.serverPeerId;
@@ -115,8 +117,9 @@ export class WsQueueBoxServerAckRelay {
 
     /**
      * Whether the admitted ACK left for the instance that aggregates it, in which case this instance admits
-     * nothing; refused when it is not proven, when its session used its relay budget for that message, or when
-     * the notice could not be published.
+     * nothing; refused when it is not proven or when its session used its relay budget for that message. A
+     * notice that could not be published did not leave: this instance admits the ACK, which counts nowhere, and
+     * the origin's ACK-timeout retry is what recovers it.
      */
     async relayUnownedAck(message: ALMessage): Promise<Either<ALMessageRejection, boolean>> {
         const publish = this.#publishRelayedAck;
@@ -143,10 +146,7 @@ export class WsQueueBoxServerAckRelay {
             console.warn(
                 `AL acknowledgement ${message.id.msgId} for ${ack.originPeerId} was not relayed: ${published.left}`
             );
-            return Either.ofLeft({
-                code: 'unsupported',
-                message: `AL acknowledgement could not be relayed to the instance that aggregates it: ${published.left}`
-            });
+            return Either.ofRight(false);
         }
         return Either.ofRight(true);
     }
@@ -227,17 +227,24 @@ export class WsQueueBoxServerAckRelay {
 
     private spendRelayBudgetUnit(key: string): void {
         const nowMs = this.#clock.nowMs();
-        if (this.#budgets.size >= RELAY_BUDGET_SWEEP_SIZE) {
-            for (const [id, budget] of this.#budgets) {
-                if (budget.windowEndsAtMs <= nowMs) {
-                    this.#budgets.delete(id);
-                }
-            }
-        }
+        this.sweepExpiredRelayBudgets(nowMs);
         const current = this.#budgets.get(key);
         const budget = current !== undefined && current.windowEndsAtMs > nowMs
             ? current
             : { windowEndsAtMs: nowMs + RELAY_BUDGET_WINDOW_MS, used: 0 };
         this.#budgets.set(key, { ...budget, used: budget.used + 1 });
+    }
+
+    /** Every budget lives one window, so one sweep per window keeps the map within two windows of keys. */
+    private sweepExpiredRelayBudgets(nowMs: number): void {
+        if (this.#budgets.size < RELAY_BUDGET_SWEEP_SIZE || nowMs < this.#nextSweepAtMs) {
+            return;
+        }
+        this.#nextSweepAtMs = nowMs + RELAY_BUDGET_WINDOW_MS;
+        for (const [key, budget] of this.#budgets) {
+            if (budget.windowEndsAtMs <= nowMs) {
+                this.#budgets.delete(key);
+            }
+        }
     }
 }

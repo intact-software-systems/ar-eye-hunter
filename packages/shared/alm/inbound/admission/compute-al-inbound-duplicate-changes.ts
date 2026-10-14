@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckStatus, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
+import { isALUnicastAddressedTo } from '../../../al-contracts/is-al-unicast-addressed-to.ts';
 import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
@@ -178,13 +179,18 @@ function toParentAnswer(
     ];
 }
 
-/** Whether this peer confirmed itself with `accepted` beside the row when it first admitted the message. */
+/**
+ * Whether this peer confirmed itself with `accepted` beside the row when it first admitted the message: it is a
+ * logical recipient, one the frozen audience names or the unicast addresses, never a relay passing a copy on.
+ */
 function isAcceptingRecipient(
     read: ALInboundMessageReadDto,
     pendingAck: ALPendingAckSnapshot,
     selfPeerId: string
 ): boolean {
-    return isALLogicalReceiptMode(read.plan.ack.algo) && pendingAck.localReady && isFrozenRecipient(read, selfPeerId);
+    const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
+    return isALLogicalReceiptMode(read.plan.ack.algo) && pendingAck.localReady &&
+        (frozen?.recipientPeerIds.includes(selfPeerId) === true || isALUnicastAddressedTo(read.msg, selfPeerId));
 }
 
 /** Child hops a repeated parent copy can still forward to using the original canonical envelope. */
@@ -211,12 +217,8 @@ function toReparentedRowMutation(
 
 /** A peer outside the frozen audience delivered nothing: its ACK only ends its own empty subtree. */
 function toOwnAckStatus(read: ALInboundMessageReadDto, selfPeerId: string): ALAckStatus {
-    return isFrozenRecipient(read, selfPeerId) ? 'delivered' : 'subtree-complete';
-}
-
-function isFrozenRecipient(read: ALInboundMessageReadDto, selfPeerId: string): boolean {
     const frozen = resolveALFrozenMulticastAudience(read.msg.targets);
-    return frozen === undefined || frozen.recipientPeerIds.includes(selfPeerId);
+    return frozen === undefined || frozen.recipientPeerIds.includes(selfPeerId) ? 'delivered' : 'subtree-complete';
 }
 
 function toRepeatedAck(read: ALInboundMessageReadDto, repeated: ALInboundRepeatedAck): ALInboundEffectIntent {

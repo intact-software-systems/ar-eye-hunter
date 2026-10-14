@@ -29,6 +29,8 @@ export interface MarkALPendingAckLocalReadySnapshotInput {
 
 export interface AcceptALPendingAckPayloadInput {
     readonly current: ALPendingAckSnapshot | undefined;
+    /** The child ACKs the row admitted before this one. */
+    readonly acks: readonly ALAckPayload[];
     readonly ack: ALAckPayload;
 }
 
@@ -107,8 +109,9 @@ export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, rec
 }
 
 /**
- * An admitted child ACK is relayed upward when the origin counts its recipient; only the completion ACK of the
- * child hop itself completes it.
+ * An admitted child ACK is relayed upward when the origin counts its recipient and no earlier child ACK named it
+ * already: a recipient relay's terminal ACK follows its `accepted` one. Only the completion ACK of the child hop
+ * itself completes it.
  */
 export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
@@ -120,13 +123,13 @@ export function acceptALPendingAckPayload(
     const ackedFromPeerIds = isALHopCompletionAck(ack)
         ? [...new Set([...current.ackedFromPeerIds, ack.fromPeerId])]
         : current.ackedFromPeerIds;
+    const relayed = isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId) &&
+        !input.acks.some((prior) => prior.logicalRecipientPeerId === ack.logicalRecipientPeerId);
     return toALPendingAckTransition({
         msgId: ack.ackedMsgId,
         previous: current,
         pending: { ...current, ackedFromPeerIds },
-        relayedRecipientPeerIds: isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId)
-            ? [ack.logicalRecipientPeerId]
-            : []
+        relayedRecipientPeerIds: relayed ? [ack.logicalRecipientPeerId] : []
     });
 }
 

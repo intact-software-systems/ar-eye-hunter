@@ -9,11 +9,21 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
-import type { ALInboundCommitBundle, ALInboundPlanner } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import {
+    computeALInboundAdmission,
+    computeALInboundBufferedRelease
+} from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundCommitBundle,
+    ALInboundPlanner
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundUpwardAcks } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import {
+    computeALInboundBufferedReleasePlanningObservations,
+    computeALInboundPlanningObservations
+} from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import {
     acceptALPendingAckPayload,
@@ -56,6 +66,7 @@ describe('inbound pending ACK transition', () => {
     it('relays an ACK a child relay passes on without completing that hop', () => {
         const transition = acceptALPendingAckPayload({
             current: RELAY_ROW,
+            acks: [],
             ack: toChildAck('child-relay', 'grandchild', 'forwarded')
         });
 
@@ -67,10 +78,12 @@ describe('inbound pending ACK transition', () => {
     it('completes once every child hop sent its own completion ACK, and only once', () => {
         const afterRelay = acceptALPendingAckPayload({
             current: { ...RELAY_ROW, ackedFromPeerIds: ['leaf'] },
+            acks: [],
             ack: toChildAck('child-relay', 'child-relay', 'subtree-complete')
         });
         const late = acceptALPendingAckPayload({
             current: afterRelay.pending,
+            acks: [],
             ack: toChildAck('child-relay', 'grandchild', 'forwarded')
         });
 
@@ -119,6 +132,20 @@ describe('a logical recipient that relays a group-leader send', () => {
         expect(completed.completed).toMatchObject({ toPeerId: 'relay', status: 'subtree-complete' });
     });
 
+    it('confirms itself once the predecessor an ordering gap waited on releases its buffered copy', async () => {
+        const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+        const waiting = await computeDirectorArrival(admissionStore, createLeaderSend(2));
+        expect(toSentAcks(waiting)).toEqual([]);
+        expect(await admissionStore.commitBundle(waiting)).toBe('committed');
+        expect(await admissionStore.commitBundle(await computeDirectorArrival(admissionStore, createLeaderSend(1))))
+            .toBe('committed');
+
+        const release = await computeDirectorRelease(admissionStore, readBufferedSnapshot(waiting));
+
+        expect(toSentAcks(release)).toEqual([{ toPeerId: 'relay', logicalRecipientPeerId: 'director', status: 'accepted' }]);
+        expect(release.localDelivery).toBeDefined();
+    });
+
     it('relays no ACK of a child outside the frozen audience upward, only its own terminal ACK', async () => {
         const bundle = await computeDirectorAdmission();
         let current = readPendingRow(bundle);
@@ -127,6 +154,7 @@ describe('a logical recipient that relays a group-leader send', () => {
         for (const childPeerId of DIRECTOR_CHILD_PEER_IDS) {
             const transition = acceptALPendingAckPayload({
                 current,
+                acks: [],
                 ack: { ...toChildAck(childPeerId, childPeerId, 'subtree-complete'), toPeerId: 'director' }
             });
             upward.push(...toALInboundUpwardAcks(transition));
@@ -140,7 +168,10 @@ describe('a logical recipient that relays a group-leader send', () => {
 /** The director's first admission of a leader send frozen to it, arriving from its parent with two children below. */
 async function computeDirectorAdmission(): Promise<ALInboundCommitBundle> {
     const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
-    const msg = createLeaderSend();
+    return await computeDirectorArrival(admissionStore, createLeaderSend());
+}
+
+async function computeDirectorArrival(admissionStore: ALInboundAdmissionStore, msg: ALMessage): Promise<ALInboundCommitBundle> {
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
         msg,
@@ -157,14 +188,31 @@ async function computeDirectorAdmission(): Promise<ALInboundCommitBundle> {
     });
 }
 
-function createLeaderSend(): ALMessage {
+/** The director's release of the copy an ordering gap buffered, planned as the ordered delivery worker plans it. */
+async function computeDirectorRelease(
+    admissionStore: ALInboundAdmissionStore,
+    buffered: Readonly<{ trackKey: string; seq: number; }>
+): Promise<ReturnType<typeof computeALInboundBufferedRelease>> {
+    const nowMs = Date.now();
+    const read = await admissionStore.readBufferedRelease({ ...buffered, nowMs });
+    if (read === undefined) {
+        throw new Error('The buffered copy must wait for its release');
+    }
+    return computeALInboundBufferedRelease({
+        read,
+        plan: planAsDirector(read.snapshot.msg, read.source, computeALInboundBufferedReleasePlanningObservations(read)),
+        facts: readALInboundEffectFacts(nowMs, { ...INBOUND_TEST_EFFECT_PREPARATION, selfPeerId: 'director' })
+    });
+}
+
+function createLeaderSend(seq?: number): ALMessage {
     const message = newALMulticastMessage(
         'origin',
-        { topicId: 'room.director', resourceId: 'shot', contextId: ROOM.groupId },
+        { topicId: 'room.director', resourceId: `shot-${seq ?? 'unordered'}`, contextId: ROOM.groupId },
         ROOM,
         'room.director.intent.v1',
         {},
-        { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 60_000 }
+        { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 60_000, ...(seq === undefined ? {} : { seq }) }
     );
     return { ...message, targets: { mode: 'multicast', groupRef: ROOM, recipientPeerIds: ['director'], snapshotVersion: 1 } };
 }
@@ -182,6 +230,14 @@ function toSentAcks(bundle: ALInboundCommitBundle): readonly SentAck[] {
     });
 }
 
+function readBufferedSnapshot(bundle: ALInboundCommitBundle): Readonly<{ trackKey: string; seq: number; }> {
+    const buffered = bundle.mutations.find((mutation) => mutation.kind === 'set-buffered');
+    if (buffered?.kind !== 'set-buffered') {
+        throw new Error('The admission buffered no copy');
+    }
+    return buffered.snapshot;
+}
+
 function readPendingRow(bundle: ALInboundCommitBundle): ALPendingAckSnapshot {
     const row = bundle.mutations.find((mutation) => mutation.kind === 'set-control-pending');
     if (row?.kind !== 'set-control-pending' || row.value.kind !== 'pending') {
@@ -196,6 +252,7 @@ function acceptChildCompletions(pending: ALPendingAckSnapshot, childPeerIds: rea
     for (const childPeerId of childPeerIds) {
         transition = acceptALPendingAckPayload({
             current: transition.pending,
+            acks: [],
             ack: { ...toChildAck(childPeerId, childPeerId, 'subtree-complete'), toPeerId: 'director' }
         });
     }

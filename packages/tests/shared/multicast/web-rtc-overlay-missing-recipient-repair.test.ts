@@ -8,7 +8,7 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, parseALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -76,7 +76,7 @@ describe('the RTC origin retry of a receiver receipt', () => {
         await enqueueAndDrain(fixture.manager, message);
         await relay.receive(fixture.channels.r!.sent[0]!, 'a');
         // `b` delivers behind `r`; `r` confirms itself, relays its ACK and ends its subtree, but the r -> a leg loses all three.
-        await relay.receive(createLeafAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'r' }), 'b');
+        await relay.receive(createChildAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'r', status: 'delivered' }), 'b');
         const lost = readAckTuples(await relay.readSent('a'));
         expect(lost.toSorted()).toEqual([['b', 'forwarded'], ['r', 'accepted'], ['r', 'subtree-complete']]);
         // `c` is a leaf: its own delivered ACK completes its hop.
@@ -115,6 +115,65 @@ describe('the RTC origin retry of a receiver receipt', () => {
             unconfirmedRecipientPeerIds: []
         });
         expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['b', 'c', 'r']);
+    });
+
+    it('confirms a hop whose recipient relays all acknowledged, and retries only toward the recipient still missing', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'c', 'b', 'd'], 4);
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r', 'd'] });
+        const parent = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const child = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['r', 'b'] });
+        const message = createOriginReceiverMulticast('finished-subtree');
+        await enqueueAndDrain(fixture.manager, message);
+        await parent.receive(fixture.channels.r!.sent[0]!, 'a');
+        await child.receive((await parent.readSent('c'))[0]!, 'r');
+        await child.receive(createChildAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'c', status: 'delivered' }), 'b');
+        for (const ack of (await child.readSent('r')).filter(isAck)) {
+            await parent.receive(ack, 'c');
+        }
+        const parentAcks = (await parent.readSent('a')).filter(isAck);
+        for (const ack of parentAcks) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(readAckTuples(parentAcks).toSorted()).toEqual([
+            ['b', 'forwarded'],
+            ['c', 'forwarded'],
+            ['r', 'accepted'],
+            ['r', 'subtree-complete']
+        ]);
+        expect(fixture.channels.r!.sent).toHaveLength(1);
+        expect(readSentTargets(fixture.channels.d!)).toEqual([
+            toOriginFrozenTargets(['r', 'c', 'b', 'd'], 4),
+            toOriginFrozenTargets(['r', 'c', 'b', 'd'], 4)
+        ]);
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            confirmedHopPeerIds: ['r'],
+            unconfirmedHopPeerIds: ['d'],
+            unconfirmedRecipientPeerIds: ['d'],
+            complete: false
+        });
+    });
+
+    it('relays a child recipient relay once and completes its hop on the terminal ACK that follows its accepted ACK', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'c'], 4);
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const message = createOriginReceiverMulticast('accepted-then-terminal');
+        await enqueueAndDrain(fixture.manager, message);
+        await relay.receive(fixture.channels.r!.sent[0]!, 'a');
+
+        for (const status of ['accepted', 'subtree-complete', 'subtree-complete'] as const) {
+            await relay.receive(createChildAck({ msgId: message.id.msgId, fromPeerId: 'c', toPeerId: 'r', status }), 'c');
+        }
+
+        expect(readAckTuples(await relay.readSent('a')).toSorted()).toEqual([
+            ['c', 'forwarded'],
+            ['r', 'accepted'],
+            ['r', 'subtree-complete']
+        ]);
     });
 
     it('names the relay as its confirmed hop and the recipient behind it as its confirmed recipient (R-S2c-ii-6)', async () => {
@@ -345,15 +404,16 @@ describe('the RTC origin verdict when it owns no child (R-S2c-ii-9a)', () => {
     });
 });
 
-interface LeafAckInput {
+interface ChildAckInput {
     readonly msgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
+    readonly status: ALAckStatus;
 }
 
-function createLeafAck(input: LeafAckInput): ALMessage {
+function createChildAck(input: ChildAckInput): ALMessage {
     return newALAckControlMessage(
-        { v: 3, msgId: `ack-${input.fromPeerId}`, senderId: input.fromPeerId, ts: Date.now() },
+        { v: 3, msgId: `ack-${input.fromPeerId}-${input.status}`, senderId: input.fromPeerId, ts: Date.now() },
         {
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,
@@ -361,7 +421,7 @@ function createLeafAck(input: LeafAckInput): ALMessage {
             originPeerId: 'a',
             logicalRecipientPeerId: input.fromPeerId,
             carrier: 'rtc',
-            status: 'delivered',
+            status: input.status,
             observedAtEpochMs: Date.now()
         }
     );

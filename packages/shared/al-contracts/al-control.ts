@@ -135,9 +135,9 @@ export interface ALControlAcceptance {
 
 /**
  * How a relay tracks one message it forwarded: the child hops it waits on, and those whose subtree
- * completed. A child ACK is relayed upward as it arrives when the origin counts its recipient; the row
- * completes once this peer is ready and every child hop completed, and stays until it expires so a late
- * child ACK is still relayed.
+ * completed. A child ACK is relayed upward as it arrives when the origin counts its recipient and no earlier
+ * child ACK named it; the row completes once this peer is ready and every child hop completed, and stays until
+ * it expires so a late child ACK is still relayed.
  */
 export interface ALPendingAckSnapshot {
     readonly toPeerId: string;

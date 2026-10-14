@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
@@ -7,7 +8,6 @@ import {
     acceptALSupersedenceObservation,
     type ALSupersedenceAcceptance
 } from '../../compute-al-supersedence-observation.ts';
-import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundAdmissionRead,
@@ -135,14 +135,14 @@ interface InboundAcknowledgementChanges {
 /** This peer's own ACK of the admitted message, before its status is chosen. */
 type InboundOwnAck = Omit<ALInboundAckEffectInput, 'status'>;
 
-interface InboundPendingAckInput {
-    readonly msgId: string;
-    readonly expireAtTimestamp: number | undefined;
-    readonly nowMs: number;
-    readonly senderId: string;
-    readonly retention: ALInboundMessageReadDto['retention'];
-    readonly carrier: ALDeliveryCarrier;
-}
+/** The clock reading and retention a pending-row write expires against. */
+type InboundPendingAckRetention = Pick<ALInboundMessageReadDto, 'nowMs' | 'retention'>;
+
+const NO_INBOUND_ACKNOWLEDGEMENTS: InboundAcknowledgementChanges = {
+    mutations: [],
+    immediateEffects: [],
+    completedEffects: []
+};
 
 export function computeALInboundAdmission(
     input: ComputeALInboundAdmissionInput
@@ -249,17 +249,10 @@ function computeIncomingAcknowledgements(
     shouldForward: boolean
 ): InboundAcknowledgementChanges {
     const plan = read.plan;
-    if (!plan.ack.enabled || !plan.ack.toPeerId) {
-        return { mutations: [], immediateEffects: [], completedEffects: [] };
+    const ack = plan.ack.enabled ? toInboundOwnAck(read.msg, plan, read.source) : undefined;
+    if (ack === undefined) {
+        return NO_INBOUND_ACKNOWLEDGEMENTS;
     }
-    const ack: InboundOwnAck = {
-        toPeerId: plan.ack.toPeerId,
-        ackedMsgId: read.msg.id.msgId,
-        originPeerId: read.msg.id.senderId,
-        logicalRecipient: { kind: 'self' },
-        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg, plan.effective),
-        carrier: toALDeliveryCarrier(read.source)
-    };
     if (!plan.ack.deferred || !shouldForward) {
         return {
             mutations: [],
@@ -295,14 +288,7 @@ function computeRelayAcknowledgements(
         carrier: ack.carrier,
         upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(plan.ack.algo, read.msg.targets)
     });
-    const changes = toAckTransitionChanges(transition, {
-        msgId: ack.ackedMsgId,
-        senderId: ack.originPeerId,
-        expireAtTimestamp: ack.expireAtTimestamp,
-        nowMs: read.nowMs,
-        retention: read.retention,
-        carrier: ack.carrier
-    });
+    const changes = toAckTransitionChanges(transition, ack, read);
     if (!transition.pending) {
         return changes;
     }
@@ -340,71 +326,81 @@ function toControlOwnerMutation(
     };
 }
 
+/**
+ * The buffered copy is delivered now: a peer with no relay row acknowledges its delivery, and a relay row
+ * becomes ready, beside which a logical recipient confirms itself with `accepted` as an undeferred admission does.
+ */
 function computeBufferedAcknowledgements(
     read: ALInboundBufferedReleaseReadDto,
     plan: ALMessageHandlingPlan,
     supersedenceAcceptance: ALSupersedenceAcceptance | undefined
 ): InboundAcknowledgementChanges {
-    if (
-        supersedenceAcceptance?.observation.status === 'superseded' || plan.ack.algo === 'none' ||
-        !plan.ack.toPeerId
-    ) {
-        return { mutations: [], immediateEffects: [], completedEffects: [] };
+    const superseded = supersedenceAcceptance?.observation.status === 'superseded';
+    const ack = superseded || plan.ack.algo === 'none'
+        ? undefined
+        : toInboundOwnAck(read.snapshot.msg, plan, read.source);
+    if (ack === undefined) {
+        return NO_INBOUND_ACKNOWLEDGEMENTS;
     }
-    const expireAtTimestamp = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective);
     if (!plan.ack.deferred) {
         return {
             mutations: [],
             completedEffects: [],
-            immediateEffects: [toALInboundAckEffect({
-                toPeerId: plan.ack.toPeerId,
-                ackedMsgId: read.snapshot.msg.id.msgId,
-                originPeerId: read.snapshot.msg.id.senderId,
-                logicalRecipient: { kind: 'self' },
-                status: 'delivered',
-                expireAtTimestamp,
-                carrier: toALDeliveryCarrier(read.source)
-            })]
+            immediateEffects: [toALInboundAckEffect({ ...ack, status: 'delivered' })]
         };
     }
-    const transition = markALPendingAckLocalReadySnapshot({
-        msgId: read.snapshot.msg.id.msgId,
-        current: read.pendingAck
-    });
-    return toAckTransitionChanges(transition, {
-        msgId: read.snapshot.msg.id.msgId,
-        senderId: read.snapshot.msg.id.senderId,
-        expireAtTimestamp,
-        nowMs: read.nowMs,
-        retention: read.retention,
-        carrier: toALDeliveryCarrier(read.source)
-    });
+    const transition = markALPendingAckLocalReadySnapshot({ msgId: ack.ackedMsgId, current: read.pendingAck });
+    return {
+        ...toAckTransitionChanges(transition, ack, read),
+        immediateEffects: isALLogicalReceiptMode(plan.ack.algo)
+            ? [toALInboundAckEffect({ ...ack, status: 'accepted' })]
+            : []
+    };
+}
+
+/** This peer's own ACK of a message, toward the peer its plan acknowledges to; none when there is no such peer. */
+function toInboundOwnAck(
+    msg: ALMessage,
+    plan: ALMessageHandlingPlan,
+    source: ALInboundMessageReadDto['source']
+): InboundOwnAck | undefined {
+    return !plan.ack.toPeerId
+        ? undefined
+        : {
+            toPeerId: plan.ack.toPeerId,
+            ackedMsgId: msg.id.msgId,
+            originPeerId: msg.id.senderId,
+            logicalRecipient: { kind: 'self' },
+            expireAtTimestamp: resolveALMessageExpireAtMs(msg, plan.effective),
+            carrier: toALDeliveryCarrier(source)
+        };
 }
 
 function toAckTransitionChanges(
     transition: ALPendingAckTransition,
-    input: InboundPendingAckInput
+    ack: InboundOwnAck,
+    read: InboundPendingAckRetention
 ): InboundAcknowledgementChanges {
     const mutations: ALInboundAdmissionMutation[] = transition.pending
         ? [{
             kind: 'set-control-pending',
-            msgId: input.msgId,
-            senderId: input.senderId,
+            msgId: ack.ackedMsgId,
+            senderId: ack.originPeerId,
             value: { kind: 'pending', value: transition.pending },
             expireAtTimestamp: resolveExpireAtTimestampWithFallback(
                 transition.pending.expireAtTimestamp,
-                input.retention.controlPendingTtlMs,
-                input.nowMs
+                read.retention.controlPendingTtlMs,
+                read.nowMs
             )
         }]
         : [];
-    return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, input) };
+    return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, ack) };
 }
 
 /** The origin is the tracked message sender, never what a child ACK claimed. */
 function toCompletedAckEffects(
     transition: ALPendingAckTransition,
-    input: InboundPendingAckInput
+    ack: InboundOwnAck
 ): readonly ALInboundEffectIntent[] {
     const pending = transition.pending;
     if (pending === undefined) {
@@ -412,13 +408,11 @@ function toCompletedAckEffects(
     }
     return toALInboundUpwardAcks(transition).map((upward) =>
         toALInboundAckEffect({
+            ...ack,
             toPeerId: pending.toPeerId,
-            ackedMsgId: input.msgId,
-            originPeerId: input.senderId,
             logicalRecipient: upward.logicalRecipient,
             status: upward.status,
-            expireAtTimestamp: pending.expireAtTimestamp ?? input.expireAtTimestamp,
-            carrier: input.carrier
+            expireAtTimestamp: pending.expireAtTimestamp ?? ack.expireAtTimestamp
         })
     );
 }
