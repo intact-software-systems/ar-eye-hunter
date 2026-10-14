@@ -471,7 +471,7 @@ describe('IndexedDbQueueBox', () => {
         });
     });
 
-    it('treats the exact already-completed AppInbox reservation as an idempotent IndexedDB success release', async () => {
+    it('rejects releasing an AppInbox reservation its handler already finalized in IndexedDB', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const queue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });
         const reserved = createEntry(EnqueuedType.APP_INBOX, 'atomic-success', {
@@ -481,20 +481,12 @@ describe('IndexedDbQueueBox', () => {
         });
         await queue.enqueue({ ...reserved, status: EntityStatus.COMPLETED });
 
-        const released = await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
-
-        expect(firstValue(released)).toMatchObject({
+        await expect(
+            queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }])
+        ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        expect(await queue.getItem(reserved.key)).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 7 }
-        });
-        await expect(
-            queue.releaseEntries([{
-                entry: { ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } },
-                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-            }])
-        ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.FAILED, delayMs: null } }])).rejects.toMatchObject({
-            code: 'resource-inbox-lost-reservation'
         });
     });
 

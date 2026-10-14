@@ -9,7 +9,7 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import {
@@ -77,7 +77,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         });
         const commandId = toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = hashMutationCommand(decodeJsonWireValue(semanticCommand));
+        const commandHash = computeMutationCommandDigest(decodeJsonWireValue(semanticCommand));
         const command = {
             ...semanticCommand,
             commandId
@@ -252,7 +252,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         });
         const commandId = toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
-        const commandHash = hashMutationCommand(decodeJsonWireValue(semanticCommand));
+        const commandHash = computeMutationCommandDigest(decodeJsonWireValue(semanticCommand));
         const command = { ...semanticCommand, commandId };
         const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
         const row = {

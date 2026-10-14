@@ -11,7 +11,7 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/top
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { writeRtcTopologyOutboxProvenance } from '@shared-server/rallar-system/topology/publication/rtc-topology-outbox-provenance.ts';
-import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import {
     computeRtcTopologyPublicationOutboxWrites
@@ -104,7 +104,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             publication: stalePublication,
             facts: {
                 publicationExpireAtTimestamp: 253_402_300_799_999,
-                commandHash: hashRtcTopologyExecutionCommand(stalePublication),
+                commandHash: computeRtcTopologyExecutionCommandDigest(stalePublication),
                 attemptCount: 1
             }
         });
@@ -207,7 +207,7 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
                 publication: candidate,
                 facts: {
                     publicationExpireAtTimestamp: candidate.expiresAtEpochMs,
-                    commandHash: hashRtcTopologyExecutionCommand(candidate),
+                    commandHash: computeRtcTopologyExecutionCommandDigest(candidate),
                     attemptCount: 1
                 }
             });

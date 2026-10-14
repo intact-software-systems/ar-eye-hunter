@@ -176,9 +176,6 @@ export function isIdempotentHandlerFinalizedRelease(input: HandlerFinalizedRelea
         if (!commonFinalization) {
             return false;
         }
-        if (reserved.typeId === EnqueuedType.APP_INBOX) {
-            return true;
-        }
 
         if (
             reserved.typeId !== EnqueuedType.APP_OUTBOX ||

@@ -1,5 +1,5 @@
 import { computeSha256CanonicalJson } from '../protocol/canonical-json.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
     authorizeGroupMutation,
@@ -131,7 +131,7 @@ function createInternalMutationIngressCapture(
 ): InternalMutationIngressCapture {
     return (command, internalAuthority, atEpochMs) => {
         assertGroupMutationCommand(command);
-        const commandHash = hashMutationCommand(
+        const commandHash = computeMutationCommandDigest(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );
         const facts: Omit<GroupMutationFacts, 'attemptCount'> = {

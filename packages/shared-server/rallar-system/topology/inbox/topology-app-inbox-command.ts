@@ -10,8 +10,8 @@ import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
@@ -68,7 +68,7 @@ export function toTopologyAppInboxCommand(
             groupRef,
             requestId: input.requestId,
             capturedAtEpochMs: input.capturedAtEpochMs,
-            commandHash: hashMutationCommand(stableCommand)
+            commandHash: computeMutationCommandDigest(stableCommand)
         },
         payload
     );
@@ -82,7 +82,7 @@ export function toTopologyHttpMutationSemanticHash(
         payload: TopologyAppInboxRequestPayload;
     }>
 ): string {
-    return hashTopologyHttpMutationSemantic({
+    return computeTopologyHttpMutationSemanticDigest({
         ...input,
         payload: toCanonicalTopologyAppInboxPayload(input.payload)
     });
@@ -91,7 +91,7 @@ export function toTopologyHttpMutationSemanticHash(
 export function toPersistedTopologyHttpMutationSemanticHash(
     command: TopologyAppInboxCommand
 ): string {
-    return hashTopologyHttpMutationSemantic({
+    return computeTopologyHttpMutationSemanticDigest({
         principalId: command.actor.principalId,
         groupRef: command.groupRef,
         requestId: command.requestId,
@@ -99,7 +99,7 @@ export function toPersistedTopologyHttpMutationSemanticHash(
     });
 }
 
-function hashTopologyHttpMutationSemantic(
+function computeTopologyHttpMutationSemanticDigest(
     input: Readonly<{
         principalId: string;
         groupRef: TopologyAppInboxCommand['groupRef'];
@@ -107,7 +107,7 @@ function hashTopologyHttpMutationSemantic(
         payload: TopologyAppInboxPayload;
     }>
 ): string {
-    return hashMutationCommand({
+    return computeMutationCommandDigest({
         operation: input.payload.operation,
         requestId: input.requestId,
         callerId: input.principalId,
@@ -130,7 +130,7 @@ export function readTopologyCommandForValidatedSession(
     enqueue: AppInboxEnqueueInput,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
 ): TopologyAppInboxCommand {
-    const command = readDurableTopologyAppInboxCommand(enqueue.data);
+    const command = decodeDurableTopologyAppInboxCommand(enqueue.data);
     if (
         command.actor.principalId !== expectedActor.principalId ||
         command.actor.sessionId !== expectedActor.sessionId ||
@@ -147,7 +147,7 @@ export function readTopologyCommandForValidatedSession(
         operation: command.operation,
         payload: command.payload
     };
-    if (hashMutationCommand(stableCommand) !== command.commandHash) {
+    if (computeMutationCommandDigest(stableCommand) !== command.commandHash) {
         throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
     }
     return command;
@@ -167,7 +167,7 @@ export function toTopologyHttpMutationContextId(
         .join(':');
 }
 
-export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
+export function decodeDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
     const command = requireTopologyObject(
         decodeJsonWireValue(value, 'Topology durable AppInbox command'),
         'Topology durable AppInbox command'

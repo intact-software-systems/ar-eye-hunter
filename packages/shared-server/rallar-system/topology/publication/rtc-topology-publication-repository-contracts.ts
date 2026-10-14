@@ -1,7 +1,7 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { validateWorkClaim, type PersistedBoundaryValue } from './rtc-topology-publication-repository-state.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
@@ -37,7 +37,7 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
-export function hashRtcTopologyExecutionCommand(
+export function computeRtcTopologyExecutionCommandDigest(
     publication: RtcTopologyPublication
 ): string {
     validateRtcTopologyPublication(publication, publication.groupRef);
@@ -46,7 +46,7 @@ export function hashRtcTopologyExecutionCommand(
         schemaVersion: 1,
         publication
     };
-    return hashMutationCommand(
+    return computeMutationCommandDigest(
         encodeJsonWireValue(command, 'RTC topology execution command')
     );
 }

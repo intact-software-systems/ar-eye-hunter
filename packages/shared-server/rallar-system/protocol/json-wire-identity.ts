@@ -32,7 +32,7 @@ export function encodeJsonWireValue<Value>(value: Value, label = 'JSON wire valu
     return decodeJsonWireValue(value, label);
 }
 
-export function hashMutationCommand(command: JsonWireValue): string {
+export function computeMutationCommandDigest(command: JsonWireValue): string {
     return `sha256:${computeSha256CanonicalJson(command)}`;
 }
 

@@ -8,7 +8,7 @@ import { assertGroupMutationCommand } from '../group-state/mutation/command-vali
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
-    readDurableTopologyAppInboxCommand,
+    decodeDurableTopologyAppInboxCommand,
     toTopologyAppInboxType
 } from '../topology/inbox/topology-app-inbox-command.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
@@ -155,7 +155,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
         if (!TOPOLOGY_APP_INBOX_TYPES.has(type)) {
             return undefined;
         }
-        const command = readDurableTopologyAppInboxCommand(value);
+        const command = decodeDurableTopologyAppInboxCommand(value);
         if (toTopologyAppInboxType(command.operation) !== type) {
             throw new TypeError('Topology operation differs from AppInbox type');
         }

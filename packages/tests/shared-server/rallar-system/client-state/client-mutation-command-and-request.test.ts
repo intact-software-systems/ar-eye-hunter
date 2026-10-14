@@ -16,7 +16,7 @@ import {
 } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -114,7 +114,7 @@ describe('client mutation command and request projection', () => {
 
         expect(command.facts).toEqual({
             ...facts,
-            commandHash: hashMutationCommand(
+            commandHash: computeMutationCommandDigest(
                 decodeJsonWireValue({ ...input, authority }, 'Client mutation command identity')
             )
         });

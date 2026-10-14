@@ -21,7 +21,7 @@ import { readGroupMutation } from '@shared-server/rallar-system/group-state/muta
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateGuardedBatchTransaction } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateComputedRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
@@ -97,7 +97,7 @@ export class GroupStateTestMutationExecutor {
         atEpochMs: number,
         attemptCount: number
     ): Promise<Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>> {
-        const commandHash = hashMutationCommand(
+        const commandHash = computeMutationCommandDigest(
             decodeJsonWireValue(command, 'Group maintenance command')
         );
         const read = await readGroupMutation(this.repository(), command);

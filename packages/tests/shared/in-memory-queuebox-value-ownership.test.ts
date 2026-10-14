@@ -237,7 +237,7 @@ describe('InMemoryQueueBox value ownership', () => {
         }
     );
 
-    it('keeps release results separate, including already completed handler work', async () => {
+    it('keeps a release result separate from the stored entry', async () => {
         const entry = { ...createEntry(), status: EntityStatus.RESERVED };
         const queue = new InMemoryQueueBox();
         await queue.enqueue(entry);
@@ -250,19 +250,9 @@ describe('InMemoryQueueBox value ownership', () => {
                 }
             }])
         );
-        const repeated = firstValue(
-            await queue.releaseEntries([{
-                entry: entry,
-                disposition: {
-                    status: EntityStatus.COMPLETED,
-                    delayMs: null
-                }
-            }])
-        );
 
         completed.status = EntityStatus.FAILED;
-        repeated.status = EntityStatus.FAILED;
-        Object.assign(repeated.dequeueAudit, { attempts: 99 });
+        Object.assign(completed.dequeueAudit, { attempts: 99 });
         expect(await queue.getItem(entry.key)).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 0 }

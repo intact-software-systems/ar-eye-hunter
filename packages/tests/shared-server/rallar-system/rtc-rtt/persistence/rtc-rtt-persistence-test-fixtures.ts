@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
@@ -38,7 +38,7 @@ export async function executeRtcRttMutation(
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId
     };
-    const commandHash = hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         encodeJsonWireValue(request, 'test RTC RTT stable request')
     );
     const read = await readRtcRttMutation(input.repository, request);

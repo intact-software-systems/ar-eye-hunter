@@ -20,9 +20,9 @@ import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
     encodeJsonWireValue,
-    hashMutationCommand,
     serializeCanonicalMutationCommand,
     type JsonWireObject,
     type JsonWireValue
@@ -201,7 +201,7 @@ function resolveScopedGroupCommandIdentity(
         semanticCommand = toDescriptorCommand(descriptor, () => {
             throw new TypeError('Benchmark group mutation request ID is required');
         });
-        commandHash = hashMutationCommand(encodeJsonWireValue(semanticCommand));
+        commandHash = computeMutationCommandDigest(encodeJsonWireValue(semanticCommand));
     }
     catch {
         return undefined;

@@ -15,13 +15,13 @@ export function clientMutationPrincipalRef(principalId: string) {
 }
 
 interface InvalidSessionCommandInput {
-    readonly base: Readonly<Record<string, unknown>>;
-    readonly actor: Readonly<Record<string, unknown>>;
+    readonly base: object;
+    readonly actor: object;
     readonly operation: string;
-    readonly override: Readonly<Record<string, unknown>>;
+    readonly override: object;
 }
 
-export function invalidSessionCommand({ base, actor, operation, override }: InvalidSessionCommandInput): unknown {
+export function invalidSessionCommand({ base, actor, operation, override }: InvalidSessionCommandInput): object {
     const common = {
         ...base,
         operation,

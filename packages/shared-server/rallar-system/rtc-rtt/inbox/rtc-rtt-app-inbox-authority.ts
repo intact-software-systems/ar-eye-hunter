@@ -6,9 +6,9 @@ import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-co
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
     encodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
@@ -58,7 +58,7 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: hashMutationCommand(
+        mutationCommandHash: computeMutationCommandDigest(
             encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
         ),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
@@ -72,7 +72,7 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: hashMutationCommand(
+        commandHash: computeMutationCommandDigest(
             encodeJsonWireValue(stableCommand, 'RTC RTT stable command')
         )
     };
@@ -198,10 +198,10 @@ function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): void {
         rtt: command.rtt
     };
     if (
-        (hashMutationCommand(
+        (computeMutationCommandDigest(
                 encodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (hashMutationCommand(encodeJsonWireValue({
+        (computeMutationCommandDigest(encodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
             }, 'RTC RTT mutation command'))) !== command.mutationCommandHash

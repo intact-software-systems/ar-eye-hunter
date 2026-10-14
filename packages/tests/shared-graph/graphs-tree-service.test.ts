@@ -87,7 +87,6 @@ describe('shared-graph tree service orchestration', () => {
             globalGraph,
             'peer-c'
         );
-        expect(mockState.remove).not.toHaveBeenCalled();
         expect(result.reconfigured).toBe(false);
         expect(result.tree).toBe(insertedTree);
     });

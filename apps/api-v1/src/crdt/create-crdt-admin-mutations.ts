@@ -23,8 +23,8 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { Either } from '@shared/resilience/Either.ts';
 
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -120,7 +120,7 @@ export function createCrdtAdminMutations(
     return {
         writeCrdtAdminMutation: async (mutation) => {
             const normalized = normalizeCrdtAdminMutation(mutation);
-            const semanticHash = hashMutationCommand(normalized.semantic);
+            const semanticHash = computeMutationCommandDigest(normalized.semantic);
             const completed = await input.appCrdtInboxService.writeHttpAdminCommandUntilCompletion(
                 createCrdtAdminCommandReservation({
                     mutation: {
@@ -172,7 +172,7 @@ function createCrdtAdminCommandReservation(
 function matchesStoredCrdtAdminCommand(
     input: MatchStoredCrdtAdminCommandInput
 ): boolean {
-    return hashMutationCommand(toCrdtAdminSemanticCommand(input.command)) ===
+    return computeMutationCommandDigest(toCrdtAdminSemanticCommand(input.command)) ===
         input.semanticHash;
 }
 

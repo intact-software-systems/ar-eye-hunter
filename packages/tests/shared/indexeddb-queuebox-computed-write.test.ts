@@ -37,20 +37,17 @@ import {
 import { NO_TEMPORAL_PARSES, recordTemporalParses } from './queuebox/record-temporal-parses.ts';
 
 describe('IndexedDbQueueBox computed writes', () => {
-    it.each([
-        { typeId: EnqueuedType.APP_INBOX, status: EntityStatus.COMPLETED },
-        { typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.RETRY }
-    ])('uses the captured release time for a handler-finalized $typeId row', ({ typeId, status }) => {
+    it('uses the captured release time for a handler-finalized WS_OUTBOX row', () => {
         const expiryTs = Temporal.Instant.from('2026-01-01T12:00:01Z');
         const initial = createEntry('accepted');
         const reserved: ResourceEntry = {
             ...initial,
-            typeId,
+            typeId: EnqueuedType.WS_OUTBOX,
             status: EntityStatus.RESERVED,
             audit: { ...initial.audit, expiryTs },
             dequeueAudit: { attempts: 1 }
         };
-        const current = { ...reserved, status };
+        const current = { ...reserved, status: EntityStatus.RETRY };
         const key = toKeyAsString(current.key);
         const now = vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => {
             throw new Error('Release computation must not read the clock');

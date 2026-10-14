@@ -8,7 +8,7 @@ import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.t
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import { computeSha256CanonicalJson, serializeCanonicalJson } from '../protocol/canonical-json.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -107,7 +107,7 @@ async function captureAuthorizedGroupMutationIngress(
         useScopedCommandId
     });
     const { command } = materialized;
-    const commandHash = hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
@@ -200,7 +200,7 @@ export async function readAndVerifyGroupMutationIngressAuthority(
         useScopedCommandId: isScopedGroupMutationCommandId(ingress.command.commandId)
     });
     const { command } = materialized;
-    const commandHash = hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     if (

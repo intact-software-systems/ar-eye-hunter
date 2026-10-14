@@ -6,8 +6,8 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { serializeCanonicalMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
+    decodeDurableTopologyAppInboxCommand,
     readAuthenticatedTopologyCommand,
-    readDurableTopologyAppInboxCommand,
     toTopologyConfigMutationCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type {
@@ -107,7 +107,7 @@ describe('topology AppInbox durable command contract', () => {
         });
         const durable = structuredClone(command);
 
-        expect(readDurableTopologyAppInboxCommand(durable)).toStrictEqual(durable);
+        expect(decodeDurableTopologyAppInboxCommand(durable)).toStrictEqual(durable);
         expect(
             readAuthenticatedTopologyCommand(
                 {

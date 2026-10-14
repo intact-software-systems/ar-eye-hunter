@@ -86,6 +86,96 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "client-authorised-connect-validation-single-projection",
+      "domain": "Client-state AppInbox mutation validation cost",
+      "owner": "Rallar server maintainers",
+      "summary": "Validating an authorised WebSocket connect projects the complete computed operation once and still rejects a changed candidate. Executable assertion: “projects an authorised connect once and still rejects a changed candidate”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/client-state/client-mutation-result-validation.test.ts#projects an authorised connect once and still rejects a changed candidate",
+      "coverageRelation": "The test computes a real authorised connect, validates it through assertAuthorisedWsConnectOperation with the projection walker observed, then proves a candidate missing one outbox message is rejected.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "validateComputedProjection, the computed-data projection walker called by assertAuthorisedWsConnectOperation",
+        "observableEffect": "Each projection walks the complete computed operation, so the number of walks is the validation cost of one session setup.",
+        "requiredConstraint": "Validating one authorised connect performs exactly one complete projection walk.",
+        "failureRationale": "The accept and reject outcomes are identical whether validation walks the operation once or several times, so only the walk count distinguishes the single-projection validation this slice introduced from the repeated walks it removed."
+      }
+    },
+    {
+      "id": "client-snapshot-provenance-single-page-build",
+      "domain": "Client-state snapshot provenance computation cost",
+      "owner": "Rallar server maintainers",
+      "summary": "One client mutation compute builds the principal's state snapshot pages once and derives the provenance sidecars from them. Executable assertion: “builds the snapshot pages once per operation compute and keeps the sidecar bytes”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/client-state/client-snapshot-provenance.test.ts#builds the snapshot pages once per operation compute and keeps the sidecar bytes",
+      "coverageRelation": "The test computes a real connect operation with the page builder observed, then reads the sidecar writes the compute produced and compares their exact bytes.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "computeStateSnapshotPages, the state-sync page builder called by computeClientMutationOperation",
+        "observableEffect": "Every page build re-serializes the principal's whole snapshot, so the number of builds is the serialization cost of one client mutation.",
+        "requiredConstraint": "One client mutation compute builds the snapshot pages exactly once; the provenance reuses the rows compute produced.",
+        "failureRationale": "The sidecar bytes are identical whether provenance rebuilds the pages or reuses them, so only the build count distinguishes the reuse this slice introduced from the rebuild it removed."
+      }
+    },
+    {
+      "id": "computed-projection-match-builds-no-path-text",
+      "domain": "Computed-data validation walker cost",
+      "owner": "Rallar server maintainers",
+      "summary": "While a candidate matches its computed value, the projection walker builds no path text; paths are spelled only for a reported issue. Executable assertion: “builds no path text while a wide candidate matches its computed value”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/computed-data-validation.test.ts#builds no path text while a wide candidate matches its computed value",
+      "coverageRelation": "The test validates a matching thousand-field candidate with the global String conversion observed and reads the empty issue list.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "globalThis.String, the conversion the walker uses to spell an issue path",
+        "observableEffect": "Building path text for every visited field costs one string per field on every validation, though a matching candidate reports nothing.",
+        "requiredConstraint": "A matching candidate causes zero path-text conversions.",
+        "failureRationale": "The empty issue list is identical whether the walker spelled every path or none, so only the absent conversion distinguishes the lazy path this slice introduced from the eager one it removed."
+      }
+    },
+    {
+      "id": "rtc-topology-star-plans-without-room-graph",
+      "domain": "RTC topology planning cost without RTT measurements",
+      "owner": "Rallar server maintainers",
+      "summary": "A star topology plans its next hops without building the weighted room graph. Executable assertion: “does not build a weighted room graph for star topology”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts#does not build a weighted room graph for star topology",
+      "coverageRelation": "The test plans an eight-member group through the real RallarRtcTopologyService with its room-graph builder observed and reads the exact star next hops.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRtcTopologyService.createRoomGraph",
+        "observableEffect": "Building the weighted room graph costs a graph over every member pair, which a star plan never reads.",
+        "requiredConstraint": "Planning a star topology builds zero weighted room graphs.",
+        "failureRationale": "The star next hops are identical whether or not the graph was built, so only the absent build distinguishes the direct star plan from one that pays for an unused graph."
+      }
+    },
+    {
+      "id": "rtc-topology-no-rtt-mesh-plans-without-room-graph",
+      "domain": "RTC topology planning cost without RTT measurements",
+      "owner": "Rallar server maintainers",
+      "summary": "A mesh without RTT measurements for its members plans without building the weighted room graph and matches the graph-path plan. Executable assertion: “does not build a weighted room graph for no-RTT mesh topology”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts#does not build a weighted room graph for no-RTT mesh topology",
+      "coverageRelation": "The test plans a sixteen-member group through two real RallarRtcTopologyService instances, one without RTT rows with its room-graph builder observed, and compares and validates both next-hop maps.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarRtcTopologyService.createRoomGraph",
+        "observableEffect": "Building the weighted room graph costs a graph over every member pair, which a no-RTT mesh plan never reads.",
+        "requiredConstraint": "Planning a mesh without member RTT measurements builds zero weighted room graphs.",
+        "failureRationale": "The no-RTT mesh next hops equal the graph-path plan whether or not the graph was built, so only the absent build distinguishes the direct plan from one that pays for an unused graph."
+      }
+    },
+    {
+      "id": "indexeddb-release-computation-reads-no-clock",
+      "domain": "IndexedDB queue release computation purity",
+      "owner": "Rallar shared maintainers",
+      "summary": "The IndexedDB release computation decides a handler-finalized row against the release time its caller captured and never reads the clock itself. Executable assertion: “uses the captured release time for a handler-finalized WS_OUTBOX row”.",
+      "semanticCoverage": "packages/tests/shared/indexeddb-queuebox-computed-write.test.ts#uses the captured release time for a handler-finalized WS_OUTBOX row",
+      "coverageRelation": "The test computes the release of a requeued WS_OUTBOX row at captured times just before, at and after its expiry with Temporal.Now.instant observed and throwing, and reads the accepted or lost-reservation result for each.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Temporal.Now.instant, the ambient clock",
+        "observableEffect": "A clock read inside the computation would decide expiry against a time other than the one the release transaction captured.",
+        "requiredConstraint": "computeIndexedDbQueueRelease performs zero clock reads; the captured releasedAt is its only time input.",
+        "failureRationale": "The idempotent-release check converts an exception into a refusal, so a clock read inside it would surface as an ordinary lost reservation at the expired offsets; only the absent call states the purity requirement directly."
+      }
+    },
+    {
       "id": "queue-engine-retained-completion-single-report",
       "domain": "Owned queue task settlement reporting",
       "owner": "Rallar shared maintainers",
@@ -9532,6 +9622,72 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "The observeCommittedTopology absence assertion observes the owned committed-topology effect port after the real handler rejects incomparable work. The exception and unchanged durable state do not exclude a premature in-memory topology observation; zero observations proves uncommitted work cannot be advertised as committed.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit"
+    },
+    {
+      "id": "test-structure-coupling-e052eb2d35fad854",
+      "path": "packages/tests/shared-server/rallar-system/client-state/client-mutation-result-validation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "client-authorised-connect-validation-single-projection",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The single projection-walk count observes the walker port while the real assertion validates a real authorised connect; the accepted result and the later rejection would pass unchanged with repeated walks.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/client-state/client-mutation-result-validation.test.ts#projects an authorised connect once and still rejects a changed candidate"
+    },
+    {
+      "id": "test-structure-coupling-e21db7a7ad65d403",
+      "path": "packages/tests/shared-server/rallar-system/client-state/client-snapshot-provenance.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "client-snapshot-provenance-single-page-build",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The single page-build count observes the page builder while the real compute derives the provenance sidecars; their exact bytes would pass unchanged if provenance rebuilt the pages.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/client-state/client-snapshot-provenance.test.ts#builds the snapshot pages once per operation compute and keeps the sidecar bytes"
+    },
+    {
+      "id": "test-structure-coupling-ed3fd27c88865898",
+      "path": "packages/tests/shared-server/rallar-system/computed-data-validation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "computed-projection-match-builds-no-path-text",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The String absence assertion observes the path-spelling conversion while the real walker accepts a matching candidate; the empty issue list would pass unchanged if every path were spelled.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/computed-data-validation.test.ts#builds no path text while a wide candidate matches its computed value"
+    },
+    {
+      "id": "test-structure-coupling-a8bc81e97cecd090",
+      "path": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-star-plans-without-room-graph",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The createRoomGraph absence assertion observes the graph builder while the real service plans a star; the exact next hops would pass unchanged if an unused graph were built.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts#does not build a weighted room graph for star topology"
+    },
+    {
+      "id": "test-structure-coupling-c08f9d33ed8406bc",
+      "path": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-no-rtt-mesh-plans-without-room-graph",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The createRoomGraph absence assertion observes the graph builder while the real service plans a no-RTT mesh; the next hops equal to the graph-path plan would pass unchanged if an unused graph were built.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-no-rtt.test.ts#does not build a weighted room graph for no-RTT mesh topology"
+    },
+    {
+      "id": "test-structure-coupling-b1c11551d5a67270",
+      "path": "packages/tests/shared/indexeddb-queuebox-computed-write.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-release-computation-reads-no-clock",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The clock absence assertion observes Temporal.Now.instant while the real release computation decides a row at three captured times; a clock read the idempotent-release check converted into a refusal would still produce the expected lost reservations, so zero calls is the direct purity proof.",
+      "semanticCoverage": "packages/tests/shared/indexeddb-queuebox-computed-write.test.ts#uses the captured release time for a handler-finalized WS_OUTBOX row"
     }
   ]
 }

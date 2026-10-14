@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, encodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type {
@@ -34,7 +34,7 @@ export async function executeRtcRttMutation(
     input: ExecuteRtcRttMutationInput
 ): Promise<ExecuteRtcRttMutationResult> {
     const stableRequest = input.request;
-    const commandHash = hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
     );
     const read = await readRtcRttMutation(input.repository, stableRequest);

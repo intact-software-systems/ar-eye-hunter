@@ -9,8 +9,12 @@ import {
     type ResourceInboxRelease,
     type ResourceInboxReservationInput
 } from '@shared/queuebox/queue-box-types.ts';
-import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    createDefaultResourceInboxDequeuer,
+    ResourceInboxHandlerFinalizedSuccess
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
+import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -303,6 +307,39 @@ describe('released ResourceInbox outcomes', () => {
         finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('handler-finalized ResourceInbox success', () => {
+    it('completes with the entry its handler committed and leaves that entry as the handler wrote it', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const queue = new InMemoryQueueBox();
+        const enqueued = createQueueEntry('handler-finalized', EntityStatus.NEW, 0);
+        await queue.enqueue(enqueued);
+        const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
+        const completion = completionNotifications.subscribe(enqueued.key);
+        let committed: ResourceEntry | undefined;
+
+        const results = await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess>({
+            repository: queue,
+            typesToDequeue: () => new Set(['APP_INBOX']),
+            maxToReserve: () => 1,
+            maxNumToDequeue: 1,
+            resilience: toTestResilience(),
+            options: { jitterUnit: () => 0.5, completionNotifications }
+        }).withReturnDequeuedEntries(true)
+            .dequeueForCompute(async (_key, attempt) => {
+                committed = { ...attempt.entry, status: EntityStatus.COMPLETED };
+                expect(await queue.replaceIfObserved(attempt.entry, committed)).not.toBeNull();
+                return new ResourceInboxHandlerFinalizedSuccess(committed);
+            });
+
+        const [outcome] = [...results.get(Reservator.NEW)!.values()];
+        expect(outcome?.left).toBeUndefined();
+        expect(outcome?.right?.value.entry).toEqual(committed);
+        expect(await queue.getItem(enqueued.key)).toEqual(committed);
+        await expect(completion.wait(1_000)).resolves.toBeUndefined();
     });
 });
 

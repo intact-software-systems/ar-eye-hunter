@@ -6,14 +6,14 @@ import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-s
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
 import {
+    decodeDurableTopologyAppInboxCommand,
     readAuthenticatedTopologyCommand,
-    readDurableTopologyAppInboxCommand,
     readTopologyCommandForValidatedSession
 } from './topology-app-inbox-command.ts';
 import type { TopologyAppInboxAuthority, TopologyAppInboxCommand } from './topology-app-inbox-contracts.ts';
@@ -96,7 +96,7 @@ export function decodeTopologyAppInboxAuthority(value: unknown): TopologyAppInbo
             throw new TypeError('authority kind is invalid');
         }
         const proof = decodeTopologyMutationAuthorityProof(authority.proof);
-        const command = readDurableTopologyAppInboxCommand(authority.command);
+        const command = decodeDurableTopologyAppInboxCommand(authority.command);
         if (authority.kind === 'topology-config') {
             return { kind: authority.kind, proof, command };
         }
@@ -129,7 +129,7 @@ export async function verifyTopologyAppInboxAuthority(
     }
     const command = input.authority.command;
     if (
-        (hashMutationCommand({
+        (computeMutationCommandDigest({
             actor: command.actor,
             groupRef: command.groupRef,
             requestId: command.requestId,

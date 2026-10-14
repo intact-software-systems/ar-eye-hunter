@@ -11,8 +11,8 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireText,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -144,7 +144,7 @@ export function topologyConfigCommand(
     } as const;
     return {
         ...command,
-        commandHash: hashMutationCommand(command),
+        commandHash: computeMutationCommandDigest(command),
         capturedAtEpochMs: 1_000
     };
 }
@@ -168,7 +168,7 @@ export function topologyOverrideCommand(
     } as const;
     return {
         ...command,
-        commandHash: hashMutationCommand(command),
+        commandHash: computeMutationCommandDigest(command),
         capturedAtEpochMs: 1_000
     };
 }

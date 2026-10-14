@@ -1,4 +1,4 @@
-import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import type {
     ClientMutationAuthority,
@@ -20,7 +20,7 @@ export function toClientMutationCommand(
         authority,
         facts: {
             ...facts,
-            commandHash: hashMutationCommand(
+            commandHash: computeMutationCommandDigest(
                 encodeJsonWireValue(
                     { ...input, authority },
                     'Client mutation command identity'

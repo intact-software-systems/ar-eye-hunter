@@ -301,6 +301,12 @@ and mutable counters respectively.
 Config query, config mutation, reconfiguration, planning, execution, and runtime owners are
 constructed directly; there is no broad topology-management facade.
 
+A tree is rooted at the group's appointed director when the director is a member: the weighted and
+the no-RTT tree both use it as their source. The director's session id is part of the topology
+input fingerprint, so an appointment after the first plan produces work, and a tree with a leader
+and no membership change plans a full rebuild rather than an incremental one. A group without a
+leader plans as before.
+
 Every work item reads the current durable group snapshot and selects its
 planning input causally. `group-revision` work keeps its embedded snapshot
 even when the current snapshot dominates it, so revision N is never replaced

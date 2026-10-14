@@ -1,4 +1,4 @@
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
@@ -316,7 +316,7 @@ describe('RTC RTT repository convergence', () => {
                 version: 1
             };
             const receiptId = toRtcRttMutationReceiptId(baseRtt);
-            const commandHash = hashMutationCommand({
+            const commandHash = computeMutationCommandDigest({
                 rtt: baseRtt,
                 alSenderId: 'session-a'
             } as JsonWireValue);

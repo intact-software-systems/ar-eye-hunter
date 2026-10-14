@@ -18,7 +18,7 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { decodeTopologyAppInboxAuthority } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
-    readDurableTopologyAppInboxCommand,
+    decodeDurableTopologyAppInboxCommand,
     toTopologyAppInboxCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
@@ -211,7 +211,7 @@ Deno.test(
             assert.ok(persisted);
             const message = decodePersistedALMessage(persisted.ri_resource);
             const envelope = decodeAppInboxEnqueue(JSON.parse(message.payload.resource));
-            const command = readDurableTopologyAppInboxCommand(envelope.data);
+            const command = decodeDurableTopologyAppInboxCommand(envelope.data);
             assert.equal(command.capturedAtEpochMs, 1_000);
             assert.equal(
                 Number(

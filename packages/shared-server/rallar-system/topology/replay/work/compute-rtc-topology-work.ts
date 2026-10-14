@@ -1,6 +1,6 @@
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
-import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -303,7 +303,7 @@ function computeAcceptedTopologyMutation(
     const facts = publication && publicationExpireAtTimestamp !== null
         ? {
             publicationExpireAtTimestamp,
-            commandHash: hashRtcTopologyExecutionCommand(publication),
+            commandHash: computeRtcTopologyExecutionCommandDigest(publication),
             attemptCount
         }
         : ({ publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null } as const);
