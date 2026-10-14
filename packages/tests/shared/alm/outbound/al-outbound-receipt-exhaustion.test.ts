@@ -1,9 +1,4 @@
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
-import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
-import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -11,10 +6,18 @@ import {
     it,
     vi
 } from 'vitest';
+
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
+
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestStores,
     createOutboundMessage,
+    readOutboundTestAdmission,
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
@@ -42,7 +45,12 @@ const SPENT_RECEIPT: ReceiptRow = {
 async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionFixture> {
     const stores = createDefaultOutboundTestStores();
     const message = createOutboundMessage('receipt-exhaustion');
-    const bundle = await computeOutboundTestAdmission(stores.admissionStore, message);
+    const bundle = await readOutboundTestAdmission({
+        store: stores.admissionStore,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     await stores.admissionStore.commitBundle({
         ...bundle,
         mutations: [...bundle.mutations, {
@@ -60,16 +68,18 @@ async function createExhaustionFixture(receipt: ReceiptRow): Promise<ExhaustionF
             port: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             clock,
             settlements: (fact) => facts.push(fact),
-            carrier: 'rtc'
+            carrier: 'rtc',
+            hopPeerIds: undefined
         }),
         clock,
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: []
         }),
         planRepairMessage: undefined,
+        hopPeerIds: undefined,
         diagnostics: undefined,
         settlements: (fact) => facts.push(fact)
     });

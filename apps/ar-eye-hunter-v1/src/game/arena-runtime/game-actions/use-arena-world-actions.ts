@@ -5,10 +5,13 @@ import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import { ARENA_EVENT_HEADLINE_MS, PICKUP_CLAIM_TTL_MS } from '../../simulation.ts';
 import {
     GAME_PROTOCOL,
+    type ArenaEvent,
     type ArenaMatchDurationMs,
     type ArenaMatchLifecycleMessage,
+    type ArenaPickupState,
     type ArenaSnapshot,
     type MatchStartIntent,
     type PickupIntent
@@ -28,6 +31,7 @@ interface ArenaWorldActionsInput extends Pick<ArenaMatchDelivery, 'publishMatchL
     readonly runBestEffortNetworkTask: <T>(task: () => Promise<T> | undefined, generation?: number) => void;
     readonly scheduleReliableArenaSnapshot: (snapshot: ArenaSnapshot, generation: number) => void;
     readonly sessionRef: RefObject<AuthSession | undefined>;
+    readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
     readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
 }
 
@@ -36,6 +40,7 @@ export function useArenaWorldActions(
 ): Pick<ArenaConnection, 'sendPickupIntent' | 'startArenaMatch' | 'publishArenaSnapshot'> {
     const sendPickupIntent = useCallback((intent: PickupIntent) => sendArenaPickupIntent(input, intent), [
         input.isNetworkEnabled,
+        input.isCurrentNetworkGeneration,
         input.runBestEffortNetworkTask,
         input.nowMs
     ]);
@@ -59,19 +64,35 @@ export function useArenaWorldActions(
     return { sendPickupIntent, startArenaMatch, publishArenaSnapshot };
 }
 
+/** The intent claims its pickup, so a pickup another session claimed first comes back `held-by-other`. */
 function sendArenaPickupIntent(input: ArenaWorldActionsInput, intent: PickupIntent): void {
     const session = input.sessionRef.current;
     const match = input.arenaMatchRef.current;
     if (!session || !input.isNetworkEnabled() || !match?.status().directorIsFresh) {
         return;
     }
+    const generation = input.networkGenerationRef.current;
     const fullIntent: PickupIntent = { ...intent, sessionId: session.sessionId, sentAtEpochMs: input.nowMs() };
-    input.runBestEffortNetworkTask(() =>
-        match.sendIntent({
-            protocol: GAME_PROTOCOL,
-            kind: 'pickup-intent',
-            intent: fullIntent
-        }), input.networkGenerationRef.current);
+    input.runBestEffortNetworkTask(async () => {
+        const result = await match.sendIntent(
+            { protocol: GAME_PROTOCOL, kind: 'pickup-intent', intent: fullIntent },
+            { resourceId: intent.pickupId, ttlMs: PICKUP_CLAIM_TTL_MS }
+        );
+        if (result.status === 'held-by-other') {
+            setPickupTakenEvent(input, intent.pickupId, generation);
+        }
+    }, generation);
+}
+
+/** The loss is the local session's alone: it holds the activity headline until it expires. */
+function setPickupTakenEvent(input: ArenaWorldActionsInput, pickupId: string, generation: number): void {
+    const snapshot = input.arenaSnapshotRef.current;
+    const pickup = snapshot?.pickups.find((item) => item.id === pickupId);
+    if (!snapshot || !pickup) {
+        return;
+    }
+    const event = toPickupTakenEvent(pickup, snapshot.revision, input.nowMs());
+    input.setActiveEvent((previous) => input.isCurrentNetworkGeneration(generation) ? event : previous);
 }
 
 async function startArenaMatchFromIntent(
@@ -125,6 +146,20 @@ function publishArenaMatchEnd(
     if (message && match) {
         input.runBestEffortNetworkTask(() => input.publishMatchLifecycleOutput(match, message), generation);
     }
+}
+
+function toPickupTakenEvent(pickup: ArenaPickupState, revision: number, nowEpochMs: number): ArenaEvent {
+    return {
+        id: `pickup-taken:${pickup.id}`,
+        kind: 'pickup-taken',
+        position: pickup.position,
+        durationMs: ARENA_EVENT_HEADLINE_MS,
+        startsAtEpochMs: nowEpochMs,
+        expiresAtEpochMs: nowEpochMs + ARENA_EVENT_HEADLINE_MS,
+        revision,
+        source: 'local',
+        headline: `${pickup.label} was taken first`
+    };
 }
 
 function toArenaMatchEndedMessage(

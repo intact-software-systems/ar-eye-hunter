@@ -181,8 +181,32 @@ The browser transport storage and WebSocket owners are feature-colocated:
   the connect resolved, whose durable pairs are always IndexedDB;
   [browser-al-storage-availability.ts](./al-runtime/browser-al-storage-availability.ts)
   owns the connect's storage availability (`missing` without IndexedDB, any
-  other cause re-decided by the next durable admission) and its one request
-  for persistent storage;
+  other cause re-decided by the next durable admission), the checkpoint lane's
+  skip (`missing`, or a checkpoint store whose health reads `failing`, for a lag
+  beyond its bound or any other cause, until that store reads `healthy` or
+  `delayed` again) and its
+  one request for persistent storage, asked by the first durable or
+  `local-checkpoint` admission;
+  [browser-al-checkpoint-stores.ts](./al-runtime/browser-al-checkpoint-stores.ts)
+  owns the connect's two checkpoint pairs, one per outbound carrier under the
+  store ids `browser-ws-client-checkpoint:<sessionId>` and
+  `browser-rtc-overlay-checkpoint:<sessionId>`: a memory pair a
+  `local-checkpoint` admission goes to, whose writer checkpoints it into the
+  scope's database while the connect owns the session's work. The browser
+  composition sets `checkpointIntervalMs` and `checkpointLagBoundMs` on the store
+  factory input, which default to `AL_CHECKPOINT_DEFAULT_SETTINGS` (1,000 ms and
+  10,000 ms); no app-facing option exposes them yet. The pairs are built once per connect
+  under its claim, after `configureBrowserALRuntimeStores` registered their
+  factories beside each outbound scope's durable pair, and the WS client and the
+  RTC overlay each take their own;
+  [browser-page-lifecycle-flush.ts](./al-runtime/browser-page-lifecycle-flush.ts)
+  is the one adapter of the page lifecycle: per connect, and only once the
+  connect owns the session's work,
+  [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
+  listens for `visibilitychange` to hidden, `pagehide` and `freeze`, each of which
+  starts both checkpoints without awaiting them, and removes the listeners when
+  the connect ends. It flushes the two checkpoint ports `initialiseMiddleware`
+  returns beside the middleware, which never carries them;
   [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
   owns IndexedDB scanning, expiry scheduling, and session cleanup over every
   scope's database that `indexedDB.databases()` lists, or the current scope's
@@ -249,7 +273,11 @@ Message ownership is concentrated under [`messages/`](./messages/):
   constructs the completed capability and exposes its lifecycle owners.
 - [BrowserRallarMessageSender](./messages/browser-rallar-message-sender.ts)
   owns RTC/WS envelope construction and scoped targets, returning a `RallarMessageHandle`
-  immediately after submission. Consumers await admission with `handle.wait(...)` and inspect
+  immediately after submission. Every room send -- the RTC multicast, the WS room broadcast and the
+  room broadcast a fallback send becomes -- carries `minSnapshotVersion` and `rosterVersion` from
+  the cached room snapshot, read through one resolver of the
+  [room state store](./rooms/room-state-store.ts); a send whose room has no cached snapshot
+  carries neither, unless it states a floor, which then travels alone, and no caller sets the roster. Consumers await admission with `handle.wait(...)` and inspect
   its lifecycle; the delivery registry observes carrier settlements in memory. Each connect's
   settlement epoch ([`BrowserDeliverySettlements`](./connection/browser-delivery-settlements.ts))
   relays once, on the session channel, a durable lane's settlement for a msgId this tab holds no
@@ -258,7 +286,26 @@ Message ownership is concentrated under [`messages/`](./messages/):
   The receiving tab records it through its own observers, which ignore a msgId they never opened,
   and never relays it again. A handle's `cancel()` reaches only its own tab's carriers.
 - [BrowserTypedMessageChannels](./messages/browser-typed-message-channels.ts)
-  owns typed channels and the current RTC-with-WS and WS-then-RTC policies.
+  owns typed channels and the current RTC-with-WS and WS-then-RTC policies. A
+  channel definition's optional `recovery: RallarChannelRecovery` names the
+  application's owner of resynchronization, `onResyncRequired(cursor)`, which
+  `channel(...)` registers by route (topic and type, or type alone) in
+  [BrowserChannelRecoveryOwners](./messages/browser-channel-recovery-owners.ts);
+  the latest declaration for a route stands.
+- [BrowserResyncRecovery](./messages/browser-resync-recovery.ts) is the
+  `onResyncRequired` sink of the WS and RTC inbound runtimes, composed before
+  the session by `createBrowserResyncRecoveryComposition` in
+  [browser-communication-composition.ts](./composition/browser-communication-composition.ts).
+  When an inbound runtime can no longer order a sender's messages it hands the
+  sink the refused message and its `ALInboundResyncCursor`; the sink invokes the
+  message's route owner once per ordering track (ordering key, sender, epoch)
+  while the track goes on resynchronizing (the sink forgets a track 5 minutes
+  after its last resynchronization, and remembers at most 256 tracks, the first
+  remembered leaving first, D191), states `recovery-owner-invoked` with that cursor
+  on the `storage` diagnostics port even when the owner throws (the error is
+  logged), and states nothing for a route without an owner, whose message is
+  dropped as before. A new epoch is a new track; a reload invokes the owner
+  again.
 - [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)
   owns selector registries, WS inbox lifetime, RTC callback lifetime, and
   listener delivery.

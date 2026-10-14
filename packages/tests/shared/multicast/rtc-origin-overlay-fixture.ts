@@ -1,7 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished, vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    type ALMessage,
+    type ALTargets
+} from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
@@ -9,6 +14,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -21,14 +27,19 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { toRateLimiter, type RateLimiter } from '@shared/resilience/Resilience.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -49,19 +60,29 @@ export interface RtcOriginOverlayFixture {
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
+    readonly diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
 }
 
 export interface RtcOriginOverlayFixtureInput {
+    readonly creationNow?: QueueBoxUtilities.CreationClock;
+    /** Numerical epoch domain of the supplied limiter; absent, the fixture's Date clock. */
+    readonly quotaNow?: () => number;
     readonly snapshot: GroupSnapshot;
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The same admission policy port production supplies; absent, the default RTC limiter. */
+    readonly rateLimiter?: RateLimiter;
     /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
     readonly stores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The session's provider the composition hands the manager; absent, the carrier's capabilities alone. */
     readonly qosProvider?: ALQosInputProvider;
+    /** The session's transport faults; absent, a pass-through port. */
+    readonly faultPort?: TransportFaultPort;
+    /** Also told every settlement the fixture records, as a browser session's delivery feed is; absent, only recorded. */
+    readonly onSettlement?: (settlement: ALDeliverySettlement) => void;
 }
 
 export interface OriginAcknowledgementInput {
@@ -72,6 +93,12 @@ export interface OriginAcknowledgementInput {
 }
 
 export const ORIGIN_ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+export const ORIGIN_PRINCIPAL_REF = {
+    applicationId: ORIGIN_ROOM.applicationId,
+    workspaceId: ORIGIN_ROOM.workspaceId,
+    principalId: 'principal-1'
+} as const;
 
 const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'r'];
 
@@ -89,21 +116,28 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         volatileStores: input.volatileStores
     });
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const manager = new WebRtcOverlayMulticastManager({
+        creationNow: input.creationNow ?? Temporal.Now.instant,
+        quotaNow: input.quotaNow ?? Date.now,
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
-        outboundDiagnostics: undefined,
-        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundDiagnostics: (event) => diagnostics.push(event),
+        outboundSettlements: (settlement) => {
+            settlements.push(settlement);
+            input.onSettlement?.(settlement);
+        },
         outboundRuntime: resources,
         circuitBreaker: input.circuitBreaker ?? toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
+        rateLimiter: input.rateLimiter ?? toRateLimiter(),
+        faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());
-    return { manager, resources, groups, overlays, channels, ready, settlements };
+    return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {
@@ -140,7 +174,7 @@ export async function acknowledgeAtOrigin(
 ): Promise<void> {
     await manager.acceptControlMessage(newALAckControlMessage(
         {
-            v: 2,
+            v: 3,
             msgId: `ack-${input.fromPeerId}-${input.logicalRecipientPeerId}-${input.status}`,
             senderId: input.fromPeerId,
             ts: Date.now()
@@ -168,6 +202,32 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
             acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' }
         },
         activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 600_000 }))
+    };
+}
+
+/** The room of `a`, `b`, `c` and `d`, where `a`, `b` and `d` are sessions of one principal. */
+export function createOriginPrincipalSnapshot(): GroupSnapshot {
+    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) =>
+            ['a', 'b', 'd'].includes(session.sessionId) ? { ...session, principalId: ORIGIN_PRINCIPAL_REF.principalId } : session
+        ),
+        members: [...snapshot.members, { ...snapshot.members[0]!, principalId: ORIGIN_PRINCIPAL_REF.principalId }]
+    };
+}
+
+/** The snapshot with the session `directorSessionId` appointed its room's director, the room's leader. */
+export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessionId: string, observedAtMs: number): GroupSnapshot {
+    const principalId = snapshot.activeSessions.find((session) => session.sessionId === directorSessionId)?.principalId ??
+        directorSessionId;
+    const appointment = createRallarGroupDirectorAppointment({
+        session: { clientId: principalId, sessionId: directorSessionId },
+        now: observedAtMs
+    });
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) }
     };
 }
 
@@ -199,7 +259,7 @@ function createConnectionService(
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto) });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {
         const channel = ready.peerIds.includes(peerId) ? channels[peerId]?.channel : undefined;
@@ -230,7 +290,12 @@ function createOpenChannel(peerId: string): CapturedChannel {
     const health = channel.readHealth();
     const sent: ALMessage[] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
+    // As the reliable lane's `drop-new` overflow does, a send at the high watermark is dropped, never queued.
     vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        const { bufferedAmount, flowControl } = channel.readHealth();
+        if (bufferedAmount >= flowControl.highWatermarkBytes) {
+            return { status: 'dropped', reason: 'Back pressure', bufferedAmount };
+        }
         sent.push(decodePersistedALMessageValue(message));
         return { status: 'sent', bufferedAmount: 0 };
     });

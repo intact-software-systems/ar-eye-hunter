@@ -109,14 +109,19 @@ await ai.broadcastJson({
     result: proposed,
     transport: 'messages.ws',
     roomId,
+    scope: 'principal',
+    principalId,
     topicId: 'room.relic.ai.planning',
     typeId: 'relic.ai.planning-proposal.v1'
 });
 ```
 
-Peers should display compatible proposals as read-only context. The local
-browser can use a proposal to prime existing controls, but final submission
-should still go through the normal validated command path.
+`scope: 'principal'` with `principalId` sends the proposal to that principal's
+sessions in the room instead of the whole room; `scope` defaults to `'room'`.
+Relic Hunters addresses the asking hunter's own sessions. Receivers should
+display compatible proposals as read-only context. The local browser can use a
+proposal to prime existing controls, but final submission should still go
+through the normal validated command path.
 
 ## Server-Side Flow
 

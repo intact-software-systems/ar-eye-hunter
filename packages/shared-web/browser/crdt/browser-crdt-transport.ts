@@ -14,6 +14,7 @@ import {
     type RallarCrdtCatchUpResponseEnvelope,
     type RallarCrdtDocumentRef,
     type RallarCrdtDocumentTypePolicy,
+    type RallarCrdtJsonValue,
     type RallarCrdtOperationBatch,
     type RallarCrdtSyncRequestEnvelope,
     type RallarCrdtSyncResponseEnvelope,
@@ -29,7 +30,7 @@ export type RallarCrdtTransportSendInput<TPayload> = Readonly<{
     payload: TPayload;
     contextId?: string;
     resourceId?: string;
-    scope?: 'room' | 'world' | 'all';
+    scope?: 'room' | 'world';
     roomId?: string;
     roomRef?: RallarCrdtDocumentRef['roomRef'];
 }>;
@@ -87,7 +88,7 @@ export namespace SubscribeRallarCrdtLiveTransport {
             transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onSyncResponse?(
-            response: RallarCrdtSyncResponseEnvelope<unknown, TPayload>,
+            response: RallarCrdtSyncResponseEnvelope<RallarCrdtJsonValue, TPayload>,
             transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onAppendResponse?(
@@ -95,7 +96,7 @@ export namespace SubscribeRallarCrdtLiveTransport {
             transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onCatchUpResponse?(
-            response: RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>,
+            response: RallarCrdtCatchUpResponseEnvelope<RallarCrdtJsonValue, TPayload>,
             transport: Extract<RallarCrdtTransportKind, 'ws'>
         ): void | Promise<void>;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
@@ -153,7 +154,8 @@ function subscribeRallarCrdtWsLane<TPayload extends RallarCrdtOperationBatch>(
         topicId: input.topicId,
         typeId: RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
         onPayload: onCatchUpResponse
-            ? (payload: RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>) => onCatchUpResponse(payload, 'ws')
+            ? (payload: RallarCrdtCatchUpResponseEnvelope<RallarCrdtJsonValue, TPayload>) =>
+                onCatchUpResponse(payload, 'ws')
             : undefined
     });
     if (catchUp) {
@@ -187,7 +189,8 @@ function subscribeRallarCrdtLane<TPayload extends RallarCrdtOperationBatch>(
             topicId,
             typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID,
             onPayload: onSyncResponse
-                ? (payload: RallarCrdtSyncResponseEnvelope<unknown, TPayload>) => onSyncResponse(payload, transportKind)
+                ? (payload: RallarCrdtSyncResponseEnvelope<RallarCrdtJsonValue, TPayload>) =>
+                    onSyncResponse(payload, transportKind)
                 : undefined
         }),
         subscribeOptionalRallarCrdtPayload({
@@ -357,7 +360,7 @@ export async function sendRallarCrdtCatchUpRequest(
         resourceId: options.request.requestId,
         roomId: options.request.document.roomRef?.groupId,
         roomRef: options.request.document.roomRef,
-        scope: options.request.document.roomRef ? 'room' : undefined
+        scope: options.request.document.roomRef ? 'room' : 'world'
     });
     return toRallarCrdtLiveSendOutcome({
         attempted: ['ws'],
@@ -393,7 +396,7 @@ function toDeferredRallarCrdtWsOutcome(reason: string): RallarCrdtLiveSendOutcom
 
 export async function sendRallarCrdtSyncResponse<TPayload extends RallarCrdtOperationBatch>(
     options: Readonly<{
-        response: RallarCrdtSyncResponseEnvelope<unknown, TPayload>;
+        response: RallarCrdtSyncResponseEnvelope<RallarCrdtJsonValue, TPayload>;
         transport: RallarCrdtMessageTransport | undefined;
         replyTransport: RallarCrdtTransportKind;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
@@ -544,7 +547,7 @@ function toRallarCrdtTransportSendInput<TPayload extends RallarCrdtOperationBatc
         resourceId: update.updateId,
         roomId,
         roomRef,
-        scope: transport === 'ws' && roomRef ? 'room' : undefined
+        scope: transport === 'ws' ? (roomRef ? 'room' : 'world') : undefined
     };
 }
 
@@ -648,9 +651,7 @@ async function sendRallarCrdtControlThroughTransport<TEnvelope>(
             resourceId: input.resourceId,
             roomId: input.document.roomRef?.groupId,
             roomRef: input.document.roomRef,
-            scope: input.transportKind === 'ws' && input.document.roomRef
-                ? 'room'
-                : undefined
+            scope: input.transportKind === 'ws' ? (input.document.roomRef ? 'room' : 'world') : undefined
         }),
         transport: input.transportKind
     };

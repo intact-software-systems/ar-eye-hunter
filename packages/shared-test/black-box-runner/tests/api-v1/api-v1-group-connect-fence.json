@@ -306,9 +306,6 @@
         "body": {
           "generationId": "generation-fence-{runId}",
           "principalId": "{bobClientId}"
-        },
-        "outputs": {
-          "bobPresenceRevision": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -317,39 +314,106 @@
     },
     {
       "name": "replacementLayoutIsPublished",
-      "type": "http",
-      "connection": "primary",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/topology",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
         "poll": {
           "maxAttempts": 40,
           "maxDurationMs": 15000,
           "backoffMs": 250,
           "backoffMultiplier": 1
-        },
-        "outputs": {
-          "currentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "currentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "currentLayoutVersion": "body.snapshot.version",
-          "currentLayoutState": "body.snapshot.state"
         }
       },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "state": "active",
-            "sourceGroupStateCausalRevision": {
-              "presenceRevision": "{bobPresenceRevision}"
+      "groups": [
+        {
+          "name": "replacementLayoutIsPublishedObservation",
+          "steps": [
+            {
+              "name": "bothExactSessionsAreVisible",
+              "type": "http",
+              "connection": "primary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "bobGroupRevision": "body.causalRevision.groupRevision",
+                  "bobPresenceRevision": "body.causalRevision.presenceRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "group": {
+                    "groupId": "{fenceGroupId}"
+                  },
+                  "onlineMemberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-fence-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{bobSessionId}",
+                      "principalId": "{bobClientId}",
+                      "generationId": "generation-fence-{runId}",
+                      "status": "active"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readTheReplacementLayout",
+              "type": "http",
+              "connection": "primary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/topology",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "currentLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+                  "currentLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+                  "currentLayoutVersion": "body.snapshot.version",
+                  "currentLayoutState": "body.snapshot.state"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "snapshot": {
+                    "state": "active",
+                    "sourceGroupStateCausalRevision": {
+                      "presenceRevision": "{bobPresenceRevision}",
+                      "groupRevision": "{bobGroupRevision}"
+                    },
+                    "activeSessionIds": [
+                      "{aliceSessionId}",
+                      "{bobSessionId}"
+                    ]
+                  },
+                  "groupRef": {
+                    "applicationId": "{applicationId}",
+                    "workspaceId": "{workspaceId}",
+                    "groupId": "{fenceGroupId}"
+                  }
+                },
+                "comparison": "compatible-complete"
+              }
             }
-          }
+          ]
         }
-      }
+      ]
     },
     {
       "name": "nothingPendsBeforeTheConnects",

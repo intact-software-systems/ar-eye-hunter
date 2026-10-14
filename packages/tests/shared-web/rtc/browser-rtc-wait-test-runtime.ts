@@ -12,6 +12,8 @@ import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createNativeRealtimeLaneFixture } from '../realtime/native-realtime-lane-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('./browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 interface GroupSnapshotScopeFixture {
     readonly applicationId?: string;
     readonly workspaceId?: string;
@@ -106,7 +108,11 @@ vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal) => ({
         ...await importOriginal(),
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => ({
+            middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+            rtcCaptureReceipt,
+            checkpoints: []
+        })
     })
 );
 
@@ -287,6 +293,7 @@ function resetRtcTransportMocks(): void {
     });
     mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
         mocks.webSocketClient.close(code, reason);
+        return Promise.resolve();
     });
     mocks.webSocketClient.onWebsocketCallbacksDo.mockReturnValue(mocks.webSocketClient);
     mocks.webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);

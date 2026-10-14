@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -109,7 +117,7 @@ function createRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async () => {},
         sendControlMessages: async () => {},
         onControlMessage,
@@ -121,7 +129,7 @@ function createRuntime(
 
 function createAcknowledgement(): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: 'control-ack', ts: 1, senderId: 'peer-2' },
+        { v: 3, msgId: 'control-ack', ts: 1, senderId: 'peer-2' },
         {
             ackedMsgId: 'acked-msg',
             originPeerId: 'peer-1',

@@ -1,3 +1,4 @@
+import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { validateJsonMessageSize, type JsonMessageRejection } from '../api/json-message-validation.ts';
 import type {
     TransportFaultPort,
@@ -227,6 +228,11 @@ export class JsonWebSocketClient {
 
     decideSubmissionReadiness(data: string, readinessFaultPort: WebSocketSubmissionReadinessFaultPort): boolean {
         return this.ws?.readyState === 1 && readinessFaultPort.decideSubmissionReadiness(data) === 'ready';
+    }
+
+    /** Whether a scripted fault holds this socket backpressured for the message, whatever it has buffered. */
+    decideBackpressureFault(message: ALMessage): boolean {
+        return this.faultPort.decideBackpressure('ws', message);
     }
 
     sendAsJsonString(data: string): void {

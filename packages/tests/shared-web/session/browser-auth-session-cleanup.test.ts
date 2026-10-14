@@ -1,5 +1,5 @@
 import { toBrowserSessionALRuntimeStoreIds } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
-import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
@@ -14,6 +14,8 @@ import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createDeferred } from '../browser-lifecycle-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
+
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
 const mocks = readAuthSessionContractMocks();
 
@@ -212,7 +214,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.initialiseMiddleware.mockImplementation(async (session) => {
             initializedSessionIds.push(session.sessionId);
-            return mocks.ctx.middleware;
+            return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const facade = createRallarFacade();
 
@@ -235,7 +237,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('shuts down middleware that resolves after logout during connect', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const deferred = createDeferred<RallarBrowserMiddleware>();
+        const deferred = createDeferred<BrowserConnectedMiddleware>();
         const cleanupState = {
             heartbeatStopped: false,
             rtcReceiverDisposed: false,
@@ -248,6 +250,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             cleanupState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => {
             cleanupState.knownPeersRead = true;
@@ -255,6 +258,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.qboxEngine.stop.mockImplementation(() => {
             cleanupState.queueStopped = true;
+            return Promise.resolve();
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             if (code === undefined || reason === undefined) {
@@ -262,6 +266,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         mocks.initialiseMiddleware.mockReturnValueOnce(deferred.promise);
         const facade = createRallarFacade();
@@ -274,7 +279,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             'Rallar connection was cancelled because auth ended.'
         );
 
-        deferred.resolve(mocks.ctx.middleware);
+        deferred.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expectation;
 
         expect(facade.status()).toBe('idle');
@@ -290,7 +295,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
     it('cancels a pending connection before replacing credentials and reconnects with the replacement', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const pendingMiddleware = createDeferred<RallarBrowserMiddleware>();
+        const pendingMiddleware = createDeferred<BrowserConnectedMiddleware>();
         const replacementSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',
@@ -311,7 +316,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             })
             .mockImplementationOnce(async (session) => {
                 initializedSessionIds.push(session.sessionId);
-                return mocks.ctx.middleware;
+                return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
             });
         mocks.loginToApi.mockResolvedValue(replacementSession);
         const facade = createRallarFacade();
@@ -329,7 +334,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
 
-        pendingMiddleware.resolve(mocks.ctx.middleware);
+        pendingMiddleware.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         await expect(pendingConnect).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );
@@ -358,6 +363,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             logoutState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             logoutState.backendRevoked = true;
@@ -369,6 +375,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
 
@@ -448,6 +455,7 @@ function recordDisconnectAndPurgeSteps(purgeFailure?: Error): string[] {
     const steps: string[] = [];
     mocks.webSocketQueueBox.close.mockImplementation(() => {
         steps.push('disconnect');
+        return Promise.resolve();
     });
     mocks.deleteBrowserALRuntimeEntriesForSession.mockImplementation(async (sessionId, options) => {
         steps.push(`purge:${sessionId} in ${options.currentScope.applicationId}:${options.currentScope.workspaceId}`);

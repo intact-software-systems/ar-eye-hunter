@@ -1,5 +1,9 @@
 import { Command } from '../cache/Command.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '../resilience/TryWith.ts';
+import {
+    TryWithExhaustedError,
+    TryWithPolicy,
+    tryWithPolicy
+} from '../resilience/try-with-policy.ts';
 import type { WsQueueBoxClientService } from '../services/ws-queue-box-client-service.ts';
 import type { JsonWebSocketClient } from './json-web-socket-client.ts';
 
@@ -135,8 +139,8 @@ export class WsClientReconnect {
         return TryWithPolicy.defaults()
             .label(`ws-reconnect:${this.sessionId}`)
             .maxAttempts(this.dependencies.reconnect.maxAttempts)
-            .initialDelayMsecs(this.dependencies.reconnect.retryIntervalMsecs)
-            .maxDelayMsecs(this.dependencies.reconnect.maxRetryIntervalMsecs)
+            .retryIntervalMsecs(this.dependencies.reconnect.retryIntervalMsecs)
+            .maxRetryIntervalMsecs(this.dependencies.reconnect.maxRetryIntervalMsecs)
             .jitterRatio(0)
             .retryIf(() => this.isReconnectCurrent(reconnectGeneration));
     }

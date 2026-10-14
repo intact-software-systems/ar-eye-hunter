@@ -23,7 +23,7 @@ import {
     type ALOutboundAdmissionStore
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {

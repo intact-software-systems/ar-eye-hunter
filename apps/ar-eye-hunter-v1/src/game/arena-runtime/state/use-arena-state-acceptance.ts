@@ -21,6 +21,7 @@ import {
     type PlayerHitAccepted
 } from '../../types.ts';
 import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
+import { resolveArenaActiveEvent } from './resolve-arena-active-event.ts';
 
 export interface ArenaStateAcceptance {
     readonly acceptPlayerHit: (accepted: PlayerHitAccepted, isCurrent: () => boolean) => void;
@@ -190,6 +191,9 @@ function publishAcceptedArenaEvents(
     snapshot: ArenaSnapshot,
     isCurrent: () => boolean
 ): void {
-    input.setActiveEvent((previous) => isCurrent() ? snapshot.activeEvent : previous);
+    const nowEpochMs = input.nowMs();
+    input.setActiveEvent((previous) =>
+        isCurrent() ? resolveArenaActiveEvent(previous, snapshot.activeEvent, nowEpochMs) : previous
+    );
     input.setRemoteEvents((previous) => isCurrent() ? snapshot.events : previous);
 }

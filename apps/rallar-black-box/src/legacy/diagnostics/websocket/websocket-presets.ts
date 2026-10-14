@@ -4,17 +4,17 @@ import type { WebSocketPayloadPreset } from './websocket-contracts.ts';
 export const WEBSOCKET_PAYLOAD_PRESETS: readonly WebSocketPayloadPreset[] = [
     {
         presetId: 'ping',
-        label: 'Ping - all WS subscribers',
-        description: 'Broadcast liveness payload with scope all. It is not tied to the Group field.',
+        label: 'Ping - world scope',
+        description: 'Broadcast liveness payload to the signed-in world scope. It is not tied to the Group field.',
         payload: {
             seq: 1,
             text: 'ping from rallar-black-box'
         },
         values: {
-            wsScope: 'all',
+            wsScope: 'world',
             typeId: 'app.black-box.ws.ping',
             topicId: 'app.black-box.ws.ping',
-            contextId: 'all'
+            contextId: 'world'
         }
     },
     {

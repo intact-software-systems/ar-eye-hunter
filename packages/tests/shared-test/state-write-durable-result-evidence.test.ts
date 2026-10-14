@@ -1,13 +1,22 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type {
+    InboxRow,
+    OutboxRow
+} from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
+import type {
     AuthoritativeReceiptEvidence,
     PersistedCommandEvidence
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
-import { describe, expect, it } from 'vitest';
 
 const commandId = 'topology-command-1';
 const effectId = `${commandId}:rtc-topology-recompute:group-revision:group=1;presence=0`;
@@ -118,9 +127,12 @@ describe('durable AppInbox result evidence', () => {
             result_resource: JSON.stringify(result)
         };
         expect(deriveApiV1StateWriteEvidence({
-            match: 'scope',
-            commandTypes: [commandType]
-        }, [candidate])).toMatchObject({
+            spec: {
+                match: 'scope',
+                commandTypes: [commandType]
+            },
+            rawRows: [candidate]
+        })).toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]
@@ -128,7 +140,11 @@ describe('durable AppInbox result evidence', () => {
     });
 
     it('accepts an exact persisted receipt and ResourceInbox effect identity', () => {
-        expect(deriveApiV1StateWriteEvidence(spec, [command], [effect])).toMatchObject({
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [effect]
+        })).toMatchObject({
             atomicCompletionFailures: 0,
             receiptOutboxIds: [effectId],
             resourceOutbox: [{ resourceId: 'physical-queue-key-1', outboxId: effectId }],
@@ -181,17 +197,17 @@ describe('durable AppInbox result evidence', () => {
                 }
             })
         };
-        expect(deriveApiV1StateWriteEvidence(
-            {
+        expect(deriveApiV1StateWriteEvidence({
+            spec: {
                 match: 'scope',
                 commandTypes: ['GROUP_PRESENCE_CONNECT'],
                 expectedEffectsByCommandType: {
                     GROUP_PRESENCE_CONNECT: ['group-presence-summary']
                 }
             },
-            [presence],
-            [presenceEffect]
-        )).toMatchObject({
+            rawRows: [presence],
+            rawOutboxRows: [presenceEffect]
+        })).toMatchObject({
             atomicCompletionFailures: 0,
             appInbox: [{ receipt: { identityKind: 'physical-resource-id' } }],
             resourceOutbox: [{
@@ -227,27 +243,35 @@ describe('durable AppInbox result evidence', () => {
             })
         ]
     ])('rejects a %s durable result', (_name, resultResource) => {
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            [{ ...command, result_resource: resultResource }],
-            [effect]
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [{ ...command, result_resource: resultResource }],
+            rawOutboxRows: [effect]
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
     it('rejects a receipt whose exact effect identity is absent or unexpected', () => {
-        expect(deriveApiV1StateWriteEvidence(spec, [command], [{
-            ...effect,
-            ri_resource: JSON.stringify({
-                id: { msgId: `${commandId}:rtc-topology-recompute:different-effect` }
-            })
-        }])).toMatchObject({
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [{
+                ...effect,
+                ri_resource: JSON.stringify({
+                    id: { msgId: `${commandId}:rtc-topology-recompute:different-effect` }
+                })
+            }]
+        })).toMatchObject({
             atomicCompletionFailures: 1,
             finalEffectFailures: [commandId]
         });
-        expect(deriveApiV1StateWriteEvidence(spec, [command], [effect, {
-            ...effect,
-            ri_resource_id: 'unexpected-effect'
-        }])).toMatchObject({
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [effect, {
+                ...effect,
+                ri_resource_id: 'unexpected-effect'
+            }]
+        })).toMatchObject({
             atomicCompletionFailures: 1,
             finalEffectFailures: [commandId]
         });
@@ -282,28 +306,28 @@ describe('durable AppInbox result evidence', () => {
             commandIds: [commandId],
             receipt
         }];
-        const valid = deriveApiV1StateWriteEvidence(
-            spec,
-            [command],
-            [effect],
-            [],
-            undefined,
-            authoritative
-        );
+        const valid = deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [effect],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        });
         expect(valid).toMatchObject({ atomicCompletionFailures: 0 });
 
         const tampered: readonly PersistedCommandEvidence[] = [{
             ...authoritative[0],
             receipt: { ...receipt, outboxIds: ['invented-authoritative-id'] }
         }];
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            [command],
-            [effect],
-            [],
-            undefined,
-            tampered
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [effect],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: tampered
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
 
         const extraReceiptKey = {
             ...command,
@@ -314,14 +338,14 @@ describe('durable AppInbox result evidence', () => {
                 }
             })
         };
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            [extraReceiptKey],
-            [effect],
-            [],
-            undefined,
-            authoritative
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [extraReceiptKey],
+            rawOutboxRows: [effect],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
     it('requires the exact topology reconfigure result and command scope', () => {
@@ -358,17 +382,17 @@ describe('durable AppInbox result evidence', () => {
             commandScope: groupRef
         }];
         const topologySpec = { match: 'scope', commandTypes: ['TOPOLOGY_RECONFIGURE'] };
-        expect(deriveApiV1StateWriteEvidence(
-            topologySpec,
-            [topology],
-            [],
-            [],
-            undefined,
-            authoritative
-        )).toMatchObject({ atomicCompletionFailures: 0 });
-        expect(deriveApiV1StateWriteEvidence(
-            topologySpec,
-            [{
+        expect(deriveApiV1StateWriteEvidence({
+            spec: topologySpec,
+            rawRows: [topology],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        })).toMatchObject({ atomicCompletionFailures: 0 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: topologySpec,
+            rawRows: [{
                 ...topology,
                 result_resource: JSON.stringify({
                     status: 'queued',
@@ -378,11 +402,11 @@ describe('durable AppInbox result evidence', () => {
                     inventedIdentity: true
                 })
             }],
-            [],
-            [],
-            undefined,
-            authoritative
-        )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        })).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
     it('validates group session cleanup as its exact inactive result, not a receipt', () => {
@@ -411,14 +435,14 @@ describe('durable AppInbox result evidence', () => {
             commandType: 'GROUP_PRESENCE_SESSION_CLEANUP',
             commandIds: ['session-1', 'generation-1']
         }];
-        expect(deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: ['GROUP_PRESENCE_SESSION_CLEANUP'] },
-            [cleanup],
-            [],
-            [],
-            undefined,
-            cleanupEvidence
-        )).toMatchObject({ atomicCompletionFailures: 0 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: { match: 'scope', commandTypes: ['GROUP_PRESENCE_SESSION_CLEANUP'] },
+            rawRows: [cleanup],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: cleanupEvidence
+        })).toMatchObject({ atomicCompletionFailures: 0 });
     });
 
     it('keeps a physical AppInbox key distinct from logical command and receipt identity', () => {
@@ -451,34 +475,41 @@ describe('durable AppInbox result evidence', () => {
                 }
             }
         }];
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            [physicalCommand],
-            [effect],
-            [],
-            undefined,
-            authoritative
-        )).toMatchObject({
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [physicalCommand],
+            rawOutboxRows: [effect],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: authoritative
+        })).toMatchObject({
             atomicCompletionFailures: 0,
             appInbox: [{ resourceId: physicalResourceId, commandIds: [commandId] }]
         });
     });
 
     it('rejects a production command decoder failure before trusting its result', () => {
-        expect(deriveApiV1StateWriteEvidence(spec, [command], [effect], [], undefined, [{
-            appInboxResourceId: commandId,
-            appInboxTopicId: command.ri_topic_id,
-            appInboxContextId: command.fk_ext_bank_id,
-            valid: false,
-            commandType: 'TOPOLOGY_CONFIG_PUT',
-            commandIds: [],
-            failure: 'topology command scope differs from queue identity'
-        }])).toMatchObject({ statusResultFailures: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: [command],
+            rawOutboxRows: [effect],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [{
+                appInboxResourceId: commandId,
+                appInboxTopicId: command.ri_topic_id,
+                appInboxContextId: command.fk_ext_bank_id,
+                valid: false,
+                commandType: 'TOPOLOGY_CONFIG_PUT',
+                commandIds: [],
+                failure: 'topology command scope differs from queue identity'
+            }]
+        })).toMatchObject({ statusResultFailures: 1 });
     });
 
     it('pairs command evidence by physical row when scoped commands share a request id', () => {
         const sharedRequestId = 'shared-admin-request-id';
-        const adminRow = (rowId: number, contextId: string, jobId: string) => ({
+        const adminRow = (rowId: number, contextId: string, jobId: string): InboxRow => ({
             ...command,
             ri_row_id: rowId,
             ri_resource_id: sharedRequestId,
@@ -527,7 +558,7 @@ describe('durable AppInbox result evidence', () => {
             commandIds: [jobId],
             adminPruneCommand: adminCommand(jobId, capturedAtEpochMs)
         });
-        const page = (jobId: string, capturedAtEpochMs: number) => {
+        const page = (jobId: string, capturedAtEpochMs: number): OutboxRow => {
             const entry = toAdminPruneOutbox({
                 kind: 'page',
                 jobId,
@@ -551,21 +582,21 @@ describe('durable AppInbox result evidence', () => {
             };
         };
 
-        expect(deriveApiV1StateWriteEvidence(
-            {
+        expect(deriveApiV1StateWriteEvidence({
+            spec: {
                 match: sharedRequestId,
                 commandTypes: ['ADMIN_PRUNE_EXPIRED'],
                 expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
             },
-            [adminRow(1, 'caller=admin', 'admin-job-1'), adminRow(2, 'caller=bob', 'admin-job-2')],
-            [page('admin-job-1', 1), page('admin-job-2', 2)],
-            [],
-            undefined,
-            [
+            rawRows: [adminRow(1, 'caller=admin', 'admin-job-1'), adminRow(2, 'caller=bob', 'admin-job-2')],
+            rawOutboxRows: [page('admin-job-1', 1), page('admin-job-2', 2)],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [
                 commandEvidence('caller=admin', 'admin-job-1', 1),
                 commandEvidence('caller=bob', 'admin-job-2', 2)
             ]
-        )).toMatchObject({
+        })).toMatchObject({
             matchedAppInboxCount: 2,
             atomicCompletionFailures: 0,
             statusResultFailures: 0,
@@ -653,14 +684,14 @@ describe('durable AppInbox result evidence', () => {
             adminPruneCommand
         };
 
-        expect(deriveApiV1StateWriteEvidence(
-            { match: jobId, commandTypes: ['ADMIN_PRUNE_EXPIRED'] },
-            [candidate],
-            [],
-            [],
-            undefined,
-            [evidence]
-        )).toMatchObject({
+        expect(deriveApiV1StateWriteEvidence({
+            spec: { match: jobId, commandTypes: ['ADMIN_PRUNE_EXPIRED'] },
+            rawRows: [candidate],
+            rawOutboxRows: [],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [evidence]
+        })).toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]

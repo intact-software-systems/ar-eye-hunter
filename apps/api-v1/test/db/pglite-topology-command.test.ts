@@ -1,17 +1,15 @@
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
+import { Temporal } from '@js-temporal/polyfill';
+
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { writeCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -25,8 +23,17 @@ import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/t
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
+import type {
+    GroupPresenceSummary,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
+import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
@@ -207,20 +214,11 @@ Deno.test(
                 version: 1
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(storedRtt), true);
-            let plannedRtts: readonly typeof storedRtt[] = [];
-            class RecordingTopologyService extends RallarRtcTopologyService {
-                override planGroupTopologyAt(
-                    ...args: Parameters<RallarRtcTopologyService['planGroupTopologyAt']>
-                ): ReturnType<RallarRtcTopologyService['planGroupTopologyAt']> {
-                    plannedRtts = args[1] as readonly typeof storedRtt[];
-                    return super.planGroupTopologyAt(...args);
-                }
-            }
             // The reporting limit resolves no lower than the planning degree
             // limit, so a non-reporting pair needs both endpoints at full
             // planned degree: a four-session ring keeps every selection
             // exactly the planned hops and leaves the a-c chord outside.
-            const topologyService = new RecordingTopologyService({
+            const topologyService = new RallarRtcTopologyService({
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
@@ -258,12 +256,45 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            computeGroupTopologyFromAuthority(authority, previous, {
+            const filtered = requirePlannedTopology(computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
                 origin: 'automatic'
-            });
+            }));
 
-            assert.deepEqual(plannedRtts, []);
+            assert.equal(filtered.planningObservation?.relevantRttMeasurementCount, 0);
+            assert.equal(filtered.snapshot.state, 'active');
+            assert.equal(filtered.snapshot.topology, 'tree');
+            assert.equal(filtered.snapshot.degreeLimit, 2);
+            assert.deepEqual(filtered.snapshot.activeSessionIds, [
+                'session-a',
+                'session-b',
+                'session-c',
+                'session-d'
+            ]);
+            assert.deepEqual(filtered.snapshot.sourceGroupStateCausalRevision, group.causalRevision);
+
+            const reportingRtt = {
+                sessionIdFrom: 'session-b',
+                sessionIdTo: 'session-c',
+                rttMs: 0.01,
+                createdAtEpochMs: nowEpochMs,
+                version: 1
+            };
+            assert.equal(await rttRepository.putMeasurementIfNewer(reportingRtt), true);
+            const mixedAuthority = await service.planning.readTopologyPlanningAuthority({
+                groupRef,
+                snapshotSelection: 'prefer-current'
+            });
+            assert.deepEqual(mixedAuthority.rttMeasurements, [storedRtt, reportingRtt]);
+
+            const withReportingRtt = requirePlannedTopology(computeGroupTopologyFromAuthority(mixedAuthority, previous, {
+                intent: 'full-rebuild',
+                origin: 'automatic'
+            }));
+
+            assert.equal(withReportingRtt.planningObservation?.relevantRttMeasurementCount, 1);
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-b'].includes('session-c'));
+            assert.ok(withReportingRtt.snapshot.nextHopsBySessionId['session-c'].includes('session-b'));
         });
     }
 );
@@ -327,21 +358,21 @@ Deno.test(
                 }
                 return authority;
             };
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
-                    ...args: Parameters<PSqlQueueBox['releaseEntries']>
-                ): ReturnType<PSqlQueueBox['releaseEntries']> {
-                    const released = await super.releaseEntries(...args);
-                    if (args[0].some((release) => release.disposition.status === EntityStatus.RETRY)) {
+                    releases: readonly ResourceInboxRelease[]
+                ): Promise<Map<Key, ResourceEntry>> {
+                    const released = await super.releaseEntries(releases);
+                    if (releases.some((release) => release.disposition.status === EntityStatus.RETRY)) {
                         retryReleaseCount += 1;
                     }
                     return released;
                 }
             }
             const outboxReader = new OutboxQueueReader(
-                new RetryObservedQueueBox(resourceInbox)
+                new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant)
             );
             const executionRepository = new RtcTopologyExecutionRepository(
                 runtimeRepository,
@@ -351,6 +382,7 @@ Deno.test(
             outboxReader.onOutboxMessageDo(
                 AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
                 createRtcTopologyWorkHandler({
+                    nowEpochMs: () => nowEpochMs,
                     outboxQueueReader: outboxReader,
                     database: sql,
                     topologyPlanning: topologyManagement.planning,
@@ -403,7 +435,7 @@ Deno.test('PGlite topology worker rolls back an exact orphan WS outbox collision
             sql,
             'pglite-topology-ws-replay'
         );
-        await createPSqlResourceInboxRepository(sql).entries.write(fixture.publicationEntry);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(fixture.publicationEntry);
 
         await assert.rejects(
             () => fixture.handler.onMessage(fixture.message, fixture.reserved),

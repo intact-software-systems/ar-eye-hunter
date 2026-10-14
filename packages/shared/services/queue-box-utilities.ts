@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
 import { toAppQueueCreatedBy } from '../queuebox/AppQueueIdentity.ts';
@@ -10,7 +11,8 @@ import {
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { ResourceInboxCommandRejectedError } from '../queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
+import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
@@ -19,18 +21,21 @@ import {
 } from '../queuebox/ResourceEntry.ts';
 
 export namespace QueueBoxUtilities {
+    export type CreationClock = () => Temporal.Instant;
+
     export interface DequeueInput {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
         readonly resilience: ResourceInboxResilience;
         readonly onDequeuedDo: (entry: ResourceEntry, attemptTelemetry: ResourceInboxAttemptTelemetry) => Promise<void>;
         readonly options: DequeueResourceEntryOptions;
+        readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
     }
 }
 
 export class QueueBoxUtilities {
     static async defaultDequeue(
-        { qbox, typesToDequeue, resilience, onDequeuedDo, options }: QueueBoxUtilities.DequeueInput
+        { qbox, typesToDequeue, resilience, onDequeuedDo, options, readLaneBudgets }: QueueBoxUtilities.DequeueInput
     ): Promise<void> {
         if (resilience.isNotAllowedThroughToDequeue()) {
             console.warn('Dequeue blocked {}, circuit state {}', typesToDequeue, resilience.circuitBreaker.state.get());
@@ -42,12 +47,18 @@ export class QueueBoxUtilities {
             typesToDequeue: () => typesToDequeue,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
             maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
+            readLaneBudgets,
             resilience: resilience,
             options: options
         })
             .onFailedEntries(
                 (failures) => {
-                    if ([...failures.values()].some((failure) => !isNotReadyException(failure.exception))) {
+                    if (
+                        [...failures.values()].some((failure) =>
+                            !isNotReadyException(failure.exception) &&
+                            !(failure.exception instanceof ResourceInboxCommandRejectedError)
+                        )
+                    ) {
                         resilience.failure();
                     }
                 }
@@ -67,14 +78,17 @@ export class QueueBoxUtilities {
             );
     }
 
-    static toResourceEntryFromMsg(msg: ALMessage, typeId: string): ResourceEntry {
+    static toResourceEntryFromMsg(
+        msg: ALMessage,
+        typeId: string,
+        createdAt: Temporal.Instant
+    ): ResourceEntry {
         const expireAtMs = resolveALMessageExpireAtMs(msg);
         const expiryTs = expireAtMs !== undefined
             ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
             : NEVER_EXPIRE_TS;
 
-        // Queue readers reinterpret `createdTs` as UTC wall clock; stamp it from one UTC instant.
-        const createdAt = Temporal.Now.zonedDateTimeISO('UTC');
+        const createdAtUtc = createdAt.toZonedDateTimeISO('UTC');
         return {
             key: {
                 topicId: msg.route.topicId,
@@ -84,10 +98,10 @@ export class QueueBoxUtilities {
             resource: JSON.stringify(msg),
             typeId: typeId,
             audit: {
-                date: createdAt.toPlainTime(),
-                // The stored creator column is 16 characters wide; the message keeps its full audit (R-S3c-i-30).
+                date: createdAtUtc.toPlainTime(),
+                // The stored creator column is 16 characters wide; the message keeps its full audit.
                 createdBy: toAppQueueCreatedBy(msg.audit?.createdBy ?? 'test'),
-                createdTs: createdAt.toPlainDateTime(),
+                createdTs: createdAtUtc.toPlainDateTime(),
                 expiryTs
             },
             status: EntityStatus.NEW,

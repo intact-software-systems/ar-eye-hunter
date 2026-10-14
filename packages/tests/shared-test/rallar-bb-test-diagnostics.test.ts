@@ -1,14 +1,134 @@
-import { describe, expect, it } from 'vitest';
 import {
-    createRallarBlackBoxBrowserTestRuntime,
-    createRallarBlackBoxTestRuntime,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    createDefaultRallarBlackBoxBrowserTestRuntime,
+    createDefaultRallarBlackBoxTestRuntime,
     toRallarBlackBoxDiagnostics,
-    toRallarBlackBoxRuntimeDiagnostic,
-    type RallarBlackBoxTestWaitResultValue
+    toRallarBlackBoxRuntimeDiagnostic
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
+    it.each([undefined, 'enabled'] as const)('keeps the complete browser sequence with recording %s', async (selection) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ routineBrowserDiagnostics: selection });
+        runtime.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic: 'routine-progress',
+            routineBrowserDiagnostic: true,
+            data: { password: 'secret', step: 1 }
+        });
+        runtime.receiveRallarBrowserEvent({ kind: 'message', topic: 'delivered', data: { token: 'secret', text: 'hello' } });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'observer', data: { status: 'ready' } });
+        runtime.receiveRallarBrowserEvent({ kind: 'close', topic: 'closed' });
+
+        expect(runtime.state().events.map((event) => event.topic)).toEqual(['routine-progress', 'delivered', 'observer', 'closed']);
+        expect(runtime.state().events[0].payload).toHaveProperty('data', { password: '<redacted>', step: 1 });
+        expect(runtime.state().events[1].payload).toHaveProperty('data', { token: '<redacted>', text: 'hello' });
+        const health = await runtime.execute({ kind: 'health' });
+        expect(health.value).toHaveProperty('browserDiagnostics', {
+            routineBrowserDiagnostics: 'enabled',
+            omittedRoutineBrowserDiagnostics: 0,
+            forwardedBrowserDiagnostics: 2
+        });
+    });
+
+    it('omits only certified routine info while retaining failures, ambiguity and functional events', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ routineBrowserDiagnostics: 'disabled' });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'routine-progress', routineBrowserDiagnostic: true });
+        const retained = [
+            { kind: 'message', topic: 'message', routineBrowserDiagnostic: true },
+            { kind: 'close', topic: 'close', routineBrowserDiagnostic: true },
+            { kind: 'diagnostic', topic: 'warning', severity: 'warning', routineBrowserDiagnostic: true },
+            { kind: 'diagnostic', topic: 'error', severity: 'error', routineBrowserDiagnostic: true },
+            { kind: 'diagnostic', topic: 'debug', severity: 'debug', routineBrowserDiagnostic: true },
+            {
+                kind: 'diagnostic',
+                topic: 'explicit-info-cause',
+                severity: 'info',
+                routineBrowserDiagnostic: true,
+                error: { name: 'Error', message: 'failed', stack: undefined }
+            },
+            { kind: 'diagnostic', topic: 'explicit-info-status', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'failed' } },
+            { kind: 'diagnostic', topic: 'explicit-info-unavailable', severity: 'info', routineBrowserDiagnostic: true, data: { status: 'no-peers' } },
+            { kind: 'diagnostic', topic: 'ordinary-progress', data: { status: 'ready' } },
+            { kind: 'diagnostic', topic: 'nested-info', data: { snapshot: { status: 'failed' } } },
+            { kind: 'diagnostic', topic: 'marked-nested-info', severity: 'info', routineBrowserDiagnostic: true, data: { snapshot: { status: 'failed' } } },
+            { kind: 'diagnostic', topic: 'marked-null-info', severity: 'info', routineBrowserDiagnostic: true, data: null },
+            { topic: 'ambiguous-kind', routineBrowserDiagnostic: true },
+            { kind: 'diagnostic', topic: 'rallar.browser.connect_completed', data: { status: 'connected' } },
+            { kind: 'diagnostic', topic: 'rallar.browser.connect.phase_completed', data: { phase: 'rallar-connect', almDiagnostics: false } }
+        ] as const;
+        for (const event of retained) {
+            runtime.receiveRallarBrowserEvent(event);
+        }
+        runtime.recordEvent({ kind: 'diagnostic', topic: 'core-control', severity: 'info' });
+
+        expect(runtime.state().events.map((event) => event.topic)).toEqual([
+            'message',
+            'close',
+            'warning',
+            'error',
+            'debug',
+            'explicit-info-cause',
+            'explicit-info-status',
+            'explicit-info-unavailable',
+            'ordinary-progress',
+            'nested-info',
+            'marked-nested-info',
+            'marked-null-info',
+            'ambiguous-kind',
+            'rallar.browser.connect_completed',
+            'rallar.browser.connect.phase_completed',
+            'core-control'
+        ]);
+        await runtime.execute({ kind: 'configure', config: { browser: { routineBrowserDiagnostics: 'enabled' } } });
+        const health = await runtime.execute({ kind: 'health', commandId: 'applied-policy' });
+        expect(health.ok).toBe(true);
+        expect(health.value).toMatchObject({
+            browserDiagnostics: { routineBrowserDiagnostics: 'disabled', omittedRoutineBrowserDiagnostics: 1, forwardedBrowserDiagnostics: 13 },
+            stats: { rallar: { connected: true }, counters: { diagnostics: 15, messages: 1 } }
+        });
+        expect(runtime.state().events.some((event) => event.topic === 'rallar.bb.command.result' && event.commandId === 'applied-policy')).toBe(true);
+        expect(runtime.state().resultCache['applied-policy'].value).toHaveProperty('browserDiagnostics.omittedRoutineBrowserDiagnostics', 1);
+    });
+
+    it('keeps admission counts for the adapter lifetime through reset and close', async () => {
+        const options = { routineBrowserDiagnostics: 'disabled' as const };
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime(options);
+        const initial = await runtime.execute({ kind: 'health' });
+        expect(initial.value).toHaveProperty('browserDiagnostics', {
+            routineBrowserDiagnostics: 'disabled',
+            omittedRoutineBrowserDiagnostics: 0,
+            forwardedBrowserDiagnostics: 0
+        });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'routine-progress', routineBrowserDiagnostic: true });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'retained-progress' });
+        runtime.receiveRallarBrowserEvent({ kind: 'message', topic: 'message' });
+        await runtime.execute({ kind: 'reset' });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'routine-progress', routineBrowserDiagnostic: true });
+        runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'retained-progress' });
+        await runtime.execute({ kind: 'close' });
+        const health = await runtime.execute({ kind: 'health' });
+
+        expect(health.value).toHaveProperty('browserDiagnostics', {
+            routineBrowserDiagnostics: 'disabled',
+            omittedRoutineBrowserDiagnostics: 2,
+            forwardedBrowserDiagnostics: 2
+        });
+        expect(runtime.state().latestStats?.counters.diagnostics).toBe(1);
+        const fresh = createDefaultRallarBlackBoxBrowserTestRuntime(options);
+        const freshHealth = await fresh.execute({ kind: 'health' });
+        expect(freshHealth.value).toHaveProperty('browserDiagnostics', {
+            routineBrowserDiagnostics: 'disabled',
+            omittedRoutineBrowserDiagnostics: 0,
+            forwardedBrowserDiagnostics: 0
+        });
+    });
+
     it('keeps a payload record subject fact only when it decodes, and resolves the type and topic ids once', () => {
         const unreadable = toRallarBlackBoxRuntimeDiagnostic({
             topic: 'rallar.browser.rtc.lane_state',
@@ -55,7 +175,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes transport diagnostics so wait and assert can match them', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         runtime.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.ws.unhandled_message',
@@ -97,22 +217,26 @@ describe('rallar-bb-test runtime diagnostics', () => {
         });
 
         expect(waitResult.ok).toBe(true);
-        expect((waitResult.value as RallarBlackBoxTestWaitResultValue).event?.payload).toMatchObject({
-            diagnosticSchemaVersion: 1,
-            diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
-            topic: 'rallar.browser.ws.unhandled_message',
-            transport: 'ws',
-            severity: 'warning',
-            message: 'Unhandled WS message: room.unknown',
-            data: {
-                typeId: 'room.unknown'
+        expect(waitResult.value).toMatchObject({
+            event: {
+                payload: {
+                    diagnosticSchemaVersion: 1,
+                    diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                    topic: 'rallar.browser.ws.unhandled_message',
+                    transport: 'ws',
+                    severity: 'warning',
+                    message: 'Unhandled WS message: room.unknown',
+                    data: {
+                        typeId: 'room.unknown'
+                    }
+                }
             }
         });
         expect(assertResult.ok).toBe(true);
     });
 
     it('names the producer of a simulated runtime command diagnostic', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
 
         await runtime.execute({
             kind: 'rtc.send',
@@ -129,7 +253,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes browser Rallar RTC warning events from the adapter bridge', () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
 
         runtime.receiveRallarBrowserEvent({
             kind: 'diagnostic',
@@ -164,7 +288,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('records browser event evidence in the JSON form the control connection carries, all the way down', () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
         const cyclic: { self?: object; } = {};
         cyclic.self = cyclic;
 
@@ -199,7 +323,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
     });
 
     it('normalizes browser-adapter RTC send failures as structured diagnostics', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),

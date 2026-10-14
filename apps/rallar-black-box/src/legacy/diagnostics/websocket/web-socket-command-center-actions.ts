@@ -323,11 +323,11 @@ export class WebSocketCommandCenterActions {
 }
 
 function isDefaultGroupContext(values: WebSocketCommandCenterValues): boolean {
-    return [values.groupId, '', 'all', values.wsScope].includes(values.contextId);
+    return [values.groupId, '', values.wsScope].includes(values.contextId);
 }
 
 function isDefaultScopeContext(values: WebSocketCommandCenterValues): boolean {
-    return [values.wsScope, values.groupId, 'all', 'world', 'room'].includes(values.contextId);
+    return [values.wsScope, values.groupId, 'world', 'room'].includes(values.contextId);
 }
 
 function toScopeDefaultContext(

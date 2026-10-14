@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -19,10 +20,11 @@ import {
     AL_ADMISSION_SCHEMA_KEY,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -47,7 +49,8 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 backend,
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             });
             const planner: ALInboundMessageRuntime.Dependencies['planIncomingMessage'] = (msg, source, observations) =>
                 planALMessageHandling(msg, {
@@ -68,7 +71,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                 effectPreparation: {
                     newControlId: crypto.randomUUID.bind(crypto),
                     selfPeerId: 'receiver',
-                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX')
+                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX', Temporal.Now.instant())
                 },
                 forwardMessage: undefined,
                 canForwardMessage: undefined

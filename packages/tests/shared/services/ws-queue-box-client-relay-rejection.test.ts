@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALNackControlMessage,
+    newALReceiptControlMessage,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -16,7 +20,7 @@ import {
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type {
     WsServerInboundAuthorization,
@@ -98,7 +102,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
     it('never relays a session NACK to the peer it names', async () => {
         const fixture = await createRelayFixture();
         const nack = newALNackControlMessage(
-            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
             { msgId: 'ordered-gapped', fromPeerId: 'b', toPeerId: 'a', reason: 'resync-required', observedAtEpochMs: Date.now() }
         );
 
@@ -127,7 +131,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
                 lane: 'durable',
                 atMs: expect.any(Number),
                 relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-                detail: 'The server refused the message: unauthorized.'
+                detail: 'The server relay refused the message: unauthorized.'
             }]
         );
         const lifecycle = origin.settlements
@@ -164,6 +168,135 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-refused', 'receiver'));
         expect(lifecycle.state).toBe('rejected');
         expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'unauthorized' });
+    });
+
+    it('states the room authorizer fencing a sender no longer in the roster; the receipted handle reads rejected', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'membership-fenced',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: the sender is no longer an active member.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-fenced', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, minSnapshotVersion: 3, rosterVersion: 2 }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(broadcast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await relayFrames(fixture.sockets.a, origin);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected')).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'broadcast-fenced',
+            carrier: 'ws',
+            lane: 'durable',
+            atMs: expect.any(Number),
+            relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
+            detail: 'The server relay refused the message: membership-fenced.'
+        }]);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-fenced')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-fenced', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'membership-fenced' }
+        });
+    });
+
+    it('states the room authorizer refusing a group-leader send for no leader; the handle reads rejected on its one sent attempt', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'no-leader',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: no active leader inside the audience the send names.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-leaderless', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        await fixture.server.acceptIncomingMessage(broadcast, 'a');
+        await relayFrames(fixture.sockets.a, origin);
+
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-leaderless')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-leaderless', 'group-leader'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.attempts).toHaveLength(1);
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'no-leader' }
+        });
+    });
+
+    it('states the server dropping an exclusive send on a resource another session holds; the receipted handle reads rejected', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const held = await fixture.server.acceptIncomingMessage(exclusiveRoomBroadcast('claim-held', 'b'), 'b');
+        expect(held.right).toEqual({ kind: 'admitted' });
+        const contested = exclusiveRoomBroadcast('claim-contested', 'a');
+        expect((await origin.service.enqueueOutboxIfAbsent(contested)).verdict.kind).toBe('admitted');
+
+        const dropped = await fixture.server.acceptIncomingMessage(contested, 'a');
+
+        expect(dropped.right).toEqual({ kind: 'not-admitted', reason: 'Exclusive resource is held by another session' });
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentNacks(fixture.sockets.a).length;
+        }).toBe(1);
+        await relayFrames(fixture.sockets.a, origin);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'claim-contested')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('claim-contested', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.attempts).toHaveLength(1);
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'held-by-other' }
+        });
+    });
+
+    it('ends a claim the server retained on a conflict and then dropped held-by-other: the admitted receipt came first, the handle reads rejected', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const contested = exclusiveRoomBroadcast('claim-retained', 'a');
+        expect((await origin.service.enqueueOutboxIfAbsent(contested)).verdict.kind).toBe('admitted');
+        expect((await fixture.server.acceptIncomingMessage(exclusiveRoomBroadcast('claim-held', 'b'), 'b')).right)
+            .toEqual({ kind: 'admitted' });
+        await fixture.server.acceptIncomingMessage(contested, 'a');
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentNacks(fixture.sockets.a).length;
+        }).toBe(1);
+
+        await origin.service.acceptIncomingMessage(serverReceipt('claim-retained', 'admitted'));
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'claim-retained' })
+        ).toBeDefined();
+        await relayFrames(fixture.sockets.a, origin);
+
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({ originPeerId: 'a', msgId: 'claim-retained' })
+        ).toBeUndefined();
+        // The server's aggregate for the retained claim still sweeps at the deadline; its late receipt ends nothing new.
+        await origin.service.acceptIncomingMessage(serverReceipt('claim-retained', 'timed-out'));
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'claim-retained')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('claim-retained', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.failure).toEqual({
+            kind: 'relay-rejected',
+            rejection: { relay: 'trusted-server', reason: 'held-by-other' }
+        });
     });
 
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
@@ -288,7 +421,7 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
 /** The ordering-resync send: a retained room broadcast on one ordering key, with or without a receipt. */
 function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.ordered', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -301,7 +434,7 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
 /** A receipted command to one session of the room, which names its room so the room's authority admits it. */
 function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     return {
-        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
         constraints: { expiresAtMs: Date.now() + 30_000 },
@@ -310,12 +443,41 @@ function roomUnicast(msgId: string, toPeerId: string): ALMessage {
     };
 }
 
-function toInitialLifecycle(msgId: string, ackMode: 'none' | 'receiver') {
+/** A receipted exclusive room broadcast on the one resource every message this helper builds names. */
+function exclusiveRoomBroadcast(msgId: string, senderId: string): ALMessage {
+    return {
+        id: { v: 3, msgId, ts: Date.now(), senderId },
+        route: { topicId: 'room.pickup', resourceId: 'pickup-1', contextId: ROOM.groupId },
+        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver', ownership: 'exclusive' },
+        payload: { typeId: 'pickup.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+/** The server's receipt of `phase` for an origin message of `a`, whose frozen audience is `b`. */
+function serverReceipt(msgId: string, phase: ALReceiptPayload['phase']): ALMessage {
+    const observedAtEpochMs = Date.now();
+    return newALReceiptControlMessage(
+        { v: 3, msgId: `receipt-${phase}-${msgId}`, senderId: 'server-1', ts: observedAtEpochMs },
+        {
+            msgId,
+            originPeerId: 'a',
+            expectedRecipientPeerIds: ['b'],
+            confirmedRecipientPeerIds: [],
+            snapshotVersion: 3,
+            phase,
+            observedAtEpochMs
+        }
+    );
+}
+
+function toInitialLifecycle(msgId: string, ackMode: 'none' | 'receiver' | 'group-leader') {
     return createInitialALDeliveryLifecycle({
         msgId,
         typeId: 'ordered.v1',
         ackMode,
-        receiptAlgo: ackMode,
+        receiptAlgo: ackMode === 'group-leader' ? 'leader' : ackMode,
         expiresAtMs: undefined,
         submittedAtMs: 0
     });

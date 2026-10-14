@@ -1,4 +1,4 @@
-import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -9,7 +9,6 @@ import { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controlle
 import {
     BlackBoxRallarRuntimeDiagnostics,
     createBlackBoxRallarConsoleDiagnostics,
-    createBlackBoxRallarDiagnosticsPorts,
     type BlackBoxRallarConsoleDiagnostics
 } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -103,7 +102,6 @@ export namespace BlackBoxRallarConnectionRuntime {
     export interface Foundation {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
-        readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly health: BlackBoxRallarHealthReader;
         readonly lifecycle: BlackBoxRallarConnectionState.Lifecycle;
         readonly connectionState: BlackBoxRallarConnectionState;
@@ -159,6 +157,15 @@ export class BlackBoxRallarConnectionRuntime {
             refreshRoom: async (options) => await this.#refreshRoom(options),
             waitForRoom: async (options) => await this.#waitForRoom(options),
             readRtcMessageNacks: (messageId) => rallar.readRtcMessageNacks(messageId),
+            readAlmUsage: async () =>
+                rallar.isConnected()
+                    ? {
+                        ...rallar.messages.readUsage(),
+                        orderingTracks: rallar.diagnostics.orderingTracks.getOrderingTracks()
+                    }
+                    : undefined,
+            readCongestionCounters: async () =>
+                rallar.isConnected() ? rallar.diagnostics.congestion.getCounters() : undefined,
             crdt,
             director,
             formation,
@@ -180,8 +187,16 @@ export class BlackBoxRallarConnectionRuntime {
                     requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input)),
                     decodeBlackBoxCommandNumber(deadlineEpochMs)
                 ),
-            sendWs: async (input) =>
-                await wsSend.sendWs(requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input))),
+            sendWs: async (input, capture = {}) => {
+                const captured = toRallarOperationOptions({
+                    rtcCaptureMode: capture.rtcCaptureMode,
+                    rtcCaptureContext: capture.rtcCaptureContext
+                });
+                return await wsSend.sendWs({
+                    ...requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input)),
+                    ...captured
+                });
+            },
             sendMessage: async (input) =>
                 await deliveryLedger.sendMessage(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(input))
@@ -312,7 +327,6 @@ function createConnectionFoundation(
     return {
         rallar,
         diagnostics,
-        diagnosticsPorts: createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics),
         health: new BlackBoxRallarHealthReader({ rallar, diagnostics, readDocument: input.readDocument }),
         lifecycle,
         connectionState,
@@ -348,7 +362,7 @@ function createProductControllers(
             facade: rallar,
             now: input.clock.now,
             delay: input.delay,
-            currentConnectionConfig: () => connectionState.get()?.config,
+            currentConnectionConfig: () => connectionState.get()?.config ?? connectionState.configuration()?.config,
             ensureLiveConnection: new BlackBoxRallarCrdtLiveConnection(foundation).ensure,
             scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
             emit: diagnostics.emit,
@@ -370,7 +384,6 @@ function createProductControllers(
             formation: (roomRef) => rallar.rooms.formation(roomRef),
             rtc: rallar.rtc,
             emit: diagnostics.emit,
-            emitError: diagnostics.emitError,
             now: input.clock.now
         }),
         ...createMessagingControllers(foundation, input.clock)

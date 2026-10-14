@@ -574,7 +574,72 @@ describe('createWsServerTargetResolver state sync routing', () => {
             resolver
                 .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
-        ).toEqual(['session-a']);
+        ).toEqual([]);
+    });
+
+    it('routes a principal broadcast in a room to the live open sessions of that principal in the room alone', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        for (const sessionId of ['session-a1', 'session-a2', 'session-a3', 'session-b']) {
+            addOpenConnection(webSocketServer, sessionId);
+        }
+        const snapshot = createGroupSnapshot({
+            groupId: 'shared-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            members: [
+                { principalId: 'alice', sessionId: 'session-a1', status: 'active' },
+                { principalId: 'alice', sessionId: 'session-a2', status: 'active' },
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' }
+            ],
+            snapshotVersion: 3
+        });
+        const message: ALMessage = {
+            ...newALBroadcastMessage('session-b', newALEventRoute('room.chat', 'shared-room', 'message-1'), 'room', 'chat.message.v1', {}, {
+                groupRef: snapshot.group
+            }),
+            targets: {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: snapshot.group,
+                principalRef: { applicationId: 'app-1', workspaceId: 'workspace-a', principalId: 'alice' }
+            }
+        };
+        const resolver = createWsServerTargetResolver(webSocketServer, { findGroupSnapshotByRef: () => snapshot });
+
+        expect(resolver.resolveBroadcastRecipients?.('principal', message).map((recipient) => recipient.connectionId))
+            .toEqual(['session-a1', 'session-a2']);
+    });
+
+    it('routes a room broadcast with a fixed list to the listed live open sessions in the room alone', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        for (const sessionId of ['session-a', 'session-b', 'session-c', 'session-x']) {
+            addOpenConnection(webSocketServer, sessionId);
+        }
+        const snapshot = createGroupSnapshot({
+            groupId: 'shared-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            members: [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' },
+                { principalId: 'carol', sessionId: 'session-c', status: 'active' }
+            ],
+            snapshotVersion: 3
+        });
+        const message: ALMessage = {
+            ...newALBroadcastMessage('session-a', newALEventRoute('room.chat', 'shared-room', 'message-1'), 'room', 'chat.message.v1', {}, {
+                groupRef: snapshot.group
+            }),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, recipientPeerIds: ['session-c', 'session-x'] }
+        };
+        const resolver = createWsServerTargetResolver(webSocketServer, { findGroupSnapshotByRef: () => snapshot });
+
+        expect(resolver.resolveBroadcastRecipients?.('room', message).map((recipient) => recipient.connectionId))
+            .toEqual(['session-c']);
     });
 
     it('routes multicast targets using target groupRef and never back to their origin', () => {

@@ -353,7 +353,7 @@ interface LeafAckInput {
 
 function createLeafAck(input: LeafAckInput): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${input.fromPeerId}`, senderId: input.fromPeerId, ts: Date.now() },
+        { v: 3, msgId: `ack-${input.fromPeerId}`, senderId: input.fromPeerId, ts: Date.now() },
         {
             ackedMsgId: input.msgId,
             fromPeerId: input.fromPeerId,

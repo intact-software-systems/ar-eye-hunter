@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -20,16 +18,18 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { CreateGroupRequest, StateScope } from '@shared/api/state-types.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import {
     createAppInboxTestDatabase,
     type AppInboxTestDatabase,
     type AppInboxTestDatabaseStage
 } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 import { authSession } from '../group-state-test-runtime.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-08-02T00:00:00.000Z');
 const GROUP_ID = 'transaction-boundary-room';
@@ -154,11 +154,8 @@ function createTransactionBoundaryExecution(
 ): TransactionBoundaryExecution {
     let wakeCount = 0;
     const transactionWriter = new AppInboxTransactionWriter(
-        { database: storage.database },
-        {
-            serviceId: 'server-12345678',
-            nowEpochMs: () => NOW_EPOCH_MS
-        }
+        { database: storage.database, nowEpochMs: () => NOW_EPOCH_MS },
+        { serviceId: 'server-12345678' }
     );
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({

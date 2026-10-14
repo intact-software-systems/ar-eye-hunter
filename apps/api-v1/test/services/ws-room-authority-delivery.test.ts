@@ -7,14 +7,22 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALMulticastMessage, toALGroupTargetKey } from '@shared/al-contracts/al-contract.ts';
 import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { decodeALNackPayload, decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type {
+    WsQueueBoxServerReceiptObservation,
+    WsQueueBoxServerReceiptObserver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -34,6 +42,7 @@ interface RoomDeliveryState {
 
 interface RoomDeliveryHarness {
     readonly state: RoomDeliveryState;
+    readonly connectionScopes: Map<string, StateScope>;
     readonly server: JsonWebSocketServer;
     readonly service: WsQueueBoxServerService;
     readonly router: RallarServerWsRouter;
@@ -41,10 +50,12 @@ interface RoomDeliveryHarness {
 }
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const ROOM_SCOPE: StateScope = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
 for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) {
     Deno.test(`room live delivery uses current authority with ${cacheState} local cache`, async () => {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot();
             harness.state.cached = cacheState === 'absent' ? undefined : {
@@ -69,8 +80,12 @@ for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) 
             assert.equal(harness.state.cached, cachedBefore);
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     });
 }
@@ -78,6 +93,7 @@ for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) 
 Deno.test('room delivery excludes revoked or expired recipients even when cache and sockets retain them', async () => {
     for (const revocation of ['member', 'session', 'expiry'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = {
@@ -105,15 +121,32 @@ Deno.test('room delivery excludes revoked or expired recipients even when cache 
             assert.deepEqual(revokedFrames, []);
             assert.deepEqual(remainingFrames, [JSON.stringify(message)]);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
-Deno.test('current room denial emits the existing NACK without using a permissive recipient cache', async () => {
-    for (const denial of ['missing', 'scope', 'group', 'member', 'session', 'version', 'policy', 'halted'] as const) {
+Deno.test('current room denial emits its typed NACK without using a permissive recipient cache', async () => {
+    for (
+        const { denial, reason } of [
+            { denial: 'missing', reason: 'unauthorized' },
+            { denial: 'scope', reason: 'unauthorized' },
+            { denial: 'group', reason: 'unauthorized' },
+            { denial: 'member', reason: 'membership-fenced' },
+            { denial: 'session', reason: 'membership-fenced' },
+            { denial: 'version', reason: 'not-yet-in-sync' },
+            { denial: 'roster', reason: 'not-yet-in-sync' },
+            { denial: 'policy', reason: 'unauthorized' },
+            { denial: 'halted', reason: 'unauthorized' }
+        ] as const
+    ) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const snapshot = createRoomSnapshot();
             harness.state.current = denial === 'missing' ? undefined : {
@@ -135,25 +168,89 @@ Deno.test('current room denial emits the existing NACK without using a permissiv
             harness.state.policy = { status: 'present', policy: resolveGroupLifecyclePolicyPreset('match') };
             const senderFrames = addRecordingConnection(harness.server, 'alice');
             const recipientFrames = addRecordingConnection(harness.server, 'bob');
-            const message = roomMessage(denial === 'version' ? 3 : undefined);
+            const message = roomMessage({
+                minSnapshotVersion: denial === 'version' ? 3 : undefined,
+                rosterVersion: denial === 'roster' ? 2 : undefined
+            });
 
             await harness.router.route(message);
 
             assert.equal(senderFrames.length, 1);
             const nack = decodePersistedALMessage(senderFrames[0]!);
             assert.notEqual(nack.route.topicId, 'room.chat');
-            assert.match(nack.payload.resource, /unauthorized|not-yet-in-sync/);
+            assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, reason, denial);
             assert.deepEqual(recipientFrames, []);
             assert.deepEqual(await harness.outbox.getAllKeys(), []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a room send behind the server snapshot is retained at ingress with its advisory NACK and delivered once the snapshot advances', async () => {
+    for (const floor of ['version', 'roster'] as const) {
+        const observations: WsQueueBoxServerReceiptObservation[] = [];
+        const harness = createRoomDeliveryHarness(undefined, (event) => observations.push(event));
+        let bodyFailed = false;
+        try {
+            harness.router.install();
+            const senderFrames = addRecordingConnection(harness.server, 'alice');
+            const recipientFrames = addRecordingConnection(harness.server, 'bob');
+            const message = roomMessage(floor === 'version' ? { minSnapshotVersion: 3 } : { rosterVersion: 2 });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+
+            assert.deepEqual(accepted.right, { kind: 'pending-admission' }, floor);
+            assert.equal(senderFrames.length, 1, floor);
+            const nack = decodePersistedALMessage(senderFrames[0]!);
+            assert.equal(decodeALNackPayload(JSON.parse(nack.payload.resource)).reason, 'not-yet-in-sync', floor);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            assert.deepEqual(recipientFrames, [], floor);
+            const expected = {
+                kind: 'business-socket-decision',
+                serverPeerId: 'room-authority-delivery',
+                msgId: message.id.msgId,
+                senderId: 'alice',
+                typeId: 'chat.message.v1',
+                topicId: 'room.chat',
+                connectionId: 'alice',
+                fromPeerId: 'alice',
+                authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                scopeDisposition: 'authorized',
+                outcome: 'pending-admission',
+                rejectionCode: undefined
+            };
+            console.log(
+                'Pending business socket effects:',
+                JSON.stringify({ floor, acceptance: accepted.right?.kind, advisoryNack: 'not-yet-in-sync', recipientFrames })
+            );
+            assert.deepEqual(observations, [expected], floor);
+
+            const snapshot = createRoomSnapshot();
+            harness.state.current = { ...snapshot, group: { ...snapshot.group, snapshotVersion: 3, rosterVersion: 2 } };
+            await waitForRoomFrames(() => recipientFrames.length > 0);
+
+            assert.deepEqual(recipientFrames.map((frame) => decodePersistedALMessage(frame).id), [message.id], floor);
+            assert.equal(senderFrames.length, 1, floor);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('room broadcast exclusions preserve an empty authoritative audience without cache fallback', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const snapshot = createRoomSnapshot();
         harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.sessionId === 'alice') };
@@ -170,13 +267,18 @@ Deno.test('room broadcast exclusions preserve an empty authoritative audience wi
         assert.deepEqual(staleFrames, []);
         assert.deepEqual(await harness.outbox.getAllKeys(), []);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('room reconnect delivers to the current open socket and ignores delayed old-generation close', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         harness.state.cached = undefined;
         const oldSocket = createOpenTestWebSocket();
@@ -195,13 +297,18 @@ Deno.test('room reconnect delivers to the current open socket and ignores delaye
         await harness.router.route(message);
         assert.deepEqual(currentFrames, [JSON.stringify(message)]);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('transformed proxy targets never inherit the source room authoritative audience', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         harness.state.cached = undefined;
         const sourceFrames = addRecordingConnection(harness.server, 'alice');
@@ -222,14 +329,19 @@ Deno.test('transformed proxy targets never inherit the source room authoritative
         assert.deepEqual(sourceFrames, []);
         assert.deepEqual(proxyFrames, [JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'outsider' } })]);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('generic custom authorization retains its explicit resolver-owned audience', async () => {
     for (const decision of [true, { authorized: true }] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
             const router = new RallarServerWsRouter(harness.service, { authorizeRoomMessage: () => decision });
@@ -240,8 +352,12 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
             assert.deepEqual(frames, [JSON.stringify(message)]);
             assert.equal(harness.state.authorityReads, 0);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
@@ -249,6 +365,7 @@ Deno.test('generic custom authorization retains its explicit resolver-owned audi
 Deno.test('room delivery rechecks session expiry and open sockets after awaited handlers', async () => {
     let nowEpochMs = Date.now();
     const harness = createRoomDeliveryHarness(() => nowEpochMs);
+    let bodyFailed = false;
     try {
         const senderFrames = addRecordingConnection(harness.server, 'alice');
         const recipientFrames = addRecordingConnection(harness.server, 'bob');
@@ -264,14 +381,19 @@ Deno.test('room delivery rechecks session expiry and open sockets after awaited 
         assert.deepEqual(recipientFrames, []);
         assert.equal(harness.state.authorityReads, 1);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a handler cannot reuse room authority after changing the target scope or exclusions', async () => {
     for (const mutation of ['scope', 'exclusions'] as const) {
         const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
         try {
             const frames = addRecordingConnection(harness.server, 'bob');
             harness.router.on({ topicId: 'room.chat' }, async (message) => {
@@ -295,14 +417,19 @@ Deno.test('a handler cannot reuse room authority after changing the target scope
 
             assert.deepEqual(frames, []);
         }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
         finally {
-            harness.service.dispose();
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
         }
     }
 });
 
 Deno.test('a socket closed during an awaited handler receives no authoritative live frame', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const socket = createOpenTestWebSocket();
         let readyState: number = WebSocket.OPEN;
@@ -320,13 +447,18 @@ Deno.test('a socket closed during an awaited handler receives no authoritative l
         assert.deepEqual(frames, []);
         assert.equal(harness.state.authorityReads, 1);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
 Deno.test('a WS-carried receiver room multicast queues durable delivery to the other admitted members, never its origin, and answers it with receipts', async () => {
     const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
     try {
         const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
         harness.state.current = snapshot;
@@ -369,12 +501,457 @@ Deno.test('a WS-carried receiver room multicast queues durable delivery to the o
         assert.deepEqual(readReceipts(senderFrames)[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
         assert.equal(readReceipts(senderFrames)[0]?.snapshotVersion, 2);
     }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
     finally {
-        harness.service.dispose();
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
     }
 });
 
-function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
+Deno.test('a server publication that names an ordering key is published with the sequence its outbound minted, and delivered with it', async () => {
+    const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
+    try {
+        const aliceFrames = addRecordingConnection(harness.server, 'alice');
+        const bobFrames = addRecordingConnection(harness.server, 'bob');
+
+        const published = [
+            await harness.router.publish({ message: serverTrackNotice(harness.router.serverPeerId, 'notice-1'), fanout: 'outbox' }),
+            await harness.router.publish({ message: serverTrackNotice(harness.router.serverPeerId, 'notice-2'), fanout: 'outbox' })
+        ];
+        await waitForRoomFrames(() => readNoticeOrderings(aliceFrames).length + readNoticeOrderings(bobFrames).length >= 4);
+
+        const minted = [1, 2].map((seq) => ({ orderingKey: 'notice-track', epoch: 1, seq }));
+        assert.deepEqual(published.map((result) => [result.status, result.message.ordering]), [
+            ['queued-outbox', minted[0]],
+            ['queued-outbox', minted[1]]
+        ]);
+        assert.deepEqual(readNoticeOrderings(aliceFrames), minted);
+        assert.deepEqual(readNoticeOrderings(bobFrames), minted);
+    }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
+    finally {
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
+    }
+});
+
+Deno.test('a principal broadcast in a room reaches the live sessions of that principal in the room alone, and its receipt and outbox row expect them', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'alice-elsewhere', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['alice']!).length + readChatIds(frames['alice-2']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['alice']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            for (const outside of ['alice-elsewhere', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['bob']!)[0]?.expectedRecipientPeerIds, ['alice', 'alice-2'], fanout);
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['alice', 'alice-2']);
+            }
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a principal broadcast to the sender\'s own principal reaches that principal\'s other session in the room alone, and its receipt expects it', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('alice', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['alice-2']!).length >= 1);
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            for (const outside of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['alice-2'], fanout);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a principal broadcast whose principal has no live session in the room reaches no one and is answered with one empty admitted receipt', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.current = { ...snapshot, activeSessions: snapshot.activeSessions.filter((session) => session.principalId !== 'carol') };
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'carol' }
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            for (const sessionId of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[sessionId]!), [], `${fanout} ${sessionId}`);
+            }
+            assert.deepEqual(readReceipts(frames['bob']!).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds]), [['admitted', []]], fanout);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a principal broadcast stamped beyond the server roster is retained at ingress and delivered to that principal once the roster advances', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = createSecondSessionSnapshot();
+            harness.state.cached = createSecondSessionSnapshot();
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'alice-2', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('bob', {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: ROOM,
+                principalRef: { ...ROOM_SCOPE, principalId: 'alice' },
+                rosterVersion: 2
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'bob');
+
+            assert.deepEqual(accepted.right, { kind: 'pending-admission' }, fanout);
+            assert.equal(decodeALNackPayload(JSON.parse(decodePersistedALMessage(frames['bob']![0]!).payload.resource)).reason, 'not-yet-in-sync');
+            const current = createSecondSessionSnapshot();
+            harness.state.current = { ...current, group: { ...current.group, rosterVersion: 2 } };
+            await waitForRoomFrames(() => readChatIds(frames['alice']!).length + readChatIds(frames['alice-2']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['alice']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice-2']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['carol']!), [], fanout);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a room broadcast from a client reaches the other live sessions in the room and never its sender', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = audienceMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['bob']!).length + readChatIds(frames['carol']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['bob']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['alice']!), [], fanout);
+            assert.deepEqual(readReceipts(frames['alice']!)[0]?.expectedRecipientPeerIds, ['bob', 'carol'], fanout);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a room broadcast with a fixed list reaches the listed sessions in the room alone, and its receipt expects them', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(
+                ['alice', 'bob', 'carol', 'outsider'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = audienceMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM, recipientPeerIds: ['carol', 'outsider'] });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['carol']!).length >= 1);
+
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            for (const outside of ['alice', 'bob', 'outsider']) {
+                assert.deepEqual(readChatIds(frames[outside]!), [], `${fanout} ${outside}`);
+            }
+            assert.deepEqual(readReceipts(frames['alice']!).map((receipt) => receipt.expectedRecipientPeerIds), [['carol']], fanout);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('a world broadcast reaches each live connection of the authenticated scope of its sender once, and no one else', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.router.defineTopic({ topicId: 'app.news', fanout });
+            harness.router.install();
+            harness.connectionScopes.set('foreign', { applicationId: 'app-2', workspaceId: ROOM.workspaceId });
+            const frames = Object.fromEntries(
+                ['alice', 'bob', 'foreign'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)])
+            );
+            const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'world', 'world-news'), 'world', 'news.v1', { text: 'hello' }, {
+                reliability: 'at-least-once',
+                ack: 'none'
+            });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readTopicIds(frames['bob']!, 'app.news').length >= 1);
+            // Settles every path that could still deliver, so a second copy or a stray one would have arrived.
+            await waitForRoomFrames(() => false);
+
+            assert.deepEqual(readTopicIds(frames['bob']!, 'app.news'), [message.id.msgId], fanout);
+            assert.deepEqual(readTopicIds(frames['foreign']!, 'app.news'), [], fanout);
+            assert.deepEqual(readTopicIds(frames['alice']!, 'app.news'), [], fanout);
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.recipientScope, ROOM_SCOPE);
+            }
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+Deno.test('an all broadcast from a client is refused unauthorized and reaches no one', async () => {
+    const harness = createRoomDeliveryHarness();
+    let bodyFailed = false;
+    try {
+        harness.router.install();
+        const senderFrames = addRecordingConnection(harness.server, 'alice');
+        const bobFrames = addRecordingConnection(harness.server, 'bob');
+        const message = newALBroadcastMessage('alice', newALEventRoute('app.news', 'all', 'all-news'), 'all', 'news.v1', { text: 'hello' });
+
+        const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+        await waitForRoomFrames(() => false);
+
+        assert.equal(accepted.left?.code, 'unauthorized');
+        assert.deepEqual(senderFrames.map((frame) => decodeALNackPayload(JSON.parse(decodePersistedALMessage(frame).payload.resource)).reason), [
+            'unauthorized'
+        ]);
+        assert.deepEqual(bobFrames, []);
+    }
+    catch (caught) {
+        bodyFailed = true;
+        throw toError(caught);
+    }
+    finally {
+        await disposeRoomDeliveryHarness(harness, bodyFailed);
+    }
+});
+
+Deno.test('a group-leader room send reaches the appointed director alone, and its receipt expects the director and completes on its ACK', async () => {
+    for (const fanout of ['live-only', 'outbox'] as const) {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            harness.state.current = withDirector(createRoomSnapshot(['alice', 'bob', 'carol']), 'carol');
+            // The local cache predates the appointment: the audience admitted from current authority decides delivery.
+            harness.state.cached = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.router.defineTopic({ topicId: 'room.chat', fanout });
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = leaderMessage('alice', { mode: 'broadcast', scope: 'room', groupRef: ROOM });
+
+            const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+            assert.deepEqual(accepted.right, { kind: 'admitted' }, fanout);
+            await waitForRoomFrames(() => readChatIds(frames['carol']!).length >= 1);
+            await harness.service.acceptIncomingMessage(receiverAck(message, 'carol'), 'carol');
+            await waitForRoomFrames(() => readReceipts(frames['alice']!).length >= 2);
+
+            assert.deepEqual(readChatIds(frames['carol']!), [message.id.msgId], fanout);
+            assert.deepEqual(readChatIds(frames['bob']!), [], fanout);
+            assert.deepEqual(readChatIds(frames['alice']!), [], fanout);
+            assert.deepEqual(
+                readReceipts(frames['alice']!).map((receipt) => [receipt.phase, receipt.expectedRecipientPeerIds, receipt.confirmedRecipientPeerIds]),
+                [
+                    ['admitted', ['carol'], []],
+                    ['complete', ['carol'], ['carol']]
+                ],
+                fanout
+            );
+            if (fanout === 'outbox') {
+                assert.deepEqual((await readCapturedOutboxPolicy(harness, message))?.admittedAudience, ['carol']);
+            }
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    }
+});
+
+for (
+    const { situation, director, sender, targets } of [
+        { situation: 'no director is appointed', director: undefined, sender: 'alice', targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM } },
+        { situation: 'the director sent it', director: 'carol', sender: 'carol', targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM } },
+        {
+            situation: 'its fixed list omits the director',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, recipientPeerIds: ['bob'] }
+        },
+        {
+            situation: 'it excepts the director',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, exceptPeerIds: ['carol'] }
+        },
+        {
+            situation: 'the principal it names is not the director\'s',
+            director: 'carol',
+            sender: 'alice',
+            targets: { mode: 'broadcast', scope: 'principal', groupRef: ROOM, principalRef: { ...ROOM_SCOPE, principalId: 'bob' } }
+        }
+    ] as const
+) {
+    Deno.test(`a group-leader room send is refused no-leader with its typed NACK and reaches no one when ${situation}`, async () => {
+        const harness = createRoomDeliveryHarness();
+        let bodyFailed = false;
+        try {
+            const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+            harness.state.current = director === undefined ? snapshot : withDirector(snapshot, director);
+            harness.router.install();
+            const frames = Object.fromEntries(['alice', 'bob', 'carol'].map((sessionId) => [sessionId, addRecordingConnection(harness.server, sessionId)]));
+            const message = leaderMessage(sender, targets);
+
+            const accepted = await harness.service.acceptIncomingMessage(message, sender);
+            await waitForRoomFrames(() => false);
+
+            assert.equal(accepted.left?.code, 'unauthorized');
+            assert.deepEqual(
+                frames[sender]!.map((frame) => decodeALNackPayload(JSON.parse(decodePersistedALMessage(frame).payload.resource)).reason),
+                ['no-leader']
+            );
+            for (const sessionId of ['alice', 'bob', 'carol']) {
+                assert.deepEqual(readChatIds(frames[sessionId]!), [], sessionId);
+                assert.deepEqual(readReceipts(frames[sessionId]!), [], sessionId);
+            }
+            assert.deepEqual(await harness.outbox.getAllKeys(), []);
+        }
+        catch (caught) {
+            bodyFailed = true;
+            throw toError(caught);
+        }
+        finally {
+            await disposeRoomDeliveryHarness(harness, bodyFailed);
+        }
+    });
+}
+
+/** Joins the service's owned cleanup; cleanup diagnostics cannot replace an earlier test failure. */
+async function disposeRoomDeliveryHarness(harness: RoomDeliveryHarness, bodyFailed: boolean): Promise<void> {
+    try {
+        await harness.service.dispose();
+    }
+    catch (caught) {
+        const error = toError(caught);
+        if (!bodyFailed) {
+            throw error;
+        }
+        try {
+            console.error('Room delivery cleanup failed after body failure:', error);
+        }
+        catch { /* Keep the primary test failure even if its cleanup diagnostic fails. */ }
+    }
+}
+
+function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: WsQueueBoxServerReceiptObserver): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
         cached: createRoomSnapshot(),
@@ -383,14 +960,16 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     };
     const server = new JsonWebSocketServer();
     const outbox = new InMemoryQueueBox();
+    const connectionScopes = new Map<string, StateScope>();
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>
             server.connections.get(connection.id) === connection
-                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                ? { scope: connectionScopes.get(connection.id) ?? ROOM_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         name: 'room-authority-delivery',
+        receiptObserver,
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })
     });
@@ -402,11 +981,11 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
         }
     }, { readLifecyclePolicy: () => Promise.resolve(state.policy) });
     const router = new RallarServerWsRouter(service, { authorizeRoomMessage, nowEpochMs });
-    return { state, server, service, router, outbox };
+    return { state, connectionScopes, server, service, router, outbox };
 }
 
 function receiverAck(message: ALMessage, recipient: string): ALMessage {
-    return newALAckControlMessage({ v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+    return newALAckControlMessage({ v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
         ackedMsgId: message.id.msgId,
         fromPeerId: recipient,
         toPeerId: message.id.senderId,
@@ -423,6 +1002,81 @@ function readReceipts(frames: readonly string[]): readonly ALReceiptPayload[] {
         .map((frame) => decodePersistedALMessage(frame))
         .filter((frame) => frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
         .map((frame) => decodeALReceiptPayload(JSON.parse(frame.payload.resource)));
+}
+
+/** A notice the server publishes itself on epoch 1 of one track, naming no sequence. */
+function serverTrackNotice(serverPeerId: string, noticeId: string): ALMessage {
+    return newALBroadcastMessage(serverPeerId, newALEventRoute('room.notice', ROOM.groupId, noticeId), 'room', 'notice.v1', {
+        noticeId
+    }, {
+        groupRef: ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
+        ttlMs: 60_000,
+        ordering: { orderingKey: 'notice-track', epoch: 1 }
+    });
+}
+
+function readNoticeOrderings(frames: readonly string[]): readonly (ALMessage['ordering'])[] {
+    return frames
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((frame) => frame.route.topicId === 'room.notice')
+        .map((frame) => frame.ordering);
+}
+
+/** A receiver-acknowledged chat message in the room from `senderId`, addressed by `targets`. */
+function audienceMessage(senderId: string, targets: NonNullable<ALMessage['targets']>): ALMessage {
+    const message = newALBroadcastMessage(senderId, newALEventRoute('room.chat', ROOM.groupId, 'audience'), 'room', 'chat.message.v1', { text: 'hello' }, {
+        groupRef: ROOM,
+        reliability: 'at-least-once',
+        ack: 'receiver',
+        ttlMs: 30_000
+    });
+    return { ...message, targets };
+}
+
+/** A director-acknowledged command in the room from `senderId`, addressed by `targets`. */
+function leaderMessage(senderId: string, targets: NonNullable<ALMessage['targets']>): ALMessage {
+    return { ...audienceMessage(senderId, targets), delivery: { reliability: 'at-least-once', ack: 'group-leader' } };
+}
+
+/** The room with `sessionId`, of the principal of the same name, appointed its director. */
+function withDirector(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: sessionId, sessionId }, now: 1 });
+    return { ...snapshot, group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) } };
+}
+
+/** The policy the outbox captured for the row that relays `message`. */
+async function readCapturedOutboxPolicy(harness: RoomDeliveryHarness, message: ALMessage): Promise<ALOutboundCapturedPolicy | undefined> {
+    for (const key of (await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')) {
+        const entry = await harness.outbox.getItem(key);
+        const relayed = entry === undefined ? undefined : decodePersistedALMessage(entry.resource);
+        if (entry !== undefined && relayed?.id.msgId === message.id.msgId) {
+            return await harness.service.readCapturedPolicy(relayed, entry);
+        }
+    }
+    return undefined;
+}
+
+function readChatIds(frames: readonly string[]): readonly string[] {
+    return readTopicIds(frames, 'room.chat');
+}
+
+function readTopicIds(frames: readonly string[], topicId: string): readonly string[] {
+    return frames
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((frame) => frame.route.topicId === topicId)
+        .map((frame) => frame.id.msgId);
+}
+
+/** Alice, Bob and Carol in the room, Alice with a second live session `alice-2`. */
+function createSecondSessionSnapshot(): GroupSnapshot {
+    const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+    const alice = snapshot.activeSessions[0]!;
+    return {
+        ...snapshot,
+        activeSessions: [...snapshot.activeSessions, { ...alice, sessionId: 'alice-2', generationId: 'generation-alice-2' }]
+    };
 }
 
 function addRecordingConnection(server: JsonWebSocketServer, sessionId: string): string[] {
@@ -444,9 +1098,9 @@ async function waitForRoomFrames(isSettled: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1));
 }
 
-function roomMessage(minSnapshotVersion?: number): ALMessage {
+function roomMessage(floors: Readonly<{ minSnapshotVersion?: number; rosterVersion?: number; }> = {}): ALMessage {
     return newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'), ROOM, 'chat.message.v1', { text: 'hello' }, {
-        minSnapshotVersion,
+        ...floors,
         reliability: 'best-effort',
         ack: 'none'
     });

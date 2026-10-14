@@ -1,6 +1,6 @@
 ---
 name: publishing-plan-progress
-description: Use when publishing a written plan or long-running implementation through a branch, draft pull request, milestone updates, compatibility reviews, or final remote evidence.
+description: Publishes long-running work through one pull request and records remote evidence. Use when opening or updating a draft pull request, milestone, compatibility review, or final evidence. Plan adaptation belongs to adaptive-plan-execution.
 ---
 
 # Publishing Plan Progress

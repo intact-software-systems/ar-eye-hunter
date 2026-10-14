@@ -1,3 +1,4 @@
+import { AL_MESSAGE_ENVELOPE_VERSION } from '../../../al-contracts/al-contract.ts';
 import type {
     ALAckPayload,
     ALControlAcceptance,
@@ -106,6 +107,7 @@ function toALInboundControlObservations(
         senderId: read.owner.senderId,
         messageOwner: read.owner,
         dedup: undefined,
+        claim: undefined,
         ordering: undefined,
         buffered: undefined,
         deliveryProgress: undefined,
@@ -147,7 +149,7 @@ function computeUpwardAcknowledgementWork(
             payload: {
                 kind: 'send-control',
                 msg: newALAckControlMessage(
-                    { v: 2, msgId: controlMsgId, senderId: relayPeerId, ts: read.nowMs },
+                    { v: AL_MESSAGE_ENVELOPE_VERSION, msgId: controlMsgId, senderId: relayPeerId, ts: read.nowMs },
                     {
                         fromPeerId: relayPeerId,
                         toPeerId: pending.toPeerId,

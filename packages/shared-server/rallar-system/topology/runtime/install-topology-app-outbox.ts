@@ -1,6 +1,7 @@
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
@@ -49,9 +50,7 @@ export interface InstallTopologyAppOutboxOptions {
     }>;
 }
 
-export function installTopologyAppOutbox(
-    options: InstallTopologyAppOutboxOptions
-): void {
+export function installTopologyAppOutbox(options: InstallTopologyAppOutboxOptions): void {
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_CONNECT_TRIGGER,
         createGroupConnectTriggerWorkHandler(options.formationAutomation)
@@ -94,6 +93,7 @@ export function installTopologyAppOutbox(
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
+            nowEpochMs: options.nowEpochMs,
             outboxQueueReader: options.outboxQueueReader,
             database: options.database,
             topologyPlanning: options.topologyPlanning,

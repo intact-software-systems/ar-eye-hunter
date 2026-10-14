@@ -1,16 +1,18 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { GROUP_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-topics.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    toResourceEntryWithUpdatedResource,
+    type Key
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -21,6 +23,10 @@ interface EpochMillisecondsRow {
 
 interface StringCountRow {
     readonly count: string;
+}
+
+interface RetryEligibilityRow {
+    readonly eligible: boolean;
 }
 
 export async function readPGliteDatabaseEpochMs(sql: PGliteSql): Promise<number> {
@@ -36,10 +42,10 @@ export async function readPGliteAppInboxFailure(
     resourceId: string,
     resource: JsonWireValue
 ) {
-    const inbox = createPSqlResourceInboxRepository(sql);
+    const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const results = new ResourceInboxResultsRepository(sql);
     const service = createAppInboxClientRuntime({
-        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
+        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox, Temporal.Now.instant)),
         resourceInboxRepository: inbox.entries,
         resourceInboxResultsRepository: results,
         serviceId: 'pglite-failure-reader',
@@ -103,4 +109,23 @@ export async function waitForPGliteQueueRow(
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
     throw new Error(`Timed out waiting for ${typeId} ${status} queue row`);
+}
+
+export async function waitForPGliteFirstRetryEligibility(sql: PGliteSql, key: Key): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const [row] = await sql<RetryEligibilityRow[]>`
+            select next_ts <= (now() at time zone 'UTC')
+                and expire_ts > (now() at time zone 'UTC') as eligible
+            from resource_inbox where ri_topic_id = ${key.topicId}
+            and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
+            and ri_type_id = 'APP_INBOX' and ri_status = 'RETRY'
+            and ri_attempts = 1 and next_ts is not null
+        `;
+        assert.ok(row, 'Expected the exact one-attempt scheduled AppInbox retry');
+        if (row.eligible) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error('Timed out waiting for the exact AppInbox retry SQL eligibility');
 }

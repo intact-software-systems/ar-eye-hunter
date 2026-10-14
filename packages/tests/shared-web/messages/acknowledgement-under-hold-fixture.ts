@@ -1,5 +1,6 @@
 import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult } from 'vitest';
 
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -24,13 +25,14 @@ import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-in
 import { ALOutboundMessageRuntime, type ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createScriptedTransportFaultPort,
@@ -274,9 +276,11 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        faultPort: runtime.faults,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: undefined,
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
         outboundSettlements: (event) => runtime.registry.record(event),
         webRtcConnectionService: service,
         qboxEngine: runtime.engine
@@ -289,14 +293,18 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('self'),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
-    onTestFinished(() => {
-        streamer.dispose();
-        manager.dispose();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([streamer.dispose(), manager.dispose()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return manager;
 }
@@ -366,9 +374,11 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -378,9 +388,12 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
     }
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        runtime.engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.close(), runtime.engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, native };
 }
@@ -469,7 +482,7 @@ function readSettledCall<TFirst, TValue>(
 export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 'selfPeerId' | 'carrier'>): ALMessage {
     const hopPeerId = sender.carrier === 'ws' ? WS_SERVER_PEER_ID : 'receiver';
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now() },
+        { v: 3, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
             originPeerId: sender.selfPeerId,

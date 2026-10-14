@@ -5,30 +5,40 @@ import {
     RELIC_TYPES,
     type RelicCommand,
     type RelicExpeditionSetupMetadata,
-    type RelicGameState
+    type RelicGameState,
+    type RelicRoundTransitionEvent
 } from '@relic-hunters/mod.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
+import { RELIC_EVENT_TTL_MS } from '../src/to-relic-round-transition-message.ts';
 import { RELIC_SNAPSHOT_TTL_MS } from '../src/to-relic-snapshot-message.ts';
 
 interface TopicDefinition {
     readonly topicId: string;
     readonly typeId: string;
-    validate(value: unknown, context: Readonly<{ roomId?: string; roomRef?: GroupRef; }>): boolean;
+    validate(value: JsonWireValue, context: Readonly<{ roomId?: string; roomRef?: GroupRef; }>): boolean;
 }
 
-const SESSION_USERNAMES: Readonly<Record<string, string>> = {
-    'alice-session': 'Alice',
-    'bob-session': 'Bob'
+const SESSIONS: Readonly<Record<string, Readonly<{ username: string; clientId: string; }>>> = {
+    'alice-session': { username: 'Alice', clientId: 'alice-client' },
+    'bob-session': { username: 'Bob', clientId: 'bob-client' }
 };
+const ALICE = { sessionId: 'alice-session', clientId: 'alice-client' };
+const BOB = { sessionId: 'bob-session', clientId: 'bob-client' };
 
 const TEST_GAME_SERVICE_OPTIONS = {
     createInitialState: (gameId: string) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-    readSessionUsername: (sessionId: string) => Promise.resolve(SESSION_USERNAMES[sessionId])
+    readSession: (sessionId: string) => Promise.resolve(SESSIONS[sessionId])
+};
+const ROOM_ONE_GROUP_REF = {
+    applicationId: DEFAULT_STATE_APPLICATION_ID,
+    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+    groupId: 'room-1'
 };
 const ROOM_ONE_CONTEXT = {
     roomId: 'room-1',
@@ -70,7 +80,7 @@ describe('Relic Hunter server game service', () => {
         const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         const publishedAfterMs = Date.now();
-        const snapshot = await service.applyCommand(joinCommand('room-1'), 'alice-session');
+        const snapshot = await service.applyCommand(joinCommand('room-1'), ALICE);
 
         expect(snapshot.players[0]).toMatchObject({
             playerId: 'alice-session',
@@ -110,12 +120,12 @@ describe('Relic Hunter server game service', () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
-        await service.applyCommand(joinCommand('room-1'), 'alice-session');
+        await service.applyCommand(joinCommand('room-1'), ALICE);
         await service.applyCommand({
             ...joinCommand('room-2'),
             username: 'Bob',
             characterId: 'kael-ironstride'
-        }, 'bob-session');
+        }, BOB);
 
         await expect(service.readSnapshot('room-1')).resolves.toMatchObject({
             gameId: 'room-1',
@@ -135,7 +145,7 @@ describe('Relic Hunter server game service', () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
-        await service.applyCommand(joinCommand('room-1'), 'alice-session');
+        await service.applyCommand(joinCommand('room-1'), ALICE);
         const reset = await service.reset('room-1');
 
         expect(reset).toMatchObject({
@@ -186,20 +196,62 @@ describe('Relic Hunter server game service', () => {
         });
     });
 
-    it('ends a WebSocket command that breaks a rule as a value: nothing is thrown into an inbox retry (Q6, C12)', async () => {
+    it('ends a WebSocket command that breaks a rule as a value and tells the acting hunter\'s own sessions the rule', async () => {
         const fake = createFakeRallar();
         await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
-        await expect(
-            fake.commandHandler?.({ payload: continueReview('room-1') }, { senderId: 'alice-session', ...ROOM_ONE_CONTEXT })
-        )
-            .resolves.toBeUndefined();
+        const warnings = await captureWarnings(async () => {
+            await expect(
+                fake.commandHandler?.({ payload: continueReview('room-1') }, { senderId: 'alice-session', ...ROOM_ONE_CONTEXT })
+            )
+                .resolves.toBeUndefined();
+        });
 
-        expect(fake.published).toHaveLength(0);
+        expect(fake.store.get('room-1')).toBeUndefined();
+        expect(fake.published.map(toPublishedTopicId)).toEqual([RELIC_TOPICS.hunter]);
+        expect(JSON.parse(fake.published[0].message.payload.resource)).toEqual({
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            principalId: 'alice-client',
+            playerId: 'alice-session',
+            kind: 'command-refused',
+            command: 'continue-review',
+            text: 'The expedition has not started.'
+        });
+        expect(warnings).toEqual([]);
+    });
+
+    it('ends a WebSocket command whose refusal publish fails as refused, not published', async () => {
+        const fake = createFakeRallar({ error: new Error('hunter admission failed'), topicId: RELIC_TOPICS.hunter });
+        await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+
+        const warnings = await captureWarnings(async () => {
+            await fake.commandHandler?.({ payload: continueReview('room-1') }, { senderId: 'alice-session', ...ROOM_ONE_CONTEXT });
+        });
+
+        expect(fake.published).toEqual([]);
+        expect(warnings).toEqual([[
+            '[relic] WS command from alice-session was refused, but its refusal was not published.',
+            new Error('hunter admission failed')
+        ]]);
+    });
+
+    it('refuses a REST command with the rule\'s own error, and tells the acting hunter\'s own sessions the rule as well', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+
+        await expect(service.applyCommand(continueReview('room-1'), BOB)).rejects.toThrow('The expedition has not started.');
+
+        expect(fake.published.map(toPublishedTopicId)).toEqual([RELIC_TOPICS.hunter]);
+        expect(JSON.parse(fake.published[0].message.payload.resource)).toMatchObject({
+            principalId: 'bob-client',
+            playerId: 'bob-session',
+            kind: 'command-refused'
+        });
     });
 
     it('ends a WebSocket command whose snapshot publish fails after the write as applied, not published (C12)', async () => {
-        const fake = createFakeRallar(new Error('outbox admission failed'));
+        const fake = createFakeRallar({ error: new Error('outbox admission failed'), topicId: undefined });
         await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         const warnings = await captureWarnings(async () => {
@@ -210,8 +262,27 @@ describe('Relic Hunter server game service', () => {
 
         expect(fake.store.get('room-1')?.players[0]?.playerId).toBe('alice-session');
         expect(warnings).toEqual([[
-            '[relic] WS command from alice-session was applied, but its snapshot was not published.',
+            '[relic] WS command from alice-session was applied, but its publication failed.',
             new Error('outbox admission failed')
+        ]]);
+    });
+
+    it('ends a WebSocket command whose round event publish fails after its snapshot as applied, not published', async () => {
+        const fake = createFakeRallar({ error: new Error('event admission failed'), topicId: RELIC_TOPICS.event });
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+
+        const warnings = await captureWarnings(async () => {
+            await expect(
+                fake.commandHandler?.({ payload: startCommand('room-1') }, { senderId: 'alice-session', ...ROOM_ONE_CONTEXT })
+            ).resolves.toBeUndefined();
+        });
+
+        expect(fake.store.get('room-1')?.phase).toBe('planning');
+        expect(fake.published.map(toPublishedTopicId)).toEqual([RELIC_TOPICS.snapshot, RELIC_TOPICS.snapshot]);
+        expect(warnings).toEqual([[
+            '[relic] WS command from alice-session was applied, but its publication failed.',
+            new Error('event admission failed')
         ]]);
     });
 
@@ -219,7 +290,7 @@ describe('Relic Hunter server game service', () => {
         const fake = createFakeRallar();
         await installRelicHunterGame(fake.rallar, {
             ...TEST_GAME_SERVICE_OPTIONS,
-            readSessionUsername: () => Promise.reject(new Error('auth store unavailable'))
+            readSession: () => Promise.reject(new Error('auth store unavailable'))
         });
 
         const warnings = await captureWarnings(async () => {
@@ -273,11 +344,210 @@ describe('Relic Hunter server game service', () => {
         });
     }
 
+    it('publishes a started round right after its snapshot as an ordered, receipted event on the game\'s track for the round', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+
+        const publishedAfterMs = Date.now();
+        await service.applyCommand(startCommand('room-1'), ALICE);
+
+        expect(fake.published.map(toPublishedTopicId)).toEqual([
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.event
+        ]);
+        const published = fake.published[2];
+        expect(published).toMatchObject({
+            fanout: 'outbox',
+            message: {
+                id: { senderId: 'relic-server' },
+                route: { topicId: RELIC_TOPICS.event, contextId: 'room-1', resourceId: 'room-1:1' },
+                payload: { typeId: RELIC_TYPES.event },
+                targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM_ONE_GROUP_REF },
+                delivery: { reliability: 'at-least-once', ack: 'receiver' },
+                ordering: { orderingKey: 'room-1:1', epoch: 1 }
+            }
+        });
+        expect(published.scope).toBeUndefined();
+        expect(published.message.ordering?.seq).toBeUndefined();
+        const expiresAtMs = published.message.constraints?.expiresAtMs ?? 0;
+        expect(expiresAtMs).toBeGreaterThanOrEqual(publishedAfterMs + RELIC_EVENT_TTL_MS);
+        expect(expiresAtMs).toBeLessThanOrEqual(Date.now() + RELIC_EVENT_TTL_MS);
+        expect(RELIC_EVENT_TTL_MS).toBe(60_000);
+        expect(JSON.parse(published.message.payload.resource)).toEqual({
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            createdAtEpochMs: 1,
+            round: 1,
+            phase: 'planning',
+            transition: 'round-started',
+            text: 'Alice started the expedition.'
+        });
+    });
+
+    it('publishes the resolved round and the continued review on the tracks of their rounds, each after its snapshot', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+
+        await service.applyCommand(searchCommand('room-1'), ALICE);
+        await service.applyCommand(continueReview('room-1'), ALICE);
+
+        expect(fake.published.map(toPublishedTopicId)).toEqual([
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.event,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.hunter,
+            RELIC_TOPICS.event,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.event
+        ]);
+        expect(fake.published.filter(isRoundEvent).map(toPublishedRoundEvent)).toEqual([
+            {
+                resourceId: 'room-1:1',
+                orderingKey: 'room-1:1',
+                epoch: 1,
+                round: 1,
+                phase: 'planning',
+                transition: 'round-started',
+                text: 'Alice started the expedition.'
+            },
+            {
+                resourceId: 'room-1:1',
+                orderingKey: 'room-1:1',
+                epoch: 1,
+                round: 1,
+                phase: 'review',
+                transition: 'round-resolved',
+                text: 'Round 1 actions are revealed.'
+            },
+            {
+                resourceId: 'room-1:2',
+                orderingKey: 'room-1:1',
+                epoch: 2,
+                round: 2,
+                phase: 'planning',
+                transition: 'review-continued',
+                text: 'Round 2 begins.'
+            }
+        ]);
+    });
+
+    it('publishes the finish on the track of the round past the last, so no track spans a review', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, {
+            ...TEST_GAME_SERVICE_OPTIONS,
+            createInitialState: (gameId: string) => Promise.resolve({ ...createRelicGame(gameId, gameId, 1), maxRounds: 1 })
+        });
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+        await service.applyCommand(searchCommand('room-1'), ALICE);
+
+        await service.applyCommand(continueReview('room-1'), ALICE);
+
+        expect(fake.published.filter(isRoundEvent).map(toPublishedRoundEvent).at(-1)).toEqual({
+            resourceId: 'room-1:1',
+            orderingKey: 'room-1:1',
+            epoch: 2,
+            round: 1,
+            phase: 'finished',
+            transition: 'finished',
+            text: 'The castle collapses as the expedition ends.'
+        });
+    });
+
+    it('publishes the hunter\'s recorded action to the hunter\'s own sessions in the room, right after the snapshot of its submission', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand({ ...joinCommand('room-1'), username: 'Bob', characterId: 'kael-ironstride' }, BOB);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+        const submittedFrom = fake.published.length;
+
+        const publishedAfterMs = Date.now();
+        await service.applyCommand(searchCommand('room-1'), ALICE);
+
+        expect(fake.published.slice(submittedFrom).map(toPublishedTopicId)).toEqual([RELIC_TOPICS.snapshot, RELIC_TOPICS.hunter]);
+        const published = fake.published[submittedFrom + 1];
+        expect(published).toMatchObject({
+            fanout: 'outbox',
+            message: {
+                id: { senderId: 'relic-server' },
+                route: { topicId: RELIC_TOPICS.hunter, contextId: 'room-1', resourceId: 'room-1:alice-client' },
+                payload: { typeId: RELIC_TYPES.hunter },
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'principal',
+                    groupRef: ROOM_ONE_GROUP_REF,
+                    principalRef: {
+                        applicationId: DEFAULT_STATE_APPLICATION_ID,
+                        workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                        principalId: 'alice-client'
+                    }
+                },
+                delivery: { reliability: 'at-least-once', ack: 'receiver' }
+            }
+        });
+        expect(published.message.ordering).toBeUndefined();
+        const expiresAtMs = published.message.constraints?.expiresAtMs ?? 0;
+        expect(expiresAtMs).toBeGreaterThanOrEqual(publishedAfterMs + RELIC_SNAPSHOT_TTL_MS);
+        expect(expiresAtMs).toBeLessThanOrEqual(Date.now() + RELIC_SNAPSHOT_TTL_MS);
+        expect(JSON.parse(published.message.payload.resource)).toEqual({
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            principalId: 'alice-client',
+            playerId: 'alice-session',
+            kind: 'action-recorded',
+            round: 1,
+            action: { kind: 'search' }
+        });
+    });
+
+    it('publishes no round event for a command or a reset that moves no phase', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+        await service.reset('room-1');
+
+        expect(fake.published.map(toPublishedTopicId)).toEqual([
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.event,
+            RELIC_TOPICS.snapshot,
+            RELIC_TOPICS.snapshot
+        ]);
+    });
+
+    it('starts the rounds of a reset game on the tracks of its new incarnation', async () => {
+        const fake = createFakeRallar();
+        const incarnations = [1_000, 2_000];
+        const service = await installRelicHunterGame(fake.rallar, {
+            ...TEST_GAME_SERVICE_OPTIONS,
+            createInitialState: (gameId: string) => Promise.resolve(createRelicGame(gameId, gameId, incarnations.shift()))
+        });
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+
+        await service.reset('room-1');
+        await service.applyCommand(joinCommand('room-1'), ALICE);
+        await service.applyCommand(startCommand('room-1'), ALICE);
+
+        expect(fake.published.filter(isRoundEvent).map(toPublishedRoundEvent).map((event) => event.orderingKey))
+            .toEqual(['room-1:1000', 'room-1:2000']);
+        expect(JSON.parse(fake.published.at(-2)?.message.payload.resource ?? '{}').snapshot.createdAtEpochMs).toBe(2_000);
+    });
+
     it('uses the centralized async initializer for ensure, reset, and missing command state', async () => {
         const fake = createFakeRallar();
         const calls: string[] = [];
         const service = await installRelicHunterGame(fake.rallar, {
-            readSessionUsername: TEST_GAME_SERVICE_OPTIONS.readSessionUsername,
+            readSession: TEST_GAME_SERVICE_OPTIONS.readSession,
             createInitialState: (gameId, reason) => {
                 calls.push(`${reason}:${gameId}`);
                 return Promise.resolve({
@@ -301,7 +571,7 @@ describe('Relic Hunter server game service', () => {
         const ensuredSetup: RelicExpeditionSetupMetadata | undefined = ensured.setup;
         expect(ensuredSetup?.seed).toBeUndefined();
 
-        const joined = await service.applyCommand(joinCommand('room-2'), 'alice-session');
+        const joined = await service.applyCommand(joinCommand('room-2'), ALICE);
         expect(joined.setup).toMatchObject({
             source: 'procedural'
         });
@@ -337,7 +607,19 @@ async function captureWarnings(run: () => Promise<void>): Promise<readonly (stri
     return warnings;
 }
 
-function createFakeRallar(publishFailure: Error | undefined = undefined): Readonly<{
+interface PublishedRoundEvent extends Pick<RelicRoundTransitionEvent, 'round' | 'phase' | 'transition' | 'text'> {
+    readonly resourceId: string;
+    readonly orderingKey: string | undefined;
+    readonly epoch: number | undefined;
+}
+
+interface FakePublishFailure {
+    readonly error: Error;
+    /** The one topic whose publications fail; undefined fails every publication. */
+    readonly topicId: string | undefined;
+}
+
+function createFakeRallar(publishFailure: FakePublishFailure | undefined = undefined): Readonly<{
     rallar: Parameters<typeof installRelicHunterGame>[0];
     store: Map<string, RelicGameState>;
     published: RallarServerWsPublishInputDto[];
@@ -370,8 +652,11 @@ function createFakeRallar(publishFailure: Error | undefined = undefined): Readon
                 commandHandler = handler;
             },
             publish: (publication: RallarServerWsPublishInputDto) => {
-                if (publishFailure !== undefined) {
-                    return Promise.reject(publishFailure);
+                if (
+                    publishFailure !== undefined &&
+                    (publishFailure.topicId === undefined || publishFailure.topicId === publication.message.route.topicId)
+                ) {
+                    return Promise.reject(publishFailure.error);
                 }
                 published.push(publication);
                 return Promise.resolve();
@@ -401,6 +686,46 @@ function joinCommand(
         gameId,
         username: 'Alice',
         characterId: 'nyra-vale'
+    };
+}
+
+function startCommand(gameId: string): RelicCommand {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'start-expedition',
+        gameId,
+        username: 'Alice'
+    };
+}
+
+function searchCommand(gameId: string): RelicCommand {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'submit-action',
+        gameId,
+        username: 'Alice',
+        action: { kind: 'search' }
+    };
+}
+
+function toPublishedTopicId(publication: RallarServerWsPublishInputDto): string {
+    return publication.message.route.topicId;
+}
+
+function isRoundEvent(publication: RallarServerWsPublishInputDto): boolean {
+    return publication.message.route.topicId === RELIC_TOPICS.event;
+}
+
+function toPublishedRoundEvent(publication: RallarServerWsPublishInputDto): PublishedRoundEvent {
+    const event: RelicRoundTransitionEvent = JSON.parse(publication.message.payload.resource);
+    return {
+        resourceId: publication.message.route.resourceId,
+        orderingKey: publication.message.ordering?.orderingKey,
+        epoch: publication.message.ordering?.epoch,
+        round: event.round,
+        phase: event.phase,
+        transition: event.transition,
+        text: event.text
     };
 }
 

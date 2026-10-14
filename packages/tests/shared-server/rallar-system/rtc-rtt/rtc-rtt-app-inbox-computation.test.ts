@@ -1,10 +1,16 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import {
     computeRtcRttAppInboxMutation,
     validateRtcRttAppInboxMutation
 } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-computation.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createAtomicHarness } from '../app-inbox/test-support/app-inbox-transaction-test-runtime.ts';
 
 const COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
@@ -52,8 +58,8 @@ describe('RTC RTT AppInbox computation', () => {
             },
             requestId: 'request-1',
             completionFacts: new AppInboxTransactionWriter(
-                { database: harness.database.sql },
-                { serviceId: 'server-1', nowEpochMs: () => 2 }
+                { database: harness.database.sql, nowEpochMs: () => 2 },
+                { serviceId: 'server-1' }
             ).readCompletionFacts(harness.context)
         } as const;
 

@@ -1,7 +1,5 @@
-// @vitest-environment happy-dom
-
+import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
@@ -9,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+// @vitest-environment happy-dom
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores
@@ -33,10 +32,9 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-
+import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import '../../setup-browser-indexeddb.ts';
 import { captureOutboundWorkRunnable, peekOutboundWorkReadyAt } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
@@ -52,12 +50,11 @@ beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_000);
     nativeRuntime = installNativeRtcRuntime();
-});
-
-afterEach(() => {
-    nativeRuntime.dispose();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
+    onTestFinished(() => {
+        nativeRuntime.dispose();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
 });
 
 it('recovers the same IndexedDB room original when its captured RTC edge becomes authorized after owner recreation', async () => {
@@ -116,7 +113,7 @@ it.each(['cancel', 'dispose'] as const)('prevents the current owner writing afte
         fresh.manager.cancel(original.id.msgId);
     }
     else {
-        fresh.close();
+        await fresh.close();
     }
     fresh.observe(['receiver']);
     vi.setSystemTime(1_200);
@@ -192,7 +189,7 @@ it.each(['different-origin', 'relay'] as const)('does not grant originating rete
     }
     await old.drain();
     expect(old.native.sent).toEqual([]);
-    old.close();
+    await old.close();
     const fresh = new RtcRecoveryOwner(sessionId);
     await fresh.open();
     fresh.observe(mode === 'relay' ? ['origin'] : []);
@@ -222,7 +219,7 @@ async function recreateHeldOriginal(): Promise<RetainedRtcOriginal> {
     expect(admission.verdict).toMatchObject({ kind: 'admitted', durable: true });
     await old.drain();
     expect(oldNative.sent).toEqual([]);
-    old.close();
+    await old.close();
     const fresh = new RtcRecoveryOwner(sessionId);
     await fresh.open();
     fresh.observe([]);
@@ -264,9 +261,11 @@ class RtcRecoveryOwner {
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'alm',
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto) });
+        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now() });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
+            quotaNow: Date.now,
+            creationNow: Temporal.Now.instant,
             connectionService: this.connection,
             groupCache: this.groups,
             overlayCache: this.overlays,
@@ -281,6 +280,7 @@ class RtcRecoveryOwner {
             }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
+            faultPort: createPassThroughTransportFaultPort(),
             dequeueResilience: createDefaultALOutboundDequeueResilience()
         });
         onTestFinished(() => this.close());
@@ -366,11 +366,14 @@ class RtcRecoveryOwner {
         };
     }
 
-    close(): void {
-        this.manager.dispose();
-        this.engine.stop();
+    async close(): Promise<void> {
+        const cleanup = Promise.allSettled([this.manager.dispose(), this.engine.stop()]);
         for (const peerId of this.connection.knownPeerIds()) {
             this.connection.removePeerIfPresent(peerId);
+        }
+        const failure = (await cleanup).find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
         }
     }
 }

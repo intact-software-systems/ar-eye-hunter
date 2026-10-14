@@ -1,4 +1,11 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -16,18 +23,21 @@ import type { OutboundTestPayload } from './outbound-test-payload.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
+/** The trigger each cause's repair request names; a gap NACK without missing ranges asks for the message itself. */
+const REPAIR_TRIGGER_BY_CAUSE = { 'ack-timeout': 'ack-timeout', nack: 'repair' } as const;
+
 describe('retained room authority through repair scheduling', () => {
-    it.each(['ack-timeout', 'nack'] as const)('carries a direct physical key and captured policy into %s repair', async (trigger) => {
+    it.each(['ack-timeout', 'nack'] as const)('carries a direct physical key and captured policy into %s repair', async (cause) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
             vi.useRealTimers();
         });
         const stores = createDefaultOutboundTestStores();
-        const message = newALBroadcastMessage('self', { topicId: 'raw-snapshot', resourceId: 'room', contextId: trigger }, 'room', 'snapshot.v1', {}, {
+        const message = newALBroadcastMessage('self', { topicId: 'raw-snapshot', resourceId: 'room', contextId: cause }, 'room', 'snapshot.v1', {}, {
             ttlMs: 30_000,
             groupRef: { ...SCOPE, groupId: 'room' }
         });
-        const entry = await admitDirect(stores, message, trigger === 'ack-timeout' ? 5 : 60_000);
+        const entry = await admitDirect(stores, message, cause === 'ack-timeout' ? 5 : 60_000);
         const requests: ALOutboundRepairRequest[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores,
@@ -39,12 +49,12 @@ describe('retained room authority through repair scheduling', () => {
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         await runOutboundWorkTask(runtime);
-        if (trigger === 'ack-timeout') {
+        if (cause === 'ack-timeout') {
             vi.setSystemTime(Date.now() + 6);
         }
-        if (trigger === 'nack') {
+        if (cause === 'nack') {
             await runtime.acceptControlMessage(
-                newALNackControlMessage({ v: 2, msgId: 'nack', senderId: 'frozen-session', ts: 1 }, {
+                newALNackControlMessage({ v: 3, msgId: 'nack', senderId: 'frozen-session', ts: 1 }, {
                     msgId: message.id.msgId,
                     fromPeerId: 'frozen-session',
                     toPeerId: 'self',
@@ -57,10 +67,10 @@ describe('retained room authority through repair scheduling', () => {
         await expect.poll(async () => {
             await runOutboundWorkTask(runtime);
             return requests.length;
-        }).toBe(trigger === 'nack' ? 2 : 1);
+        }).toBe(cause === 'nack' ? 2 : 1);
         for (const request of requests) {
             expect(request).toMatchObject({
-                trigger,
+                trigger: REPAIR_TRIGGER_BY_CAUSE[cause],
                 referenceKey: entry.key,
                 admittedAudience: ['frozen-session']
             });
@@ -71,7 +81,7 @@ describe('retained room authority through repair scheduling', () => {
 function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<OutboundTestPayload> {
     return {
         msg,
-        persist: true,
+        lane: 'durable',
         dropReasonCode: undefined,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         admittedAudience: ['frozen-session'],
@@ -81,7 +91,7 @@ function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<Outbo
 }
 
 async function admitDirect(stores: OutboundTestStores, message: ALMessage, timeoutMs: number) {
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
     const read = await stores.admissionStore.readOutgoingMessage({
         msg: message,
         observedCanonicalEntry: entry,

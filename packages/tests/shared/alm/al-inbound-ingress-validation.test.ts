@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -9,14 +10,26 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+interface InboundIngressFixture {
+    readonly runtime: ALInboundMessageRuntime;
+    readonly admissionStore: ALInboundAdmissionStore;
+    readonly delivered: readonly string[];
+    readonly controls: readonly ALMessage[];
+    readonly state: ALAdmissionMemoryState;
+}
 
 describe('AL inbound canonical validation', () => {
     it('bounds retained ordered message bytes and admits the rejected identity when capacity becomes available', async () => {
@@ -59,7 +72,7 @@ describe('AL inbound canonical validation', () => {
             expect(fixture.delivered).toContain('message');
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -67,7 +80,7 @@ describe('AL inbound canonical validation', () => {
         const fixture = createFixture('rtc');
         const nowMs = Date.now();
         const control = newALAckControlMessage(
-            { v: 2, msgId: 'receipt', senderId: 'sender', ts: nowMs },
+            { v: 3, msgId: 'receipt', senderId: 'sender', ts: nowMs },
             {
                 ackedMsgId: 'unknown',
                 originPeerId: 'receiver',
@@ -89,7 +102,7 @@ describe('AL inbound canonical validation', () => {
             expect(fixture.controls).toEqual([]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -105,7 +118,7 @@ describe('AL inbound canonical validation', () => {
             expect(fixture.delivered).toEqual([]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -122,7 +135,7 @@ describe('AL inbound canonical validation', () => {
             await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -140,7 +153,7 @@ describe('AL inbound canonical validation', () => {
             expect(fixture.controls).toEqual([]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -152,7 +165,7 @@ describe('AL inbound canonical validation', () => {
             await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -174,14 +187,14 @@ describe('AL inbound canonical validation', () => {
             await expect.poll(() => fixture.delivered).toEqual(['message']);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 });
 
 function directMessage(): ALMessage {
     return {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: Date.now() },
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: Date.now() },
         route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         delivery: { reliability: 'best-effort', ack: 'none' },
@@ -189,7 +202,7 @@ function directMessage(): ALMessage {
     };
 }
 
-function createFixture(carrier: ALDeliveryCarrier) {
+function createFixture(carrier: ALDeliveryCarrier): InboundIngressFixture {
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
     const state = createInMemoryALAdmissionState();
@@ -199,14 +212,15 @@ function createFixture(carrier: ALDeliveryCarrier) {
         backend: new InMemoryAdmissionBackend(state, Date.now),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const runtime = new ALInboundMessageRuntime({
         carrier,
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore, workQueue: state.workQueue },
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         }),
 
         planIncomingMessage: (message, source, observations) =>

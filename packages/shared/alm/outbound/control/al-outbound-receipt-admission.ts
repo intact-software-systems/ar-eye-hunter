@@ -1,10 +1,11 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
-import type {
-    ALOutboundMessageRuntime,
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundSettlementEmitter
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundMessageRuntime,
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
@@ -13,6 +14,7 @@ import {
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
+import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
@@ -42,7 +44,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         if (decoded?.type !== 'receipt') {
             return { kind: 'not-handled' };
         }
-        const admitted = await this.admitReceipt(decoded.payload);
+        const admitted = await this.admitReceipt(control, decoded.payload);
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control,
             targetMsgId: decoded.payload.msgId,
@@ -52,9 +54,12 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         return admitted;
     }
 
-    private async admitReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    private async admitReceipt(
+        control: ALMessage,
+        receipt: ALReceiptPayload
+    ): Promise<ALOutboundControlAdmissionResult> {
         for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
-            const result = await this.admitOnce(receipt);
+            const result = await this.admitOnce(control, receipt, attempt + 1);
             if (result !== 'conflict') {
                 return result;
             }
@@ -66,8 +71,12 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         return { kind: 'rejected', reason };
     }
 
-    private async admitOnce(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
-        const { admissionStore, clock } = this.dependencies;
+    private async admitOnce(
+        control: ALMessage,
+        receipt: ALReceiptPayload,
+        attempt: number
+    ): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
+        const { admissionStore, clock, diagnostics, settlements } = this.dependencies;
         const surface = await admissionStore.readReceiptAdmission({
             originPeerId: receipt.originPeerId,
             msgId: receipt.msgId
@@ -75,6 +84,18 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const candidate = computeALOutboundReceiptAdmission({ ...surface, receipt, nowMs: clock.nowMs() });
         const issues = validateALOutboundReceiptAdmission(candidate);
         if (issues.length > 0 || candidate.write === undefined) {
+            if (diagnostics !== undefined) {
+                writeALOutboundRuntimeDiagnostic(
+                    diagnostics,
+                    toALOutboundReceiptConfirmationDiagnostic({
+                        control,
+                        candidate,
+                        attempt,
+                        commitOutcome: 'not-attempted',
+                        settlement: undefined
+                    })
+                );
+            }
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const status = await admissionStore.commitBundle({
@@ -83,8 +104,24 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             mutations: [toALOutboundReceiptMutation(candidate.write, receipt)],
             durableEffects: []
         });
-        if (status === 'committed') {
-            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.read, candidate.write));
+        const settlement = status === 'committed'
+            ? toALOutboundReceiptSettlement(candidate.read, candidate.write)
+            : undefined;
+        // Snapshot the exact fact before an external settlement sink can mutate its retained arrays.
+        const confirmation = diagnostics === undefined ? undefined : toALOutboundReceiptConfirmationDiagnostic({
+            control,
+            candidate,
+            attempt,
+            commitOutcome: status,
+            settlement
+        });
+        if (settlement !== undefined) {
+            settlements(settlement);
+        }
+        if (confirmation !== undefined) {
+            writeALOutboundRuntimeDiagnostic(diagnostics, confirmation);
+        }
+        if (settlement !== undefined) {
             return { kind: 'committed' };
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };

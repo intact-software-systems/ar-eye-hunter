@@ -1,3 +1,4 @@
+import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -58,7 +59,7 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'message-1',
                     ts: 1,
                     senderId: 'server-1'
@@ -81,7 +82,7 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'message-1',
                     ts: 1,
                     senderId: 'server-1'
@@ -107,7 +108,7 @@ describe('persisted AL message decoding', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'message-1',
                     ts: 1,
                     senderId: 'server-1'
@@ -146,7 +147,7 @@ describe('persisted AL message decoding', () => {
         { label: 'a repeated recipient', audience: { recipientPeerIds: ['session-a', 'session-a'], snapshotVersion: 4 }, accepted: false }
     ])('decodes $label only when the frozen audience pair is whole', ({ audience, accepted }) => {
         const decoded = decodeALMessageValue({
-            id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
+            id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
             route: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'room-1' },
             targets: {
                 mode: 'multicast',
@@ -159,11 +160,52 @@ describe('persisted AL message decoding', () => {
         expect(decoded.left === undefined).toBe(accepted);
     });
 
+    it.each([
+        { label: 'a multicast stamped with its roster', targets: { mode: 'multicast', rosterVersion: 4 }, accepted: true },
+        { label: 'a multicast roster below one', targets: { mode: 'multicast', rosterVersion: 0 }, accepted: false },
+        { label: 'a multicast membership epoch', targets: { mode: 'multicast', membershipEpoch: 1 }, accepted: false },
+        {
+            label: 'a room broadcast stamped with its roster',
+            targets: { mode: 'broadcast', scope: 'room', minSnapshotVersion: 7, rosterVersion: 4 },
+            accepted: true
+        },
+        {
+            label: 'a room broadcast roster below one',
+            targets: { mode: 'broadcast', scope: 'room', rosterVersion: 0 },
+            accepted: false
+        }
+    ])('decodes $label only when the roster field is a version', ({ targets, accepted }) => {
+        const decoded = decodeALMessageValue({
+            id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
+            route: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'room-1' },
+            targets: {
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                ...targets
+            },
+            payload: { typeId: 'type-1', resource: '{}' }
+        });
+
+        expect(decoded.left === undefined).toBe(accepted);
+    });
+
+    it('stamps the current envelope version and refuses any other as unsupported', () => {
+        const current = currentPersistedALMessage();
+
+        expect(AL_MESSAGE_ENVELOPE_VERSION).toBe(3);
+        expect(decodeALMessageValue(current).left).toBeUndefined();
+        for (const v of [2, 4]) {
+            expect(decodeALMessageValue({ ...current, id: { ...current.id, v } }).left).toEqual({
+                code: 'unsupported',
+                message: 'AL envelope version is unsupported'
+            });
+        }
+    });
+
     it('accepts the current principal broadcast target shape', () => {
         expect(() =>
             decodePersistedALMessageValue({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'message-1',
                     ts: 1,
                     senderId: 'server-1'
@@ -193,7 +235,7 @@ describe('persisted AL message decoding', () => {
     it('decodes a serialized current envelope and rejects malformed stored shapes', () => {
         const serialized = JSON.stringify({
             id: {
-                v: 2,
+                v: 3,
                 msgId: 'message-1',
                 ts: 1,
                 senderId: 'server-1'
@@ -249,7 +291,7 @@ describe('persisted AL message decoding', () => {
 function currentPersistedALMessage(): MutablePersistedALMessageFixture {
     return {
         id: {
-            v: 2,
+            v: 3,
             msgId: 'message-1',
             ts: 1,
             senderId: 'server-1'

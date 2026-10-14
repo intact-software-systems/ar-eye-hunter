@@ -4,11 +4,18 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
-import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
     createOriginOverlay,
@@ -32,6 +39,21 @@ describe('the child hops an RTC relay owns', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
+    });
+
+    it('restores native RTC ownership when relay peer setup throws', () => {
+        const previousPeerConnection = globalThis.RTCPeerConnection;
+        onTestFinished(() => {
+            expect(globalThis.RTCPeerConnection).toBe(previousPeerConnection);
+        });
+
+        expect(() =>
+            createRtcRelayOverlayFixture({
+                selfPeerId: 'b',
+                snapshot: createOriginSnapshot(['a', 'b'], 4),
+                neighbourPeerIds: ['a', 'b']
+            })
+        ).toThrow('The RTC relay neighbour was not created.');
     });
 
     it('lets both recipients of a three-session star deliver and ACK, relaying nothing to each other', async () => {
@@ -339,11 +361,12 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
 
     it('adds the requester to the hops a subtree receipt expects, never replacing the others with it', async () => {
         const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
-        const message = { ...createOriginSubtreeMulticast('targeted-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
+        const subtree = createOriginSubtreeMulticast('targeted-repair');
+        const message = { ...subtree, qos: { ...subtree.qos, repair: { algo: 'retransmit' } } } as const;
         await enqueueAndDrain(origin.manager, message);
 
         await origin.manager.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { v: 3, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
             { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
         ));
         await vi.advanceTimersByTimeAsync(100);
@@ -454,16 +477,18 @@ function createOriginSubtreeMulticast(resourceId: string): ALMessage {
         ORIGIN_ROOM,
         'chat.message.v1',
         { text: resourceId },
-        { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+        { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
     );
 }
 
-function readLastAcknowledgement(origin: RtcOriginOverlayFixture) {
+function readLastAcknowledgement(
+    origin: RtcOriginOverlayFixture
+): Extract<ALDeliverySettlement, { kind: 'acknowledgement'; }> | undefined {
     return origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1);
 }
 
 function createStarPeers(
-    snapshot: ReturnType<typeof createOriginSnapshot>,
+    snapshot: GroupSnapshot,
     peerIds: readonly string[]
 ): ReadonlyMap<string, RtcRelayOverlayFixture> {
     return new Map(peerIds.map((peerId) => [

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -232,7 +233,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
             carrier: 'ws',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'alice-session',
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'group-delta-inbox')
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'group-delta-inbox', Temporal.Now.instant())
             }),
             planIncomingMessage: (message, source, observations) =>
                 planALMessageHandling(message, {

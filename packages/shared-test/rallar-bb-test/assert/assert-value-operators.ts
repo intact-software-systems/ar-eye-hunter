@@ -25,7 +25,15 @@ export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'matchesShapeComplete'
 ] as const;
 
-type PresentValueAssertOperator = Exclude<RallarBlackBoxTestAssertOperator, 'exists' | 'notEquals'>;
+export const RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
+    ...RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+    'sameUniqueStringSet'
+];
+
+type PresentValueAssertOperator = Exclude<
+    RallarBlackBoxTestAssertOperator,
+    'exists' | 'notEquals' | 'sameUniqueStringSet'
+>;
 
 /** A recipe expectation and the evidence it is compared with, both in JSON form. */
 interface AssertComparison {
@@ -38,7 +46,7 @@ export function isRallarBlackBoxAssertOperator(
     value: unknown
 ): value is RallarBlackBoxTestAssertOperator {
     return typeof value === 'string' &&
-        RALLAR_BLACK_BOX_ASSERT_OPERATORS.some((operator) => operator === value);
+        RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS.some((operator) => operator === value);
 }
 
 export function isAssertOperatorSatisfied(
@@ -51,12 +59,17 @@ export function isAssertOperatorSatisfied(
             return expected === undefined ? source.exists : source.exists === Boolean(expected);
         case 'notEquals':
             return !source.exists || !isSameJsonValue(source.value, expected);
+        case 'sameUniqueStringSet':
+            return false;
         default:
             return source.exists && isPresentValueOperatorSatisfied(operator, { actual: source.value, expected });
     }
 }
 
-/** gt, lt, between, length and matches coerce like the runner comparators; gte and lte stay strictly numeric. */
+/**
+ * gt, lt, between and length coerce like the runner comparators; gte and lte stay strictly numeric. matches tests a
+ * string, or every member of a non-empty array of strings.
+ */
 function isPresentValueOperatorSatisfied(
     operator: PresentValueAssertOperator,
     comparison: AssertComparison
@@ -80,7 +93,7 @@ function isPresentValueOperatorSatisfied(
         case 'length':
             return computeCollectionLength(actual) === Number(expected);
         case 'matches':
-            return typeof actual === 'string' && isPatternMatch(actual, String(expected));
+            return isMatchesSatisfied(actual, String(expected));
         case 'matchesShape':
             return CompareJson.compatible(expected, actual).isEqual;
         case 'matchesShapeComplete':
@@ -102,6 +115,14 @@ function isContainsSatisfied(comparison: AssertComparison): boolean {
             : Object.values(actual).some((entry) => isSameJsonValue(entry, expected));
     }
     return hasContainedText(actual, String(expected));
+}
+
+function isMatchesSatisfied(actual: ApiJsonValue, pattern: string): boolean {
+    if (Array.isArray(actual)) {
+        return actual.length > 0 &&
+            actual.every((entry) => typeof entry === 'string' && isPatternMatch(entry, pattern));
+    }
+    return typeof actual === 'string' && isPatternMatch(actual, pattern);
 }
 
 function isBoundSatisfied(

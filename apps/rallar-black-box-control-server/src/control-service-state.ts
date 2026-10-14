@@ -120,3 +120,55 @@ export interface ControlDistributedRunState {
     commandLinks: ControlDistributedRunCommandLink[];
     error?: ControlDistributedRunSnapshot['error'];
 }
+
+export function toInitialControlAgentState(runId: string, agentId: string): ControlAgentState {
+    return {
+        runId,
+        agentId,
+        connected: false,
+        connectionSequence: 0,
+        reconnectCount: 0,
+        receivedResultCount: 0,
+        receivedEventCount: 0,
+        completedCommandIds: new Set(),
+        resumeCompletedCommandIds: new Set(),
+        commandEnqueueTimestamps: []
+    };
+}
+
+export function toInitialControlRunState(runId: string, nowEpochMs: number): ControlRunState {
+    return {
+        runId,
+        createdAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs,
+        agents: new Map(),
+        commands: new Map(),
+        results: new Map(),
+        events: [],
+        stats: [],
+        reports: [],
+        reportKeys: new Set(),
+        heartbeats: [],
+        tokens: new Map(),
+        retentionRevision: 0,
+        issuedRunTokenStateRevision: 0,
+        barriers: new Map()
+    };
+}
+
+export function toInitialControlDistributedRunState(
+    manifest: RallarBlackBoxDistributedRunManifest,
+    controlRunId: string,
+    nowEpochMs: number
+): ControlDistributedRunState {
+    return {
+        distributedRunId: manifest.distributedRunId,
+        controlRunId,
+        manifest,
+        state: 'draft',
+        createdAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs,
+        targetAgentIds: [],
+        commandLinks: []
+    };
+}

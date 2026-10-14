@@ -22,7 +22,7 @@ export interface ComputeALInboundDedupExpiryInput {
     readonly msgOwnerTtlMs: number;
 }
 
-/** The provenance, ordering and dedup rows an admitted message owns. */
+/** The provenance, ordering, dedup and claim rows an admitted message owns; its claim lasts as long as the message. */
 export function toALInboundAdmittedMessageMutations(
     read: ALInboundMessageReadDto
 ): readonly ALInboundAdmissionMutation[] {
@@ -57,6 +57,14 @@ export function toALInboundAdmittedMessageMutations(
             msgOwnerTtlMs: read.retention.msgOwnerTtlMs
         })
     });
+    if (read.observations.claim !== undefined) {
+        mutations.push({
+            kind: 'set-claim',
+            claimKey: read.observations.claim.key,
+            holderPeerId: read.fromPeerId,
+            expireAtTimestamp: deadlineAtMs
+        });
+    }
     return mutations;
 }
 

@@ -1,5 +1,19 @@
-import { RetryableConflictError, tryRunInIntervals, tryWith, TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import {
+    RetryableConflictError,
+    tryRunInIntervals,
+    tryWith,
+    TryWithExhaustedError,
+    TryWithPolicy,
+    tryWithPolicy
+} from '@shared/resilience/try-with-policy.ts';
 
 describe('TryWith', () => {
     afterEach(() => {
@@ -12,8 +26,8 @@ describe('TryWith', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         let attempts = 0;
-        const promise = tryWith(
-            () => {
+        const promise = tryWith({
+            handler: () => {
                 attempts += 1;
 
                 if (attempts < 3) {
@@ -22,16 +36,17 @@ describe('TryWith', () => {
 
                 return 'ok';
             },
-            10,
-            5
-        );
+            retryIntervalMsecs: 10,
+            maxAttempts: 5,
+            maxRetryIntervalMsecs: 20_000
+        });
 
         expect(attempts).toBe(1);
 
         await vi.advanceTimersByTimeAsync(10);
         expect(attempts).toBe(2);
 
-        await vi.advanceTimersByTimeAsync(10);
+        await vi.advanceTimersByTimeAsync(20);
         await expect(promise).resolves.toBe('ok');
         expect(attempts).toBe(3);
     });
@@ -41,19 +56,20 @@ describe('TryWith', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         let attempts = 0;
-        const handled = tryWith(
-            () => {
+        const handled = tryWith({
+            handler: () => {
                 attempts += 1;
                 throw new Error('still failing');
             },
-            10,
-            2
-        ).catch((error) => error);
+            retryIntervalMsecs: 10,
+            maxAttempts: 2,
+            maxRetryIntervalMsecs: 20_000
+        }).catch((error) => error);
 
         expect(attempts).toBe(1);
 
         await vi.advanceTimersByTimeAsync(10);
-        await expect(handled).resolves.toEqual({ error: 'Unable to do it' });
+        await expect(handled).resolves.toBeInstanceOf(TryWithExhaustedError);
         expect(attempts).toBe(2);
 
         await vi.advanceTimersByTimeAsync(100);
@@ -65,8 +81,8 @@ describe('TryWith', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         let attempts = 0;
-        const promise = tryWith(
-            async () => {
+        const promise = tryWith({
+            handler: async () => {
                 attempts += 1;
 
                 if (attempts < 3) {
@@ -75,9 +91,10 @@ describe('TryWith', () => {
 
                 return 'ok';
             },
-            10,
-            5
-        );
+            retryIntervalMsecs: 10,
+            maxAttempts: 5,
+            maxRetryIntervalMsecs: 20_000
+        });
 
         expect(attempts).toBe(1);
 
@@ -105,7 +122,7 @@ describe('TryWith', () => {
             },
             TryWithPolicy.defaults()
                 .maxAttempts(5)
-                .initialDelayMsecs(10)
+                .retryIntervalMsecs(10)
                 .jitterRatio(0)
                 .retryIf((error) => error instanceof RetryableConflictError)
         );
@@ -131,7 +148,7 @@ describe('TryWith', () => {
             },
             TryWithPolicy.defaults()
                 .maxAttempts(5)
-                .initialDelayMsecs(10)
+                .retryIntervalMsecs(10)
                 .retryIf((error) => error instanceof RetryableConflictError)
         );
 
@@ -154,7 +171,7 @@ describe('TryWith', () => {
             TryWithPolicy.defaults()
                 .label('test-commit')
                 .maxAttempts(2)
-                .initialDelayMsecs(10)
+                .retryIntervalMsecs(10)
                 .jitterRatio(0)
                 .retryIf((error) => error instanceof RetryableConflictError)
         ).catch((error) => error);
@@ -176,7 +193,12 @@ describe('TryWith', () => {
         vi.useFakeTimers();
 
         const handler = vi.fn(() => 'tick');
-        const promise = tryRunInIntervals(handler, 50, 10, 3);
+        const promise = tryRunInIntervals({
+            handler: handler,
+            intervalMsecs: 50,
+            retryIntervalMsecs: 10,
+            maxAttempts: 3
+        });
 
         await expect(promise).resolves.toBe('tick');
         expect(handler).toHaveBeenCalledTimes(1);
@@ -193,8 +215,8 @@ describe('TryWith', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         let attempts = 0;
-        const promise = tryRunInIntervals(
-            async () => {
+        const promise = tryRunInIntervals({
+            handler: async () => {
                 attempts += 1;
 
                 if (attempts < 3) {
@@ -203,10 +225,10 @@ describe('TryWith', () => {
 
                 return 'ok';
             },
-            50,
-            10,
-            5
-        );
+            intervalMsecs: 50,
+            retryIntervalMsecs: 10,
+            maxAttempts: 5
+        });
 
         expect(attempts).toBe(1);
 
@@ -223,8 +245,8 @@ describe('TryWith', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
         let attempts = 0;
-        const promise = tryRunInIntervals(
-            async () => {
+        const promise = tryRunInIntervals({
+            handler: async () => {
                 attempts += 1;
 
                 if (attempts === 2) {
@@ -233,10 +255,10 @@ describe('TryWith', () => {
 
                 return `tick-${attempts}`;
             },
-            50,
-            10,
-            5
-        );
+            intervalMsecs: 50,
+            retryIntervalMsecs: 10,
+            maxAttempts: 5
+        });
 
         await expect(promise).resolves.toBe('tick-1');
         expect(attempts).toBe(1);

@@ -17,16 +17,41 @@ import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
-    ALM_CONFORMANCE_TOPIC_ID,
     toCommandId,
     toConnectionName,
     toRoomRef,
+    toScenarioTopicId,
     toScenarioTypeId
 } from './alm-conformance-step-identities.ts';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
 const OWNER_LEASE_LAPSE_TOPIC = 'rallar.black-box.alm.owner-lease-lapsed';
+
+export type AlmConformanceSelfMembershipStatus = 'active' | 'left';
+
+/** Each names one mutation request of a role in a scenario, so a re-run replays it rather than writing twice. */
+type AlmConformanceEnsureRequest = 'group' | 'member' | 'leave-roster';
+
+interface AlmConformanceSelfMembershipWrite {
+    readonly commandName: string;
+    readonly requestName: AlmConformanceEnsureRequest;
+    readonly purpose: string;
+}
+
+const SELF_MEMBERSHIP_WRITES: Readonly<Record<AlmConformanceSelfMembershipStatus, AlmConformanceSelfMembershipWrite>> =
+    {
+        active: {
+            commandName: 'ensure-member',
+            requestName: 'member',
+            purpose: 'Ensure the logged-in browser client is an active group member before the ALM carrier connects.'
+        },
+        left: {
+            commandName: 'leave-roster',
+            requestName: 'leave-roster',
+            purpose: 'Leave the group, so its roster version advances.'
+        }
+    };
 
 /** A connect that keeps the auth session its document already holds: no credentials, so it never signs in afresh. */
 export const RESTORED_SESSION_RALLAR = { username: '', password: '', restoreSession: true } as const;
@@ -59,24 +84,33 @@ export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlack
     };
 }
 
-export function toEnsureMemberCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+/**
+ * The member's own write through the self-service membership route, which takes `active` and `left` only. `active`
+ * ensures the logged-in client is an active member before the carrier connects, a no-op for one that already is;
+ * `left` leaves the group, which advances its roster and snapshot versions, and the next scenario's `active` joins it
+ * again. A removed member could not rejoin itself.
+ */
+export function toSelfMembershipCommand(
+    step: AlmConformanceStepInput,
+    status: AlmConformanceSelfMembershipStatus
+): RallarBlackBoxTestCommand {
     const group = step.input.group;
+    const write = SELF_MEMBERSHIP_WRITES[status];
     return {
         kind: 'http.request',
-        commandId: toCommandId(step, 'ensure-member'),
+        commandId: toCommandId(step, write.commandName),
         timeoutMs: toBudgetMs(ENSURE_TIMEOUT_MS, step.input.deadlineMs),
         metadata: {
-            purpose: 'Ensure the logged-in browser client is an active group member ' +
-                'before the ALM carrier connects.',
+            purpose: write.purpose,
             idempotent: true,
             group: toRoomRef(group)
         },
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, 'member')}`,
+                `/requests/${toEnsureRequestId(step, write.requestName)}`,
             body: {
-                status: 'active'
+                status
             }
         },
         response: {
@@ -99,9 +133,13 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         workspaceId: input.group.workspaceId,
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
-        rallar: step.role === 'successor'
-            ? { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID, ...RESTORED_SESSION_RALLAR }
-            : { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
+        rallar: {
+            almDiagnostics: true,
+            typeId,
+            topicId: toScenarioTopicId(step),
+            ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
+            ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
+        },
         timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {
             readiness: {
@@ -111,6 +149,11 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
             }
         })
     };
+}
+
+/** Only a recipient's channel receives, so only its connect installs the lane's recording owner. */
+function installsRecoveryOwner(step: AlmConformanceStepInput): boolean {
+    return step.input.recoveryOwner === 'record' && (step.role === 'receiver' || step.role === 'recipient-b');
 }
 
 /**
@@ -142,10 +185,10 @@ export function toOwnerLeaseLapseWait(step: AlmConformanceStepInput): RallarBlac
     };
 }
 
-export function toStatsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+export function toStatsCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
     return {
         kind: 'stats',
-        commandId: toCommandId(step, 'stats'),
+        commandId: toCommandId(step, name),
         timeoutMs: toBudgetMs(STATS_TIMEOUT_MS, step.input.deadlineMs)
     };
 }
@@ -166,7 +209,9 @@ const RECOVERY_MARGIN_MS = 60_000;
 export const RECOVERED_STORE_PREFIXES = {
     sessionInbound: 'browser-session-inbound',
     ws: 'browser-ws-client',
-    rtc: 'browser-rtc-overlay'
+    rtc: 'browser-rtc-overlay',
+    wsCheckpoint: 'browser-ws-client-checkpoint',
+    rtcCheckpoint: 'browser-rtc-overlay-checkpoint'
 } as const;
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
@@ -188,6 +233,11 @@ export function toRecoveryTtlMs(deadlineMs: number): number {
 /** The fallback carrier's hold hands the original to WS before its page ends, so only `rtc` leaves it in the overlay. */
 export function toOriginalStorePrefix(carrier: AlmConformanceCarrier): string {
     return carrier === 'rtc' ? RECOVERED_STORE_PREFIXES.rtc : RECOVERED_STORE_PREFIXES.ws;
+}
+
+/** The checkpoint store of the lane that holds a held original at the end of its page, as {@link toOriginalStorePrefix}. */
+export function toCheckpointStorePrefix(carrier: AlmConformanceCarrier): string {
+    return carrier === 'rtc' ? RECOVERED_STORE_PREFIXES.rtcCheckpoint : RECOVERED_STORE_PREFIXES.wsCheckpoint;
 }
 
 /**
@@ -216,7 +266,7 @@ export function toStoreRecoveryWait(
 
 function toEnsureRequestId(
     step: AlmConformanceStepInput,
-    operation: 'group' | 'member'
+    operation: AlmConformanceEnsureRequest
 ): string {
     return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
         `-${step.role}-${operation}`;

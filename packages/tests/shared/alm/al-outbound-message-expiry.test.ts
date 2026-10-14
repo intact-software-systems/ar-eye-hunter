@@ -1,3 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
@@ -11,21 +20,15 @@ import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repa
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
-import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import {
     claimOutboundTestWork,
-    computeOutboundTestAdmission,
     createDefaultOutboundTestStores,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -50,13 +53,13 @@ describe('outbound message expiry', () => {
         const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
-            planner: () => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            planner: () => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ message: JSON.stringify(msg) }] }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 2_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -107,7 +110,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
@@ -115,7 +118,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -154,7 +157,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
             }),
             observedCanonicalEntry: undefined,
@@ -162,7 +165,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -199,7 +202,12 @@ describe('outbound message expiry', () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;
         const message = createOutboundMessage('post-deadline-control', { ttlMs: 10 });
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         await store.commitBundle({
             ...bundle,
             mutations: [...bundle.mutations, {
@@ -228,10 +236,12 @@ describe('outbound message expiry', () => {
                 port: workPort,
                 clock,
                 settlements: () => {},
-                carrier: 'ws'
+                carrier: 'ws',
+                hopPeerIds: undefined
             }),
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             planRepairMessage: undefined,
+            hopPeerIds: undefined,
             diagnostics: undefined,
             settlements: () => {}
         });
@@ -261,7 +271,12 @@ describe('outbound message expiry', () => {
             })
         });
         const message = createOutboundMessage('post-expiry-admission', { ttlMs: 10 });
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(bundle)).toBe('committed');
 
         vi.setSystemTime(1_010);
@@ -288,7 +303,12 @@ describe('outbound message expiry', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const message = createOutboundMessage('foreign-scope-admission');
-        const bundle = await computeOutboundTestAdmission(store, message);
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: message,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(bundle)).toBe('committed');
         const sent = state.data.get(`scoped-admission:sent:${message.id.msgId}`);
         if (sent === undefined) {
@@ -324,13 +344,13 @@ describe('outbound message expiry', () => {
         const plan: ALOutboundDispatchPlan<OutboundTestPayload> = {
             msg: msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
         const read = await store.readOutgoingMessage({ msg: msg, planner: () => plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -365,7 +385,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
@@ -373,7 +393,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 2_000,
             intent,
             phase: 'immediate',
@@ -401,13 +421,13 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant());
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: entry,
@@ -433,7 +453,7 @@ describe('outbound message expiry', () => {
             planner: () => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
             observedCanonicalEntry: undefined,
@@ -441,7 +461,7 @@ describe('outbound message expiry', () => {
         });
         const candidate = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',

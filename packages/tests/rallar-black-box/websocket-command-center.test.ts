@@ -22,11 +22,13 @@ import {
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
+    RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
     '?apiBaseUrl=https%3A%2F%2Fbootstrap.example%2Fapi&applicationId=bootstrap-app&workspaceId=bootstrap-workspace&roomId=bootstrap-room&actor=bootstrap-actor&sessionId=bootstrap-session',
@@ -99,6 +101,7 @@ function state(
     commandHistory: readonly RallarBlackBoxTestResult[] = []
 ): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture(events),
         status: 'completed',
         currentConfig: {
             roomId: 'group-a',
@@ -193,7 +196,7 @@ describe('WebSocket command-center presets and routing', () => {
             globalRoom: { ...scope, groupId: 'global-room', contextId: 'global-room' },
             configuredRoom: { ...scope, groupId: 'config-room', contextId: 'config-room' },
             bootstrapRoom: { ...scope, groupId: 'bootstrap-room', contextId: 'bootstrap-room' },
-            noRoom: { ...scope, groupId: '', contextId: 'all' }
+            noRoom: { ...scope, groupId: '', contextId: 'world' }
         });
     });
 
@@ -201,7 +204,7 @@ describe('WebSocket command-center presets and routing', () => {
         const recipeFor = (
             nextValues: WebSocketCommandCenterValues,
             payload: RallarMessagePayload
-        ): Record<string, unknown> => {
+        ): Extract<RallarBlackBoxTestCommand, { kind: 'ws.send'; }> | undefined => {
             const recipe = JSON.parse(
                 toWebSocketCommandCenterRecipeText({
                     values: nextValues,
@@ -212,11 +215,11 @@ describe('WebSocket command-center presets and routing', () => {
                     sequence: 1,
                     includeRtcParity: false
                 })
-            ) as { commands: readonly Record<string, unknown>[]; };
-            return recipe.commands.find((command) => command.kind === 'ws.send') ?? {};
+            ) as { commands: readonly RallarBlackBoxTestCommand[]; };
+            return recipe.commands.find((command): command is Extract<RallarBlackBoxTestCommand, { kind: 'ws.send'; }> => command.kind === 'ws.send');
         };
 
-        expect(recipeFor(values, { text: 'hello' }).data).toEqual({
+        expect(recipeFor(values, { text: 'hello' })?.data).toEqual({
             payload: { text: 'hello' },
             applicationId: 'black-box-app',
             workspaceId: 'workspace-a',
@@ -230,7 +233,7 @@ describe('WebSocket command-center presets and routing', () => {
         });
         expect(
             recipeFor(
-                { ...values, wsScope: 'all', groupId: 'ignored-group' },
+                { ...values, wsScope: 'world', groupId: 'ignored-group' },
                 {
                     payload: 'typed',
                     scope: 'world',
@@ -239,7 +242,7 @@ describe('WebSocket command-center presets and routing', () => {
                     contextId: '',
                     resourceId: 'explicit-resource'
                 }
-            ).data
+            )?.data
         ).toEqual({
             payload: 'typed',
             scope: 'world',
@@ -317,16 +320,16 @@ describe('WebSocket command-center presets and routing', () => {
         });
         expect(
             webSocketRoutePreview({
-                values: { ...values, wsScope: 'all' },
+                values: { ...values, wsScope: 'world' },
                 diagnostics: { ...diagnostics, status: 'idle' },
                 providerMode: 'simulated',
                 browserStatus
             })
         ).toMatchObject({
-            destination: 'All WS subscribers',
-            destinationDetail: 'Group is ignored for this send.',
+            destination: 'World scope',
+            destinationDetail: 'Uses Rallar world scope; Group is ignored.',
             transport: 'Simulated WebSocket',
-            sendLabel: 'Send JSON to all'
+            sendLabel: 'Send JSON to world'
         });
         expect(
             webSocketRoutePreview({
@@ -359,7 +362,7 @@ describe('WebSocket command-center copied recipes', () => {
                     text: 'hello from rallar-black-box'
                 }
             })
-        ) as { commands: readonly Record<string, unknown>[]; };
+        ) as { commands: readonly RallarBlackBoxTestCommand[]; };
 
         expect(recipe.commands[0]).toMatchObject({
             kind: 'configure',
@@ -454,7 +457,7 @@ describe('WebSocket command-center copied recipes', () => {
             })
         ) as {
             recipeId: string;
-            commands: readonly Record<string, unknown>[];
+            commands: readonly RallarBlackBoxTestCommand[];
         };
 
         expect(recipe.recipeId).toBe(

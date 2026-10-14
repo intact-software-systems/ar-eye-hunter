@@ -11,19 +11,85 @@ import {
     type OverdueRecoveryEvidence,
     type ParsedInboxRow
 } from './api-v1-state-write-evidence-contracts.ts';
-import { collectEvidenceNamedStrings, parseEvidenceJson } from './api-v1-state-write-json-evidence.ts';
-import { readPersistedCommandEvidence, type PersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
+import {
+    collectEvidenceNamedStrings,
+    parseEvidenceJson
+} from './api-v1-state-write-json-evidence.ts';
+import type { PersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { validatePersistedAppInboxResult } from './api-v1-state-write-result-evidence.ts';
+import { toStateWriteEvidenceInstant } from './to-state-write-evidence-instant.ts';
 
-type ParsedEvidenceValue = ReturnType<typeof parseEvidenceJson>;
+export interface ApiV1StateWriteEvidenceDerivationInput {
+    readonly spec: ApiV1StateWriteEvidenceSpec;
+    readonly rawRows: readonly InboxRow[];
+    readonly rawOutboxRows?: readonly OutboxRow[];
+    readonly intermediateMutationIntents?: readonly Record<string, unknown>[];
+    readonly overdueRecoveryFixture?: OverdueRecoveryEvidence;
+    readonly commandEvidence?: readonly PersistedCommandEvidence[];
+}
+
+interface EvidenceMessageIdentity {
+    readonly msgId: string | undefined;
+    readonly typeId: string | undefined;
+}
+
+interface CanonicalOutboxEffect {
+    readonly commandId: string;
+    readonly effectKind: string;
+    readonly outboxId: string;
+    readonly adminPrunePage?: AdminPrunePageWork;
+}
+
+interface LinkedOutboxEvidence {
+    readonly resourceId: string;
+    readonly outboxId: string;
+    readonly topicId: string;
+    readonly typeId: string;
+    readonly status: string;
+    readonly commandId: string;
+    readonly appInboxResourceId: string;
+    readonly appInboxTopicId: string;
+    readonly appInboxContextId: string;
+    readonly effectKind: string;
+    readonly adminPrunePageCategory?: string;
+    readonly adminPrunePageMatchesCommand?: boolean;
+    readonly stage: 'direct' | 'downstream';
+}
+
+interface DerivedEvidenceResultInput {
+    readonly spec: ApiV1StateWriteEvidenceSpec;
+    readonly selectedTypes: ReadonlySet<string>;
+    readonly selectedPrefixes: readonly string[];
+    readonly appInbox: readonly ParsedInboxRow[];
+    readonly statusResultFailures: number;
+    readonly resourceOutbox: readonly LinkedOutboxEvidence[];
+    readonly downstreamOutbox: readonly LinkedOutboxEvidence[];
+    readonly effectFailures: readonly ParsedInboxRow[];
+    readonly intermediateMutationIntents: readonly Record<string, unknown>[];
+    readonly overdueRecoveryFixture?: OverdueRecoveryEvidence;
+}
+
+interface FinalEffectFailureInput {
+    readonly spec: ApiV1StateWriteEvidenceSpec;
+    readonly appInbox: readonly ParsedInboxRow[];
+    readonly resourceOutbox: readonly LinkedOutboxEvidence[];
+    readonly commandEvidence: readonly PersistedCommandEvidence[];
+}
+
+interface SelectAppInboxEvidenceInput {
+    readonly rawRows: readonly InboxRow[];
+    readonly commandEvidence: readonly PersistedCommandEvidence[];
+    readonly selectedTypes: ReadonlySet<string>;
+    readonly selectedPrefixes: readonly string[];
+}
 
 export function parseApiV1StateWriteEvidenceRow(
     row: InboxRow,
     commandEvidence?: PersistedCommandEvidence
 ): ParsedInboxRow {
-    const envelope = parseEvidenceJson(row.ri_resource) as { payload?: { typeId?: ParsedEvidenceValue; }; } | undefined;
+    const envelope = parseEvidenceJson(row.ri_resource);
     const commandType = commandEvidence?.commandType ??
-        (typeof envelope?.payload?.typeId === 'string' ? envelope.payload.typeId : 'UNKNOWN');
+        toEvidenceMessageIdentity(envelope).typeId ?? 'UNKNOWN';
     const commandIds = new Set(commandEvidence?.commandIds ?? []);
     if (!commandEvidence) {
         collectEvidenceNamedStrings(
@@ -42,7 +108,8 @@ export function parseApiV1StateWriteEvidenceRow(
         adminPruneCommand: commandEvidence?.adminPruneCommand,
         requireAuthoritativeReceipt: commandEvidence !== undefined
     });
-    const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
+    const iso = (value: Date | string | null): string | null =>
+        value ? toStateWriteEvidenceInstant(value).toString() : null;
     return {
         rowId: Number(row.ri_row_id),
         resourceId: row.ri_resource_id,
@@ -58,31 +125,94 @@ export function parseApiV1StateWriteEvidenceRow(
         nextAt: iso(row.next_ts),
         outboxIds: [...(resultEvidence.receipt?.outboxIds ?? [])].sort(),
         durableResult: resultEvidence.result,
-        durableResultValid: resultEvidence.valid && (commandEvidence?.valid ?? true),
+        durableResultValid: resultEvidence.valid &&
+            (commandEvidence?.valid ?? true),
         ...((commandEvidence?.failure ?? resultEvidence.failure)
             ? {
-                durableResultFailure: commandEvidence?.failure ?? resultEvidence.failure
+                durableResultFailure: commandEvidence?.failure ??
+                    resultEvidence.failure
             }
             : {}),
         ...(resultEvidence.receipt ? { receipt: resultEvidence.receipt } : {})
     };
 }
 
-function canonicalEffect(row: OutboxRow):
-    | Readonly<{
-        commandId: string;
-        effectKind: string;
-        outboxId: string;
-        adminPrunePage?: AdminPrunePageWork;
-    }>
-    | undefined {
-    const envelope = parseEvidenceJson(row.ri_resource) as
-        | {
-            id?: { msgId?: ParsedEvidenceValue; };
-            payload?: { typeId?: ParsedEvidenceValue; resource?: ParsedEvidenceValue; };
-        }
-        | undefined;
-    const msgId = envelope?.id?.msgId;
+export function deriveApiV1StateWriteEvidence({
+    spec,
+    rawRows,
+    rawOutboxRows = [],
+    intermediateMutationIntents = [],
+    overdueRecoveryFixture,
+    commandEvidence = []
+}: ApiV1StateWriteEvidenceDerivationInput): ApiV1StateWriteEvidence {
+    const selectedTypes = new Set(spec.commandTypes ?? []);
+    const selectedPrefixes = spec.commandIdPrefixes ?? [];
+    const appInbox = selectAppInboxEvidence({
+        rawRows,
+        commandEvidence,
+        selectedTypes,
+        selectedPrefixes
+    });
+    const statusResultFailures = appInbox.filter(
+        (row) =>
+            (row.status === 'COMPLETED' && row.resultStatus !== 'COMPLETED') ||
+            (row.status === 'FAILED' && row.resultStatus !== 'FAILED') ||
+            !['COMPLETED', 'FAILED'].includes(row.status) ||
+            !row.durableResultValid
+    ).length;
+    const linkedOutbox = linkOutboxEvidence(
+        appInbox,
+        rawOutboxRows,
+        commandEvidence
+    );
+    const resourceOutbox = linkedOutbox.filter((effect) => effect.stage === 'direct');
+    const downstreamOutbox = linkedOutbox.filter((effect) => effect.stage === 'downstream');
+    const effectFailures = findFinalEffectFailures({
+        spec,
+        appInbox,
+        resourceOutbox,
+        commandEvidence
+    });
+    return createDerivedEvidenceResult({
+        spec,
+        selectedTypes,
+        selectedPrefixes,
+        appInbox,
+        statusResultFailures,
+        resourceOutbox,
+        downstreamOutbox,
+        effectFailures,
+        intermediateMutationIntents,
+        overdueRecoveryFixture
+    });
+}
+
+function toEvidenceMessageIdentity(
+    envelope: unknown
+): EvidenceMessageIdentity {
+    const id = envelope !== null && typeof envelope === 'object' && 'id' in envelope
+        ? envelope.id
+        : undefined;
+    const payload = envelope !== null && typeof envelope === 'object' && 'payload' in envelope
+        ? envelope.payload
+        : undefined;
+    return {
+        msgId: id !== null && typeof id === 'object' && 'msgId' in id &&
+                typeof id.msgId === 'string'
+            ? id.msgId
+            : undefined,
+        typeId: payload !== null && typeof payload === 'object' &&
+                'typeId' in payload && typeof payload.typeId === 'string'
+            ? payload.typeId
+            : undefined
+    };
+}
+
+function canonicalEffect(row: OutboxRow): CanonicalOutboxEffect | undefined {
+    const envelope = toEvidenceMessageIdentity(
+        parseEvidenceJson(row.ri_resource)
+    );
+    const msgId = envelope.msgId;
     if (typeof msgId !== 'string') {
         return undefined;
     }
@@ -95,22 +225,35 @@ function canonicalEffect(row: OutboxRow):
     ) {
         const index = msgId.indexOf(marker);
         if (index > 0) {
-            return { commandId: msgId.slice(0, index), effectKind: effectKind(row), outboxId: msgId };
+            return {
+                commandId: msgId.slice(0, index),
+                effectKind: effectKind(row),
+                outboxId: msgId
+            };
         }
     }
     const crdt = /^crdt:(.+):(reply|fanout)$/.exec(msgId);
     if (
         row.ri_type_id === 'WS_OUTBOX' &&
         crdt &&
-        ((crdt[2] === 'reply' && envelope?.payload?.typeId === 'rallar.crdt.append-response.v1') ||
-            (crdt[2] === 'fanout' && envelope?.payload?.typeId === 'rallar.crdt.update.v1'))
+        ((crdt[2] === 'reply' &&
+            envelope.typeId === 'rallar.crdt.append-response.v1') ||
+            (crdt[2] === 'fanout' && envelope.typeId === 'rallar.crdt.update.v1'))
     ) {
         return {
             commandId: crdt[1],
-            effectKind: crdt[2] === 'reply' ? 'crdt-append-reply' : 'crdt-update-fanout',
+            effectKind: crdt[2] === 'reply'
+                ? 'crdt-append-reply'
+                : 'crdt-update-fanout',
             outboxId: msgId
         };
     }
+    return toAdminPruneEffect(row);
+}
+
+function toAdminPruneEffect(
+    row: OutboxRow
+): CanonicalOutboxEffect | undefined {
     if (
         row.ri_type_id === 'APP_OUTBOX' &&
         row.ri_topic_id === ADMIN_PRUNE_APP_OUTBOX_TOPIC
@@ -159,62 +302,13 @@ function sameMultiset(left: readonly string[], right: readonly string[]): boolea
     return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
-type LinkedOutboxEvidence = Readonly<{
-    resourceId: string;
-    outboxId: string;
-    topicId: string;
-    typeId: string;
-    status: string;
-    commandId: string;
-    appInboxResourceId: string;
-    appInboxTopicId: string;
-    appInboxContextId: string;
-    effectKind: string;
-    adminPrunePageCategory?: string;
-    adminPrunePageMatchesCommand?: boolean;
-    stage: 'direct' | 'downstream';
-}>;
-
-interface DerivedEvidenceResultInput {
-    readonly spec: ApiV1StateWriteEvidenceSpec;
-    readonly selectedTypes: ReadonlySet<string>;
-    readonly selectedPrefixes: readonly string[];
-    readonly appInbox: readonly ParsedInboxRow[];
-    readonly statusResultFailures: number;
-    readonly resourceOutbox: readonly LinkedOutboxEvidence[];
-    readonly downstreamOutbox: readonly LinkedOutboxEvidence[];
-    readonly effectFailures: readonly ParsedInboxRow[];
-    readonly intermediateMutationIntents: readonly Record<string, unknown>[];
-    readonly overdueRecoveryFixture?: OverdueRecoveryEvidence;
-}
-
-export function deriveApiV1StateWriteEvidence(
-    spec: ApiV1StateWriteEvidenceSpec,
-    rawRows: readonly InboxRow[],
-    rawOutboxRows: readonly OutboxRow[] = [],
-    intermediateMutationIntents: readonly Record<string, unknown>[] = [],
-    overdueRecoveryFixture?: OverdueRecoveryEvidence,
-    commandEvidence: readonly PersistedCommandEvidence[] = []
-): ApiV1StateWriteEvidence {
-    const selectedTypes = new Set(spec.commandTypes ?? []);
-    const selectedPrefixes = spec.commandIdPrefixes ?? [];
-    const appInbox = selectAppInboxEvidence({
-        rawRows,
-        commandEvidence,
-        selectedTypes,
-        selectedPrefixes
-    });
-    const statusResultFailures = appInbox.filter(
-        (row) =>
-            (row.status === 'COMPLETED' && row.resultStatus !== 'COMPLETED') ||
-            (row.status === 'FAILED' && row.resultStatus !== 'FAILED') ||
-            !['COMPLETED', 'FAILED'].includes(row.status) ||
-            !row.durableResultValid
-    ).length;
-    const linkedOutbox = linkOutboxEvidence(appInbox, rawOutboxRows, commandEvidence);
-    const resourceOutbox = linkedOutbox.filter((effect) => effect.stage === 'direct');
-    const downstreamOutbox = linkedOutbox.filter((effect) => effect.stage === 'downstream');
-    const effectFailures = appInbox.filter((row) => {
+function findFinalEffectFailures({
+    spec,
+    appInbox,
+    resourceOutbox,
+    commandEvidence
+}: FinalEffectFailureInput): readonly ParsedInboxRow[] {
+    return appInbox.filter((row) => {
         const expected = spec.expectedEffectsByCommandType?.[row.commandType];
         if (!expected || row.status !== 'COMPLETED') {
             return false;
@@ -226,9 +320,12 @@ export function deriveApiV1StateWriteEvidence(
         );
         const actual = effects.map((effect) => effect.effectKind);
         const receiptIds = row.receipt?.outboxIds;
-        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, row)?.adminPruneCommand;
+        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, row)
+            ?.adminPruneCommand;
         const adminPageCategories = effects.flatMap((effect) =>
-            effect.adminPrunePageCategory === undefined ? [] : [effect.adminPrunePageCategory]
+            effect.adminPrunePageCategory === undefined
+                ? []
+                : [effect.adminPrunePageCategory]
         );
         const adminPageFailure = row.commandType === 'ADMIN_PRUNE_EXPIRED' &&
             (
@@ -243,22 +340,12 @@ export function deriveApiV1StateWriteEvidence(
                 !sameMultiset(
                     receiptIds,
                     effects.map((effect) =>
-                        row.receipt?.identityKind === 'logical-msg-id' ? effect.outboxId : effect.resourceId
+                        row.receipt?.identityKind === 'logical-msg-id'
+                            ? effect.outboxId
+                            : effect.resourceId
                     )
                 ))
         );
-    });
-    return createDerivedEvidenceResult({
-        spec,
-        selectedTypes,
-        selectedPrefixes,
-        appInbox,
-        statusResultFailures,
-        resourceOutbox,
-        downstreamOutbox,
-        effectFailures,
-        intermediateMutationIntents,
-        overdueRecoveryFixture
     });
 }
 
@@ -309,13 +396,6 @@ function createDerivedEvidenceResult(input: DerivedEvidenceResultInput): ApiV1St
             ? { overdueRecoveryFixture: input.overdueRecoveryFixture }
             : {})
     };
-}
-
-interface SelectAppInboxEvidenceInput {
-    readonly rawRows: readonly InboxRow[];
-    readonly commandEvidence: readonly PersistedCommandEvidence[];
-    readonly selectedTypes: ReadonlySet<string>;
-    readonly selectedPrefixes: readonly string[];
 }
 
 function selectAppInboxEvidence({

@@ -1,29 +1,37 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type {
+    PSqlParameter,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import {
-    RALLAR_CRDT_OPERATION_VERSION,
-    RALLAR_CRDT_PROTOCOL_VERSION,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtUpdateEnvelope
-} from '@shared/crdt/mod.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
+import {
+    toDomain,
+    type ResourceInboxRow
+} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-
 import {
     CrdtMutationConflictError,
     type CrdtMutationResult
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import {
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    toRallarCrdtDocumentKey,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtUpdateEnvelope
+} from '@shared/crdt/mod.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -32,8 +40,14 @@ import { createApiCrdtInboxFactory } from '../../../src/crdt/create-api-crdt-inb
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
-import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import {
+    waitForPGliteFirstRetryEligibility,
+    waitForPGliteQueueRow
+} from '../../db/pglite-app-inbox-test-runtime.ts';
+import {
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -72,10 +86,10 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const service = productionService({ queueSql: sql, database: sql, now });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database: sql, now });
             const command = await appendCommand(now, 'policy-delivery', 'policy-update');
             service.writeCrdtCommandNoWaiting(command);
-            await drainCrdtInbox(sql, service.inboxQueueReader);
+            await drainCrdtInbox(sql, inboxQueueReader);
 
             const result = await readCrdtResult(sql, 'policy-delivery');
             assert.equal(result.status, 'rejected');
@@ -89,8 +103,8 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const resourceInbox = createPSqlResourceInboxRepository(sql);
-            const queue = new PSqlQueueBox(resourceInbox);
+            const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date());
+            const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
             const authorityReads: string[] = [];
             let wakes = 0;
             const factory = createApiCrdtInboxFactory({
@@ -167,7 +181,7 @@ for (const stage of FAILURE_STAGES) {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
             const database = withInjectedTransactionFailure(sql, stage);
-            const service = productionService({ queueSql: sql, database, now, allow: true });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database, now, allow: true });
             await service.createAndEnqueueAppend({
                 update: update(`${stage}-update`, now - 10_000),
                 deliveryId: `${stage}-delivery`,
@@ -186,7 +200,7 @@ for (const stage of FAILURE_STAGES) {
                 capturedAtEpochMs: now,
                 expireAtEpochMs: now + 60_000
             });
-            await drainCrdtInbox(sql, service.inboxQueueReader);
+            await drainCrdtInbox(sql, inboxQueueReader);
 
             const [domain] = await sql<CrdtMutationRollbackCountsRow[]>`
         select
@@ -207,12 +221,13 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const service = productionService({ queueSql: sql, database: sql, now, allow: true });
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({ queueSql: sql, database: sql, now, allow: true });
             const original = update('shared-update', now - 10_000, 'original');
 
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: original,
                 deliveryId: 'session-1:delivery-1',
                 sessionId: 'session-1',
@@ -221,6 +236,7 @@ Deno.test(
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: original,
                 deliveryId: 'session-2:delivery-2',
                 sessionId: 'session-2',
@@ -229,18 +245,14 @@ Deno.test(
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: update('shared-update', now - 10_000, 'changed'),
                 deliveryId: 'session-3:delivery-3',
                 sessionId: 'session-3',
                 capturedAtEpochMs: now + 2
             });
 
-            const [counts] = await sql<CrdtMutationCountsRow[]>`
-      select
-        (select count(*) from crdt_documents)::text as documents,
-        (select count(*) from crdt_updates)::text as updates,
-        (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
-    `;
+            const counts = await readCrdtMutationCounts(sql);
             assert.deepEqual(counts, { documents: '1', updates: '1', outbox: '4' });
             const results = await sql<ResourceInboxResultRow[]>`
       select ris_resource from resource_inbox_results
@@ -268,38 +280,59 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
             let allowed = true;
+            const authorizationDecisions: boolean[] = [];
             const database = withOneCrdtConflict(sql, () => {
                 allowed = false;
             });
-            const service = productionService({
+            const { service, inboxQueueReader } = createProductionCrdtInboxHarness({
                 queueSql: sql,
                 database,
                 now,
                 allow: true,
-                isAllowed: () => allowed
+                isAllowed: () => {
+                    authorizationDecisions.push(allowed);
+                    return allowed;
+                }
             });
 
             await enqueueAndDrain({
                 sql,
                 service,
+                inboxQueueReader,
                 envelope: update('revoked-update', now - 10_000),
                 deliveryId: 'revoked-delivery',
                 sessionId: 'session-1',
                 capturedAtEpochMs: now
             });
 
-            const [counts] = await sql<CrdtMutationCountsRow[]>`
-      select
-        (select count(*) from crdt_documents)::text as documents,
-        (select count(*) from crdt_updates)::text as updates,
-        (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
-    `;
-            assert.deepEqual(counts, { documents: '0', updates: '0', outbox: '0' });
-            const [completion] = await sql<ResourceInboxCompletionRow[]>`
-      select ris_status, ris_resource from resource_inbox_results
-      where ris_topic_id = 'app-inbox.crdt-state'
-        and ris_resource_id = 'revoked-delivery'
-    `;
+            const key = toAppQueueKey({
+                topicId: 'app-inbox.crdt-state',
+                resourceId: 'revoked-delivery',
+                contextId: toRallarCrdtDocumentKey(DOCUMENT)
+            });
+            const afterFirst = await readCrdtInboxJob(sql, key);
+            assert.deepEqual(await readCrdtMutationCounts(sql), { documents: '0', updates: '0', outbox: '0' });
+            if (afterFirst.status === EntityStatus.RETRY) {
+                assert.equal(afterFirst.dequeueAudit.attempts, 1);
+                assert.ok(afterFirst.dequeueAudit.nextTs);
+                assert.equal(await readCrdtCompletion(sql, key), undefined);
+                assert.deepEqual(authorizationDecisions, [true]);
+                await waitForPGliteFirstRetryEligibility(sql, key);
+                await inboxQueueReader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    createApiV1TestQueueResilience()
+                );
+            }
+            else {
+                assert.equal(afterFirst.status, EntityStatus.COMPLETED);
+            }
+
+            const finalized = await readCrdtInboxJob(sql, key);
+            assert.equal(finalized.status, EntityStatus.COMPLETED);
+            assert.equal(finalized.dequeueAudit.attempts, 2);
+            assert.deepEqual(authorizationDecisions, [true, false]);
+            assert.deepEqual(await readCrdtMutationCounts(sql), { documents: '0', updates: '0', outbox: '0' });
+            const completion = await readCrdtCompletion(sql, key);
             assert.ok(completion);
             assert.equal(completion.ris_status, 'COMPLETED');
             const result = decodeCrdtMutationResult(JSON.parse(completion.ris_resource));
@@ -317,10 +350,15 @@ interface ProductionServiceInput {
     readonly isAllowed?: () => boolean;
 }
 
-function productionService(input: ProductionServiceInput) {
+interface ProductionCrdtInboxHarness {
+    readonly service: AppCrdtInboxService;
+    readonly inboxQueueReader: InboxQueueReader;
+}
+
+function createProductionCrdtInboxHarness(input: ProductionServiceInput): ProductionCrdtInboxHarness {
     const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
-    const resourceInbox = createPSqlResourceInboxRepository(queueSql);
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const resourceInbox = createPSqlResourceInboxRepository(queueSql, () => new Date(now));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,
@@ -348,7 +386,7 @@ function productionService(input: ProductionServiceInput) {
             ? [{ documentType: 'checklist', rollout: 'production' }]
             : [{ documentType: '*', rollout: 'disabled' }]
     });
-    return Object.assign(service, { inboxQueueReader });
+    return { service, inboxQueueReader };
 }
 
 async function appendCommand(now: number, commandId: string, updateId: string) {
@@ -403,7 +441,8 @@ async function pgliteQueueNow(sql: PGliteSql): Promise<number> {
 
 interface EnqueueAndDrainInput {
     readonly sql: PGliteSql;
-    readonly service: ReturnType<typeof productionService>;
+    readonly service: AppCrdtInboxService;
+    readonly inboxQueueReader: InboxQueueReader;
     readonly envelope: RallarCrdtUpdateEnvelope;
     readonly deliveryId: string;
     readonly sessionId: string;
@@ -411,7 +450,7 @@ interface EnqueueAndDrainInput {
 }
 
 async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
-    const { sql, service, envelope, deliveryId, sessionId, capturedAtEpochMs } = input;
+    const { sql, service, inboxQueueReader, envelope, deliveryId, sessionId, capturedAtEpochMs } = input;
     await service.createAndEnqueueAppend({
         update: envelope,
         deliveryId,
@@ -430,7 +469,7 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
         capturedAtEpochMs,
         expireAtEpochMs: capturedAtEpochMs + 60_000
     });
-    await drainCrdtInbox(sql, service.inboxQueueReader);
+    await drainCrdtInbox(sql, inboxQueueReader);
 }
 
 async function drainCrdtInbox(
@@ -442,6 +481,34 @@ async function drainCrdtInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createApiV1TestQueueResilience()
     );
+}
+
+async function readCrdtInboxJob(sql: PGliteSql, key: Key): Promise<ResourceEntry> {
+    const rows = await sql<ResourceInboxRow[]>`
+        select * from resource_inbox where ri_topic_id = ${key.topicId}
+        and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
+    `;
+    assert.equal(rows.length, 1);
+    return toDomain(rows[0]!);
+}
+
+async function readCrdtCompletion(sql: PGliteSql, key: Key): Promise<ResourceInboxCompletionRow | undefined> {
+    const rows = await sql<ResourceInboxCompletionRow[]>`
+        select ris_status, ris_resource from resource_inbox_results where ris_topic_id = ${key.topicId}
+        and ris_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
+    `;
+    assert.ok(rows.length <= 1);
+    return rows[0];
+}
+
+async function readCrdtMutationCounts(sql: PGliteSql): Promise<CrdtMutationCountsRow> {
+    const [counts] = await sql<CrdtMutationCountsRow[]>`
+        select (select count(*) from crdt_documents)::text as documents,
+        (select count(*) from crdt_updates)::text as updates,
+        (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text as outbox
+    `;
+    assert.ok(counts);
+    return counts;
 }
 
 async function readCrdtResult(

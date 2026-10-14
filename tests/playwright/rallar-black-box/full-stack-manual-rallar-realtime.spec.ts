@@ -1,4 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { BrowserContext } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Page
+} from '@playwright/test';
+
 import {
     expectFullStackApiReady,
     loginThroughUi,
@@ -7,109 +13,33 @@ import {
     uniqueSuffix
 } from './full-stack-helpers.ts';
 
+interface ManualAgent {
+    readonly page: Page;
+    readonly connection: string;
+    readonly sessionId: string;
+}
+
+interface ConnectManualAgentInput {
+    readonly connection: string;
+    readonly groupId: string;
+    readonly createGroup?: boolean;
+}
+
+interface SendManualRealtimePayloadInput {
+    readonly targetSessionId: string;
+    readonly payload: ManualRealtimePayload;
+}
+
+interface ManualRealtimePayload {
+    readonly topic: string;
+    readonly payloadId: string;
+    readonly direction: string;
+    readonly roomId: string;
+    readonly from: string;
+    readonly to: string;
+}
+
 const config = readFullStackConfig();
-
-type ManualAgent = Readonly<{
-    page: Page;
-    connection: string;
-    sessionId: string;
-}>;
-
-async function openManualTab(page: Page): Promise<void> {
-    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
-    await expect(page.locator('#panel-manual-rallar')).toBeVisible();
-}
-
-async function fillManualField(page: Page, label: string, value: string): Promise<void> {
-    await page.locator('#panel-manual-rallar').getByLabel(label, { exact: true }).fill(value);
-}
-
-async function expectManualCommandCompleted(page: Page, commandIdPrefix: string): Promise<void> {
-    const row = page.locator('#panel-manual-rallar .history-row')
-        .filter({ hasText: commandIdPrefix })
-        .first();
-    await expect(row).toContainText(commandIdPrefix);
-    await expect(row).toContainText('ok');
-}
-
-async function connectManualAgent(
-    page: Page,
-    input: Readonly<{
-        connection: string;
-        groupId: string;
-        createGroup?: boolean;
-    }>
-): Promise<ManualAgent> {
-    await openManualTab(page);
-    await fillManualField(page, 'Group', input.groupId);
-    await fillManualField(page, 'Connection', input.connection);
-    await expect(page.locator('#panel-manual-rallar select').first()).toHaveValue('realtime');
-
-    const sessionId = await page.locator('#panel-manual-rallar')
-        .getByLabel('Session', { exact: true })
-        .inputValue();
-    const authSession = await readBrowserAuthSession(page);
-    expect(sessionId).not.toHaveLength(0);
-    expect(sessionId).toBe(authSession.sessionId);
-
-    await page.locator('#panel-manual-rallar')
-        .getByRole('button', {
-            name: input.createGroup ? 'Create and join group' : 'Connect',
-            exact: true
-        })
-        .click();
-    await expectManualCommandCompleted(page, 'manual-rtc-connect');
-
-    return {
-        page,
-        connection: input.connection,
-        sessionId
-    };
-}
-
-async function sendManualRealtimePayload(
-    sender: ManualAgent,
-    input: Readonly<{
-        targetSessionId: string;
-        payload: Record<string, unknown>;
-    }>
-): Promise<void> {
-    await openManualTab(sender.page);
-    await fillManualField(sender.page, 'Connection', sender.connection);
-    await fillManualField(sender.page, 'Target Client', input.targetSessionId);
-    await sender.page.locator('#panel-manual-rallar .manual-payload-editor textarea')
-        .fill(JSON.stringify(input.payload, null, 2));
-    await sender.page.locator('#panel-manual-rallar')
-        .getByRole('button', { name: 'Send payload' })
-        .click();
-
-    await expectManualCommandCompleted(sender.page, 'manual-rtc-send-direct');
-}
-
-async function expectReceivedPayload(
-    receiver: ManualAgent,
-    payloadId: string
-): Promise<void> {
-    await openManualTab(receiver.page);
-    const inbox = receiver.page.locator('#panel-manual-rallar .received-inbox-panel');
-    await expect(inbox).toContainText(payloadId, { timeout: 45_000 });
-    await expect(inbox).toContainText('manual.full-stack.realtime');
-}
-
-async function expectRealProviderEvents(page: Page): Promise<void> {
-    await page.getByRole('tab', { name: 'Event Stream' }).click();
-    const panel = page.locator('#panel-event-stream');
-    await expect(panel).toContainText('rallar.browser.realtime.message');
-    await expect(panel).not.toContainText('rallar.bb.fake.');
-}
-
-async function closeManualAgent(agent: ManualAgent): Promise<void> {
-    await openManualTab(agent.page);
-    await agent.page.locator('#panel-manual-rallar')
-        .getByRole('button', { name: 'Close connections' })
-        .click();
-    await expectManualCommandCompleted(agent.page, 'manual-close');
-}
 
 test.describe('full-stack Manual Rallar realtime delivery', () => {
     test.skip(!config.enabled, config.skipReason);
@@ -121,16 +51,22 @@ test.describe('full-stack Manual Rallar realtime delivery', () => {
         const suffix = uniqueSuffix();
         const roomId = `${config.roomId}-manual-${suffix}`;
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
         try {
-            await loginThroughUi(pageA, config, config.userA, {
+            contextB = await browser.newContext();
+            const pageA = await contextA.newPage();
+            const pageB = await contextB.newPage();
+            await loginThroughUi({
+                page: pageA,
+                config,
+                user: config.userA,
                 suffix: `manual-a-${suffix}`,
                 tab: 'manual-rallar'
             });
-            await loginThroughUi(pageB, config, config.userB, {
+            await loginThroughUi({
+                page: pageB,
+                config,
+                user: config.userB,
                 suffix: `manual-b-${suffix}`,
                 tab: 'manual-rallar'
             });
@@ -168,8 +104,97 @@ test.describe('full-stack Manual Rallar realtime delivery', () => {
         finally {
             await Promise.all([
                 contextA.close(),
-                contextB.close()
+                contextB?.close()
             ]);
         }
     });
 });
+
+async function openManualTab(page: Page): Promise<void> {
+    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+    await expect(page.locator('#panel-manual-rallar')).toBeVisible();
+}
+
+async function fillManualField(page: Page, label: string, value: string): Promise<void> {
+    await page.locator('#panel-manual-rallar').getByLabel(label, { exact: true }).fill(value);
+}
+
+async function expectManualCommandCompleted(page: Page, commandIdPrefix: string): Promise<void> {
+    const row = page.locator('#panel-manual-rallar .history-row')
+        .filter({ hasText: commandIdPrefix })
+        .first();
+    await expect(row).toContainText(commandIdPrefix);
+    await expect(row).toContainText('ok');
+}
+
+async function connectManualAgent(
+    page: Page,
+    input: ConnectManualAgentInput
+): Promise<ManualAgent> {
+    await openManualTab(page);
+    await fillManualField(page, 'Group', input.groupId);
+    await fillManualField(page, 'Connection', input.connection);
+    await expect(page.locator('#panel-manual-rallar select').first()).toHaveValue('realtime');
+
+    const sessionId = await page.locator('#panel-manual-rallar')
+        .getByLabel('Session', { exact: true })
+        .inputValue();
+    const authSession = await readBrowserAuthSession(page);
+    expect(sessionId).not.toHaveLength(0);
+    expect(sessionId).toBe(authSession.sessionId);
+
+    await page.locator('#panel-manual-rallar')
+        .getByRole('button', {
+            name: input.createGroup ? 'Create and join group' : 'Connect',
+            exact: true
+        })
+        .click();
+    await expectManualCommandCompleted(page, 'manual-rtc-connect');
+
+    return {
+        page,
+        connection: input.connection,
+        sessionId
+    };
+}
+
+async function sendManualRealtimePayload(
+    sender: ManualAgent,
+    input: SendManualRealtimePayloadInput
+): Promise<void> {
+    await openManualTab(sender.page);
+    await fillManualField(sender.page, 'Connection', sender.connection);
+    await fillManualField(sender.page, 'Target Client', input.targetSessionId);
+    await sender.page.locator('#panel-manual-rallar .manual-payload-editor textarea')
+        .fill(JSON.stringify(input.payload, null, 2));
+    await sender.page.locator('#panel-manual-rallar')
+        .getByRole('button', { name: 'Send payload' })
+        .click();
+
+    await expectManualCommandCompleted(sender.page, 'manual-rtc-send-direct');
+}
+
+async function expectReceivedPayload(
+    receiver: ManualAgent,
+    payloadId: string
+): Promise<void> {
+    await openManualTab(receiver.page);
+    const inbox = receiver.page.locator('#panel-manual-rallar .received-inbox-panel');
+    await expect(inbox).toContainText(payloadId, { timeout: 45_000 });
+    await expect(inbox).toContainText('manual.full-stack.realtime');
+}
+
+async function expectRealProviderEvents(page: Page): Promise<void> {
+    await page.getByRole('tab', { name: 'Event Stream' }).click();
+    const panel = page.locator('#panel-event-stream');
+    await expect(panel).toContainText('rallar.browser.realtime.message');
+    await expect(panel).not.toContainText('rallar.bb.fake.');
+}
+
+async function closeManualAgent(agent: ManualAgent): Promise<void> {
+    await openManualTab(agent.page);
+    await agent.page.locator('#panel-manual-rallar')
+        .getByRole('button', { name: 'Close connections' })
+        .click();
+    await expectManualCommandCompleted(agent.page, 'manual-close');
+}

@@ -1,16 +1,32 @@
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    toAppQueueCreatedBy,
-    toAppQueueKey,
-    toStrictAppInboxQueueKey
-} from '@shared/queuebox/AppQueueIdentity.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import type { AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
-export function toAppInboxResourceEntry(
+export interface ToPhysicalAppInboxQueueKeyInput extends AppInboxEnqueueInput {
+    readonly resourceId: string;
+}
+
+export interface AppInboxQueueMessageCreationDto {
+    readonly key: Key;
+    readonly enqueue: AppInboxEnqueueInput;
+    readonly serviceId: string;
+}
+
+/** One bounded canonical envelope construction: IDs, time and serialization; no I/O, scheduling or retry. */
+export type AppInboxQueueMessageFactory = (creation: AppInboxQueueMessageCreationDto) => ALMessage;
+
+export interface AppInboxQueueEntryCreationDependencies {
+    readonly createMessage: AppInboxQueueMessageFactory;
+    readonly creationNow: QueueBoxUtilities.CreationClock;
+}
+
+export function createAppInboxResourceEntry(
     enqueue: AppInboxEnqueueInput,
-    serviceId: string
+    serviceId: string,
+    dependencies: AppInboxQueueEntryCreationDependencies
 ): ResourceEntry {
     const key = toPhysicalAppInboxQueueKey(
         {
@@ -23,24 +39,20 @@ export function toAppInboxResourceEntry(
         true
     );
     return QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUntargetedMessage(
-            toAppQueueCreatedBy(serviceId),
-            newALRoute(key.topicId, key.contextId, key.resourceId),
-            enqueue.type,
-            enqueue
-        ),
-        'APP_INBOX'
+        dependencies.createMessage({ key, enqueue, serviceId }),
+        'APP_INBOX',
+        dependencies.creationNow()
     );
 }
 
 export function toPhysicalAppInboxQueueKey(
-    enqueue: AppInboxEnqueueInput,
+    enqueue: ToPhysicalAppInboxQueueKeyInput,
     defaultTopicId = '',
     strictQueueIdentity = false
 ): Key {
     const key = {
         topicId: enqueue.topicId ?? defaultTopicId,
-        resourceId: enqueue.resourceId ?? crypto.randomUUID().toString(),
+        resourceId: enqueue.resourceId,
         contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server'
     };
     return strictQueueIdentity ? toStrictAppInboxQueueKey(key) : toAppQueueKey(key);

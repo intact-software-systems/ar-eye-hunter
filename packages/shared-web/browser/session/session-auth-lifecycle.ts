@@ -6,7 +6,11 @@ import type {
     RallarAuthRuntimePort,
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { toBrowserRtcCaptureIntent } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import type {
+    BrowserTransportRuntime,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
     toRallarDiagnosticsPorts,
     type RallarDiagnosticsPorts
@@ -14,7 +18,11 @@ import {
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    toRallarCommandOptions,
+    toRallarOperationOptions,
+    type RallarOperationOptions
+} from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarAuthChangeListener,
@@ -29,6 +37,7 @@ import {
 } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
+import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
@@ -43,6 +52,8 @@ export interface RallarAuthSessionEndOptions {
 
 export interface RallarSessionAuthLifecycle {
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
+    connectWithRtcCapture(options?: RallarScopedOperationOptions): Promise<BrowserTransportRuntime.Connection>;
+    acquireConnection(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     requireSession(): AuthSession;
     activateLoginSession(session: AuthSession): Promise<void>;
@@ -85,8 +96,33 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     public async connect(
         scopedOptions: RallarScopedOperationOptions = {}
     ): Promise<ApiMiddleware> {
+        return (await this.connectWithRtcCapture(scopedOptions)).middleware;
+    }
+
+    public connectWithRtcCapture(
+        scopedOptions: RallarScopedOperationOptions = {}
+    ): Promise<BrowserTransportRuntime.Connection> {
+        return this.connectWithIntent(scopedOptions, 'explicit');
+    }
+
+    /** Omitted capture intent preserves the owned graph's active or pending selection. */
+    public async acquireConnection(
+        scopedOptions: RallarScopedOperationOptions = {}
+    ): Promise<ApiMiddleware> {
+        const intent = toBrowserRtcCaptureIntent(scopedOptions);
+        return (await this.connectWithIntent(
+            { ...scopedOptions, ...intent.options },
+            intent.connectionIntent
+        )).middleware;
+    }
+
+    private async connectWithIntent(
+        scopedOptions: RallarScopedOperationOptions,
+        intent: 'explicit' | 'acquire'
+    ): Promise<BrowserTransportRuntime.Connection> {
+        const capturedOptions = { ...scopedOptions, ...toRallarOperationOptions(scopedOptions) };
         await this.waitForAuthEnd();
-        const operationOptions = this.input.connectionRuntime.resolveOperationOptions(scopedOptions);
+        const operationOptions = this.input.connectionRuntime.resolveOperationOptions(capturedOptions);
         const scope = this.input.connectionRuntime.resolveOperationScope(operationOptions.scope);
         const session = readSession();
         await this.reconcileActiveMiddleware(session);
@@ -96,11 +132,23 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         this.input.sessionDeliveries.beginSession(session);
         this.scheduleAuthExpiry(session);
 
-        const middleware = await this.input.connectionLifecycle.connect({
+        const diagnosticsPorts = this.readDiagnosticsPorts();
+        const ownedCapture = intent === 'acquire'
+            ? this.input.connectionLifecycle.readRtcCaptureConfiguration()
+            : undefined;
+        const rtcCaptureConfiguration = ownedCapture ?? resolveRtcCaptureConfiguration({
+            run: operationOptions.rtcCaptureContext?.run,
+            step: operationOptions.rtcCaptureMode,
+            recipe: operationOptions.rtcCaptureContext?.recipe,
+            host: this.input.connectionRuntime.readDefaults()?.rtc?.captureMode,
+            sinkAvailable: diagnosticsPorts.signalingDiagnostics !== undefined
+        });
+        const connected = await this.input.connectionLifecycle.connect({
+            rtcCaptureConfiguration,
             session,
             scope,
             operationOptions,
-            diagnosticsPorts: this.readDiagnosticsPorts(),
+            diagnosticsPorts,
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
             isSessionCurrent: () => {
                 const currentSession = readSession();
@@ -108,8 +156,8 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             },
             onAuthInvalid: async (error) => await this.endUnauthorizedSession(error, session)
         });
-        this.scheduleAuthExpiry(middleware.session);
-        return middleware;
+        this.scheduleAuthExpiry(connected.middleware.session);
+        return connected;
     }
 
     public disconnect(): Promise<void> {

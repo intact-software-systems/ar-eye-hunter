@@ -1,12 +1,20 @@
 import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALVolatileSessionPoolUsage,
+    ALVolatileSessionUsage
+} from '../../../../shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
+import { decodeALCongestionCounters } from '../../alm/decode-al-congestion-counters.ts';
+import { decodeRallarBlackBoxTestAlmUsage } from '../../alm/decode-rallar-black-box-test-alm-usage.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';
 const STORAGE_COUNTERS_TOPIC = 'rallar.bb.storage.counters';
+const STATS_TOPIC = 'rallar.bb.stats';
 const COMMIT_PHASES_DIAGNOSTIC_KIND = 'commit-phases';
 const READINESS_PROBE_DIAGNOSTIC_KIND = 'readiness-probe';
 const ADMISSION_OUTCOME_DIAGNOSTIC_KIND = 'admission-outcome';
@@ -41,6 +49,28 @@ export interface ALMObservationStorageCounters {
     readonly workPageCount: number;
     /** The reading reset the page's counter, so that page's next reading counts from zero. */
     readonly reset: boolean;
+}
+
+/**
+ * One `stats` reading of an agent's session ledger (D180). The control client's periodic stats read no page and
+ * carry no ledger, so only the `stats` command's readings appear.
+ */
+export interface ALMObservationLedgerReading {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly usage: ALVolatileSessionUsage;
+    readonly own: ALVolatileSessionPoolUsage;
+    readonly inbound: ALVolatileSessionPoolUsage;
+    readonly overloaded: boolean;
+    /** The ordering snapshots the page's inbound stores held (D191). */
+    readonly orderingTracks: number;
+}
+
+/** One `stats` reading of the congestion decisions an agent's page counted since its last `close` (D186). */
+export interface ALMObservationCongestionReading {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly counters: ALCongestionCounters;
 }
 
 export type ALMObservationCommandResult =
@@ -80,6 +110,8 @@ export interface ALMObservationInboundDrain {
     readonly runDurationMs: number;
     readonly releaseDurationMs: number;
     readonly queueWaitMs: number;
+    /** Releases the batch ran by promotion (D190). */
+    readonly promoted: number;
 }
 
 /** One `claim-settled`: what the claim cost, and the three instants its wait splits at. */
@@ -121,6 +153,8 @@ export function resolveALMObservationAgentRole(agentId: string): ALMObservationA
 export interface ALMObservationSnapshot {
     readonly runId: string;
     readonly firstEventAtEpochMs: number;
+    /** The events the control server retained of the run, every kind counted. */
+    readonly retainedEventCount: number;
     readonly commitPhases: readonly ALMObservationCommitPhase[];
     readonly rtcLifecycles: readonly ALMObservationRtcLifecycle[];
     readonly storageCounters: readonly ALMObservationStorageCounters[];
@@ -129,6 +163,15 @@ export interface ALMObservationSnapshot {
     readonly inboundDrains: readonly ALMObservationInboundDrain[];
     readonly inboundClaims: readonly ALMObservationInboundClaim[];
     readonly readinessProbes: readonly ALMObservationReadinessProbe[];
+    readonly ledgerReadings: readonly ALMObservationLedgerReading[];
+    readonly congestionReadings: readonly ALMObservationCongestionReading[];
+}
+
+/** A `stats` event the `stats` command recorded: its agent and the `rallar` block it read off the page. */
+interface ALMObservationStatsEvent {
+    readonly atEpochMs: number;
+    readonly agentId: string;
+    readonly rallar: RallarBlackBoxTestRecord;
 }
 
 interface ALMObservationDiagnostic {
@@ -157,9 +200,11 @@ export function decodeALMObservationSnapshot(
         return Either.ofLeft(toSnapshotIssues({ runId, events, results, firstEventAtEpochMs }));
     }
     const diagnostics = events.map(toDiagnostic).filter(isPresent);
+    const statsEvents = events.map(toStatsEvent).filter(isPresent);
     return Either.ofRight({
         runId,
         firstEventAtEpochMs,
+        retainedEventCount: events.length,
         commitPhases: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toCommitPhase).filter(isPresent),
         rtcLifecycles: toTopicDiagnostics(diagnostics, RTC_LIFECYCLE_TOPIC).map(toRtcLifecycle).filter(isPresent),
         storageCounters: toTopicDiagnostics(diagnostics, STORAGE_COUNTERS_TOPIC).map(toStorageCounter).filter(
@@ -177,7 +222,9 @@ export function decodeALMObservationSnapshot(
         ),
         readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(
             isPresent
-        )
+        ),
+        ledgerReadings: statsEvents.map(toLedgerReading).filter(isPresent),
+        congestionReadings: statsEvents.map(toCongestionReading).filter(isPresent)
     });
 }
 
@@ -286,11 +333,13 @@ function toInboundDrain(
     const runDurationMs = decodeFiniteNumber(diagnostic.detail.runDurationMs);
     const releaseDurationMs = decodeFiniteNumber(diagnostic.detail.releaseDurationMs);
     const queueWaitMs = decodeFiniteNumber(diagnostic.detail.queueWaitMs);
+    const promoted = decodeFiniteNumber(diagnostic.detail.promoted);
     const lane = decodeLane(diagnostic.detail.lane);
     if (
         diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         durationMs === undefined || selectionDurationMs === undefined || claimDurationMs === undefined ||
-        runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined
+        runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined ||
+        promoted === undefined
     ) {
         return undefined;
     }
@@ -304,7 +353,8 @@ function toInboundDrain(
         claimDurationMs,
         runDurationMs,
         releaseDurationMs,
-        queueWaitMs
+        queueWaitMs,
+        promoted
     };
 }
 
@@ -354,6 +404,41 @@ function toReadinessProbe(
             cause,
             durationMs
         };
+}
+
+function toStatsEvent(event: RallarBlackBoxTestRecord): ALMObservationStatsEvent | undefined {
+    const envelope = decodeRecord(event.payload);
+    const atEpochMs = decodeFiniteNumber(event.atEpochMs);
+    const agentId = decodeText(event.agentId);
+    const rallar = decodeRecord(decodeRecord(envelope?.payload)?.rallar);
+    return envelope?.topic !== STATS_TOPIC || atEpochMs === undefined || agentId === undefined || rallar === undefined
+        ? undefined
+        : { atEpochMs, agentId, rallar };
+}
+
+/** A `stats` event with no ledger, as the control client's periodic stats, decodes to a left and is skipped. */
+function toLedgerReading(stats: ALMObservationStatsEvent): ALMObservationLedgerReading | undefined {
+    const { atEpochMs, agentId } = stats;
+    return decodeRallarBlackBoxTestAlmUsage(stats.rallar.alm).fold(
+        () => undefined,
+        ({ usage, own, inbound, overloaded, orderingTracks }) => ({
+            atEpochMs,
+            agentId,
+            usage,
+            own,
+            inbound,
+            overloaded,
+            orderingTracks
+        })
+    );
+}
+
+function toCongestionReading(stats: ALMObservationStatsEvent): ALMObservationCongestionReading | undefined {
+    const { atEpochMs, agentId } = stats;
+    return decodeALCongestionCounters(stats.rallar.congestion).fold(
+        () => undefined,
+        (counters) => ({ atEpochMs, agentId, counters })
+    );
 }
 
 /**
@@ -417,7 +502,7 @@ function decodeLane(value: unknown): ALStoreDurability | undefined {
     if (value === undefined) {
         return 'durable';
     }
-    return value === 'durable' || value === 'volatile' ? value : undefined;
+    return value === 'durable' || value === 'volatile' || value === 'checkpoint' ? value : undefined;
 }
 
 function decodeBoolean(value: unknown): boolean | undefined {

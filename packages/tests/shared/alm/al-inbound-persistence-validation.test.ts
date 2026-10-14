@@ -46,7 +46,7 @@ import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.t
 const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 const message: ALMessage = {
-    id: { v: 2, msgId: 'message', senderId: 'sender:with:delimiter', ts: 1_800_000_000_000 },
+    id: { v: 3, msgId: 'message', senderId: 'sender:with:delimiter', ts: 1_800_000_000_000 },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
     ordering: { orderingKey: 'chat', seq: 2 },
     payload: { typeId: 'chat', resource: '{"text":"hello"}' }
@@ -65,7 +65,8 @@ function createFixture() {
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const stores = { admissionStore: store, workQueue: state.workQueue };
     return {
@@ -438,12 +439,13 @@ describe('inbound admission persisted values', () => {
         { localDelivery: { enabled: 'yes', persist: false, deferred: false } },
         { forwarding: { enabled: true, persist: false, nextHopPeerIds: [1] } },
         { ack: { enabled: true, algo: 'hop', deferred: 1 } },
-        { nack: { enabled: false, missingSeqs: [-1] } },
+        { nack: { enabled: false, missingRanges: [{ from: 1, to: 0 }] } },
         { repair: { enabled: true, algo: 'unknown' } },
         { supersedence: { enabled: true, algo: 'latest-wins', status: 'unknown' } },
         { congestion: { overloaded: false, action: 'none', priority: Number.NaN } },
+        { congestion: { overloaded: true, action: 'drop-low', priority: 0, cause: 'busy' } },
         { ownership: { algo: 'shared', exclusive: 1 } },
-        { orderingRuntime: { status: 'gap', missingSeqs: [1], releasableSeqs: ['2'] } }
+        { orderingRuntime: { status: 'gap', missingRanges: [{ from: 1, to: 1 }], releasableSeqs: ['2'] } }
     ])('rejects malformed persisted handling-plan sections before buffered release', async (corruption) => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
@@ -457,6 +459,30 @@ describe('inbound admission persisted values', () => {
         });
 
         await expect(store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it.each([
+        // A plan stored before the congestion cause existed reads back without migration.
+        { label: 'no cause', congestion: { overloaded: false, action: 'none', priority: 0 } },
+        { label: 'the backpressured cause', congestion: { overloaded: false, action: 'drop-low', priority: 0, cause: 'backpressured' } }
+    ])('reads back a stored congestion plan with $label before buffered release', async ({ congestion }) => {
+        const { backend, store } = createFixture();
+        const snapshot = createBufferedSnapshot();
+        await backend.write(async (transaction) => {
+            await writeCanonicalMessage(transaction);
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, plan: { ...snapshot.plan, congestion } });
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
+                supersedenceKey: null
+            });
+        });
+
+        const read = await store.readBufferedRelease({ trackKey: snapshot.trackKey, seq: 2, nowMs: Date.now() });
+
+        expect(read?.snapshot.plan.congestion).toEqual(congestion);
     });
 
     it('rejects a buffered snapshot whose sequence disagrees with its storage slot on direct and list reads', async () => {
@@ -1058,7 +1084,7 @@ async function seedPendingAcknowledgement(
 
 function createAcknowledgement(fromPeerId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        { v: 3, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
             originPeerId: message.id.senderId,

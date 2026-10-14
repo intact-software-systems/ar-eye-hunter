@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider, ALQosMessageContext } from '@shared/al-contracts/al-policy.ts';
-import { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -24,13 +27,13 @@ const APPLICATION: ALQosInputProvider = {
 };
 
 function createFullBudget(): ALVolatileSessionBudget {
-    const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
-    budget.record({ msgId: 'received', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS });
+    const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1, maxBytes: 1_000 });
+    budget.record({ msgId: 'received', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
     return budget;
 }
 
 const ACK = newALAckControlMessage(
-    { v: 2, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS },
+    { v: 3, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS },
     {
         ackedMsgId: 'planned',
         fromPeerId: 'self',
@@ -45,7 +48,7 @@ const ACK = newALAckControlMessage(
 
 describe('the session QoS provider over the volatile budget (D78)', () => {
     it('answers the application\'s live fields while the session is under its bound', () => {
-        const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1, maxBytes: 1_000 });
         const provider = toALVolatileSessionQosProvider(APPLICATION, budget, () => NOW_MS);
 
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3 });
@@ -72,6 +75,18 @@ describe('the session QoS provider over the volatile budget (D78)', () => {
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ overloaded: true });
         nowMs = NOW_MS + 1_000;
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toBeUndefined();
+    });
+
+    it('states no overload while arrivals alone hold the total, and overloaded once the own share is held too (D189)', () => {
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 1_000 });
+        const provider = toALVolatileSessionQosProvider(APPLICATION, budget, () => NOW_MS);
+        for (const msgId of ['received-1', 'received-2']) {
+            budget.record({ msgId, bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
+        }
+
+        expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3 });
+        budget.tryAdmit({ msgId: 'sent', bytes: 10, deadlineAtMs: NOW_MS + 1_000, nowMs: NOW_MS, trackKey: undefined });
+        expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ connectedNeighborCount: 3, overloaded: true });
     });
 
     it('passes the application\'s defaults, capabilities and authorization through unchanged', () => {

@@ -1,3 +1,7 @@
+import {
+    decodeFullStackRtcBuildToolInputs,
+    FULL_STACK_RTC_BUILD_TOOL_INPUT_COMMAND
+} from '../../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-build-tool-provenance.ts';
 import type {
     RtcBaselineJson,
     RtcBaselineResult,
@@ -88,67 +92,24 @@ async function readDarwinCpuModel(run: ProcessPort['run']) {
     return profilerCpuModel;
 }
 
-export function createDenoRtcBaselineAdapters(
-    runtime: RtcBaselineDenoPort
-): DenoRtcBaselineAdapters {
-    async function run(input: CommandInput): Promise<RtcBaselineResult<RtcBaselineCommandOutput>> {
-        if (!allowedExecutables.has(input.executable)) {
-            return {
-                ok: false,
-                issues: [
-                    {
-                        path: '$.executable',
-                        code: 'executable-not-allowlisted',
-                        message: `Executable ${input.executable} is not allowed by the RTC baseline protocol.`
-                    }
-                ]
-            };
-        }
-        try {
-            const output = await runtime.command(input.executable, input.arguments);
-            const value = {
-                exitStatus: output.code,
-                stdout: decoder.decode(output.stdout),
-                stderr: decoder.decode(output.stderr)
-            };
-            if (output.code === 0) {
-                return { ok: true, value };
-            }
-            return {
-                ok: false,
-                issues: [
-                    {
-                        path: '$.process',
-                        code: 'command-failed',
-                        message: `${input.executable} exited with status ${output.code}.`,
-                        details: value satisfies RtcBaselineJson
-                    }
-                ]
-            };
-        }
-        catch (error) {
-            return {
-                ok: false,
-                issues: [
-                    { path: '$.process', code: 'command-threw', message: cleanMessage(String(error)) }
-                ]
-            };
-        }
-    }
+export function createDenoRtcBaselineAdapters(runtime: RtcBaselineDenoPort): DenoRtcBaselineAdapters {
+    const run: ProcessPort['run'] = (input) => runRtcBaselineCommand(runtime, input);
+    return {
+        filePort: createRtcBaselineDenoFilePort(runtime),
+        writerLockRuntime: createRtcBaselineWriterLockRuntime(runtime),
+        sha256,
+        clock: { nowUtc: () => runtime.now().toISOString(), monotonicNowMs: () => runtime.performanceNow() },
+        environment: { readAllowlisted: (names) => readRtcBaselineAllowlistedEnvironment(runtime, names) },
+        runtimeHost: { read: () => readRtcBaselineRuntimeHost(runtime, run) },
+        process: { run },
+        freshWorker: { run },
+        git: createRtcBaselineGitAdapter(run),
+        sourceConfigHashing: { read: (inputs) => readRtcBaselineSourceConfigHashes(runtime, inputs) }
+    };
+}
 
-    async function gitValue(
-        arguments_: readonly string[],
-        trim: boolean
-    ): Promise<RtcBaselineResult<string>> {
-        const result = await run({ executable: 'git', arguments: arguments_ });
-        if (!result.ok) {
-            return result;
-        }
-        return { ok: true, value: trim ? result.value.stdout.trim() : result.value.stdout };
-    }
-
-    const filePort = createRtcBaselineDenoFilePort(runtime);
-    const writerLockRuntime: RtcBaselineWriterLockRuntime = {
+function createRtcBaselineWriterLockRuntime(runtime: RtcBaselineDenoPort): RtcBaselineWriterLockRuntime {
+    return {
         createOwnerToken: () => runtime.randomUuid(),
         readOwnerIdentity: () => ({ hostname: runtime.hostname(), processId: runtime.pid }),
         now: () => runtime.now(),
@@ -163,14 +124,19 @@ export function createDenoRtcBaselineAdapters(
             }
         }
     };
+}
 
-    async function sha256(bytes: Uint8Array) {
-        const digestInput = bytes.buffer instanceof ArrayBuffer
-            ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-            : new Uint8Array(bytes);
-        return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', digestInput)));
+function createRtcBaselineGitAdapter(run: ProcessPort['run']): DenoRtcBaselineAdapters['git'] {
+    async function gitValue(
+        arguments_: readonly string[],
+        trim: boolean
+    ): Promise<RtcBaselineResult<string>> {
+        const result = await run({ executable: 'git', arguments: arguments_ });
+        if (!result.ok) {
+            return result;
+        }
+        return { ok: true, value: trim ? result.value.stdout.trim() : result.value.stdout };
     }
-
     async function readGitRef() {
         const symbolic = await gitValue(['symbolic-ref', '--short', '-q', 'HEAD'], true);
         if (symbolic.ok) {
@@ -190,89 +156,165 @@ export function createDenoRtcBaselineAdapters(
     }
 
     return {
-        filePort,
-        writerLockRuntime,
-        sha256,
-        clock: {
-            nowUtc: () => runtime.now().toISOString(),
-            monotonicNowMs: () => runtime.performanceNow()
-        },
-        environment: {
-            readAllowlisted(names: readonly string[]) {
-                const values: Record<string, string> = {};
-                for (const name of names) {
-                    const value = runtime.envGet(name);
-                    if (value !== undefined) {
-                        values[name] = value;
-                    }
+        readHeadCommit: () => gitValue(['rev-parse', 'HEAD'], true),
+        readHeadTree: () => gitValue(['rev-parse', 'HEAD^{tree}'], true),
+        readRef: readGitRef,
+        readStatus: () => gitValue(['status', '--porcelain=v1', '--untracked-files=all'], false)
+    };
+}
+
+async function runRtcBaselineCommand(
+    runtime: RtcBaselineDenoPort,
+    input: CommandInput
+): Promise<RtcBaselineResult<RtcBaselineCommandOutput>> {
+    if (!allowedExecutables.has(input.executable)) {
+        return {
+            ok: false,
+            issues: [
+                {
+                    path: '$.executable',
+                    code: 'executable-not-allowlisted',
+                    message: `Executable ${input.executable} is not allowed by the RTC baseline protocol.`
                 }
-                return values;
-            }
-        },
-        runtimeHost: {
-            async read() {
-                const kernel = await run({ executable: 'uname', arguments: ['-r'] });
-                if (!kernel.ok) {
-                    throw new Error(kernel.issues[0]!.message);
-                }
-                let cpuModel: string;
-                if (runtime.build.os === 'linux') {
-                    const cpuInfo = decoder.decode(await runtime.readFile('/proc/cpuinfo'));
-                    cpuModel = /^model name\s*:\s*(.+)$/m.exec(cpuInfo)?.[1]?.trim() ?? '';
-                    if (cpuModel.length === 0) {
-                        throw new Error('Linux CPU model is unavailable.');
-                    }
-                }
-                else {
-                    cpuModel = await readDarwinCpuModel(run);
-                }
-                return {
-                    deno: runtime.version.deno,
-                    os: runtime.build.os,
-                    kernel: kernel.value.stdout.trim(),
-                    architecture: runtime.build.arch,
-                    logicalCpuCount: runtime.availableParallelism(),
-                    cpuModel,
-                    totalMemoryBytes: runtime.systemMemoryInfo().total,
-                    executionContext: 'local' as const
-                };
-            }
-        },
-        process: { run },
-        freshWorker: { run },
-        git: {
-            readHeadCommit: () => gitValue(['rev-parse', 'HEAD'], true),
-            readHeadTree: () => gitValue(['rev-parse', 'HEAD^{tree}'], true),
-            readRef: readGitRef,
-            readStatus: () => gitValue(['status', '--porcelain=v1', '--untracked-files=all'], false)
-        },
-        sourceConfigHashing: {
-            async read(inputs: readonly { path: string; kind: 'source' | 'config'; }[]) {
-                const values = [];
-                for (let index = 0; index < inputs.length; index += 1) {
-                    const input = inputs[index]!;
-                    try {
-                        values.push({
-                            path: input.path,
-                            kind: input.kind,
-                            sha256: await sha256(await runtime.readFile(input.path))
-                        });
-                    }
-                    catch (error) {
-                        return {
-                            ok: false as const,
-                            issues: [
-                                {
-                                    path: `$.files[${index}]`,
-                                    code: 'file-read-failed',
-                                    message: cleanMessage(String(error))
-                                }
-                            ]
-                        };
-                    }
-                }
-                return { ok: true as const, value: values };
-            }
+            ]
+        };
+    }
+    try {
+        const output = await runtime.command(input.executable, input.arguments);
+        const value = {
+            exitStatus: output.code,
+            stdout: decoder.decode(output.stdout),
+            stderr: decoder.decode(output.stderr)
+        };
+        if (output.code === 0) {
+            return { ok: true, value };
         }
+        return {
+            ok: false,
+            issues: [
+                {
+                    path: '$.process',
+                    code: 'command-failed',
+                    message: `${input.executable} exited with status ${output.code}.`,
+                    details: value satisfies RtcBaselineJson
+                }
+            ]
+        };
+    }
+    catch (error) {
+        return {
+            ok: false,
+            issues: [
+                { path: '$.process', code: 'command-threw', message: cleanMessage(String(error)) }
+            ]
+        };
+    }
+}
+
+async function sha256(bytes: Uint8Array) {
+    const digestInput = bytes.buffer instanceof ArrayBuffer
+        ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+        : new Uint8Array(bytes);
+    return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', digestInput)));
+}
+
+async function readRtcBaselineRuntimeHost(
+    runtime: RtcBaselineDenoPort,
+    run: ProcessPort['run']
+): Promise<Awaited<ReturnType<DenoRtcBaselineAdapters['runtimeHost']['read']>>> {
+    const kernel = await run({ executable: 'uname', arguments: ['-r'] });
+    if (!kernel.ok) {
+        throw new Error(kernel.issues[0]!.message);
+    }
+    let cpuModel: string;
+    if (runtime.build.os === 'linux') {
+        const cpuInfo = decoder.decode(await runtime.readFile('/proc/cpuinfo'));
+        cpuModel = /^model name\s*:\s*(.+)$/m.exec(cpuInfo)?.[1]?.trim() ?? '';
+        if (cpuModel.length === 0) {
+            throw new Error('Linux CPU model is unavailable.');
+        }
+    }
+    else {
+        cpuModel = await readDarwinCpuModel(run);
+    }
+    return {
+        deno: runtime.version.deno,
+        os: runtime.build.os,
+        kernel: kernel.value.stdout.trim(),
+        architecture: runtime.build.arch,
+        logicalCpuCount: runtime.availableParallelism(),
+        cpuModel,
+        totalMemoryBytes: runtime.systemMemoryInfo().total,
+        executionContext: 'local' as const
+    };
+}
+
+function readRtcBaselineAllowlistedEnvironment(
+    runtime: RtcBaselineDenoPort,
+    names: readonly string[]
+): Readonly<Record<string, string>> {
+    const values: Record<string, string> = {};
+    for (const name of names) {
+        const value = runtime.envGet(name);
+        if (value !== undefined) {
+            values[name] = value;
+        }
+    }
+    return values;
+}
+
+async function readRtcBaselineSourceConfigHashes(
+    runtime: RtcBaselineDenoPort,
+    inputs: readonly { path: string; kind: 'source' | 'config'; }[]
+): Promise<RtcBaselineResult<RtcBaselineRuntimeObservationDto['sourceHashes']>> {
+    const owners = await readRtcBaselineInstalledBuildToolInputs(runtime, inputs);
+    if (!owners.ok) {
+        return owners;
+    }
+    const files = [...inputs, ...owners.value.map((path) => ({ path, kind: 'config' as const }))].filter((
+        input,
+        index,
+        all
+    ) => all.findIndex((file) => file.path === input.path) === index);
+    const values: RtcBaselineRuntimeObservationDto['sourceHashes'][number][] = [];
+    for (let index = 0; index < files.length; index++) {
+        const input = files[index]!;
+        try {
+            values.push({ ...input, sha256: await sha256(await runtime.readFile(input.path)) });
+        }
+        catch (error) {
+            return {
+                ok: false,
+                issues: [{ path: `$.files[${index}]`, code: 'file-read-failed', message: cleanMessage(String(error)) }]
+            };
+        }
+    }
+    return { ok: true, value: values };
+}
+
+async function readRtcBaselineInstalledBuildToolInputs(
+    runtime: RtcBaselineDenoPort,
+    inputs: readonly { path: string; }[]
+): Promise<RtcBaselineResult<readonly string[]>> {
+    if (!inputs.some((file) => file.path === 'node_modules/typescript/package.json')) {
+        return { ok: true, value: [] };
+    }
+    try {
+        const output = await runtime.command('node', FULL_STACK_RTC_BUILD_TOOL_INPUT_COMMAND);
+        const files = output.code === 0
+            ? decodeFullStackRtcBuildToolInputs(JSON.parse(decoder.decode(output.stdout)))
+            : null;
+        if (files) {
+            return { ok: true, value: files };
+        }
+    }
+    catch {}
+    return {
+        ok: false,
+        issues: [{
+            path: '$.sourceHashes',
+            code: 'unbound-build-tool-owner',
+            message: 'Selected installed build-tool owners could not be bound.'
+        }]
     };
 }

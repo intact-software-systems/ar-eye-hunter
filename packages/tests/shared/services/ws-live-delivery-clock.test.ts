@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     expect,
     it,
@@ -110,6 +111,7 @@ function createClockFixture(): LiveClockFixture {
 
 function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService {
     const service = new WsQueueBoxServerService({
+        creationNow: Temporal.Now.instant,
         socket: fixture.socket,
         name: 'server',
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
@@ -123,7 +125,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         inboundRuntime: createDefaultALInboundRuntimeResources({
             selfPeerId: 'server',
             nowMs: () => fixture.clock.nowMs(),
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, Temporal.Now.instant())
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
@@ -135,7 +137,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         inboundDiagnostics: undefined,
         outboundDeliveryOutcome: undefined,
         deliveryDiagnostics: undefined,
-        validateInboundMessage: Either.ofRight,
+        authorizeInboundMessage: Either.ofRight,
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 2000 }),
         publishRelayedAck: undefined,
         forwardsRoomScopedMessages: false
@@ -146,7 +148,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
 
 function createMessage(expiresAtMs: number): ALMessage {
     return {
-        id: { v: 2, msgId: 'clock-message', senderId: 'server', ts: 1000 },
+        id: { v: 3, msgId: 'clock-message', senderId: 'server', ts: 1000 },
         route: { topicId: 'app.message', contextId: 'direct', resourceId: 'clock' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' },
         targets: { mode: 'unicast', toPeerId: 'first' },

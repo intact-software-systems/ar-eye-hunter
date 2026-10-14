@@ -1,9 +1,10 @@
-import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestMessagesSendCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
@@ -16,9 +17,10 @@ import {
 } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
-    ALM_CONFORMANCE_TOPIC_ID,
     toCommandId,
+    toConnectionName,
     toRoomRef,
+    toScenarioTopicId,
     toScenarioTypeId,
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
@@ -27,9 +29,11 @@ interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
-    readonly ack?: 'receiver' | 'all-logical-recipients';
-    readonly reliability?: 'at-least-once';
-    readonly durability?: 'local-outbox' | 'local-inbox';
+    /** Absent, the channel's purpose decides; `none` asks for no receipt, so the send is done at transport acceptance. */
+    readonly ack?: RallarBlackBoxTestMessagesSendCommand['ack'];
+    /** Absent, the channel's purpose decides: at-least-once for both. */
+    readonly reliability?: RallarBlackBoxTestMessagesSendCommand['reliability'];
+    readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;
     /** Absent, the channel refuses a durable send its storage cannot take. */
     readonly onStorageUnavailable?: 'refuse' | 'volatile';
     readonly orderingKey?: string;
@@ -37,6 +41,15 @@ interface AlmConformanceSendDelivery {
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
     /** Absent, the send addresses its room. */
     readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
+    /** Absent, the room. */
+    readonly scope?: RallarBlackBoxTestMessagesSendCommand['scope'];
+    readonly principalId?: string;
+    /** Absent, the send names no fixed audience. */
+    readonly recipientPeer?: RallarBlackBoxTestMessagesSendCommand['recipientPeer'];
+    /** Absent, the send is `shared`. */
+    readonly ownership?: RallarBlackBoxTestMessagesSendCommand['ownership'];
+    /** Absent, the product mints a fresh resource for the send. */
+    readonly resourceId?: string;
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -50,25 +63,33 @@ interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
     readonly budgetMs?: number;
 }
 
-interface AlmConformanceControlAdmissionWaitInput {
-    readonly step: AlmConformanceMessageStepInput;
-    readonly name: string;
-    /** The control that answers the send of `step.index`. */
-    readonly controlTypeId: string;
-    /** A receipt's phase to match; absent, any committed admission of the control matches (a receipt's first). */
-    readonly receiptPhase?: ALReceiptPayload['phase'];
-}
-
 interface AlmConformanceResultAssertionInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'matches' | 'gt' | 'contains';
+    readonly operator:
+        | 'equals'
+        | 'notEquals'
+        | 'matches'
+        | 'gt'
+        | 'gte'
+        | 'lt'
+        | 'lte'
+        | 'length'
+        | 'contains'
+        | 'exists';
     readonly expected: string | number | boolean;
 }
 
-const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
+/** One fact a scenario reads from the observation of its first send: the assertion name, the field, how and what. */
+export type AlmConformanceVerdictFact = readonly [
+    name: string,
+    field: string,
+    operator: 'exists' | 'equals' | 'length' | 'matches',
+    expected: string | number | boolean
+];
+
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 
@@ -79,10 +100,10 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
     return {
         kind: 'messages.send',
         commandId: toCommandId(send, `send-${send.index}`),
-        connection: input.senderConnection,
+        connection: toConnectionName(send),
         carrier: input.carrier,
         typeId,
-        topicId: ALM_CONFORMANCE_TOPIC_ID,
+        topicId: toScenarioTopicId(send),
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(
@@ -94,11 +115,11 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
     };
 }
 
-export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestCommand {
+export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestMessagesObserveCommand {
     return {
         kind: 'messages.observe',
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),
-        connection: observe.input.senderConnection,
+        connection: toConnectionName(observe),
         handleId: toSendHandleId(observe),
         state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : [observe.state],
         timeoutMs: toBudgetMs(observe.budgetMs ?? toObserveBudgetMs(observe.state), observe.input.deadlineMs)
@@ -167,7 +188,7 @@ export function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarB
     return {
         kind: 'messages.cancel',
         commandId: toCommandId(cancel, `cancel-${cancel.index}`),
-        connection: cancel.input.senderConnection,
+        connection: toConnectionName(cancel),
         handleId: toSendHandleId(cancel),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, cancel.input.deadlineMs)
     };
@@ -177,32 +198,9 @@ export function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): Ral
     return {
         kind: 'messages.receipts',
         commandId: toCommandId(receipts, `receipts-${receipts.index}`),
-        connection: receipts.input.senderConnection,
+        connection: toConnectionName(receipts),
         handleId: toSendHandleId(receipts),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receipts.input.deadlineMs)
-    };
-}
-
-/**
- * The `control-admission` event in which the origin commits a control that answers one of its sends, matched in its
- * emitted key order (`typeId`, `targetMsgId`, `outcome`, then a receipt's `phase` after the `reason`). The verdict is
- * local to the origin, so the wait polls no other page.
- */
-export function toCommittedControlAdmissionWait(
-    { step, name, controlTypeId, receiptPhase }: AlmConformanceControlAdmissionWaitInput
-): RallarBlackBoxTestCommand {
-    const targetMsgId = `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
-    const phase = receiptPhase === undefined ? '' : `,"reason":"none","phase":"${receiptPhase}"`;
-    return {
-        kind: 'wait',
-        commandId: toCommandId(step, name),
-        match: {
-            kind: 'diagnostic',
-            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-            payloadPath: 'data',
-            contains: `"typeId":"${controlTypeId}","targetMsgId":"${targetMsgId}","outcome":"committed"${phase}`
-        },
-        timeoutMs: step.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
     };
 }
 
@@ -217,6 +215,27 @@ export function toResultAssertion(
         expected,
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
     };
+}
+
+/** The first send's handle reaches `state`, and each fact holds on that observation. */
+export function toVerdictCommands(
+    sender: AlmConformanceStepInput,
+    state: ALDeliveryState,
+    facts: readonly AlmConformanceVerdictFact[]
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...sender, index: 1, state }),
+        ...facts.map(([name, field, operator, expected]) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-${name}-1`,
+                resultName: `observe-${state}-1`,
+                field,
+                operator,
+                expected
+            })
+        )
+    ];
 }
 
 /**

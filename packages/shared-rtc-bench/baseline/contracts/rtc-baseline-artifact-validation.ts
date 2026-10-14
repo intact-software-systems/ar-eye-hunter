@@ -1,38 +1,38 @@
+import { jsonEquals } from '@shared/repository/state-utils.ts';
+
 import type {
     RtcBaselineStoredArtifact,
     RtcBaselineSummaryArtifactRecord
 } from '../evidence/rtc-baseline-evidence-layout.ts';
-import type {
-    RtcBaselineCaptureManifestDto,
-    RtcBaselineCohortIdentityDto,
-    RtcBaselineEnvironmentDto,
-    RtcBaselineExternalAttemptDto,
-    RtcBaselineExternalCohortDto,
-    RtcBaselineFinalizationFailureDto,
-    RtcBaselineJson,
-    RtcBaselineRuntimeObservationDto,
-    RtcBaselineSampleDto,
-    RtcBaselineSampleIdentityDto,
-    RtcBaselineSummaryDto
+import { validateRtcB06ProductionServingProof } from '../observation/validate-rtc-b06-production-serving-proof.ts';
+import {
+    rtcBaselineIssue,
+    type RtcBaselineCaptureManifestDto,
+    type RtcBaselineCohortIdentityDto,
+    type RtcBaselineEnvironmentDto,
+    type RtcBaselineExternalAttemptDto,
+    type RtcBaselineExternalCohortDto,
+    type RtcBaselineFinalizationFailureDto,
+    type RtcBaselineIssueDto,
+    type RtcBaselineJson,
+    type RtcBaselineRuntimeObservationDto,
+    type RtcBaselineSampleDto,
+    type RtcBaselineSampleIdentityDto,
+    type RtcBaselineSummaryDto
 } from './rtc-baseline-contracts.ts';
 import { isRtcBaselineId } from './rtc-baseline-id.ts';
 import { validateRtcBaselineId } from './rtc-baseline-validation.ts';
-type AccountingIdentity = RtcBaselineSampleIdentityDto | RtcBaselineCohortIdentityDto;
-type FailureIdentity = Pick<RtcBaselineFinalizationFailureDto, 'baselineId'>;
+
 export interface RtcBaselineAccountingOutcomeRecord {
     identity: AccountingIdentity;
 }
-const issue = (path: string, code: string, message: string) => ({ path, code, message });
-type Issue = ReturnType<typeof issue>;
+
+type AccountingIdentity = RtcBaselineSampleIdentityDto | RtcBaselineCohortIdentityDto;
+
+type FailureIdentity = Pick<RtcBaselineFinalizationFailureDto, 'baselineId'>;
+
 type IssueInput = readonly [path: string, code: string, message: string];
-function reportIf(issues: Issue[], invalid: boolean, problem: IssueInput) {
-    if (invalid) {
-        issues.push(issue(...problem));
-    }
-}
-function same<Left, Right>(left: Left, right: Right) {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
+
 const semanticMessages = {
     'artifact-workload-list-mismatch': 'Manifest workload list differs.',
     'attempt-evidence-class-mismatch': 'External attempt sample has the wrong evidence class.',
@@ -51,51 +51,64 @@ const semanticMessages = {
     'sample-id-mismatch': 'Sample ID does not match its identity fields.',
     'workload-list-mismatch': 'Manifest workload order must match its request.'
 } as const;
+
 type SemanticCode = keyof typeof semanticMessages;
-function semanticIssue(path: string, code: SemanticCode): Issue {
-    return issue(path, code, semanticMessages[code]);
-}
+
+type StringFormat = 'baselineId' | 'gitHash' | 'path' | 'sha256' | 'timestamp';
+
+const attemptLocatorFields = [
+    'workloadId',
+    'caseId',
+    'inputKey',
+    'intendedPhase',
+    'outerOrdinal'
+] as const;
+
+type AccountingKind = 'sample' | 'cohort';
+
+type OutcomeProblem = 'duplicate' | 'extra' | 'identity';
+
 export function validateRtcBaselineNumberRule(
     value: RtcBaselineJson | object | undefined,
     rule: { integer?: boolean; minimum?: number; values?: readonly number[]; },
     path: string
 ) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return [issue(path, 'expected-number', 'Expected a number.')];
+        return [rtcBaselineIssue(path, 'expected-number', 'Expected a number.')];
     }
     const integerKind = rule.minimum === 1 ? 'positive' : 'nonnegative';
     if (rule.integer && (!Number.isInteger(value) || value < (rule.minimum ?? 0))) {
-        return [issue(path, `expected-${integerKind}-integer`, `Expected a ${integerKind} integer.`)];
+        return [rtcBaselineIssue(path, `expected-${integerKind}-integer`, `Expected a ${integerKind} integer.`)];
     }
     if (rule.minimum !== undefined && value < rule.minimum) {
-        return [issue(path, 'expected-nonnegative-number', 'Expected a nonnegative number.')];
+        return [rtcBaselineIssue(path, 'expected-nonnegative-number', 'Expected a nonnegative number.')];
     }
     return rule.values && !rule.values.includes(value)
-        ? [issue(path, 'unsupported-value', `Expected ${rule.values.join(' or ')}.`)]
+        ? [rtcBaselineIssue(path, 'unsupported-value', `Expected ${rule.values.join(' or ')}.`)]
         : [];
 }
-type StringFormat = 'baselineId' | 'gitHash' | 'path' | 'sha256' | 'timestamp';
+
 export function validateRtcBaselineStringRule(
     value: RtcBaselineJson | object | undefined,
     rule: { values?: readonly string[]; format?: StringFormat; },
     path: string
 ) {
     if (typeof value !== 'string') {
-        return [issue(path, 'expected-string', 'Expected a string.')];
+        return [rtcBaselineIssue(path, 'expected-string', 'Expected a string.')];
     }
     if (rule.values && !rule.values.includes(value)) {
-        return [issue(path, 'unsupported-value', 'Unsupported value.')];
+        return [rtcBaselineIssue(path, 'unsupported-value', 'Unsupported value.')];
     }
     if (rule.format === 'sha256' && !/^[0-9a-f]{64}$/.test(value)) {
-        return [issue(path, 'invalid-sha256', 'Expected a lowercase 64-character SHA-256 digest.')];
+        return [rtcBaselineIssue(path, 'invalid-sha256', 'Expected a lowercase 64-character SHA-256 digest.')];
     }
     if (rule.format === 'baselineId' && !isRtcBaselineId(value)) {
         return [
-            issue(path, 'invalid-baseline-id', 'Baseline ID does not match the canonical grammar.')
+            rtcBaselineIssue(path, 'invalid-baseline-id', 'Baseline ID does not match the canonical grammar.')
         ];
     }
     if (rule.format === 'gitHash' && !/^[0-9a-f]{40}$/.test(value)) {
-        return [issue(path, 'invalid-git-hash', 'Expected a lowercase 40-character Git hash.')];
+        return [rtcBaselineIssue(path, 'invalid-git-hash', 'Expected a lowercase 40-character Git hash.')];
     }
     if (
         rule.format === 'path' &&
@@ -104,104 +117,96 @@ export function validateRtcBaselineStringRule(
             value.includes('\\') ||
             value.split('/').includes('..'))
     ) {
-        return [issue(path, 'invalid-relative-path', 'Expected a confined relative path.')];
+        return [rtcBaselineIssue(path, 'invalid-relative-path', 'Expected a confined relative path.')];
     }
     return rule.format === 'timestamp' && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-        ? [issue(path, 'invalid-timestamp', 'Expected an ISO 8601 UTC timestamp.')]
+        ? [rtcBaselineIssue(path, 'invalid-timestamp', 'Expected an ISO 8601 UTC timestamp.')]
         : [];
 }
-function fieldValue(value: object, field: PropertyKey) {
-    return Reflect.get(value, field);
-}
-const attemptLocatorFields = [
-    'workloadId',
-    'caseId',
-    'inputKey',
-    'intendedPhase',
-    'outerOrdinal'
-] as const;
-function expectedSampleId(identity: RtcBaselineSampleIdentityDto) {
-    const workload = String(identity.workloadId).slice(4).toLowerCase();
-    const outer = String(identity.outerOrdinal).padStart(3, '0');
-    const inner = String(identity.innerOrdinal).padStart(3, '0');
-    const sampleCase = `${workload}-${identity.caseId}-${identity.inputKey}`;
-    return `rtc-${sampleCase}-${identity.intendedPhase}-${outer}-${inner}`;
-}
+
 export function validateRtcBaselineManifest(manifest: RtcBaselineCaptureManifestDto) {
     const issues = [...validateRtcBaselineId(manifest.request.baselineId)];
-    if (!same(manifest.request.repeatLink, manifest.repeatLink)) {
-        issues.push(semanticIssue('$.repeatLink', 'repeat-link-mismatch'));
+    if (!jsonEquals(manifest.request.repeatLink, manifest.repeatLink)) {
+        issues.push(toRtcBaselineSemanticIssue('$.repeatLink', 'repeat-link-mismatch'));
     }
-    if (!same(manifest.request.workloadIds, manifest.workloadIds)) {
-        issues.push(semanticIssue('$.workloadIds', 'workload-list-mismatch'));
+    if (!jsonEquals(manifest.request.workloadIds, manifest.workloadIds)) {
+        issues.push(toRtcBaselineSemanticIssue('$.workloadIds', 'workload-list-mismatch'));
     }
     return issues;
 }
+
 export function validateRtcBaselineSample(sample: RtcBaselineSampleDto) {
-    const issues: Issue[] = [];
-    if (sample.identity.sampleId !== expectedSampleId(sample.identity)) {
-        issues.push(semanticIssue('$.identity.sampleId', 'sample-id-mismatch'));
+    const issues: RtcBaselineIssueDto[] = [];
+    if (sample.identity.sampleId !== computeRtcBaselineSampleId(sample.identity)) {
+        issues.push(toRtcBaselineSemanticIssue('$.identity.sampleId', 'sample-id-mismatch'));
     }
     if (sample.outcome === 'passed' && sample.issues.length > 0) {
-        issues.push(semanticIssue('$.issues', 'passed-with-issues'));
+        issues.push(toRtcBaselineSemanticIssue('$.issues', 'passed-with-issues'));
     }
+    issues.push(...validateRtcB06ProductionServingProof(sample));
     return issues;
 }
+
 export function validateRtcBaselineSummary(summary: Pick<RtcBaselineSummaryDto, 'baselineId'>) {
     return validateRtcBaselineId(summary.baselineId);
 }
+
 export function validateRtcBaselinePassingSummary(summary: RtcBaselineSummaryArtifactRecord) {
     const outcomes = [...summary.sampleOutcomes, ...summary.cohortOutcomes];
     const failed = outcomes.some((outcome) => outcome.outcome !== 'passed');
-    return failed ? [semanticIssue('$.summary', 'non-passing-finalized-outcome')] : [];
+    return failed ? [toRtcBaselineSemanticIssue('$.summary', 'non-passing-finalized-outcome')] : [];
 }
+
 export function validateRtcBaselineFinalizationFailure(failure: FailureIdentity) {
     return validateRtcBaselineId(failure.baselineId);
 }
+
 export function validateRtcBaselineExternalCohort(cohort: RtcBaselineExternalCohortDto) {
     const seen = new Set<string>();
-    const issues: Issue[] = [];
+    const issues: RtcBaselineIssueDto[] = [];
     cohort.identity.memberSampleIds.forEach((sampleId: string, index: number) => {
         if (seen.has(sampleId)) {
-            issues.push(semanticIssue(`$.identity.memberSampleIds[${index}]`, 'duplicate-member-sample'));
+            issues.push(toRtcBaselineSemanticIssue(`$.identity.memberSampleIds[${index}]`, 'duplicate-member-sample'));
         }
         seen.add(sampleId);
     });
     const sampleIds = cohort.samples.map(({ identity }) => identity.sampleId);
-    if (!same(cohort.identity.memberSampleIds, sampleIds)) {
-        issues.push(semanticIssue('$.samples', 'cohort-member-samples-mismatch'));
+    if (!jsonEquals(cohort.identity.memberSampleIds, sampleIds)) {
+        issues.push(toRtcBaselineSemanticIssue('$.samples', 'cohort-member-samples-mismatch'));
     }
     cohort.samples.forEach((sample, index) => {
         if (sample.identity.workloadId !== cohort.identity.workloadId) {
             issues.push(
-                semanticIssue(`$.samples[${index}].identity.workloadId`, 'cohort-workload-mismatch')
+                toRtcBaselineSemanticIssue(`$.samples[${index}].identity.workloadId`, 'cohort-workload-mismatch')
             );
         }
         if (sample.evidenceClass !== 'local-full-stack') {
             issues.push(
-                semanticIssue(`$.samples[${index}].evidenceClass`, 'cohort-evidence-class-mismatch')
+                toRtcBaselineSemanticIssue(`$.samples[${index}].evidenceClass`, 'cohort-evidence-class-mismatch')
             );
         }
     });
     return issues;
 }
+
 export function validateRtcBaselineRuntimeObservation(
     observation: RtcBaselineRuntimeObservationDto
 ) {
     const { startedAtUtc, endedAtUtc } = observation.timing;
     return Date.parse(endedAtUtc) < Date.parse(startedAtUtc)
-        ? [semanticIssue('$.timing.endedAtUtc', 'invalid-timing-order')]
+        ? [toRtcBaselineSemanticIssue('$.timing.endedAtUtc', 'invalid-timing-order')]
         : [];
 }
+
 export function validateRtcBaselineExternalAttempt(attempt: RtcBaselineExternalAttemptDto) {
     const facts = attempt.producerFacts;
-    const issues: Issue[] = [];
+    const issues: RtcBaselineIssueDto[] = [];
     const expectsAllScenarios = attempt.locator.caseId === 'all-scenarios';
     if (
         facts.allScenariosPresent !== expectsAllScenarios ||
         facts.allScenariosRaw !== (expectsAllScenarios ? '1' : null)
     ) {
-        issues.push(semanticIssue('$.producerFacts.allScenariosRaw', 'producer-fact-mismatch'));
+        issues.push(toRtcBaselineSemanticIssue('$.producerFacts.allScenariosRaw', 'producer-fact-mismatch'));
     }
     const expectsRetention = attempt.locator.caseId === 'retention-100';
     if (
@@ -210,7 +215,7 @@ export function validateRtcBaselineExternalAttempt(attempt: RtcBaselineExternalA
         facts.retentionCyclesPresent !== expectsRetention ||
         facts.retentionCyclesRaw !== (expectsRetention ? '100' : null)
     ) {
-        issues.push(semanticIssue('$.producerFacts.retentionSoakRaw', 'producer-fact-mismatch'));
+        issues.push(toRtcBaselineSemanticIssue('$.producerFacts.retentionSoakRaw', 'producer-fact-mismatch'));
     }
     const expectedEvidence = attempt.locator.workloadId === 'RTC-B05'
         ? 'native-browser'
@@ -218,17 +223,18 @@ export function validateRtcBaselineExternalAttempt(attempt: RtcBaselineExternalA
         ? 'local-full-stack'
         : null;
     attempt.samples.forEach((sample, index) => {
+        issues.push(...validateRtcB06ProductionServingProof(sample));
         const identityDiffers = attemptLocatorFields.some(
             (field) => sample.identity[field] !== attempt.locator[field]
         );
         if (identityDiffers) {
             issues.push(
-                semanticIssue(`$.samples[${index}].identity`, 'attempt-sample-identity-mismatch')
+                toRtcBaselineSemanticIssue(`$.samples[${index}].identity`, 'attempt-sample-identity-mismatch')
             );
         }
         if (expectedEvidence !== null && sample.evidenceClass !== expectedEvidence) {
             issues.push(
-                semanticIssue(`$.samples[${index}].evidenceClass`, 'attempt-evidence-class-mismatch')
+                toRtcBaselineSemanticIssue(`$.samples[${index}].evidenceClass`, 'attempt-evidence-class-mismatch')
             );
         }
     });
@@ -237,69 +243,12 @@ export function validateRtcBaselineExternalAttempt(attempt: RtcBaselineExternalA
         outcome,
         issues: sampleIssues
     }));
-    if (!same(attempt.sampleOutcomes, projectedOutcomes)) {
-        issues.push(semanticIssue('$.sampleOutcomes', 'attempt-outcome-projection-mismatch'));
+    if (!jsonEquals(attempt.sampleOutcomes, projectedOutcomes)) {
+        issues.push(toRtcBaselineSemanticIssue('$.sampleOutcomes', 'attempt-outcome-projection-mismatch'));
     }
     return issues;
 }
-type AccountingKind = 'sample' | 'cohort';
-type OutcomeProblem = 'duplicate' | 'extra' | 'identity';
-function accountingId(identity: AccountingIdentity, kind: AccountingKind) {
-    if (kind === 'sample' && 'sampleId' in identity) {
-        return identity.sampleId;
-    }
-    if (kind === 'cohort' && 'cohortId' in identity) {
-        return identity.cohortId;
-    }
-    return '';
-}
-function outcomeIssue(kind: AccountingKind, index: number, problem: OutcomeProblem) {
-    const label = kind === 'sample' ? 'Sample' : 'Cohort';
-    const identityMismatch = problem === 'identity';
-    return issue(
-        `$.${kind}Outcomes[${index}]${identityMismatch ? '.identity' : ''}`,
-        identityMismatch ? `${kind}-identity-mismatch` : `${problem}-${kind}-outcome`,
-        identityMismatch
-            ? `${label} identity differs.`
-            : `${label} outcome is ${problem === 'duplicate' ? 'duplicated' : 'extra'}.`
-    );
-}
-function validateOutcomeSet(
-    expected: readonly AccountingIdentity[],
-    outcomes: readonly RtcBaselineAccountingOutcomeRecord[],
-    kind: AccountingKind
-) {
-    const seen = new Set<string>();
-    const expectedById = new Map(
-        expected.map((identity) => [accountingId(identity, kind), identity])
-    );
-    const issues: Issue[] = [];
-    outcomes.forEach((outcome, index) => {
-        const id = accountingId(outcome.identity, kind);
-        const expectedIdentity = expectedById.get(id);
-        const problem: OutcomeProblem | null = seen.has(id)
-            ? 'duplicate'
-            : !expectedIdentity
-            ? 'extra'
-            : !same(expectedIdentity, outcome.identity)
-            ? 'identity'
-            : null;
-        if (problem !== null) {
-            issues.push(outcomeIssue(kind, index, problem));
-        }
-        seen.add(id);
-    });
-    if (expected.some((identity) => !seen.has(accountingId(identity, kind)))) {
-        issues.push(
-            issue(
-                `$.${kind}Outcomes`,
-                `missing-${kind}-outcome`,
-                `${kind === 'sample' ? 'Sample' : 'Cohort'} outcome is missing.`
-            )
-        );
-    }
-    return issues;
-}
+
 export function validateRtcBaselineCompleteAccounting(input: {
     expectedSamples: readonly AccountingIdentity[];
     expectedCohorts: readonly AccountingIdentity[];
@@ -311,6 +260,7 @@ export function validateRtcBaselineCompleteAccounting(input: {
         ...validateOutcomeSet(input.expectedCohorts, input.cohortOutcomes, 'cohort')
     ];
 }
+
 export function validateRtcBaselineReconciliation<Observation extends object>(
     initialized: Observation,
     current: Observation
@@ -326,9 +276,9 @@ export function validateRtcBaselineReconciliation<Observation extends object>(
         'workerCommand',
         'allowlistedEnvironment'
     ] as const;
-    const issues: Issue[] = [];
+    const issues: RtcBaselineIssueDto[] = [];
     for (const field of fields) {
-        reportIf(issues, !same(fieldValue(initialized, field), fieldValue(current, field)), [
+        appendRtcBaselineIssueIf(issues, !jsonEquals(Reflect.get(initialized, field), Reflect.get(current, field)), [
             `$.${field}`,
             'reconciliation-mismatch',
             `Runtime observation field ${field} changed.`
@@ -336,6 +286,7 @@ export function validateRtcBaselineReconciliation<Observation extends object>(
     }
     return issues;
 }
+
 export function validateRtcBaselineRetainedSampleObservations(
     environment: RtcBaselineRuntimeObservationDto | null,
     samples: readonly RtcBaselineSampleDto[]
@@ -347,10 +298,10 @@ export function validateRtcBaselineRetainedSampleObservations(
         if (sample.runtimeObservation === null) {
             return sample.metrics.length === 0
                 ? []
-                : [semanticIssue(`$.samples[${index}].runtimeObservation`, 'missing-runtime-observation')];
+                : [toRtcBaselineSemanticIssue(`$.samples[${index}].runtimeObservation`, 'missing-runtime-observation')];
         }
         if (environment === null) {
-            return [issue('$.environment.observation', 'missing-runtime-observation', 'Required.')];
+            return [rtcBaselineIssue('$.environment.observation', 'missing-runtime-observation', 'Required.')];
         }
         return validateRtcBaselineReconciliation(environment, sample.runtimeObservation).map(
             (problem) => ({
@@ -360,13 +311,14 @@ export function validateRtcBaselineRetainedSampleObservations(
         );
     });
 }
+
 export function validateRtcBaselineArtifactReconciliation(input: {
     baselineId: string;
     environment: RtcBaselineEnvironmentDto;
     manifest: RtcBaselineCaptureManifestDto;
     summary: RtcBaselineSummaryArtifactRecord;
 }) {
-    const issues: Issue[] = [];
+    const issues: RtcBaselineIssueDto[] = [];
     const { environment, manifest, summary } = input;
     const { request } = manifest;
     for (
@@ -376,14 +328,14 @@ export function validateRtcBaselineArtifactReconciliation(input: {
             ['summary', 'Summary', summary.baselineId]
         ] as const
     ) {
-        reportIf(issues, actual !== input.baselineId, [
+        appendRtcBaselineIssueIf(issues, actual !== input.baselineId, [
             `$.${owner}.baselineId`,
             'artifact-baseline-id-mismatch',
             `${label} baseline ID differs.`
         ]);
     }
-    if (!same(manifest.workloadIds, request.workloadIds)) {
-        issues.push(semanticIssue('$.manifest.workloadIds', 'artifact-workload-list-mismatch'));
+    if (!jsonEquals(manifest.workloadIds, request.workloadIds)) {
+        issues.push(toRtcBaselineSemanticIssue('$.manifest.workloadIds', 'artifact-workload-list-mismatch'));
     }
     const facts = [
         ['workloadIds', request.workloadIds, 'workload-list', 'workload list differs'],
@@ -403,7 +355,7 @@ export function validateRtcBaselineArtifactReconciliation(input: {
         ] as const
     ) {
         for (const [field, expected, code, description] of facts) {
-            reportIf(issues, !same(Reflect.get(artifact, field), expected), [
+            appendRtcBaselineIssueIf(issues, !jsonEquals(Reflect.get(artifact, field), expected), [
                 `$.${owner}.${field}`,
                 `artifact-${code}-mismatch`,
                 `${label} ${description}.`
@@ -412,6 +364,7 @@ export function validateRtcBaselineArtifactReconciliation(input: {
     }
     return issues;
 }
+
 export function validateRtcBaselineStoredArtifact(value: RtcBaselineStoredArtifact) {
     if (value.schema === 'rallar.rtc-baseline.environment.v1' && value.observation !== null) {
         return validateRtcBaselineRuntimeObservation(value.observation);
@@ -438,4 +391,81 @@ export function validateRtcBaselineStoredArtifact(value: RtcBaselineStoredArtifa
         return validateRtcBaselineFinalizationFailure(value);
     }
     return validateRtcBaselineSummary(value);
+}
+
+function appendRtcBaselineIssueIf(issues: RtcBaselineIssueDto[], invalid: boolean, problem: IssueInput) {
+    if (invalid) {
+        issues.push(rtcBaselineIssue(...problem));
+    }
+}
+
+function toRtcBaselineSemanticIssue(path: string, code: SemanticCode): RtcBaselineIssueDto {
+    return rtcBaselineIssue(path, code, semanticMessages[code]);
+}
+
+function computeRtcBaselineSampleId(identity: RtcBaselineSampleIdentityDto) {
+    const workload = String(identity.workloadId).slice(4).toLowerCase();
+    const outer = String(identity.outerOrdinal).padStart(3, '0');
+    const inner = String(identity.innerOrdinal).padStart(3, '0');
+    const sampleCase = `${workload}-${identity.caseId}-${identity.inputKey}`;
+    return `rtc-${sampleCase}-${identity.intendedPhase}-${outer}-${inner}`;
+}
+
+function resolveRtcBaselineAccountingId(identity: AccountingIdentity, kind: AccountingKind) {
+    if (kind === 'sample' && 'sampleId' in identity) {
+        return identity.sampleId;
+    }
+    if (kind === 'cohort' && 'cohortId' in identity) {
+        return identity.cohortId;
+    }
+    return '';
+}
+
+function toRtcBaselineOutcomeIssue(kind: AccountingKind, index: number, problem: OutcomeProblem) {
+    const label = kind === 'sample' ? 'Sample' : 'Cohort';
+    const identityMismatch = problem === 'identity';
+    return rtcBaselineIssue(
+        `$.${kind}Outcomes[${index}]${identityMismatch ? '.identity' : ''}`,
+        identityMismatch ? `${kind}-identity-mismatch` : `${problem}-${kind}-outcome`,
+        identityMismatch
+            ? `${label} identity differs.`
+            : `${label} outcome is ${problem === 'duplicate' ? 'duplicated' : 'extra'}.`
+    );
+}
+
+function validateOutcomeSet(
+    expected: readonly AccountingIdentity[],
+    outcomes: readonly RtcBaselineAccountingOutcomeRecord[],
+    kind: AccountingKind
+) {
+    const seen = new Set<string>();
+    const expectedById = new Map(
+        expected.map((identity) => [resolveRtcBaselineAccountingId(identity, kind), identity])
+    );
+    const issues: RtcBaselineIssueDto[] = [];
+    outcomes.forEach((outcome, index) => {
+        const id = resolveRtcBaselineAccountingId(outcome.identity, kind);
+        const expectedIdentity = expectedById.get(id);
+        const problem: OutcomeProblem | null = seen.has(id)
+            ? 'duplicate'
+            : !expectedIdentity
+            ? 'extra'
+            : !jsonEquals(expectedIdentity, outcome.identity)
+            ? 'identity'
+            : null;
+        if (problem !== null) {
+            issues.push(toRtcBaselineOutcomeIssue(kind, index, problem));
+        }
+        seen.add(id);
+    });
+    if (expected.some((identity) => !seen.has(resolveRtcBaselineAccountingId(identity, kind)))) {
+        issues.push(
+            rtcBaselineIssue(
+                `$.${kind}Outcomes`,
+                `missing-${kind}-outcome`,
+                `${kind === 'sample' ? 'Sample' : 'Cohort'} outcome is missing.`
+            )
+        );
+    }
+    return issues;
 }

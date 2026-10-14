@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
 import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { createPassThroughALOutboundRuntimeDiagnosticsSink } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -12,9 +13,17 @@ import {
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
-export type MiddlewareTestOverrides = {
-    readonly [K in keyof RallarBrowserMiddleware]?: Partial<RallarBrowserMiddleware[K]>;
-};
+import { createDefaultVolatileSessionBudget } from './default-volatile-session-budget.ts';
+
+/** The volatile ledger and the diagnostics sink are replaced whole: neither has a meaningful partial. */
+export type MiddlewareTestOverrides =
+    & {
+        readonly [K in Exclude<keyof RallarBrowserMiddleware, 'volatileBudget' | 'outboundDiagnostics'>]?: Partial<RallarBrowserMiddleware[K]>;
+    }
+    & {
+        readonly volatileBudget?: RallarBrowserMiddleware['volatileBudget'];
+        readonly outboundDiagnostics?: RallarBrowserMiddleware['outboundDiagnostics'];
+    };
 
 export interface ApiMiddlewareTestOverrides {
     readonly session?: Partial<AuthSession>;
@@ -47,13 +56,16 @@ export function createDefaultApiMiddlewareTestDouble(
                 ...middlewareOverrides.webRtcGroupManager
             }),
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
+                dispose: vi.fn<NonNullable<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>['dispose']>(() => Promise.resolve()),
                 ...middlewareOverrides.webRtcOverlayMulticastManager
             }),
             heartbeat: createHeartbeatDouble(
                 session.sessionId,
                 middlewareOverrides.heartbeat
             ),
-            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability)
+            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
+            volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
+            outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
         }
     };
 }
@@ -96,7 +108,7 @@ function createQboxEngineDouble(
 ): RallarBrowserMiddleware['qboxEngine'] {
     return toServiceTestDouble<RallarBrowserMiddleware['qboxEngine']>({
         wake: vi.fn(),
-        stop: vi.fn(),
+        stop: vi.fn<RallarBrowserMiddleware['qboxEngine']['stop']>(() => Promise.resolve()),
         ...override
     });
 }
@@ -124,7 +136,7 @@ function createWebSocketQueueBoxDouble(
             maxReconnectAttempts: 12,
             reconnectExhausted: false
         })),
-        close: vi.fn(),
+        close: vi.fn<RallarBrowserMiddleware['webSocketQueueBox']['close']>(() => Promise.resolve()),
         onAnyInboxMessageDo: vi.fn(() => queueBox),
         removeAnyInboxMessageCallback: vi.fn(() => true),
         socket: createWebSocketClientDouble(),
@@ -201,7 +213,7 @@ function createRtcRxStreamerDouble(
         setMediaPolicy: vi.fn(),
         stopLocalMedia: vi.fn(),
         stopAllHeartbeats: vi.fn(),
-        dispose: vi.fn(),
+        dispose: vi.fn<RallarBrowserMiddleware['rtcRxStreamer']['dispose']>(() => Promise.resolve()),
         ...override
     });
 

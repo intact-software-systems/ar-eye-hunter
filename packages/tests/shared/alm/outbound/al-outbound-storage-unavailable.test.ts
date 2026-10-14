@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -6,7 +6,7 @@ import {
     createCountingIndexedDbOperationObserver,
     createPassThroughIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -23,9 +23,11 @@ import {
 const QUOTA = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
 
 describe('outbound storage unavailability', () => {
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.unstubAllGlobals();
+        })
+    );
 
     // The failed transaction wrote nothing, so the send settles typed; the next commit is a recovery point.
     it('answers a send whose commit hits the quota storage-unavailable, then healthy at the next commit', async () => {
@@ -99,6 +101,7 @@ describe('outbound storage unavailability', () => {
         const events: ALStorageEvent[] = [];
         const observer = createCountingIndexedDbOperationObserver();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const volatileStores = createVolatileOutboundTestStores();
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: engine,
@@ -116,7 +119,7 @@ describe('outbound storage unavailability', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
@@ -136,7 +139,7 @@ describe('outbound storage unavailability', () => {
         );
         expect(observer.getCounts().byOwner['al-work']).toBe(0);
         await vi.waitFor(() => expect(events.map(toHealthStatus)).toEqual(['failing']));
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     // The caller tells this from a foreign control: inside a claim it retries, inline it answers not handled.
@@ -166,7 +169,12 @@ describe('outbound storage unavailability', () => {
     });
 });
 
-function createObservedStores(): Readonly<{ stores: OutboundTestStores; events: ALStorageEvent[]; }> {
+interface ObservedOutboundStores {
+    readonly stores: OutboundTestStores;
+    readonly events: ALStorageEvent[];
+}
+
+function createObservedStores(): ObservedOutboundStores {
     const events: ALStorageEvent[] = [];
     const stores: OutboundTestStores = {
         ...createDefaultOutboundTestStores(),

@@ -1,5 +1,3 @@
-import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import {
@@ -12,12 +10,13 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait, toResultAssertion } from '../alm-conformance-message-commands.ts';
+import { toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
     toAudiencePayload,
     toAudienceSendCommands,
     toReceiptWindowCommands,
+    toServerReceiptCommands,
     type AlmConformanceReceiptRoles
 } from '../alm-conformance-receipt-commands.ts';
 import {
@@ -27,7 +26,7 @@ import {
     toReceivedCommand,
     toSingleArrivalReceiverCommands
 } from '../alm-conformance-receiver-commands.ts';
-import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
+import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -35,8 +34,6 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
-
-export const RECEIPTED_AUDIENCE_ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver', 'recipient-b'];
 
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 const RETIRED_ACK_TYPE_ID = 'al.control.ack.v1';
@@ -50,13 +47,13 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     scenarioKey: 'aggregated-receipt',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
+        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: toSingleArrivalReceiverCommands
 };
@@ -72,19 +69,20 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
     scenarioKey: 'missing-recipient-retry',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: toRetryReceiptRoles,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({
             sender,
-            ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS
+            ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS,
+            ack: 'all-logical-recipients'
         }),
-        ...toReceiptWindowCommands(
-            sender,
-            toRetryReceiptRoles(sender.input.carrier),
-            sender.input.carrier === 'ws' ? 'expired' : 'acknowledged'
-        )
+        ...toReceiptWindowCommands(sender, {
+            roles: toRetryReceiptRoles(sender.input.carrier),
+            ending: sender.input.carrier === 'ws' ? 'expired' : 'acknowledged',
+            mode: 'receiver'
+        })
     ],
     toRecipientCommands: toRetryRecipientCommands
 };
@@ -99,12 +97,12 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     scenarioKey: 'frozen-audience-membership',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS }),
-        ...toReceiptWindowCommands(sender, RECIPIENT_B_UNCONFIRMED, 'expired')
+        ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS, ack: 'all-logical-recipients' }),
+        ...toReceiptWindowCommands(sender, { roles: RECIPIENT_B_UNCONFIRMED, ending: 'expired', mode: 'receiver' })
     ],
     toRecipientCommands: toMembershipRecipientCommands
 };
@@ -120,11 +118,11 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
     scenarioKey: 'unknown-ack-version',
     tags: FULL_TAGS,
     carriers: RTC_CARRIERS,
-    roles: RECEIPTED_AUDIENCE_ROLES,
+    roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
-        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
+        ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         toControlAdmissionOutcomeWait(sender, {
             name: 'unknown-ack-version-refused',
             controlMsgId: toRetiredAckMsgId(sender, `{resultCache.${toCommandId(sender, 'send-1')}.value.msgId}`),
@@ -132,7 +130,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
             contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"',
             timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
         }),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
+        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ],
     toRecipientCommands: toUnknownAckVersionRecipientCommands
 };
@@ -154,21 +152,6 @@ function toRetiredAckMsgId(step: AlmConformanceStepInput, ackedMsgId: string): s
 
 function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceReceiptRoles {
     return carrier === 'ws' ? RECIPIENT_B_UNCONFIRMED : BOTH_CONFIRMED;
-}
-
-/**
- * Over ws the receipt is a control of the trusted server, so the origin states its own admission of it. The wait
- * matches the first receipt frame committed for the send, the `admitted` one; the frame carries no phase in its
- * diagnostic, so completion is proven by the receipt read after the window, which must read `acknowledged`.
- */
-function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return sender.input.carrier !== 'ws' ? [] : [
-        toCommittedControlAdmissionWait({
-            step: { ...sender, index: 1 },
-            name: 'receipt-admitted-1',
-            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID
-        })
-    ];
 }
 
 /**

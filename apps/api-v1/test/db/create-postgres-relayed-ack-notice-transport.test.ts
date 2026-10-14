@@ -37,7 +37,7 @@ function createRecordingNotificationPort(): RecordingNotificationPort {
 
 function relayedNotice(ackedMsgId = 'room-message-1'): RelayedAckNotice {
     const message = newALAckControlMessage(
-        { v: 2, msgId: 'ack-c', senderId: 'c', ts: 1 },
+        { v: 3, msgId: 'ack-c', senderId: 'c', ts: 1 },
         {
             ackedMsgId,
             fromPeerId: 'c',

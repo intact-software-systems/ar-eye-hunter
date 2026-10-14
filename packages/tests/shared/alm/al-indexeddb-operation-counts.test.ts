@@ -6,9 +6,11 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
 import {
+    createCheckpointALOutboundRuntimeStores,
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
+import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -20,10 +22,10 @@ import {
     type ALOutboundWorkDeferral
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
@@ -36,8 +38,9 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -55,6 +58,7 @@ import {
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
+import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -72,6 +76,8 @@ const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 /** The resource inbox's timeout-claim and fairness rate-limit window, so the pin crosses at least one of each. */
 const IDLE_OWNER_RATE_WINDOW_MS = 60_000;
+const CHECKPOINT_INTERVAL_MS = 1_000;
+const CHECKPOINT_LAG_BOUND_MS = 10_000;
 const NO_DEFERRAL: ALOutboundWorkDeferral = {
     dequeue: { types: new Set<string>(), readyAtMs: undefined },
     leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
@@ -167,6 +173,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, nowMs, NO_DEFERRAL),
             selectReady: async (claimed, size) => toTestALWorkReadySelection(await claimed.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
@@ -182,7 +189,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
         }
 
         expect((observer.getCounts().byKind['work-page'] ?? 0) - before).toBe(4);
-        handler.dispose();
+        await handler.dispose();
     });
     it('claims a row an external writer enqueued once a wake announces it', async () => {
         const observer = createCountingIndexedDbOperationObserver();
@@ -199,6 +206,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
             selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
@@ -216,7 +224,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
         await engine.executeOnce();
 
         await vi.waitFor(() => expect(claimed).toEqual(['external-write']));
-        handler.dispose();
+        await handler.dispose();
     });
 });
 
@@ -228,7 +236,7 @@ describe('outbound default send IndexedDB volume', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
             nowMs: () => laneNowMs,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
@@ -246,7 +254,7 @@ describe('outbound default send IndexedDB volume', () => {
                 'takes the committed canonical pair in memory instead of two work reads, and only the ' +
                 'bootstrap batch sweeps for exhausted rows and lapsed leases'
         ).toBe(9);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -263,7 +271,7 @@ describe('outbound volatile send IndexedDB volume', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -289,8 +297,65 @@ describe('outbound volatile send IndexedDB volume', () => {
         );
         expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         // S3c-ii (D74): the session budget counts the send in memory and moves no IndexedDB counter.
-        expect(budget.readUsage(Date.now()).admissions, 'the bounded send is counted once').toBe(1);
-        runtime.dispose();
+        expect(budget.readReport(Date.now()).usage.admissions, 'the bounded send is counted once').toBe(1);
+        await runtime.dispose();
+    });
+});
+
+describe('outbound local-checkpoint send IndexedDB volume', () => {
+    // The send path is the volatile zero; the checkpoint is counted on its own, one write per interval and none while clean.
+    it('sends local-checkpoint messages beside a durable pair in 0 al-admission and 0 non-probe al-work operations, and checkpoints them in one write', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const timers = createManualCheckpointTimers();
+        const sent: string[] = [];
+        const checkpointStores = createCheckpointALOutboundRuntimeStores({
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: 'outbound-checkpoint-send',
+            dbName: `outbound-checkpoint-send-${crypto.randomUUID()}`,
+            observer,
+            ownership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            intervalMs: CHECKPOINT_INTERVAL_MS,
+            lagBoundMs: CHECKPOINT_LAG_BOUND_MS,
+            timers
+        });
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-checkpoint-durable' }),
+            checkpointStores,
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'checkpoint',
+                preparedMessages: [{ kind: 'send' }]
+            }),
+            sendPreparedMessage: async () => {
+                sent.push('send');
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+        await runtime.ready();
+        observer.reset();
+
+        for (const msgId of ['msg-checkpoint-1', 'msg-checkpoint-2', 'msg-checkpoint-3']) {
+            const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage(msgId));
+            expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        }
+        await vi.waitFor(() => expect(sent).toEqual(['send', 'send', 'send']));
+        await vi.waitFor(async () => expect(await readSettledInboundWork(checkpointStores.workQueue)).toBe(true));
+        const sends = observer.getCounts();
+        const armedBySends = timers.armed();
+        observer.reset();
+        timers.fire();
+        await vi.waitFor(() => expect(observer.getCounts().byKind.write).toBe(1));
+        const checkpoint = observer.getCounts();
+        observer.reset();
+
+        expect(sends.byOwner['al-admission'], 'a local-checkpoint send commits nothing to IndexedDB').toBe(0);
+        expect(computeNonProbeWorkOperations(sends), 'no non-probe al-work operation').toBe(0);
+        expect(armedBySends, 'the first change arms the one interval timer and later ones never postpone it').toBe(1);
+        expect(checkpoint.total, 'one checkpoint is one IndexedDB write, whatever the sends changed').toBe(1);
+        expect(timers.armed(), 'nothing is armed while the lane is clean').toBe(0);
+        expect(observer.getCounts().total, 'nothing runs while the lane is clean').toBe(0);
+        await runtime.dispose();
     });
 });
 
@@ -307,7 +372,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -328,7 +393,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         expect(first.byKind['work-probe'] ?? 0, 'the bootstrap inspects the empty queue').toBeGreaterThan(0);
         expect(computeNonProbeWorkOperations(first), 'the bootstrap changes nothing').toBe(0);
         expect(second.total, 'a warm runtime spends nothing on a volatile send').toBe(0);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('spends only probes on batches over an empty queue across the readiness memory and the rate window', async () => {
@@ -344,7 +409,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -367,7 +432,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         expect(counts.byOwner['al-admission']).toBe(0);
         expect(counts.byKind['work-probe'] ?? 0, 'the idle owner still inspects its queue').toBeGreaterThan(0);
         expect(computeNonProbeWorkOperations(counts), 'a reservation that changed nothing is not work').toBe(0);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -436,7 +501,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
         const admitted = await fixture.runtime.admitIncomingMessage(
             newALAckControlMessage(
                 {
-                    v: 2,
+                    v: 3,
                     msgId: 'ack-own-message',
                     senderId: INBOUND_TEST_SENDER_PEER_ID,
                     ts: Date.now()
@@ -522,6 +587,7 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
             toTestALWorkReadySelection(
                 await claimable.claim({ maxCount: size, observedEntries: undefined })
             ),
+        claimSuccessor: undefined,
         runClaim: async () => ({ status: 'completed' }),
         diagnostics: (event) => {
             if (event.kind === 'work-batch' && event.completedCount === claimCount) {
@@ -539,7 +605,8 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
     await engine.executeOnce();
     await batchSettled;
     const released = (observer.getCounts().byKind['work-release'] ?? 0) - before;
-    handler.dispose();
+    await handler.dispose();
+    await engine.stop();
     return released;
 }
 
@@ -554,11 +621,13 @@ interface IdleInboundRotation {
 /** An owner with an empty queue, driven for ten idle seconds of engine passes and nothing else. */
 async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'): Promise<IdleInboundRotation> {
     const observer = createCountingIndexedDbOperationObserver();
+    const batches = new ALWorkBatchTestObserver();
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
         effectWorkerId: INBOUND_WORKER_ID,
-        canDispatchMessage: () => false
+        canDispatchMessage: () => false,
+        acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     await fixture.runtime.ready();
     if (scanned === 'deferred-row') {
@@ -567,15 +636,15 @@ async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'):
             INBOUND_TEST_SOURCE
         );
     }
-    // The batch a commit schedules for itself is not awaited by its caller: let it leave the window.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Commit-started batches publish only after their real owned operations finish.
+    await batches.waitForPublishedBatches();
     observer.reset();
     const eventsBefore = fixture.diagnostics.length;
 
     for (let round = 0; round < INBOUND_IDLE_ROUNDS; round += 1) {
         await fixture.queueEngine.executeOnce();
-        // A round whose task is still in flight asks the owner nothing: let the pass before it end.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // This fixture never starts its engine; stop joins the pass without starting another one.
+        await fixture.queueEngine.stop();
     }
 
     const counts = observer.getCounts();
@@ -668,7 +737,7 @@ async function readAdmittedInboundDelivery(
         delivered: fixture.delivered,
         admissionOperations: counts.byOwner['al-admission'],
         nonProbeWorkOperations: computeNonProbeWorkOperations(counts),
-        budgetAdmissions: budget.readUsage(Date.now()).admissions
+        budgetAdmissions: budget.readReport(Date.now()).usage.admissions
     };
 }
 
@@ -696,12 +765,26 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
     return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
 }
 
+/** Holds the checkpoint writer's interval timers, so the test fires the one it armed instead of waiting a second. */
+function createManualCheckpointTimers(): ALCheckpointWriter.Timers & { armed(): number; fire(): void; } {
+    const pending = new Set<() => void>();
+    return {
+        schedule: (run) => {
+            pending.add(run);
+            return () => pending.delete(run);
+        },
+        armed: () => pending.size,
+        fire: () => {
+            const due = [...pending];
+            pending.clear();
+            due.forEach((callback) => callback());
+        }
+    };
+}
+
 /** The production bound over one session's memory pairs (D74). */
 function createDefaultSessionBudget(): ALVolatileSessionBudget {
-    return new ALVolatileSessionBudget({
-        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-    });
+    return new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
 }
 
 /** The durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */

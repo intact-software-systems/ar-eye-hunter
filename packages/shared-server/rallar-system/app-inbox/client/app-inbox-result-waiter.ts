@@ -1,3 +1,4 @@
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
     EntityStatus,
     type Key,
@@ -8,7 +9,9 @@ import {
     TryWithExhaustedError,
     TryWithPolicy,
     tryWithPolicy
-} from '@shared/resilience/TryWith.ts';
+} from '@shared/resilience/try-with-policy.ts';
+
+import type { ResourceInboxStatusAndAttempts } from '../../../queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -27,6 +30,24 @@ import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
 import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 
+type AppInboxQueueObservation =
+    | 'missing'
+    | 'NEW'
+    | 'RESERVED'
+    | 'RETRY'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'NON_RETRYABLE'
+    | 'other-status'
+    | 'read-failure';
+
+interface AppInboxCompletedResultRead<Result> {
+    readonly enqueue: AppInboxEnqueueInput;
+    readonly key: Key;
+    readonly decodeResult: AppInboxResultWaiter.ResultDecoder<Result>;
+    readonly subscription: ResourceInboxCompletionNotifications.Subscription | undefined;
+}
+
 interface AppInboxWaitPhase<Result> {
     readonly operation: 'read-result' | 'wait-completion';
     readonly enqueue: AppInboxEnqueueInput;
@@ -39,7 +60,7 @@ export namespace AppInboxResultWaiter {
     export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
 
     export interface StatusRepository {
-        isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
+        readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
     }
 
     export interface ResultRepository {
@@ -47,6 +68,7 @@ export namespace AppInboxResultWaiter {
     }
 
     export interface Dependencies {
+        readonly completionNotifications?: ResourceInboxCompletionNotifications;
         readonly statusRepository: StatusRepository;
         readonly resultRepository: ResultRepository;
     }
@@ -60,6 +82,7 @@ export namespace AppInboxResultWaiter {
 }
 
 export class AppInboxResultWaiter {
+    private readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     private readonly statusRepository: AppInboxResultWaiter.StatusRepository;
     private readonly resultRepository: AppInboxResultWaiter.ResultRepository;
     private readonly serviceId: string;
@@ -71,6 +94,7 @@ export class AppInboxResultWaiter {
         dependencies: AppInboxResultWaiter.Dependencies,
         config: AppInboxResultWaiter.Config
     ) {
+        this.completionNotifications = dependencies.completionNotifications;
         this.statusRepository = dependencies.statusRepository;
         this.resultRepository = dependencies.resultRepository;
         this.serviceId = config.serviceId;
@@ -84,16 +108,13 @@ export class AppInboxResultWaiter {
         key: Key,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
-        if (!(await this.waitForCompletion(enqueue, key))) {
-            return Either.ofLeft(toUnavailableAppInboxFailure());
+        const subscription = this.completionNotifications?.subscribe(key);
+        try {
+            return await this.readCompletedResult({ enqueue, key, decodeResult, subscription });
         }
-        return await this.timePhase({
-            operation: 'read-result',
-            enqueue,
-            key,
-            action: async () => await this.readResult(key, decodeResult),
-            details: {}
-        });
+        finally {
+            subscription?.close();
+        }
     }
 
     async waitForReservedResult<Result>(
@@ -108,6 +129,22 @@ export class AppInboxResultWaiter {
             reservation.key,
             decodeResult
         );
+    }
+
+    private async readCompletedResult<Result>(
+        read: AppInboxCompletedResultRead<Result>
+    ): Promise<Either<AppInboxFailure, Result>> {
+        const { enqueue, key, decodeResult, subscription } = read;
+        if (!(await this.waitForCompletion(enqueue, key, subscription))) {
+            return Either.ofLeft(toUnavailableAppInboxFailure());
+        }
+        return await this.timePhase({
+            operation: 'read-result',
+            enqueue,
+            key,
+            action: async () => await this.readResult(key, decodeResult),
+            details: {}
+        });
     }
 
     private async readResult<Result>(
@@ -146,7 +183,8 @@ export class AppInboxResultWaiter {
 
     private async waitForCompletion(
         enqueue: AppInboxEnqueueInput,
-        key: Key
+        key: Key,
+        subscription: ResourceInboxCompletionNotifications.Subscription | undefined
     ): Promise<boolean> {
         try {
             return await this.timePhase({
@@ -156,17 +194,10 @@ export class AppInboxResultWaiter {
                 action: async () =>
                     await tryWithPolicy(
                         async () => {
-                            const completed = await this.statusRepository.isEntryWithStatus(key, [
-                                EntityStatus.COMPLETED,
-                                EntityStatus.FAILED,
-                                EntityStatus.NON_RETRYABLE
-                            ]);
-                            if (!completed) {
-                                throw new Error('App inbox entry not found');
-                            }
-                            return true;
+                            subscription?.beginRead();
+                            return await this.readCompletionPoll(enqueue, key);
                         },
-                        this.toWaitPolicy(enqueue, key)
+                        this.toWaitPolicy(enqueue, key, subscription)
                     ),
                 details: { waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs }
             });
@@ -198,9 +229,51 @@ export class AppInboxResultWaiter {
         }
     }
 
+    private async readCompletionPoll(enqueue: AppInboxEnqueueInput, key: Key): Promise<boolean> {
+        let observed: ResourceInboxStatusAndAttempts | undefined;
+        try {
+            observed = await this.statusRepository.readStatusAndAttempts(key);
+        }
+        catch (error) {
+            this.recordPoll(enqueue, key, { queueObservation: 'read-failure' });
+            throw error;
+        }
+        this.recordPoll(enqueue, key, {
+            queueObservation: toAppInboxQueueObservation(observed),
+            ...(observed === undefined ? {} : { attempts: observed.attempts })
+        });
+        if (
+            observed?.status !== EntityStatus.COMPLETED &&
+            observed?.status !== EntityStatus.FAILED &&
+            observed?.status !== EntityStatus.NON_RETRYABLE
+        ) {
+            throw new Error('App inbox entry not found');
+        }
+        return true;
+    }
+
+    private recordPoll(enqueue: AppInboxEnqueueInput, key: Key, details: RallarTimingDetails): void {
+        if (!this.options.phaseTiming) {
+            return;
+        }
+        recordRallarTiming({
+            sink: this.timing,
+            event: {
+                component: 'app-inbox-phase',
+                operation: 'wait-poll',
+                serviceId: this.serviceId,
+                requestId: enqueue.resourceId,
+                details: { ...toAppInboxTimingDetails(enqueue, key), ...details }
+            },
+            status: details.queueObservation === 'read-failure' ? 'error' : 'ok',
+            durationMs: 0
+        });
+    }
+
     private toWaitPolicy(
         enqueue: AppInboxEnqueueInput,
-        key: Key
+        key: Key,
+        subscription: ResourceInboxCompletionNotifications.Subscription | undefined
     ): TryWithPolicy {
         let policy = TryWithPolicy.defaults()
             .label(`app-inbox:${key.topicId}:${key.resourceId}`)
@@ -234,7 +307,7 @@ export class AppInboxResultWaiter {
                 });
             });
         }
-        return policy;
+        return subscription ? policy.waitBeforeRetry((context) => subscription.wait(context.delayMsecs)) : policy;
     }
 
     private async timePhase<Result>(
@@ -254,5 +327,22 @@ export class AppInboxResultWaiter {
             },
             phase.action
         );
+    }
+}
+
+function toAppInboxQueueObservation(observed: ResourceInboxStatusAndAttempts | undefined): AppInboxQueueObservation {
+    if (observed === undefined) {
+        return 'missing';
+    }
+    switch (observed.status) {
+        case EntityStatus.NEW:
+        case EntityStatus.RESERVED:
+        case EntityStatus.RETRY:
+        case EntityStatus.COMPLETED:
+        case EntityStatus.FAILED:
+        case EntityStatus.NON_RETRYABLE:
+            return observed.status;
+        default:
+            return 'other-status';
     }
 }

@@ -1,11 +1,13 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
+
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH
 } from './composite-result-paths.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     RALLAR_BLACK_BOX_TEST_RESULT_STATUSES,
     type RallarBlackBoxTestCompositeChildResult,
     type RallarBlackBoxTestError,
@@ -47,8 +49,17 @@ export interface RallarBlackBoxCompositeChildDecodeIssue {
     readonly invalidFields: readonly string[];
 }
 
+export interface RallarBlackBoxCompositeRootPosition {
+    readonly kind: 'root';
+}
+
+export interface RallarBlackBoxCompositeRecipeChildPosition extends RallarBlackBoxCompositeChildPosition {
+    readonly kind: 'recipe-child';
+}
+
 export type RallarBlackBoxCompositeResultPosition =
-    | Readonly<{ kind: 'root'; }>
+    | RallarBlackBoxCompositeRootPosition
+    | RallarBlackBoxCompositeRecipeChildPosition
     | RallarBlackBoxCompositeLoopChildPosition
     | RallarBlackBoxCompositeParallelChildPosition;
 
@@ -115,10 +126,15 @@ export interface RallarBlackBoxCompositeDisplayResult {
     readonly error?: RallarBlackBoxTestError;
 }
 
+interface TraversalBudget {
+    remaining: number;
+}
+
 interface EntryPlacement {
     readonly path: string;
     readonly sourceRecipePath: string;
     readonly depth: number;
+    readonly compositeDepth: number;
     readonly position: RallarBlackBoxCompositeResultPosition;
 }
 
@@ -127,7 +143,10 @@ interface PlacedChild {
     readonly placement: EntryPlacement;
 }
 
-type ChildDecoding<Child> = Either<RallarBlackBoxCompositeChildDecodeIssue, Child>;
+interface ChildTraversal {
+    readonly entries: readonly RallarBlackBoxCompositeResultFlatEntry[];
+    readonly issues: readonly RallarBlackBoxCompositeChildDecodeIssue[];
+}
 
 const RESULT_FIELD_GUARDS = {
     commandId: isText,
@@ -159,6 +178,7 @@ const PARALLEL_CHILD_FIELD_GUARDS = { ...COMPOSITE_CHILD_FIELD_GUARDS, groupId: 
 export function toRallarBlackBoxCompositeResultFlatEntries(
     roots: readonly RallarBlackBoxTestResult[]
 ): readonly RallarBlackBoxCompositeResultFlatEntry[] {
+    const budget: TraversalBudget = { remaining: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands };
     return roots.flatMap((result, index) => {
         const rootPath = roots.length === 1
             ? RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH
@@ -167,8 +187,9 @@ export function toRallarBlackBoxCompositeResultFlatEntries(
             path: rootPath,
             sourceRecipePath: rootPath,
             depth: 0,
+            compositeDepth: 0,
             position: { kind: 'root' }
-        });
+        }, budget);
     });
 }
 
@@ -268,11 +289,25 @@ export function toRallarBlackBoxCompositeDisplayResults(
 
 function toFlatEntries(
     result: RallarBlackBoxTestResult,
-    placement: EntryPlacement
+    placement: EntryPlacement,
+    budget: TraversalBudget
 ): readonly RallarBlackBoxCompositeResultFlatEntry[] {
-    const childDecodings = toChildDecodings(result, placement);
+    if (budget.remaining === 0) {
+        return [];
+    }
+    budget.remaining -= 1;
+    // Recipe membership changes display depth, while only loop/parallel membership consumes executable composite depth.
+    const atCompositeLimit = (result.kind === 'loop' || result.kind === 'parallel') &&
+        placement.compositeDepth >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth;
+    const childDecodings = atCompositeLimit
+        ? []
+        : toChildDecodings(result, placement);
+    const traversal = toBoundedChildTraversal(childDecodings, budget);
     const entry: RallarBlackBoxCompositeResultFlatEntry = {
-        ...placement,
+        path: placement.path,
+        sourceRecipePath: placement.sourceRecipePath,
+        depth: placement.depth,
+        position: placement.position,
         commandId: result.commandId,
         kind: result.kind,
         status: result.status,
@@ -280,21 +315,62 @@ function toFlatEntries(
         startedAtEpochMs: result.startedAtEpochMs,
         endedAtEpochMs: result.endedAtEpochMs,
         durationMs: result.durationMs,
-        childDecodeIssues: childDecodings.flatMap((decoding) => decoding.fold((issue) => [issue], () => [])),
+        childDecodeIssues: [
+            ...traversal.issues,
+            ...(atCompositeLimit
+                ? [{ valuePath: 'value', invalidFields: ['depth-limit'] }]
+                : [])
+        ],
         result
     };
-    return [
-        entry,
-        ...childDecodings.flatMap((decoding) =>
-            decoding.fold(() => [], (child) => toFlatEntries(child.result, child.placement))
-        )
-    ];
+    return [entry, ...traversal.entries];
+}
+
+/** A descendant may consume the last slot before a later sibling is visited. */
+function toBoundedChildTraversal(
+    decodings: readonly Either<RallarBlackBoxCompositeChildDecodeIssue, PlacedChild>[],
+    budget: TraversalBudget
+): ChildTraversal {
+    const entries: RallarBlackBoxCompositeResultFlatEntry[] = [];
+    const issues = decodings.flatMap((decoding) => decoding.fold((issue) => [issue], () => []));
+    const paths = new Set<string>();
+    const positions = new Set<string>();
+    for (const decoding of decodings) {
+        const child = decoding.right;
+        if (child === undefined) {
+            continue;
+        }
+        const position = child.placement.position;
+        const index = position.kind === 'root'
+            ? undefined
+            : `${position.kind === 'parallel-child' ? position.groupIndex : ''}:${position.childIndex}`;
+        const invalidFields = [
+            ...(paths.has(child.placement.path) ? ['duplicate-path'] : []),
+            ...(index !== undefined && positions.has(index) ? ['duplicate-childIndex'] : [])
+        ];
+        if (invalidFields.length > 0) {
+            issues.push({ valuePath: child.placement.path, invalidFields });
+        }
+        paths.add(child.placement.path);
+        if (index !== undefined) {
+            positions.add(index);
+        }
+        if (budget.remaining === 0) {
+            issues.push({ valuePath: 'value', invalidFields: ['expanded-command-limit'] });
+            break;
+        }
+        entries.push(...toFlatEntries(child.result, child.placement, budget));
+    }
+    return { entries, issues };
 }
 
 function toChildDecodings(
     parent: RallarBlackBoxTestResult,
     placement: EntryPlacement
-): readonly ChildDecoding<PlacedChild>[] {
+): readonly Either<RallarBlackBoxCompositeChildDecodeIssue, PlacedChild>[] {
+    if (parent.kind === 'recipe.run') {
+        return decodeRecipeChildResults(parent, placement);
+    }
     if (parent.kind === 'loop') {
         return decodeLoopChildResults(parent.value).map((decoding) =>
             decoding.mapRight((child) =>
@@ -321,6 +397,41 @@ function toChildDecodings(
     return [];
 }
 
+/** Ordinary recipe children retain their authored command index without inventing loop metadata. */
+function decodeRecipeChildResults(
+    parent: RallarBlackBoxTestResult,
+    placement: EntryPlacement
+): readonly Either<RallarBlackBoxCompositeChildDecodeIssue, PlacedChild>[] {
+    if (parent.value === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(parent.value) || !Array.isArray(parent.value.results)) {
+        return [Either.ofLeft({ valuePath: 'value', invalidFields: ['results'] })];
+    }
+    return parent.value.results.map((value, index) =>
+        decodeRallarBlackBoxTestResult(value).mapBoth(
+            (invalidFields) => ({ valuePath: `value.results[${index}]`, invalidFields }),
+            (result) => ({
+                result,
+                placement: {
+                    path: `${placement.path}.commands[${index}]`,
+                    sourceRecipePath: `${placement.sourceRecipePath}.commands[${index}]`,
+                    depth: placement.depth + 1,
+                    compositeDepth: placement.compositeDepth,
+                    position: {
+                        kind: 'recipe-child',
+                        parentPath: placement.path,
+                        parentCommandId: parent.commandId,
+                        childIndex: index,
+                        commandIndex: index,
+                        originalCommandId: result.commandId
+                    }
+                }
+            })
+        )
+    );
+}
+
 function toChildPosition(
     parent: EntryPlacement,
     child: RallarBlackBoxTestCompositeChildResult
@@ -345,6 +456,7 @@ function toPlacedChild(
             path: toNestedResultPath(parent.path, child.path),
             sourceRecipePath: toNestedResultPath(parent.sourceRecipePath, child.sourceRecipePath),
             depth: parent.depth + 1,
+            compositeDepth: parent.compositeDepth + 1,
             position
         }
     };
@@ -361,15 +473,16 @@ function toNestedResultPath(parentPath: string, childPath: string): string {
 }
 
 function isCompositeResult(result: RallarBlackBoxTestResult): boolean {
-    return result.kind === 'loop' || result.kind === 'parallel';
+    return result.kind === 'recipe.run' || result.kind === 'loop' || result.kind === 'parallel';
 }
 
 /**
- * A loop without a recorded value, or whose value the control server compacted with `resultsOmitted`, holds no
- * children; a recorded value without its child list is one issue.
+ * A loop without a recorded value holds no children; a recorded value without its child list is one issue.
  */
-function decodeLoopChildResults(value: unknown): readonly ChildDecoding<RallarBlackBoxTestLoopChildResult>[] {
-    if (value === undefined || (isJsonRecordValue(value) && value.resultsOmitted === true)) {
+function decodeLoopChildResults(
+    value: unknown
+): readonly Either<RallarBlackBoxCompositeChildDecodeIssue, RallarBlackBoxTestLoopChildResult>[] {
+    if (value === undefined) {
         return [];
     }
     if (!isJsonRecordValue(value) || !Array.isArray(value.results)) {
@@ -379,7 +492,9 @@ function decodeLoopChildResults(value: unknown): readonly ChildDecoding<RallarBl
 }
 
 /** A composite without a recorded value holds no children; a value or group without its child list is one issue. */
-function decodeParallelChildResults(value: unknown): readonly ChildDecoding<RallarBlackBoxTestParallelChildResult>[] {
+function decodeParallelChildResults(
+    value: unknown
+): readonly Either<RallarBlackBoxCompositeChildDecodeIssue, RallarBlackBoxTestParallelChildResult>[] {
     if (value === undefined) {
         return [];
     }
@@ -394,7 +509,7 @@ function decodeParallelChildResults(value: unknown): readonly ChildDecoding<Rall
 function decodeParallelGroupChildResults(
     group: unknown,
     valuePath: string
-): readonly ChildDecoding<RallarBlackBoxTestParallelChildResult>[] {
+): readonly Either<RallarBlackBoxCompositeChildDecodeIssue, RallarBlackBoxTestParallelChildResult>[] {
     if (!isJsonRecordValue(group) || !Array.isArray(group.results)) {
         return [Either.ofLeft({ valuePath, invalidFields: ['results'] })];
     }
@@ -402,11 +517,17 @@ function decodeParallelGroupChildResults(
 }
 
 /** A recorded child that is not a JSON object lacks every required field. */
-function decodeLoopChildResult(value: unknown, valuePath: string): ChildDecoding<RallarBlackBoxTestLoopChildResult> {
+function decodeLoopChildResult(
+    value: unknown,
+    valuePath: string
+): Either<RallarBlackBoxCompositeChildDecodeIssue, RallarBlackBoxTestLoopChildResult> {
     const child = isJsonRecordValue(value) ? value : {};
     const invalidFields = Object.entries(LOOP_CHILD_FIELD_GUARDS)
         .filter(([field, isValidField]) => !isValidField(child[field]))
         .map(([field]) => field);
+    if (isRallarBlackBoxTestResult(child.result) && child.commandId !== child.result.commandId) {
+        invalidFields.push('result.commandId');
+    }
     return invalidFields.length === 0
         ? Either.ofRight(value as RallarBlackBoxTestLoopChildResult)
         : Either.ofLeft({ valuePath, invalidFields });
@@ -416,11 +537,14 @@ function decodeLoopChildResult(value: unknown, valuePath: string): ChildDecoding
 function decodeParallelChildResult(
     value: unknown,
     valuePath: string
-): ChildDecoding<RallarBlackBoxTestParallelChildResult> {
+): Either<RallarBlackBoxCompositeChildDecodeIssue, RallarBlackBoxTestParallelChildResult> {
     const child = isJsonRecordValue(value) ? value : {};
     const invalidFields = Object.entries(PARALLEL_CHILD_FIELD_GUARDS)
         .filter(([field, isValidField]) => !isValidField(child[field]))
         .map(([field]) => field);
+    if (isRallarBlackBoxTestResult(child.result) && child.commandId !== child.result.commandId) {
+        invalidFields.push('result.commandId');
+    }
     return invalidFields.length === 0
         ? Either.ofRight(value as RallarBlackBoxTestParallelChildResult)
         : Either.ofLeft({ valuePath, invalidFields });
@@ -441,7 +565,7 @@ export function decodeRallarBlackBoxTestResult(value: unknown): Either<readonly 
         : Either.ofLeft(invalidFields);
 }
 
-function isRallarBlackBoxTestError(value: unknown): value is RallarBlackBoxTestError {
+export function isRallarBlackBoxTestError(value: unknown): value is RallarBlackBoxTestError {
     return isJsonRecordValue(value) && typeof value.code === 'string' && typeof value.message === 'string';
 }
 

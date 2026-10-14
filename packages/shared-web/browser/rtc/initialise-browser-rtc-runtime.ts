@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import { toBrowserRtcOverlayALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     createBrowserALVolatileOutboundRuntimeStores,
@@ -13,9 +15,16 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -34,7 +43,8 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
@@ -48,17 +58,28 @@ import {
 } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    disposeRtcNativeObservationScope,
+    type RtcSignalingDiagnostics
+} from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 
+import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
+
 export interface InitialiseRtcOverlayMulticastManagerInput {
+    readonly creationNow?: QueueBoxUtilities.CreationClock;
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly volatileBudget: ALVolatileSessionBudget;
+    /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
     /** The connect's claim on its session's durable work, which only the durable lanes take. */
     readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    /** The session's transport faults, the same port its data channels decide their frames by. */
+    readonly faultPort: TransportFaultPort;
 }
 
 export function initialiseRtcOverlayMulticastManager(
@@ -67,6 +88,8 @@ export function initialiseRtcOverlayMulticastManager(
     const { webRtcConnectionService, qboxEngine } = input;
     const stores = resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId);
     const webRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: input.creationNow ?? Temporal.Now.instant,
         connectionService: webRtcConnectionService,
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         overlayCache: overlaysRepository.readableAcceptedOverlayCache(),
@@ -80,6 +103,7 @@ export function initialiseRtcOverlayMulticastManager(
                 toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
                 input.volatileBudget
             ),
+            checkpointStores: input.checkpointStores,
             durableWorkOwnership: input.durableWorkOwnership
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
@@ -87,7 +111,8 @@ export function initialiseRtcOverlayMulticastManager(
         outboundSettlements: input.outboundSettlements,
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter()
+        rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort
     });
 
     return webRtcOverlayMulticastManager;
@@ -104,6 +129,8 @@ export interface InitialiseRtcRxStreamerInput {
     readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+    /** Absent, no recovery owner is told of a track this receiver can no longer order: a transport built without the messaging composition. */
+    readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
 }
 
 export function initialiseRtcRxStreamer(
@@ -120,6 +147,7 @@ export function initialiseRtcRxStreamer(
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         durableWorkOwnership: input.durableWorkOwnership
     });
 }
@@ -132,48 +160,82 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly dataChannelName: string;
     readonly rtcSignalingTopicId: string;
     readonly faultPort: TransportFaultPort;
+    readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
+    readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
+    readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
 }
 
+export interface BrowserRtcConnectionInitialization {
+    readonly webRtcConnectionService: WebRtcConnectionService;
+    readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
+}
+
 export async function initialiseRtcConnectionService(
     input: InitialiseRtcConnectionServiceInput
-): Promise<WebRtcConnectionService> {
-    const rtcQBox = new WebRtcConnectionService(
-        new WsRtcSignalingTransportUsingWsQBox(
-            input.webSocketQueueBox,
-            input.rtcSignalingTopicId,
-            () => input.qboxEngine.wake()
-        ),
-        {
-            sessionId: input.clientData.sessionId,
-            token: 'NOT_CREATED_YET',
-            iceCandidates: input.iceCandidates,
-            dataChannelName: input.dataChannelName,
-            dataChannelLanes: input.dataChannelLanes,
-            rtcSignalingTopicId: input.rtcSignalingTopicId,
-            peerEstablishmentTimeout: {
-                ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
-                enabled: true
-            },
-            peerConnectionAttemptBudget: {
-                ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
-                enabled: true
-            },
-            maxPeerConnections: input.maxPeerConnections
-        },
-        { faultPort: input.faultPort, createOfferId: () => crypto.randomUUID() }
+): Promise<BrowserRtcConnectionInitialization> {
+    const signaler = new WsRtcSignalingTransportUsingWsQBox(
+        input.webSocketQueueBox,
+        input.rtcSignalingTopicId,
+        () => input.qboxEngine.wake()
     );
+    const nowEpochMs = Date.now;
+    const capture = createBrowserRtcCapture({
+        configuration: input.rtcCaptureConfiguration,
+        connectionId: input.connectionId,
+        record: input.signalingDiagnostics,
+        nowEpochMs
+    });
+    const dependencies = {
+        faultPort: input.faultPort,
+        createOfferId: () => crypto.randomUUID(),
+        nowEpochMs,
+        signalingDiagnostics: capture.diagnostics
+    };
+    try {
+        const connectionService = new WebRtcConnectionService(
+            signaler,
+            toBrowserRtcConnectionServiceInput(input),
+            dependencies
+        );
 
-    rtcQBox.setInboundPeerCreationPolicy(() => ({
-        decision: 'retry',
-        reason: 'browser-runtime-initializing'
-    }));
-    rtcQBox.setOutboundDialPolicy(() => ({
-        decision: 'deny',
-        reason: 'browser-runtime-initializing'
-    }));
-    await rtcQBox.connectSignaler();
+        connectionService.setInboundPeerCreationPolicy(() => ({
+            decision: 'retry',
+            reason: 'browser-runtime-initializing'
+        }));
+        connectionService.setOutboundDialPolicy(() => ({
+            decision: 'deny',
+            reason: 'browser-runtime-initializing'
+        }));
+        await connectionService.connectSignaler();
 
-    return rtcQBox;
+        return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };
+    }
+    catch (caught) {
+        disposeRtcNativeObservationScope(capture.diagnostics, input.clientData.sessionId);
+        throw caught;
+    }
+}
+
+function toBrowserRtcConnectionServiceInput(
+    input: InitialiseRtcConnectionServiceInput
+): WebRtcConnectionService.InputDto {
+    return {
+        sessionId: input.clientData.sessionId,
+        token: 'NOT_CREATED_YET',
+        iceCandidates: input.iceCandidates,
+        dataChannelName: input.dataChannelName,
+        dataChannelLanes: input.dataChannelLanes,
+        rtcSignalingTopicId: input.rtcSignalingTopicId,
+        peerEstablishmentTimeout: {
+            ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
+            enabled: true
+        },
+        peerConnectionAttemptBudget: {
+            ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
+            enabled: true
+        },
+        maxPeerConnections: input.maxPeerConnections
+    };
 }

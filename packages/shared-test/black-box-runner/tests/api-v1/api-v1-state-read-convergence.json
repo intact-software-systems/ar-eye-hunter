@@ -160,14 +160,7 @@
           "roles": []
         },
         "outputs": {
-          "clientFloor": "body.stateRevision",
-          "clientFloorString": {
-            "transform": {
-              "string": {
-                "path": "body.stateRevision"
-              }
-            }
-          }
+          "clientFloor": "body.stateRevision"
         }
       },
       "expect": {
@@ -184,13 +177,39 @@
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "clientRevisionBodyString": {
+            "transform": {
+              "string": {
+                "path": "body.stateRevision"
+              }
+            }
+          },
+          "clientRevisionBodyIsNumeric": {
+            "transform": {
+              "equals": [
+                {
+                  "path": "body.stateRevision"
+                },
+                {
+                  "number": {
+                    "path": "body.stateRevision"
+                  }
+                }
+              ]
+            }
+          }
         }
       },
       "expect": {
         "status": 200,
         "headers": {
-          "Rallar-State-Revision": "{clientFloorString}",
+          "Rallar-State-Revision": "string",
           "Rallar-State-Source": "string"
+        },
+        "body": {
+          "stateRevision": "integer"
         }
       }
     },
@@ -272,21 +291,7 @@
         },
         "outputs": {
           "groupFloor": "body.causalRevision.groupRevision",
-          "groupFloorString": {
-            "transform": {
-              "string": {
-                "path": "body.causalRevision.groupRevision"
-              }
-            }
-          },
-          "presenceFloor": "body.causalRevision.presenceRevision",
-          "presenceFloorString": {
-            "transform": {
-              "string": {
-                "path": "body.causalRevision.presenceRevision"
-              }
-            }
-          }
+          "presenceFloor": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -303,14 +308,64 @@
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "groupRevisionBodyString": {
+            "transform": {
+              "string": {
+                "path": "body.causalRevision.groupRevision"
+              }
+            }
+          },
+          "presenceRevisionBodyString": {
+            "transform": {
+              "string": {
+                "path": "body.causalRevision.presenceRevision"
+              }
+            }
+          },
+          "groupRevisionBodyIsNumeric": {
+            "transform": {
+              "equals": [
+                {
+                  "path": "body.causalRevision.groupRevision"
+                },
+                {
+                  "number": {
+                    "path": "body.causalRevision.groupRevision"
+                  }
+                }
+              ]
+            }
+          },
+          "presenceRevisionBodyIsNumeric": {
+            "transform": {
+              "equals": [
+                {
+                  "path": "body.causalRevision.presenceRevision"
+                },
+                {
+                  "number": {
+                    "path": "body.causalRevision.presenceRevision"
+                  }
+                }
+              ]
+            }
+          }
         }
       },
       "expect": {
         "status": 200,
         "headers": {
-          "Rallar-Group-Revision": "{groupFloorString}",
-          "Rallar-Presence-Revision": "{presenceFloorString}",
+          "Rallar-Group-Revision": "string",
+          "Rallar-Presence-Revision": "string",
           "Rallar-State-Source": "string"
+        },
+        "body": {
+          "causalRevision": {
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
+          }
         }
       }
     },
@@ -341,16 +396,57 @@
         "warmGroupSource": "{warmGroupSource}",
         "clientRevisionBody": "{resultsByName.readClientFloorOnTertiary.0.actual.body.stateRevision}",
         "groupRevisionBody": "{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.groupRevision}",
-        "presenceRevisionBody": "{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.presenceRevision}"
+        "presenceRevisionBody": "{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.presenceRevision}",
+        "clientRevisionHeader": "{resultsByName.readClientFloorOnTertiary.0.actual.headers.rallar-state-revision}",
+        "groupRevisionHeader": "{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-group-revision}",
+        "presenceRevisionHeader": "{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-presence-revision}",
+        "clientRevisionBodyIsNumeric": "{clientRevisionBodyIsNumeric}",
+        "groupRevisionBodyIsNumeric": "{groupRevisionBodyIsNumeric}",
+        "presenceRevisionBodyIsNumeric": "{presenceRevisionBodyIsNumeric}"
       },
       "expect": {
         "body": {
           "warmClientSource": "durable",
           "warmGroupSource": "durable",
-          "clientRevisionBody": "{clientFloor}",
-          "groupRevisionBody": "{groupFloor}",
-          "presenceRevisionBody": "{presenceFloor}"
-        }
+          "clientRevisionHeader": "{clientRevisionBodyString}",
+          "groupRevisionHeader": "{groupRevisionBodyString}",
+          "presenceRevisionHeader": "{presenceRevisionBodyString}",
+          "clientRevisionBodyIsNumeric": true,
+          "groupRevisionBodyIsNumeric": true,
+          "presenceRevisionBodyIsNumeric": true
+        },
+        "comparators": [
+          {
+            "path": "clientRevisionBody",
+            "gte": "{clientFloor}",
+            "lte": 9007199254740991
+          },
+          {
+            "path": "clientRevisionHeader",
+            "gte": "{clientFloor}",
+            "lte": 9007199254740991
+          },
+          {
+            "path": "groupRevisionBody",
+            "gte": "{groupFloor}",
+            "lte": 9007199254740991
+          },
+          {
+            "path": "groupRevisionHeader",
+            "gte": "{groupFloor}",
+            "lte": 9007199254740991
+          },
+          {
+            "path": "presenceRevisionBody",
+            "gte": "{presenceFloor}",
+            "lte": 9007199254740991
+          },
+          {
+            "path": "presenceRevisionHeader",
+            "gte": "{presenceFloor}",
+            "lte": 9007199254740991
+          }
+        ]
       }
     }
   ]

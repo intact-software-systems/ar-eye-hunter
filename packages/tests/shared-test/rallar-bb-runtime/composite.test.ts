@@ -1,28 +1,28 @@
 import * as timers from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
 import {
-    createRallarBlackBoxTestRuntime,
+    createDefaultRallarBlackBoxTestRuntime,
     getRallarBlackBoxCommandHistory,
     getRallarBlackBoxLatestStats,
-    type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestLoopResultValue,
-    type RallarBlackBoxTestParallelResultValue,
-    type RallarBlackBoxTestRecord
+    type RallarBlackBoxTestRtcSendCommand
 } from '../../../shared-test/rallar-bb-test/mod.ts';
+import { isJsonRecordValue } from '../../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
 describe('rallar-bb runtime composite', () => {
     it('runs parallel groups with bounded concurrency and deterministic parent ordering', async () => {
         let activeCommands = 0;
         let maxActiveCommands = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
                 }
 
-                const parallel = command.metadata?.parallel as { groupId?: string; } | undefined;
-                const groupId = parallel?.groupId ?? 'unknown';
+                const parallel = command.metadata?.parallel;
+                const groupId = isJsonRecordValue(parallel) && typeof parallel.groupId === 'string'
+                    ? parallel.groupId
+                    : 'unknown';
                 activeCommands += 1;
                 maxActiveCommands = Math.max(maxActiveCommands, activeCommands);
                 await timers.setTimeout(groupId === 'left' ? 30 : groupId === 'middle' ? 5 : 10);
@@ -57,11 +57,10 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.ok).toBe(true);
         expect(maxActiveCommands).toBe(2);
-        expect(value).toMatchObject({
+        expect(result.value).toMatchObject({
             commandId: 'parallel-room-traffic',
             groupCount: 3,
             maxConcurrency: 2,
@@ -69,29 +68,38 @@ describe('rallar-bb runtime composite', () => {
             failed: 0,
             cancelled: false
         });
-        expect(value.groups.map((group) => group.groupId)).toEqual(['left', 'middle', 'right']);
-        expect(value.groups.map((group) => group.results[0]?.commandId)).toEqual([
-            'parallel-room-traffic:g1:left:c1:send-shared',
-            'parallel-room-traffic:g2:middle:c1:send-shared',
-            'parallel-room-traffic:g3:right:c1:send-shared'
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ groupId: 'left' }),
+            expect.objectContaining({ groupId: 'middle' }),
+            expect.objectContaining({ groupId: 'right' })
         ]);
-        expect(value.groups[0].results[0]?.result.value).toMatchObject({
-            metadata: {
-                parallel: {
-                    commandId: 'parallel-room-traffic',
-                    groupId: 'left',
-                    groupIndex: 0,
-                    commandIndex: 0,
-                    originalCommandId: 'send-shared'
-                }
-            }
+        expect(result.value).toMatchObject({
+            groups: [
+                { results: [{ commandId: 'parallel-room-traffic:g1:left:c1:send-shared' }] },
+                { results: [{ commandId: 'parallel-room-traffic:g2:middle:c1:send-shared' }] },
+                { results: [{ commandId: 'parallel-room-traffic:g3:right:c1:send-shared' }] }
+            ]
         });
+        expect(result.value).toHaveProperty(
+            'groups.0.results.0.result.value',
+            expect.objectContaining({
+                metadata: {
+                    parallel: {
+                        commandId: 'parallel-room-traffic',
+                        groupId: 'left',
+                        groupIndex: 0,
+                        commandIndex: 0,
+                        originalCommandId: 'send-shared'
+                    }
+                }
+            })
+        );
         expect(getRallarBlackBoxCommandHistory(runtime.state()).at(-1)?.commandId).toBe('parallel-room-traffic');
     });
 
     it('runs later parallel groups after failures when failFast is disabled', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -135,13 +143,15 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_CHILD_FAILED');
-        expect(value.failed).toBe(1);
-        expect(value.passed).toBe(1);
-        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 1]);
+        expect(result.value).toHaveProperty('failed', 1);
+        expect(result.value).toHaveProperty('passed', 1);
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ commandCount: 1 }),
+            expect.objectContaining({ commandCount: 1 })
+        ]);
         expect(executedCommandIds).toEqual([
             'fail-slow-parallel:g1:left:c1:fail-send',
             'fail-slow-parallel:g2:right:c1:ok-send'
@@ -150,7 +160,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('stops scheduling later parallel groups after failure by default', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -191,10 +201,12 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('failed');
-        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 0]);
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ commandCount: 1 }),
+            expect.objectContaining({ commandCount: 0 })
+        ]);
         expect(executedCommandIds).toEqual([
             'fail-fast-parallel:g1:left:c1:fail-send'
         ]);
@@ -202,7 +214,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('keeps scheduling later parallel groups when a child reports cancelled without a runtime cancellation', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -230,13 +242,12 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         // A cancelled child ends its own group; only a failed child stops the other groups.
         expect(result.status).toBe('cancelled');
-        expect(value.groups.map((group) => [group.groupId, group.commandCount, group.cancelled])).toEqual([
-            ['left', 1, true],
-            ['right', 1, false]
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ groupId: 'left', commandCount: 1, cancelled: true }),
+            expect.objectContaining({ groupId: 'right', commandCount: 1, cancelled: false })
         ]);
         expect(executedCommandIds).toEqual([
             'child-cancelled-parallel:g1:left:c1:cancelled-send',
@@ -246,7 +257,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('continues within parallel groups and reports ok when continueOnFailure is enabled', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -291,12 +302,14 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('ok');
-        expect(value.passed).toBe(2);
-        expect(value.failed).toBe(1);
-        expect(value.groups.map((group) => group.commandCount)).toEqual([2, 1]);
+        expect(result.value).toHaveProperty('passed', 2);
+        expect(result.value).toHaveProperty('failed', 1);
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ commandCount: 2 }),
+            expect.objectContaining({ commandCount: 1 })
+        ]);
         expect(executedCommandIds).toEqual([
             'continue-parallel:g1:left:c1:fail-send',
             'continue-parallel:g1:left:c2:after-failure',
@@ -326,13 +339,12 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('cancelled');
-        expect(value.cancelled).toBe(true);
-        expect(value.groups.map((group) => [group.groupId, group.commandCount, group.cancelled])).toEqual([
-            ['left', 2, true],
-            ['right', 0, true]
+        expect(result.value).toHaveProperty('cancelled', true);
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ groupId: 'left', commandCount: 2, cancelled: true }),
+            expect.objectContaining({ groupId: 'right', commandCount: 0, cancelled: true })
         ]);
         expect(getRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'cancel-parallel:g1:left:c1:before-cancel',
@@ -343,7 +355,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('stops scheduling parallel groups after the parent timeout is reached', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -377,19 +389,21 @@ describe('rallar-bb runtime composite', () => {
                 }
             ]
         });
-        const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_TIMEOUT');
-        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 0]);
+        expect(result.value).toHaveProperty('groups', [
+            expect.objectContaining({ commandCount: 1 }),
+            expect.objectContaining({ commandCount: 0 })
+        ]);
         expect(executedCommandIds).toEqual([
             'timeout-parallel:g1:left:c1:slow-send'
         ]);
     });
 
     it('executes loop child commands with loop placeholders and metadata', async () => {
-        const capturedCommands: RallarBlackBoxTestCommand[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const capturedCommands: RallarBlackBoxTestRtcSendCommand[] = [];
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: (() => {
                 let now = 10_000;
                 return () => now += 5;
@@ -436,15 +450,8 @@ describe('rallar-bb runtime composite', () => {
             ]
         });
 
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
-        const sentPayloads = capturedCommands.map((command) =>
-            ((command as Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>).send as {
-                data: RallarBlackBoxTestRecord;
-            }).data
-        );
-
         expect(result.ok).toBe(true);
-        expect(value).toMatchObject({
+        expect(result.value).toMatchObject({
             commandId: 'position-loop',
             iterations: 3,
             childResultCount: 3,
@@ -457,10 +464,11 @@ describe('rallar-bb runtime composite', () => {
             'position-loop:i2:c1:position-send',
             'position-loop:i3:c1:position-send'
         ]);
-        expect(sentPayloads.map((payload) => payload.seq)).toEqual([0, 1, 2]);
-        expect(sentPayloads.map((payload) => payload.iteration)).toEqual([1, 2, 3]);
-        expect(sentPayloads.map((payload) => payload.label)).toEqual(['frame-0', 'frame-1', 'frame-2']);
-        expect(sentPayloads.map((payload) => payload.commandIndex)).toEqual([0, 0, 0]);
+        expect(capturedCommands).toMatchObject([
+            { send: { data: { seq: 0, iteration: 1, label: 'frame-0', commandIndex: 0 } } },
+            { send: { data: { seq: 1, iteration: 2, label: 'frame-1', commandIndex: 0 } } },
+            { send: { data: { seq: 2, iteration: 3, label: 'frame-2', commandIndex: 0 } } }
+        ]);
         expect(capturedCommands[0].metadata).toMatchObject({
             loop: {
                 commandId: 'position-loop',
@@ -470,35 +478,13 @@ describe('rallar-bb runtime composite', () => {
                 originalCommandId: 'position-send'
             }
         });
-        expect(value.results.map((child) => ({
-            commandId: child.commandId,
-            originalCommandId: child.originalCommandId,
-            commandIndex: child.commandIndex,
-            iteration: child.iteration,
-            status: child.result.status
-        }))).toEqual([
-            {
-                commandId: 'position-loop:i1:c1:position-send',
-                originalCommandId: 'position-send',
-                commandIndex: 0,
-                iteration: 1,
-                status: 'ok'
-            },
-            {
-                commandId: 'position-loop:i2:c1:position-send',
-                originalCommandId: 'position-send',
-                commandIndex: 0,
-                iteration: 2,
-                status: 'ok'
-            },
-            {
-                commandId: 'position-loop:i3:c1:position-send',
-                originalCommandId: 'position-send',
-                commandIndex: 0,
-                iteration: 3,
-                status: 'ok'
-            }
-        ]);
+        expect(result.value).toMatchObject({
+            results: [
+                { commandId: 'position-loop:i1:c1:position-send', originalCommandId: 'position-send', commandIndex: 0, iteration: 1, result: { status: 'ok' } },
+                { commandId: 'position-loop:i2:c1:position-send', originalCommandId: 'position-send', commandIndex: 0, iteration: 2, result: { status: 'ok' } },
+                { commandId: 'position-loop:i3:c1:position-send', originalCommandId: 'position-send', commandIndex: 0, iteration: 3, result: { status: 'ok' } }
+            ]
+        });
         expect(getRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'position-loop:i1:c1:position-send',
             'position-loop:i2:c1:position-send',
@@ -509,7 +495,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('stops loop execution on child failure unless continueOnFailure is true', async () => {
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -543,19 +529,18 @@ describe('rallar-bb runtime composite', () => {
             count: 4,
             commands: [{ kind: 'rtc.send', commandId: 'send-once' }]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_CHILD_FAILED');
-        expect(value.childResultCount).toBe(2);
-        expect(value.passed).toBe(1);
-        expect(value.failed).toBe(1);
+        expect(result.value).toHaveProperty('childResultCount', 2);
+        expect(result.value).toHaveProperty('passed', 1);
+        expect(result.value).toHaveProperty('failed', 1);
         expect(sendCount).toBe(2);
     });
 
     it('continues loop execution after child failure when continueOnFailure is enabled', async () => {
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -588,12 +573,11 @@ describe('rallar-bb runtime composite', () => {
             continueOnFailure: true,
             commands: [{ kind: 'rtc.send', commandId: 'send-once' }]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('ok');
-        expect(value.childResultCount).toBe(3);
-        expect(value.passed).toBe(2);
-        expect(value.failed).toBe(1);
+        expect(result.value).toHaveProperty('childResultCount', 3);
+        expect(result.value).toHaveProperty('passed', 2);
+        expect(result.value).toHaveProperty('failed', 1);
         expect(sendCount).toBe(3);
     });
 
@@ -610,11 +594,10 @@ describe('rallar-bb runtime composite', () => {
                 { kind: 'health', commandId: 'after-cancel' }
             ]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('cancelled');
-        expect(value.cancelled).toBe(true);
-        expect(value.childResultCount).toBe(2);
+        expect(result.value).toHaveProperty('cancelled', true);
+        expect(result.value).toHaveProperty('childResultCount', 2);
         expect(getRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'cancel-loop:i1:c1:before-cancel',
             'cancel-loop:i1:c2:request-cancel',
@@ -624,7 +607,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('waits the configured interval between loop iterations', async () => {
         const sendCallEpochMs: number[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -657,7 +640,7 @@ describe('rallar-bb runtime composite', () => {
     it('records deterministic loop pacing, send, and stats summaries', async () => {
         let now = 1_000;
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 now += ms;
@@ -695,37 +678,43 @@ describe('rallar-bb runtime composite', () => {
             intervalMs: 10,
             commands: [{ kind: 'rtc.send', commandId: 'paced-send', transport: 'realtime' }]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
         const statsResult = await runtime.execute({ kind: 'stats', commandId: 'paced-stats' });
-        const stats = statsResult.value as ReturnType<typeof getRallarBlackBoxLatestStats>;
+        const stats = getRallarBlackBoxLatestStats(runtime.state());
+        expect(statsResult.value).toEqual(stats);
 
         expect(result.ok).toBe(true);
-        expect(value.pacing).toMatchObject({
-            requestedIntervalMs: 10,
-            requestedRateHz: 100,
-            completedIterations: 3,
-            targetElapsedMs: 20,
-            elapsedMs: 45,
-            maxStartDriftMs: 20,
-            averageStartDriftMs: 8,
-            maxJitterMs: 15,
-            averageJitterMs: 10,
-            lateIterationCount: 1
-        });
-        expect(value.pacing?.iterations.map((iteration) => iteration.startDriftMs)).toEqual([0, 5, 20]);
-        expect(value.sends).toMatchObject({
-            sendCount: 3,
-            succeeded: 3,
-            failed: 0,
-            successRatio: 1,
-            backpressureCount: 1,
-            duration: {
-                minMs: 5,
-                maxMs: 15,
-                averageMs: 8,
-                totalMs: 25
-            }
-        });
+        expect(result.value).toHaveProperty(
+            'pacing',
+            expect.objectContaining({
+                requestedIntervalMs: 10,
+                requestedRateHz: 100,
+                completedIterations: 3,
+                targetElapsedMs: 20,
+                elapsedMs: 45,
+                maxStartDriftMs: 20,
+                averageStartDriftMs: 8,
+                maxJitterMs: 15,
+                averageJitterMs: 10,
+                lateIterationCount: 1
+            })
+        );
+        expect(result.value).toMatchObject({ pacing: { iterations: [{ startDriftMs: 0 }, { startDriftMs: 5 }, { startDriftMs: 20 }] } });
+        expect(result.value).toHaveProperty(
+            'sends',
+            expect.objectContaining({
+                sendCount: 3,
+                succeeded: 3,
+                failed: 0,
+                successRatio: 1,
+                backpressureCount: 1,
+                duration: {
+                    minMs: 5,
+                    maxMs: 15,
+                    averageMs: 8,
+                    totalMs: 25
+                }
+            })
+        );
         expect(stats?.load?.latestLoopCommandId).toBe('paced-loop');
         expect(stats?.load?.latestPacing).toMatchObject({
             completedIterations: 3,
@@ -741,7 +730,7 @@ describe('rallar-bb runtime composite', () => {
 
     it('fails loops when configured pacing or backpressure thresholds are missed', async () => {
         let now = 2_000;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             sleep: async (ms) => {
                 now += ms;
@@ -781,22 +770,18 @@ describe('rallar-bb runtime composite', () => {
             },
             commands: [{ kind: 'rtc.send', commandId: 'threshold-send', transport: 'realtime' }]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED');
-        expect(value.failed).toBe(0);
-        expect(value.thresholdFailures?.map((failure) => failure.category)).toEqual([
-            'pacing',
-            'backpressure'
-        ]);
-        expect(value.sends?.backpressureCount).toBe(2);
+        expect(result.value).toHaveProperty('failed', 0);
+        expect(result.value).toMatchObject({ thresholdFailures: [{ category: 'pacing' }, { category: 'backpressure' }] });
+        expect(result.value).toHaveProperty('sends.backpressureCount', 2);
     });
 
     it('stops duration-based loops at the configured duration boundary', async () => {
         let now = 0;
         let sendCount = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => now,
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
@@ -821,17 +806,16 @@ describe('rallar-bb runtime composite', () => {
             durationMs: 25,
             commands: [{ kind: 'rtc.send', commandId: 'duration-send' }]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.ok).toBe(true);
         expect(sendCount).toBe(3);
-        expect(value.iterations).toBe(3);
-        expect(value.childResultCount).toBe(3);
+        expect(result.value).toHaveProperty('iterations', 3);
+        expect(result.value).toHaveProperty('childResultCount', 3);
     });
 
     it('rejects loops that exceed the configured child command count limit', async () => {
         const executedCommandIds: string[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
                 if (command.kind !== 'rtc.send') {
                     return undefined;
@@ -858,18 +842,17 @@ describe('rallar-bb runtime composite', () => {
                 { kind: 'rtc.send', commandId: 'send-b' }
             ]
         });
-        const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_LIMIT_EXCEEDED');
-        expect(value.childResultCount).toBe(0);
+        expect(result.value).toHaveProperty('childResultCount', 0);
         expect(executedCommandIds).toEqual([]);
     });
 
     it('wakes loop interval sleeps when cancellation is requested', async () => {
         vi.useFakeTimers();
         try {
-            const runtime = createRallarBlackBoxTestRuntime();
+            const runtime = createDefaultRallarBlackBoxTestRuntime();
             const loop = runtime.execute({
                 kind: 'loop',
                 commandId: 'cancel-during-interval',
@@ -892,11 +875,10 @@ describe('rallar-bb runtime composite', () => {
             await Promise.resolve();
 
             const result = await loop;
-            const value = result.value as RallarBlackBoxTestLoopResultValue;
 
             expect(result.status).toBe('cancelled');
-            expect(value.cancelled).toBe(true);
-            expect(value.childResultCount).toBe(1);
+            expect(result.value).toHaveProperty('cancelled', true);
+            expect(result.value).toHaveProperty('childResultCount', 1);
             const commandIds = getRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId);
             expect(commandIds).toEqual(expect.arrayContaining([
                 'cancel-during-interval:i1:c1:interval-health',

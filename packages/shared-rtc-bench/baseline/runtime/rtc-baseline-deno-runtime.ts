@@ -1,4 +1,5 @@
-import { createRtcBaselineDenoAcceptance } from './rtc-baseline-deno-acceptance.ts';
+import { createRtcBaselineDenoAcceptance } from './create-rtc-baseline-deno-acceptance.ts';
+import type { RtcBaselineCaptureAdmission } from './rtc-baseline-capture-admission.ts';
 import type { DenoRtcBaselineAdapters } from './rtc-baseline-deno-adapters.ts';
 import { createRtcBaselineDenoEvidence } from './rtc-baseline-deno-evidence.ts';
 import { createRtcBaselineDenoFinalization } from './rtc-baseline-deno-finalization.ts';
@@ -9,9 +10,11 @@ import { createRtcBaselineDenoObservation } from './rtc-baseline-runtime-observa
 export const RTC_BASELINE_DENO_ROOT_PATH = 'tmp/perf/rtc-baseline';
 
 export function createRtcBaselineDenoRuntime(
-    adapters: DenoRtcBaselineAdapters
+    adapters: DenoRtcBaselineAdapters,
+    captureAdmission?: RtcBaselineCaptureAdmission
 ): RtcBaselineEnvelope {
-    const observeRuntime = createRtcBaselineDenoObservation(adapters);
+    const admittedCapture = captureAdmission === undefined ? undefined : Object.freeze({ ...captureAdmission });
+    const observeRuntime = createRtcBaselineDenoObservation(adapters, admittedCapture);
     const evidence = createRtcBaselineDenoEvidence({
         rootPath: RTC_BASELINE_DENO_ROOT_PATH,
         filePort: adapters.filePort,

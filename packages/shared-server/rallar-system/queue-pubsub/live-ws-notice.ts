@@ -17,7 +17,8 @@ export type LiveWsAudience =
         readonly principalRef: ClientPrincipalRef;
         readonly recipientSessionIds: readonly string[];
     }
-    | { readonly mode: 'broad'; readonly targetMode: 'all' | 'world'; };
+    | { readonly mode: 'broad'; readonly targetMode: 'all'; }
+    | { readonly mode: 'broad'; readonly targetMode: 'world'; };
 
 export interface LiveWsInboundReference {
     readonly namespace: string;
@@ -32,13 +33,15 @@ interface LiveWsNoticeBase {
     readonly expiresAtMs: number;
 }
 
-type ScopedLiveWsAudience = Exclude<LiveWsAudience, { readonly mode: 'broad'; }>;
-type ScopedLiveWsAudienceMode = ScopedLiveWsAudience['mode'];
+/** The one audience a notice carries without a scope: the server's `all`, which crosses every scope. */
+type UnscopedLiveWsAudience = Extract<LiveWsAudience, { readonly targetMode: 'all'; }>;
+type ScopedLiveWsAudience = Exclude<LiveWsAudience, UnscopedLiveWsAudience>;
+type ListedLiveWsAudienceMode = Exclude<LiveWsAudience['mode'], 'broad'>;
 
 export type LiveWsNotice =
     | (LiveWsNoticeBase & {
         readonly delivery: 'inline';
-        readonly audience: Extract<LiveWsAudience, { readonly mode: 'broad'; }>;
+        readonly audience: UnscopedLiveWsAudience;
         readonly scope?: never;
         readonly message: ALMessage;
     })
@@ -51,14 +54,21 @@ export type LiveWsNotice =
     | (LiveWsNoticeBase & {
         readonly delivery: 'inbound-key';
         readonly audienceMode: 'broad';
-        readonly targetMode: 'all' | 'world';
+        readonly targetMode: 'all';
         readonly scope?: never;
         readonly inbound: LiveWsInboundReference;
     })
     | (LiveWsNoticeBase & {
         readonly delivery: 'inbound-key';
+        readonly audienceMode: 'broad';
+        readonly targetMode: 'world';
         readonly scope: GroupScope;
-        readonly audienceMode: ScopedLiveWsAudienceMode;
+        readonly inbound: LiveWsInboundReference;
+    })
+    | (LiveWsNoticeBase & {
+        readonly delivery: 'inbound-key';
+        readonly scope: GroupScope;
+        readonly audienceMode: ListedLiveWsAudienceMode;
         readonly inbound: LiveWsInboundReference;
     });
 
@@ -72,7 +82,7 @@ interface LiveWsPublicationBase {
 
 export type LiveWsPublicationInput =
     | (LiveWsPublicationBase & {
-        readonly audience: Extract<LiveWsAudience, { readonly mode: 'broad'; }>;
+        readonly audience: UnscopedLiveWsAudience;
         readonly scope?: never;
     })
     | (LiveWsPublicationBase & {
@@ -95,8 +105,8 @@ interface EncodedLiveWsNotice {
 }
 
 export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsNoticeResult {
-    if (input.audience.mode === 'broad' && Object.hasOwn(input, 'scope')) {
-        throw new TypeError('Broad live WS notice cannot carry a scope.');
+    if (input.audience.mode === 'broad' && input.audience.targetMode === 'all' && Object.hasOwn(input, 'scope')) {
+        throw new TypeError('An all live WS notice cannot carry a scope.');
     }
     const inlineEncoded = toEncodedLiveWsNotice(toInlineLiveWsNotice(input), input.channel);
     const inlineBytes = new TextEncoder().encode(inlineEncoded.serialized).length;
@@ -126,7 +136,7 @@ export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsN
 
 function toInlineLiveWsNotice(input: LiveWsPublicationInput): LiveWsNotice {
     const base = toLiveWsNoticeBase(input);
-    if (input.audience.mode === 'broad') {
+    if (input.audience.mode === 'broad' && input.audience.targetMode === 'all') {
         return { ...base, delivery: 'inline', audience: input.audience, message: input.message };
     }
     if (input.scope === undefined) {
@@ -137,17 +147,21 @@ function toInlineLiveWsNotice(input: LiveWsPublicationInput): LiveWsNotice {
 
 function toKeyLiveWsNotice(input: LiveWsPublicationInput, inbound: LiveWsInboundReference): LiveWsNotice {
     const base = toLiveWsNoticeBase(input);
-    if (input.audience.mode === 'broad') {
-        return {
-            ...base,
-            delivery: 'inbound-key',
-            audienceMode: 'broad',
-            targetMode: input.audience.targetMode,
-            inbound
-        };
+    if (input.audience.mode === 'broad' && input.audience.targetMode === 'all') {
+        return { ...base, delivery: 'inbound-key', audienceMode: 'broad', targetMode: 'all', inbound };
     }
     if (input.scope === undefined) {
         throw new TypeError('Scoped live WS notice requires a scope.');
+    }
+    if (input.audience.mode === 'broad') {
+        return {
+            ...base,
+            scope: input.scope,
+            delivery: 'inbound-key',
+            audienceMode: 'broad',
+            targetMode: 'world',
+            inbound
+        };
     }
     return {
         ...base,

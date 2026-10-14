@@ -6,6 +6,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -16,11 +17,18 @@ import {
     isALDeliveryAdmissionFallbackVerdict,
     isALDeliveryFallbackPastDeadline
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundEnqueueResult
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import { resolveRequiredRtcCaptureFailure } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
+import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
@@ -46,6 +54,8 @@ interface CarrierAdmission {
 
 export namespace BrowserRallarMessageDispatch {
     export interface Delivery {
+        readonly requestedConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+        readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
         readonly context: ApiMiddleware;
         readonly carrier: ALDeliveryCarrier;
         readonly message: ALMessage;
@@ -70,20 +80,47 @@ export class BrowserRallarMessageDispatch {
     }
 
     send(delivery: BrowserRallarMessageDispatch.Delivery): void {
+        this.verifyCapture(delivery);
         const epoch = this.input.sessionDeliveries.capture(delivery.context);
         if (!epoch) {
             this.input.deliveries.release(delivery.message.id.msgId);
             return;
         }
-        void this.writeLeg(delivery, epoch);
+        const refusal = this.readAdmissionRefusal(delivery);
+        void this.writeLeg(delivery, epoch, refusal);
+    }
+
+    private verifyCapture(delivery: BrowserRallarMessageDispatch.Delivery): void {
+        if (delivery.requestedConfiguration === undefined) {
+            return;
+        }
+        const reason = this.readCaptureFailure(delivery);
+        if (reason !== undefined) {
+            this.input.deliveries.release(delivery.message.id.msgId);
+            throw new RallarRtcCaptureUnverifiedError({
+                requestedConfiguration: delivery.requestedConfiguration,
+                rtcCapture: delivery.rtcCapture,
+                reason
+            });
+        }
+    }
+
+    private readCaptureFailure(
+        delivery: BrowserRallarMessageDispatch.Delivery
+    ): RallarRtcCaptureUnverifiedError.Reason | undefined {
+        return delivery.requestedConfiguration === undefined
+            ? undefined
+            : this.input.sessionDeliveries.captureOwnershipFailure(delivery.context) ??
+                resolveRequiredRtcCaptureFailure(delivery.requestedConfiguration, delivery.rtcCapture);
     }
 
     /** One carrier leg, whose failure is stated as its admission and never thrown. */
     private async writeLeg(
         delivery: BrowserRallarMessageDispatch.Delivery,
-        lifetime: BrowserDeliverySettlements.Epoch
+        lifetime: BrowserDeliverySettlements.Epoch,
+        refusal: CapturedMessageAdmission | undefined
     ): Promise<void> {
-        await this.writeCapturedMessage(delivery, lifetime).catch((caught) => {
+        await this.writeCapturedMessage(delivery, lifetime, refusal).catch((caught) => {
             if (lifetime.isOpen()) {
                 lifetime.settlements[delivery.carrier]({
                     kind: 'admission',
@@ -99,13 +136,14 @@ export class BrowserRallarMessageDispatch {
 
     private async writeCapturedMessage(
         delivery: BrowserRallarMessageDispatch.Delivery,
-        lifetime: BrowserDeliverySettlements.Epoch
+        lifetime: BrowserDeliverySettlements.Epoch,
+        refusal: CapturedMessageAdmission | undefined
     ): Promise<void> {
         if (!lifetime.isOpen()) {
             return;
         }
-        const result = await this.admitCapturedMessage(delivery);
-        if (!lifetime.isOpen()) {
+        const result = refusal ?? await this.writeChannelAdmission(delivery, lifetime);
+        if (result === undefined || !lifetime.isOpen()) {
             return;
         }
         this.input.deliveries.updateDeadline(result.message);
@@ -118,18 +156,47 @@ export class BrowserRallarMessageDispatch {
         sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
-            await this.writeCapturedMessage({
+            writeCongestionHandOverDiagnostic(delivery, result);
+            const fallback: BrowserRallarMessageDispatch.Delivery = {
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
                 message: result.message,
                 canFallback: false
-            }, lifetime);
+            };
+            await this.writeCapturedMessage(fallback, lifetime, this.readAdmissionRefusal(fallback));
             return;
         }
         const end = toCarrierAdmissionEndSettlement(admission, this.input.nowMs());
         if (end) {
             sink(end);
         }
+    }
+
+    /** Storage-unavailable committed nothing; a volatile retry still needs this send's original live owner. */
+    private async writeChannelAdmission(
+        delivery: BrowserRallarMessageDispatch.Delivery,
+        lifetime: BrowserDeliverySettlements.Epoch
+    ): Promise<CapturedMessageAdmission | undefined> {
+        const admitted = await writeStorageAdmission(delivery);
+        if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
+            return toCapturedAdmission(admitted, undefined);
+        }
+        const downgrade: ALDeliveryDurabilityDowngrade = {
+            requested: toRequestedDurability(delivery.message),
+            cause: admitted.verdict.cause
+        };
+        const volatile = toVolatileALMessage(delivery.message);
+        const failure = this.readCaptureFailure(delivery);
+        if (!lifetime.isOpen()) {
+            return undefined;
+        }
+        if (failure !== undefined) {
+            return toUnadmittedAdmission(delivery.message, { kind: 'failed', detail: failure });
+        }
+        return toCapturedAdmission(
+            await writeCarrierOutboxAdmission(delivery.context, delivery, volatile),
+            downgrade
+        );
     }
 
     private toCarrierAdmission(
@@ -169,89 +236,118 @@ export class BrowserRallarMessageDispatch {
         this.input.deliveries.watchFallback({
             message: result.message,
             context: delivery.context,
-            readmit: () => this.writeLeg(wsLeg, lifetime)
+            readmit: () => this.writeLeg(wsLeg, lifetime, this.readAdmissionRefusal(wsLeg))
         });
     }
 
-    private async admitCapturedMessage(
+    private readAdmissionRefusal(
         delivery: BrowserRallarMessageDispatch.Delivery
-    ): Promise<CapturedMessageAdmission> {
-        const { message } = delivery;
-        const validated = decodeALMessageValue(message);
-        const issue = delivery.payloadIssues[0];
-        if (issue) {
-            return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
-        }
-        if (validated.left) {
-            return toUnadmittedAdmission(message, {
-                kind: 'refused',
-                reason: validated.left.code,
-                detail: validated.left.message
-            });
-        }
-        if (message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()) {
-            return toUnadmittedAdmission(message, {
-                kind: 'expired',
-                detail: 'Message deadline elapsed before carrier admission.'
-            });
-        }
+    ): CapturedMessageAdmission | undefined {
         try {
-            return await writeChannelAdmission(delivery);
+            const { message } = delivery;
+            const validated = decodeALMessageValue(message);
+            const issue = delivery.payloadIssues[0];
+            if (issue) {
+                return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
+            }
+            if (validated.left) {
+                return toUnadmittedAdmission(message, {
+                    kind: 'refused',
+                    reason: validated.left.code,
+                    detail: validated.left.message
+                });
+            }
+            if (
+                message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()
+            ) {
+                return toUnadmittedAdmission(message, {
+                    kind: 'expired',
+                    detail: 'Message deadline elapsed before carrier admission.'
+                });
+            }
+            this.verifyCapture(delivery);
+            return undefined;
         }
         catch (caught) {
-            return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
+            if (caught instanceof RallarRtcCaptureUnverifiedError) {
+                throw caught;
+            }
+            return toUnadmittedAdmission(delivery.message, { kind: 'failed', detail: toError(caught).message });
         }
     }
+}
+
+/**
+ * A leg refused for its carrier's backpressure that the strategy hands to the other carrier is a congestion
+ * decision of its own (D186); the carrier already reported its drop. The priority is the message's own
+ * effective one: the dispatch holds no QoS provider.
+ */
+function writeCongestionHandOverDiagnostic(
+    delivery: BrowserRallarMessageDispatch.Delivery,
+    result: CapturedMessageAdmission
+): void {
+    if (result.verdict.kind !== 'refused' || result.verdict.reason !== 'congested') {
+        return;
+    }
+    writeALOutboundRuntimeDiagnostic(delivery.context.middleware.outboundDiagnostics, {
+        kind: 'congestion',
+        carrier: delivery.carrier,
+        cause: 'backpressured',
+        action: 'hand-over',
+        priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
+        msgId: result.message.id.msgId
+    });
 }
 
 function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
     return { message, verdict, trackedReceiptAlgo: 'none', durabilityDowngrade: undefined };
 }
 
-/** Admitting the same msgId again is sound because a `storage-unavailable` admission committed nothing. */
-async function writeChannelAdmission(
-    delivery: BrowserRallarMessageDispatch.Delivery
-): Promise<CapturedMessageAdmission> {
-    const admitted = await writeStorageAdmission(delivery);
-    if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
-        return toCapturedAdmission(admitted, undefined);
-    }
-    const downgrade: ALDeliveryDurabilityDowngrade = {
-        requested: toRequestedDurability(delivery.message),
-        cause: admitted.verdict.cause
-    };
-    return toCapturedAdmission(
-        await writeCarrierOutboxAdmission(delivery.context, delivery, toVolatileALMessage(delivery.message)),
-        downgrade
-    );
-}
-
 /**
- * A durable message skips the carrier while storage is missing for the document; any admission that
+ * A durable or checkpoint message skips the carrier while storage is missing for the document, and a
+ * checkpoint message also while a checkpoint store lags beyond its bound; any durable admission that
  * reaches the carrier re-decides the connect's availability.
  */
 async function writeStorageAdmission(
     delivery: BrowserRallarMessageDispatch.Delivery
 ): Promise<ALOutboundEnqueueResult> {
     const storage = delivery.context.middleware.storageAvailability;
-    const skipped = toRequestedDurability(delivery.message) === 'volatile'
-        ? undefined
-        : storage.getDurableLaneSkip();
+    const durability = toRequestedDurability(delivery.message);
+    const skipped = resolveStorageLaneSkip(storage, durability);
     if (skipped !== undefined) {
         const verdict: ALDeliveryAdmissionVerdict = { kind: 'storage-unavailable', ...skipped };
         return { verdict, message: delivery.message, entries: [], trackedReceiptAlgo: 'none' };
     }
     const admitted = await writeCarrierOutboxAdmission(delivery.context, delivery, delivery.message);
-    recordStorageVerdict(storage, admitted.verdict);
+    recordStorageVerdict(storage, admitted.verdict, durability);
     return admitted;
 }
 
+function resolveStorageLaneSkip(
+    storage: BrowserALStorageAvailability,
+    durability: ALDurabilityAlgo
+): ALStorageUnavailable | undefined {
+    switch (durability) {
+        case 'volatile':
+            return undefined;
+        case 'local-checkpoint':
+            return storage.getCheckpointLaneSkip();
+        case 'local-outbox':
+        case 'local-inbox':
+            return storage.getDurableLaneSkip();
+    }
+}
+
+/** A checkpoint admission writes memory only, so it says nothing of IndexedDB; the owner's checkpoint still wants persistence. */
 function recordStorageVerdict(
     storage: BrowserALStorageAvailability,
-    verdict: ALDeliveryAdmissionVerdict
+    verdict: ALDeliveryAdmissionVerdict,
+    durability: ALDurabilityAlgo
 ): void {
-    storage.availability.accept(computeALStorageAvailability(storage.availability.get(), verdict));
-    if (verdict.kind === 'admitted' && verdict.durable) {
+    if (durability !== 'local-checkpoint') {
+        storage.availability.accept(computeALStorageAvailability(storage.availability.get(), verdict));
+    }
+    if (verdict.kind === 'admitted' && (verdict.durable || durability === 'local-checkpoint')) {
         storage.requestPersistentStorage();
     }
 }

@@ -1,4 +1,5 @@
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryFailure } from './al-delivery-failure.ts';
 import {
     isALDeliveryTerminal,
@@ -165,7 +166,7 @@ function toAdmissionLifecycle(
         case 'deferred':
             return { ...previous, state: 'pending-authority' };
         case 'refused':
-            return toFailureLifecycle(previous, { kind: 'refused', reason: verdict.reason }, verdict.detail);
+            return toFailureLifecycle(previous, toRefusedFailure(verdict), verdict.detail);
         case 'unroutable':
             return toAdmissionAttemptLifecycle(previous, {
                 outcome: 'unroutable',
@@ -204,9 +205,9 @@ function toAcknowledgementLifecycle(
     return isAcknowledged(settlement) ? { ...previous, state: 'acknowledged', evidence } : { ...previous, evidence };
 }
 
-/** Under `receiver` only logical completeness acknowledges: every expected recipient confirmed. */
+/** Under `receiver` and `leader` only logical completeness acknowledges: every expected recipient confirmed. */
 function isAcknowledged(settlement: ALDeliveryAcknowledgementSettlement): boolean {
-    return settlement.mode === 'receiver'
+    return isALLogicalReceiptMode(settlement.mode)
         ? settlement.complete && settlement.unconfirmedRecipientPeerIds.length === 0
         : settlement.complete;
 }
@@ -230,7 +231,7 @@ function toReceiptExhaustedLifecycle(
     settlement: ALDeliveryReceiptExhaustedSettlement
 ): ALDeliveryLifecycle {
     const failed = toFailureLifecycle(previous, toReceiptExhaustedFailure(settlement), settlement.detail);
-    const hopReceipt = settlement.mode !== 'receiver';
+    const hopReceipt = !isALLogicalReceiptMode(settlement.mode);
     return {
         ...failed,
         evidence: {
@@ -319,6 +320,14 @@ function toReasonedLifecycle(
     return { ...previous, state, evidence: { ...previous.evidence, reason } };
 }
 
+function toRefusedFailure(
+    verdict: Extract<ALDeliveryAdmissionVerdict, Readonly<{ kind: 'refused'; }>>
+): ALDeliveryFailure {
+    return verdict.limit === undefined
+        ? { kind: 'refused', reason: verdict.reason }
+        : { kind: 'refused', reason: verdict.reason, limit: verdict.limit };
+}
+
 function toReceiptExhaustedFailure(
     settlement: ALDeliveryReceiptExhaustedSettlement
 ): ALDeliveryFailure {
@@ -383,7 +392,13 @@ function toAdmittedLifecycle(
     };
 }
 
-const AL_ACK_ALGO_STRENGTH: Readonly<Record<ALAckAlgo, number>> = { none: 0, hop: 1, subtree: 2, receiver: 3 };
+const AL_ACK_ALGO_STRENGTH: Readonly<Record<ALAckAlgo, number>> = {
+    none: 0,
+    hop: 1,
+    subtree: 2,
+    receiver: 3,
+    leader: 3
+};
 
 function toReceiptDowngrade(requested: ALAckAlgo, tracked: ALAckAlgo): ALDeliveryReceiptDowngrade | undefined {
     return AL_ACK_ALGO_STRENGTH[tracked] < AL_ACK_ALGO_STRENGTH[requested] ? { requested, tracked } : undefined;

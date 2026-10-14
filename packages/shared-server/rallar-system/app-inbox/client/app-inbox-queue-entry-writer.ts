@@ -1,10 +1,4 @@
 import {
-    newALRoute,
-    newALUntargetedMessage,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
-import {
     isCompletedOrFailed,
     type Key,
     type ResourceEntry
@@ -15,12 +9,18 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { serializeCanonicalMutationCommand } from '../../protocol/json-wire-identity.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
-import { toPhysicalAppInboxQueueKey } from '../app-inbox-queue-entry.ts';
+import {
+    toPhysicalAppInboxQueueKey,
+    type AppInboxQueueMessageFactory
+} from '../app-inbox-queue-entry.ts';
 import { assertMatchingAppInboxCommand } from '../assert-matching-app-inbox-command.ts';
 import { toLogicalAppInboxCommand } from '../logical-app-inbox-command.ts';
 
 export namespace AppInboxQueueEntryWriter {
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
+        readonly newResourceId: () => string;
+        readonly createMessage: AppInboxQueueMessageFactory;
         readonly inboxQueueReader: InboxQueueReader;
         readonly repository: AppInboxEntryRepository;
     }
@@ -35,6 +35,9 @@ export namespace AppInboxQueueEntryWriter {
 export class AppInboxQueueEntryWriter {
     private readonly inboxQueueReader: InboxQueueReader;
     private readonly repository: AppInboxEntryRepository;
+    private readonly creationNow: QueueBoxUtilities.CreationClock;
+    private readonly newResourceId: () => string;
+    private readonly createMessage: AppInboxQueueMessageFactory;
     private readonly serviceId: string;
     private readonly defaultTopicId: string;
     private readonly wakeOwningQueue: (() => void) | undefined;
@@ -45,18 +48,21 @@ export class AppInboxQueueEntryWriter {
     ) {
         this.inboxQueueReader = dependencies.inboxQueueReader;
         this.repository = dependencies.repository;
+        this.creationNow = dependencies.creationNow;
+        this.newResourceId = dependencies.newResourceId;
+        this.createMessage = dependencies.createMessage;
         this.serviceId = config.serviceId;
         this.defaultTopicId = config.defaultTopicId;
         this.wakeOwningQueue = config.wakeOwningQueue;
     }
 
     async enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry> {
-        const key = this.toKey(enqueue);
+        const key = this.createKey(enqueue);
         const receivedIdentity = serializeCanonicalMutationCommand(
             toLogicalAppInboxCommand(enqueue)
         );
         const entry = await this.inboxQueueReader.enqueueIfAbsent(
-            this.toMessage(key, enqueue)
+            this.createMessage({ key, enqueue, serviceId: this.serviceId })
         );
         this.wakeOwningQueue?.();
         await assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
@@ -64,10 +70,11 @@ export class AppInboxQueueEntryWriter {
     }
 
     async enqueueReplacingTerminal(enqueue: AppInboxEnqueueInput): Promise<Key> {
-        const key = this.toKey(enqueue);
+        const key = this.createKey(enqueue);
         const replacement = QueueBoxUtilities.toResourceEntryFromMsg(
-            this.toMessage(key, enqueue),
-            InboxQueueReader.INBOX_ENQUEUE_TYPE
+            this.createMessage({ key, enqueue, serviceId: this.serviceId }),
+            InboxQueueReader.INBOX_ENQUEUE_TYPE,
+            this.creationNow()
         );
         const observed = await this.inboxQueueReader.inbox.getItem(key);
         if (observed === undefined) {
@@ -87,16 +94,10 @@ export class AppInboxQueueEntryWriter {
         return key;
     }
 
-    private toKey(enqueue: AppInboxEnqueueInput): Key {
-        return toPhysicalAppInboxQueueKey(enqueue, this.defaultTopicId);
-    }
-
-    private toMessage(key: Key, enqueue: AppInboxEnqueueInput): ALMessage {
-        return newALUntargetedMessage(
-            toAppQueueCreatedBy(this.serviceId),
-            newALRoute(key.topicId, key.contextId, key.resourceId),
-            enqueue.type,
-            enqueue
+    private createKey(enqueue: AppInboxEnqueueInput): Key {
+        return toPhysicalAppInboxQueueKey(
+            { ...enqueue, resourceId: enqueue.resourceId ?? this.newResourceId() },
+            this.defaultTopicId
         );
     }
 }

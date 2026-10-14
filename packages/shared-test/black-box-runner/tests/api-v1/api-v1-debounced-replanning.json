@@ -1,5 +1,5 @@
 {
-  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group reaches a quiescent active layout after its durable activation status and resulting topology work settle, then takes four replacing sessions about half a second apart under a 4 000 ms window with a 4 500 ms maximum wait; each read of the queued replan sees its own change (generation up by one), the due time extends with the second change, stops extending at the maximum wait, the one replan the burst yields carries its last presence revision, and nothing pends afterwards.",
+  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group reaches a quiescent active layout after its durable activation status and resulting topology work settle, then takes four replacing sessions about half a second apart under a 4 000 ms window with a 4 500 ms maximum wait; each read of the queued replan sees its own change (generation up by one), the due time extends with the second change, stops extending at the maximum wait, the one replan the burst yields publishes and accepts the exact converged six-session layout identity, even though promotion advances the current group revision, and nothing pends afterwards.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -543,9 +543,6 @@
             "body": {
               "generationId": "generation-{loop.iteration}-{runId}",
               "principalId": "{aliceClientId}"
-            },
-            "outputs": {
-              "churnPresenceRevision": "body.causalRevision.presenceRevision"
             }
           },
           "expect": {
@@ -612,11 +609,11 @@
           }
         },
         {
-          "name": "keepChurnPresenceRevision{loop.iteration}",
+          "name": "keepChurnSessionId{loop.iteration}",
           "type": "set",
-          "output": "churnPresenceRevision{loop.iteration}",
+          "output": "churnSessionId{loop.iteration}",
           "transform": {
-            "path": "outputs.churnPresenceRevision"
+            "path": "outputs.churnSessionId"
           }
         }
       ]
@@ -685,15 +682,10 @@
     },
     {
       "name": "boundedReplanCoversTheWholeBurst",
-      "type": "http",
-      "connection": "primary",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
         "poll": {
           "maxAttempts": 30,
           "maxDurationMs": 12000,
@@ -701,17 +693,203 @@
           "backoffMultiplier": 1
         }
       },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "state": "active",
-            "sourceGroupStateCausalRevision": {
-              "presenceRevision": "{churnPresenceRevision4}"
+      "groups": [
+        {
+          "name": "boundedReplanCoversTheWholeBurstObservation",
+          "steps": [
+            {
+              "name": "allIssuedBurstSessionsAreVisible",
+              "type": "http",
+              "connection": "primary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "burstPresenceRevision": "body.causalRevision.presenceRevision",
+                  "burstLayoutGroupRevision": "body.group.acceptedLayoutIdentity.groupRevision",
+                  "burstLayoutPresenceRevision": "body.group.acceptedLayoutIdentity.presenceRevision",
+                  "burstLayoutVersion": "body.group.acceptedLayoutIdentity.version",
+                  "burstLayoutState": "body.group.acceptedLayoutIdentity.state",
+                  "burstLayoutGroupRevisionIsNumeric": {
+                    "transform": {
+                      "equals": [
+                        {
+                          "path": "body.group.acceptedLayoutIdentity.groupRevision"
+                        },
+                        {
+                          "number": {
+                            "path": "body.group.acceptedLayoutIdentity.groupRevision"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "burstLayoutPresenceRevisionIsNumeric": {
+                    "transform": {
+                      "equals": [
+                        {
+                          "path": "body.group.acceptedLayoutIdentity.presenceRevision"
+                        },
+                        {
+                          "number": {
+                            "path": "body.group.acceptedLayoutIdentity.presenceRevision"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "burstLayoutVersionIsNumeric": {
+                    "transform": {
+                      "equals": [
+                        {
+                          "path": "body.group.acceptedLayoutIdentity.version"
+                        },
+                        {
+                          "number": {
+                            "path": "body.group.acceptedLayoutIdentity.version"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}",
+                    "acceptedLayoutIdentity": {
+                      "groupRevision": "integer",
+                      "presenceRevision": "integer",
+                      "version": "integer",
+                      "state": "active"
+                    }
+                  },
+                  "onlineMemberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{bobSessionId}",
+                      "principalId": "{bobClientId}",
+                      "generationId": "generation-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{churnSessionId1}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-1-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{churnSessionId2}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-2-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{churnSessionId3}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-3-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{churnSessionId4}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-4-{runId}",
+                      "status": "active"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "acceptedLayoutCoversCurrentBurstPresence",
+              "type": "assert",
+              "actual": {
+                "presenceRevision": "{burstLayoutPresenceRevision}",
+                "burstLayoutGroupRevisionIsNumeric": "{burstLayoutGroupRevisionIsNumeric}",
+                "burstLayoutPresenceRevisionIsNumeric": "{burstLayoutPresenceRevisionIsNumeric}",
+                "burstLayoutVersionIsNumeric": "{burstLayoutVersionIsNumeric}"
+              },
+              "expect": {
+                "body": {
+                  "presenceRevision": "{burstPresenceRevision}",
+                  "burstLayoutGroupRevisionIsNumeric": true,
+                  "burstLayoutPresenceRevisionIsNumeric": true,
+                  "burstLayoutVersionIsNumeric": true
+                }
+              }
+            },
+            {
+              "name": "readTheWholeBurstTopology",
+              "type": "http",
+              "connection": "primary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "snapshot": {
+                    "state": "{burstLayoutState}",
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "{burstLayoutGroupRevision}",
+                      "presenceRevision": "{burstLayoutPresenceRevision}"
+                    },
+                    "activeSessionIds": [
+                      "{aliceSessionId}",
+                      "{bobSessionId}",
+                      "{churnSessionId1}",
+                      "{churnSessionId2}",
+                      "{churnSessionId3}",
+                      "{churnSessionId4}"
+                    ],
+                    "version": "{burstLayoutVersion}"
+                  },
+                  "groupRef": {
+                    "applicationId": "{applicationId}",
+                    "workspaceId": "{workspaceId}",
+                    "groupId": "{groupId}"
+                  },
+                  "acceptedSnapshot": {
+                    "state": "{burstLayoutState}",
+                    "sourceGroupStateCausalRevision": {
+                      "groupRevision": "{burstLayoutGroupRevision}",
+                      "presenceRevision": "{burstLayoutPresenceRevision}"
+                    },
+                    "activeSessionIds": [
+                      "{aliceSessionId}",
+                      "{bobSessionId}",
+                      "{churnSessionId1}",
+                      "{churnSessionId2}",
+                      "{churnSessionId3}",
+                      "{churnSessionId4}"
+                    ],
+                    "version": "{burstLayoutVersion}"
+                  }
+                },
+                "comparison": "compatible-complete"
+              }
             }
-          }
+          ]
         }
-      }
+      ]
     },
     {
       "name": "nothingPendsAfterTheReplan",

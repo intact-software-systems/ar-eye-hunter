@@ -1,3 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -12,14 +21,8 @@ import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/a
 import { decodeALOutboundSentMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { computeALOutboundControlAdmission, type ALControlAdmissionRead } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 import { validateALOutboundControlAdmission } from '@shared/alm/outbound/validate-al-outbound-control-admission.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
-import { computeOutboundTestAdmission, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+
+import { createOutboundMessage, readOutboundTestAdmission } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound control version candidate', () => {
@@ -37,12 +40,14 @@ describe('outbound control version candidate', () => {
             supersedenceTrackTtlMs: 60_000
         });
         const message = createOutboundMessage('control-version');
-        await store.commitBundle(await computeOutboundTestAdmission(store, message));
+        await store.commitBundle(
+            await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+        );
         const sent = await backend.read(`control-values:sent:${message.id.msgId}`, (value) => decodeALOutboundSentMessage(value, message.id.msgId));
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const control = newALNackControlMessage({ v: 2, msgId: 'nack', senderId: 'peer-1', ts: 1_000 }, {
+        const control = newALNackControlMessage({ v: 3, msgId: 'nack', senderId: 'peer-1', ts: 1_000 }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
             toPeerId: 'self',
@@ -53,6 +58,7 @@ describe('outbound control version candidate', () => {
             parsed: parsePeerControl(control),
             source: 'peer',
             carrier: 'ws',
+            hopPeerIds: undefined,
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
             owner: 'self',
@@ -82,12 +88,14 @@ describe('outbound control version candidate', () => {
             supersedenceTrackTtlMs: 60_000
         });
         const message = createOutboundMessage('control-deadline');
-        await store.commitBundle(await computeOutboundTestAdmission(store, message));
+        await store.commitBundle(
+            await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+        );
         const sent = await backend.read(`control-deadline:sent:${message.id.msgId}`, (value) => decodeALOutboundSentMessage(value, message.id.msgId));
         if (!sent) {
             throw new Error('Expected admitted compact sent fact');
         }
-        const ack = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
+        const ack = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
             ackedMsgId: message.id.msgId,
             originPeerId: 'self',
             logicalRecipientPeerId: 'peer-1',
@@ -101,6 +109,7 @@ describe('outbound control version candidate', () => {
             parsed: parsePeerControl(ack),
             source: 'peer',
             carrier: 'ws',
+            hopPeerIds: undefined,
             targetMsgId: message.id.msgId,
             nowMs,
             owner: 'self',
@@ -146,8 +155,10 @@ describe('outbound control version candidate', () => {
             carrier: 'ws'
         });
         const message = createOutboundMessage('control-version-race');
-        await store.commitBundle(await computeOutboundTestAdmission(store, message));
-        const control = newALNackControlMessage({ v: 2, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {
+        await store.commitBundle(
+            await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+        );
+        const control = newALNackControlMessage({ v: 3, msgId: 'nack-race', senderId: 'peer-1', ts: Date.now() }, {
             msgId: message.id.msgId,
             fromPeerId: 'peer-1',
             toPeerId: 'self',

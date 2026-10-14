@@ -15,7 +15,10 @@ QueueBox engine. The WS client and server construct the runtime in
 [`WsQueueBoxServerService`](../../services/ws-queue-box-server/ws-queue-box-server-service.ts).
 RTC ingress is wired by
 [`WebRtcRxStreamerService`](../../services/web-rtc-rx-streamer-service.ts).
-These composition owners supply the planner, delivery, forwarding, and control ports.
+These composition owners supply the planner, delivery, forwarding, and control ports. The WS
+client and RTC ingress also pass the optional `onResyncRequired` sink
+(`ALInboundMessageRuntime.Dependencies`), which the browser fills with its resynchronization
+recovery (see "Ordering gaps and resynchronization" below); the WS server passes none.
 
 The runtime constructs its [`ALWorkQueuePort`](../work/al-work-queue-port.ts),
 [`ALInboundMessageAdmission`](./al-inbound-message-admission.ts) and
@@ -25,7 +28,7 @@ uses, with `maxConcurrency` fixed at one task. The inbound half of that worker i
 [`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts): it owns the rotating
 new/retry/reserved page scan that answers the handler's readiness probe and turns one observed
 page into claims. The worker registers
-with [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts); registration does
+with [`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts); registration does
 not invoke admission or delivery. Storage readiness precedes the first work scan.
 Disposal prevents further local work and unregisters the task. A runtime-owned
 engine stops; a supplied shared engine remains available to its other tasks.
@@ -70,8 +73,9 @@ WS server and Node keep the always-owned default.
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
   names from the envelope's normalized `qos.durability`: the IndexedDB lane exactly when
-  it is `local-inbox`. `local-outbox` keeps the sender's copy only, so it does not make
-  the receiver durable; `volatile` and the default do not either. No receiver-side
+  it is `local-inbox`. `local-checkpoint` and `local-outbox` keep the sender's copy
+  only, so they do not make the receiver durable; `volatile` and the default do not
+  either. No receiver-side
   policy moves the decision, and every copy and retry of one message resolves to the
   same lane.
 - **The origin's own ACK short-circuits.** An acknowledgement of a message this peer
@@ -100,7 +104,21 @@ WS server and Node keep the always-owned default.
   or longer when the work the message owns does; a message with no expiry of its own has
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
-  own 60 s schedule; this is idempotent.
+  own 60 s schedule; this is idempotent. After the volatile pair's ordinary expiry sweep,
+  that same turn can also release a canonical envelope whose direct work has completed
+  ([`evictTerminalVolatileInboundMessages`](./admission/evict-terminal-volatile-inbound-messages.ts)) and
+  which no buffered slot or owed child-forwarding receipt still needs. Its owner, dedup and
+  control facts keep their original retention. A pending or queued admission write prevents
+  this early release; the durable and checkpoint pairs keep their existing policy.
+- **The age limit bounds counted admissions, not tracks.** Every pair keeps an ordering
+  track's snapshot for `orderingTrackTtlMs`, the repository's 1 h, the volatile pair too
+  (D181): a receiver that forgot a track would read the sender's next sequence as a gap
+  from 1 and stall the track on a repair. Each of the browser's inbound stores keeps at most
+  `AL_INBOUND_MAX_ORDERING_TRACKS` (256) ordering snapshots, though (D191, below); the server's
+  stores are uncapped. **Limit:** an idle track therefore holds two
+  rows for the hour after its last message, or one once its snapshot was evicted: the marker of
+  its delivered sequences stays for the hour, because ordered delivery reads it while the track's
+  buffered rows live.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -114,7 +132,8 @@ rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3
 An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile message
 ([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
 standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
-envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
+envelope while an owed child may still need forwarding, at most until the message deadline; its message-owner
+row lives until the deadline plus the 30 s receipt grace, and
 the dedup row for the longer of the 60 s dedup window and the deadline plus the grace (see the dedup retention
 below). Once its child's ACK arrives it adds an acknowledgement-history row, kept until the deadline plus the grace
 as well. Before S3c-ii the owner row stayed for an hour and the history row
@@ -124,10 +143,12 @@ as well. Before S3c-ii the owner row stayed for an hour and the history row
 An inbound data admission on the volatile pair is recorded in the session's volatile budget
 ([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
 message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
-never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
-the usage `overloaded` reads (R-S3c-ii-3). A duplicate, a rejected arrival and a message whose sender named no
+never refused for capacity (D74, D78). It counts in the ledger's inbound pool (D189) and raises the totals (R-S3c-ii-3):
+its count, its bytes and the age of the oldest counted admission, but never the track count, since the ledger records
+it with no ordering track (D179). The session's own send is refused, and `overloaded` read, only once the totals are at
+the limit and the own pool at its share as well, so arrivals alone refuse no own send. A duplicate, a rejected arrival and a message whose sender named no
 deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
-inbound plan never reads `overloaded` (R-S3c-ii-8): at its bound a session still delivers a best-effort arrival at
+inbound plan never reads `overloaded` (R-S3c-ii-8), nor `backpressured` (D184): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
 
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
@@ -201,7 +222,7 @@ control id. The same file defines `al.control.receipt.v1`, the WS server's
 word to an origin, addressed and routed to `originPeerId`.
 
 On the WS server the same inbound admission runs for every client message,
-with two receipt rules. A `receiver` room message the server aggregates
+with two receipt rules. A `receiver` or `leader` room message the server aggregates
 withholds the server's own ACK
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would re-originate the
@@ -307,15 +328,15 @@ cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
 the list is estimated at about 117 B in a three-session star and at most about
 2.5 KB, well inside every envelope limit; it has not been measured on the wire.
 
-**Repair requests.** A peer attaches an `al.control.repair.v1` retransmit
+**Repair requests.** A peer attaches an `al.control.repair.v2` retransmit
 request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
 peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-scoped-delivery'`. An
-existing browser database at a different schema identity is deleted and
-recreated once, as described under
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence'`. An
+existing browser database at a different schema identity is refused without deletion or
+rewriting, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
 S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
@@ -324,6 +345,15 @@ server's rows gained fields older decoders refuse: the captured policy's `recipi
 `principalTargetId` and `sessionInvalidation`, the `ws-client` source's `authenticatedScope`,
 and the prepared recipient kinds `scoped-recipient`, `room-recipient` and `invalidated-session`.
 A row whose targets name a group stores none of the three captured fields: its `groupRef` scopes it.
+The range-repair bump (D139) followed because the buffered slot rows persist the handling plan,
+whose NACK plan and ordering observation now carry `missingRanges` (inclusive `{ from, to }`
+ranges, at most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges`) where they carried `missingSeqs`
+lists; the retained `repair-hint` work and the outbound control history carry the same field.
+No row is migrated: an older row's `missingSeqs` fails strict decoding.
+The roster-fence bump (D147) followed because every room send's targets carry the sender's
+`rosterVersion` (a multicast's in place of `membershipEpoch`, a room broadcast's beside
+`minSnapshotVersion`) and the envelope version moved to `AL_MESSAGE_ENVELOPE_VERSION = 3`; a row an
+older build wrote carries `id.v: 2`, which the one envelope decoder refuses `unsupported`.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -354,7 +384,7 @@ is what is out of date. The refusal is symmetric: an old-build page also
 refuses a new-build `al.control.ack.v2`, until it reloads.
 
 **The scoped-delivery window.** The WS server's PostgreSQL rows carry no schema identity, so the
-scoped-delivery bump resets browsers only. On the server:
+browser identity check refuses an older schema without resetting it. On the server:
 
 - A server rolled back past this change cannot decode a captured policy, a prepared recipient or a
   `ws-client` source this build wrote; each stays undecodable for its row's TTL.
@@ -362,6 +392,23 @@ scoped-delivery bump resets browsers only. On the server:
   its first dequeue (D103).
 - `ws-client` work an older build retained carries no `authenticatedScope`, fails strict decoding and is
   dropped once as corrupt.
+
+**The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
+browser identity check refuses an older schema without resetting it. On the server, a buffered-slot row, a retained
+`repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
+decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, by default the repository
+TTL of 60 minutes) bounds the buffered slots of a track, and the message deadlines bound the
+retained work and the control history, so the window closes without a migration. A NACK or repair a
+page still running the old build sends is refused `unsupported` (`al.control.nack.v1`,
+`al.control.repair.v1`) until that page reloads, symmetrically with the acknowledgement cutover
+above.
+
+**The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
+makes older browser schemas incompatible, which current opening refuses without resetting them.
+On the server, a row an older build wrote holds a `v: 2` envelope and fails
+decoding `unsupported` at its next read; no row is migrated. A page still running the old build
+sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
+`v: 3` symmetrically.
 
 Web and API deploy together.
 
@@ -373,11 +420,141 @@ Web and API deploy together.
 | Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                                                                                                                                                                                                              | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                                                                                 |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
-| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; later work becomes eligible through the same worker.                                                                                                                                       |
+| Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
 
 `validateALInboundControlAdmission` returns every reason an acknowledgement is
 inadmissible; the caller joins them into one rejection reason. Only an absent pending
 obligation short-circuits, because the remaining checks read that obligation.
+
+**Ordering gaps and resynchronization.** A receiver orders a sender's messages per track
+(ordering key, sender, epoch) behind the last contiguous sequence
+([`compute-al-ordering-observation.ts`](../compute-al-ordering-observation.ts)), buffering what
+arrives early inside a window of `AL_MESSAGE_RESOURCE_LIMITS.repairWindow` (256) sequences and at
+most `bufferedMessages` (256) and `bufferedBytes` (1 MiB) per track. An in-window gap is a `gap`
+observation whose `missingRanges` are the inclusive ranges between the contiguous head and the
+buffered set; the planner's NACK (`al.control.nack.v2`) and repair request
+(`al.control.repair.v2`) carry them, and the sender retransmits them by range. A sequence past the
+window, or a track at a buffer ceiling, is `resync-required`: the message is not buffered and the
+sender is NACKed. When the admission accepts a message `resync-required`, or
+[`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) can no longer order a buffered
+release, the runtime hands `{ msg, cursor }` to the optional `onResyncRequired` sink after the
+NACK has committed, so the owner is told of a resynchronization the sender is already told of. The
+cursor ([`ALInboundResyncCursor`](./al-inbound-resync-required.ts)) is where the track stands:
+`orderingKey`, `senderId`, `epoch`, `lastContiguousSeq`, `expectedSeq`, `observedSeq` and
+`carrier`. The runtime resets no track after a resynchronization; the sender's new epoch is a new
+track. Without the sink -- the WS server's case -- the message is dropped as before and the
+diagnostics state the refusal. A WS client admits every server frame as `trusted-server`, so a
+server publication that carries a sequence is ordered on the track
+`<orderingKey>:<serverPeerId>:<epoch>` (the server peer id is `default-qbox-server` in api-v1 and
+the Relic server), and the NACK and repair request for its gap go to the server, since a
+`trusted-server` source's `fromPeerId` is the message's `senderId`; the server repairs its own
+publication (D153). The recovery owner of a server track is the typed channel the publication's
+topic and type name, found as for any sender (D142); Relic Hunters' round-transition channel is one
+(D152). A receiver remembers a server track for its ordering-track TTL, by default the repository
+TTL (60 minutes) that also bounds the server's head, so a track silent for over an hour restarts at
+`seq` 1 on both sides, and since the server's sequences follow commit order, two publications of one
+track can commit out of publish order under contention.
+
+**Buffered releases and the snapshot cap.** The message that closes a gap writes one release row per sequence it makes
+releasable, and each release is eligible only once its predecessor is delivered, so a page holds one claimable release
+of a track and defers the rest. A batch whose `release-buffered` claim of track T at seq k completed promotes T's
+release of seq k + 1 (D190): the handler asks the selector's `claimPromotedRelease`, which reads that row by its key
+([`claim-al-inbound-promoted-release.ts`](./lane/claim-al-inbound-promoted-release.ts)), not by searching the page, and
+reserves it only when it is due, its eligibility reads claimable now and the row is still as the read saw it, as a new
+or retrying row only: a promotion whose row moved on claims nothing and spends no lease-timeout sweep. The batch runs it
+after its other claims and asks again for its successor while the batch holds fewer than `AL_INBOUND_WORK_PAGE_SIZE`
+(16) claims. A `claimPromotedRelease` that throws is reported as the batch's failure and promotes nothing; the batch's
+unrun claims still run. Only a completed `release-buffered` claim promotes: a release that did not complete promotes
+nothing and ends its track's chain for that batch, the gap-filling message's own dispatch promotes nothing, a track
+never has two releases claimed at once, and a release never promotes another track's. A 64-message buffer drains in 5
+batches (the first delivers the gap-filling message and promotes nothing, each of the other four runs 16 claims, 15 of
+them promoted), where one release per engine round took 65 batches: 0.4 s against 7.5 s in memory, and 0.7 s against
+13.5 s on IndexedDB with 84 % fewer IndexedDB operations. A 255-message buffer drains in 17 batches (2.1 s in memory,
+33.5 s before), well inside the 30 s default message lifetime that the old drain outlived. The `effect-drain` of such a
+batch counts the promoted releases as `promoted`, and they leave its `deferred`.
+
+A store built with `maxOrderingTracks` keeps at most that many ordering snapshots (D191): the browser's
+session and volatile stores pass `AL_INBOUND_MAX_ORDERING_TRACKS` (256); the WS server's Postgres stores, the
+Node runtime's and the default factories' pass `undefined`, run no pass and state no count, since one server
+store holds every relayed client's tracks and a cap there would evict live ones. A commit that opens
+a track lists the store's ordering prefix right after it commits and, past the cap, removes the least
+recently updated snapshots in a write of its own, each only while it is still the very snapshot read (a
+track updated again in the same millisecond survives). Between the two writes the store may hold 257. A
+snapshot whose removal finds it changed, or whose write conflicts, is left to the next new track and counts
+as still held until then, while one that a rival pass already removed counts as gone. The pass is
+best-effort: the admission has committed, so a snapshot that does not decode, a failed removal write or a
+throwing reporter ends the pass without a count, the commit still answers `committed`, and the next new
+track evicts. The evicted track's next arrival is read as a new track's, from sequence 1, and
+the release of a message buffered on a track evicted beyond its delivered head reads `resync-required`. Only
+the snapshot leaves: the track's `delivered` marker stays for the hour (**Limit** above). A store that
+names a reporter (`reportOrderingTracks`) is told the number of snapshots it holds after each such pass; the
+browser states it on the `storage` diagnostics port as `ordering-tracks`. **Limit:** a receiver holding
+more than 256 live ordered tracks in one store thrashes: each new track evicts a live one, whose next arrival
+reads as a gap from sequence 1 and goes to repair or resynchronization.
+
+**Room authority and the membership fence.** An RTC receiver judges a room send against the room
+snapshot it holds before planning it
+([`rtc-room-snapshot-admission.ts`](../../multicast/rtc-room-snapshot-admission.ts); the sender and peer
+verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/resolve-rtc-room-peer-denial.ts)). Behind the
+send's `minSnapshotVersion` or its `rosterVersion` the verdict is `pending`: the message is dropped
+`not-yet-in-sync`, its hop is NACKed with that reason, and the receiver refreshes the room once and
+re-admits the message once. At or beyond both, a sender whose member is absent or not `active` is
+`membership-fenced`: the message is dropped with that code and its hop is NACKed with that reason,
+with no ordering hints, no repair request and no refresh. A sender whose session is absent while its
+member is present stays `pending` at its own roster, since presence is not the roster, and is fenced
+in a roster beyond its stamp; every other room denial stays `unauthorized` and sends no NACK. An
+unstamped room copy (no `rosterVersion`) is judged as at its sender's roster, so a sender that is
+not an active member is fenced there too. The
+fence applies at ingress only (a copy with a `fromPeerId`); the origin and targeted repair keep their
+verdicts. A held relayed copy is re-judged at dispatch with its ingress hop, so a sender fenced since
+the hold resolves `rejected` instead of waiting to its deadline, while the origin's own held copies
+keep today's verdicts. The WS server applies the same two floors and fences a sender with no
+live session or no active member at its admission and its dispatch-time re-authorization
+([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts)); the
+receiving WS client trusts it. Behind either floor at its admission the WS server retains the
+message as a pending admission ([`retainPending`](./al-inbound-message-admission.ts)) instead of
+refusing it, answers the advisory NACK, and its replay re-authorizes the message every 50 ms until
+the floor is met or the deadline passes; the sender retries nothing.
+
+**Room-bounded audiences.** A principal or fixed-list send is a room send whose audience is narrowed
+to the principal's sessions or the listed sessions in the room (D156, D159). Over RTC the origin
+freezes the narrowed audience on the multicast, so a peer outside it may forward a copy but never
+delivers it locally or counts as a recipient, as for any frozen audience. The shared planner also
+reads a broadcast's `recipientPeerIds`: it reads this peer as a broadcast's logical recipient when
+`exceptPeerIds` does not name it and, if the broadcast carries `recipientPeerIds`, the list does
+([`al-policy.ts`](../../al-contracts/al-policy.ts)), and a relay owns as children only listed peers,
+by the rule a multicast's frozen list applies
+([`resolveALOwnedChildPeerIds`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)). A listed
+room broadcast is therefore delivered only at listed sessions, over WS as over RTC; a WS server
+whose router owns the room fanout hands a listed broadcast that leaves it out to its router, as it
+hands a room unicast to another session. A broadcast without a list keeps the `exceptPeerIds` rule
+alone. A `group-leader` send is the narrowest of these audiences: the room's director session alone,
+frozen at the RTC origin and admitted by the WS server (D164). Only the director delivers it, and its
+ordinary ACK, sent at admission as any recipient's, is the one the `leader` receipt expects; a room
+peer that carries it over RTC only forwards it and ends its subtree with `subtree-complete`.
+
+**Exclusive claims.** The WS server's admission of a client's exclusive message decides an exclusive claim on
+the message's resource key (D171–D173); it is not the worker's claim on a work row. The admission store's private
+`toALInboundClaimKey` ([`al-inbound-admission-store.ts`](./al-inbound-admission-store.ts)) names the key
+`<applicationId>/<workspaceId>/<groupId>/<topicId>/<contextId>/<resourceId>`, each part URI-encoded, only when the
+admission source is `ws-client`, the message's effective ownership is `exclusive` and its targets name a room
+`groupRef`; the room scope is part of the key because the same group id exists in other scopes. `readIncomingMessage`
+reads the exclusive-claim row at `<namespace>:claim:<key>` beside the dedup key, as a guarded observation of the
+commit: its value is the holder's peer id and its liveness is the row's own expiry, which every backend applies on
+read. The planning observation `claimHolderPeerId` carries the holder, and `resolveMessageDrop`, right after the
+duplicate check, drops an exclusive message whose key another peer holds with the code `held-by-other`; `planNack`
+answers it with a NACK of that reason to the sender, so nothing is delivered and a dropped claim starts no receipt. An
+admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own deadline as expiry, in
+the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the expiry, and an exclusive
+claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
+own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
+the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
+conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
+retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
+the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
+server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
+`shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
+reads or writes one, so a browser never drops a message for it.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
@@ -445,14 +622,28 @@ surface therefore never throws `ALAdmissionBackendConflictError`, so the admissi
 the outbound control admission of an ACK included — reaches its own commit and its own typed
 conflict.
 
-What makes that commit conditional: the backend records, for every key the write phase read or
-wrote, the revision and write token it observed there (or that the key was absent), and for every
-prefix it listed, the exact key set that listing returned. Before the transaction commits it
-re-reads exactly those rows and prefixes and rolls back as a typed conflict only when one of them
-moved; an admission, send, or ACK against a different message's rows and a different listed range
-touches none of that and commits alongside it. The three backends are conflict-equivalent under
-this fence: the in-memory backend serializes writers on its own write-tail promise, and IndexedDB
-and PostgreSQL both compare per row instead.
+What makes that commit conditional differs by backend. On memory and IndexedDB every key the
+write phase read or wrote is compared: the in-memory backend serializes writers on its own
+write-tail promise, so what the write phase reads is what its commit sees; IndexedDB records, for
+every key the write phase read or wrote, the revision and write token it observed there (or that
+the key was absent), and for every prefix it listed, the exact key set that listing returned, then
+re-reads exactly those rows and prefixes before the transaction commits and rolls back as a typed
+conflict only when one of them moved. PostgreSQL guards the keys a write touched and not the keys it
+only read: `PSqlAdmissionMutationCollector` emits one insert-if-absent, replace-if-revision or
+delete-if-revision guard per written key, while the store-level re-read of the observed surface
+runs before the transaction opens and fences nothing by itself. The arbitration rests on what the
+three share: every key the two writers of the stale-read then sequential-commit schedule arbitrate
+on — the dedup key, the supersedence latest, the ordering track, the message owner, and on the
+outbound side the supersedence latest and the sender version — is one both writers write, so the
+written-key guard decides the schedule alike on all three. The schedule module
+[`al-shared-key-arbitration.test.ts`](../../../tests/shared/alm/al-shared-key-arbitration.test.ts)
+is the proof: it runs that schedule over memory, IndexedDB and pglite for both stores and names,
+per case, the written key whose guard decides it — the dedup key, the supersedence latest, the
+ordering track, the outbound supersedence latest and the outbound sender version; the same-message
+case of
+[`inbound-supersedence-concurrency.test.ts`](../../../tests/shared/alm/inbound-supersedence-concurrency.test.ts)
+covers the message owner on the same three backends. An admission, send, or ACK against a different
+message's rows and a different listed range touches none of that and commits alongside it.
 
 Every stored key is `topicId/resourceId/contextId`, and inbound work is
 `AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.
@@ -464,7 +655,9 @@ and the canonical inbound message row
 envelope until the `retainUntilMs` its own row states — the latest deadline of the effects
 and slots that bundle owns, so a bundle owning neither writes no canonical row. Both must
 outlive the owned work the same bundle writes; a bundle whose provenance expires first is
-rejected.
+rejected. For the fresh volatile pair alone, `retainUntilMs` is an upper bound: its existing
+maintenance turn can remove the full envelope earlier once no live direct work, buffered
+slot or owed child-forwarding receipt requires it. Owner and receipt facts remain held.
 
 ## Replay authority and deadlines
 
@@ -594,7 +787,8 @@ that batch spent its time — selection, claim, run and release, which do not su
 duration, for the reasons the contract document states — and how long the earliest row it
 claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ran to an
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
-decoded and a claim that throws are counted by the drain and named by no event; and
+decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
+Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
 `longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
@@ -603,13 +797,39 @@ due; `batchStartedAtMs`, when its batch's run loop started, after that batch's s
 reservation; and `startedAtMs`, when the claim itself started — so the reservation half
 (`batchStartedAtMs − dueAtMs`) and the intra-batch half (`startedAtMs − batchStartedAtMs`, the
 serialization behind earlier claims of the run loop alone) are each named rather than left for
-a reader to subtract. `effect-drain` carries the matching `startedAtMs` and names the effects it
-ran in run order (`claimedEffectIds`, recorded by this owner as it runs them). The due rows a round
+a reader to subtract. `effect-drain` carries the matching `startedAtMs`, names the effects it
+ran in run order (`claimedEffectIds`, recorded by this owner as it runs them) and counts the
+releases it ran by promotion (`promoted`, D190). The due rows a round
 saw and did not run ride on the events that already exist, never on one of their own: a
 round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them
 into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
+
+Explicit ACK capture is owned by
+[`ALInboundAcknowledgementEvidence`](./control/al-inbound-acknowledgement-evidence.ts).
+The black-box browser diagnostic installer supplies its class and the existing
+`ALWorkBatchObservations` resource through the callable sink's optional
+`acknowledgementCapture`. Runtime/lane/admission reference that owner only as a
+type; ordinary sinks create no new ACK evidence. The association retains exact
+received and generated control identities, logical recipient, prior owner/source,
+pending parent, candidate validity, actual conditional commit and retention results.
+A conflict's candidate IDs remain distinguishable from a replay's newly generated
+IDs. Terminal sender ACKs bypass inbound storage without inventing upward work.
+
+Capture copies closed owned facts before mutable consumers, with guarded snapshots.
+The evidence owner selects and snapshots claim context in `tryCreateClaim`;
+`publishClaim` selects replay or handoff from that snapshot. The lane retains
+mandatory work and clocks. A returned handoff remains returned if the enclosing
+claim later throws, for example at its existing duration-clock read.
+Ingress publishes after its mandatory lane wake and outbound callback, including
+original exception unwind. Replay and actual `sendControlInRound` outcomes use the
+handler's existing deferral and publish after mandatory release/end/failure/clear/
+pending-commit work. Failed optional batch construction discards publications.
+There are no additional store reads, generated IDs or clock reads. Commit return
+is not independent persisted readback; handoff is not native receipt; absent events
+are not proof of absent work. The detailed field meanings and clock limitations
+are in the diagnostic contract linked above.
 
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes
@@ -625,9 +845,12 @@ and per owned canonical scope, and each range ends its `resourceId` with the `/`
 delimiter so a neighbouring owner whose id is a string prefix is never pulled in.
 Unrelated work is preserved.
 
-A browser database whose stores or recorded schema identity do not match is deleted
-and recreated once and the reset is reported through the required `onStorageReset`
-port; the details are in the
+A browser database whose stores or recorded schema identity do not match is refused with
+`ALStorageSchemaMismatchError`, preserving its schema and rows. Unreadable or undecodable
+identity throws `ALStorageSchemaIdentityError` with its original cause; acquired handles
+close on failure. Genuine absence still creates the current stores. The required
+`onStorageReset` callback reports observed external `other-context` recreation after a
+recorded `versionchange`, not a destructive mismatch recovery; the details are in the
 [outbound navigation map](../outbound/README.md#atomic-indexeddb-work-storage).
 The outbound canonical storage cutover does not establish the roadmap's
 zero-IndexedDB volatile path for inbound work.

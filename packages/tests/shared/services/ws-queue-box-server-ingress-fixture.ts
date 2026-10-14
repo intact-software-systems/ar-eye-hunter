@@ -9,9 +9,9 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
@@ -27,9 +27,9 @@ export interface ServerIngressFixture {
 }
 
 export async function createServerIngressFixture(
-    validateInboundMessage?: WsQueueBoxServerService.Input['validateInboundMessage'],
+    authorizeInboundMessage?: WsQueueBoxServerService.Input['authorizeInboundMessage'],
     peerId = 'session-1',
-    readAuthenticatedConnectionScope: NonNullable<WsQueueBoxServerService.Input['readAuthenticatedConnectionScope']> = () => ({
+    readAuthenticatedConnectionScope: WsQueueBoxServerService.Input['readAuthenticatedConnectionScope'] = () => ({
         scope: { applicationId: 'app', workspaceId: 'workspace' },
         expiresAtEpochMs: Date.now() + 60_000
     })
@@ -50,37 +50,42 @@ export async function createServerIngressFixture(
         backend,
         orderingTrackTtlMs: 300000,
         supersedenceTrackTtlMs: 300000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
-    const service = createDefaultWsQueueBoxServerService({
+    const input: WsQueueBoxServerService.Input = {
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server',
         targetResolver: {
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
-        validateInboundMessage,
+        authorizeInboundMessage,
         readAuthenticatedConnectionScope,
         inboundStores: { admissionStore, workQueue: admission.workQueue },
         queueEngine: engine
-    });
+    };
+    const service = createDefaultWsQueueBoxServerService(input);
     const delivered: ALMessage[] = [];
     service.onAnyInboxMessageDo('observer', {
         onMessage: async (message) => {
             delivered.push(message);
         }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, server, socket, admission, backend, admissionStore, delivered };
 }
 
 export function createIncomingMessage(): ALMessage {
     return {
-        id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'session-1' },
+        id: { v: 3, msgId: 'message-1', ts: 1, senderId: 'session-1' },
         route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
     };

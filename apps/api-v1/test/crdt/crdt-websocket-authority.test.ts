@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import {
@@ -36,7 +37,10 @@ import {
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketServer
+} from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -46,7 +50,10 @@ import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../db/pglite-app-inbox-test-runtime.ts';
-import { toPersistedAuthSessionFixture, withPGliteSql } from '../db/pglite-auth-test-harness.ts';
+import {
+    toPersistedAuthSessionFixture,
+    withPGliteSql
+} from '../db/pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from '../db/pglite-test-socket.ts';
 
 const NOW = Date.now();
@@ -199,7 +206,7 @@ function createCrdtAuthorityInbox(input: CrdtAuthorityInboxInput): AppCrdtInboxS
         database: sql,
         serviceId: 'server-1',
         timing: undefined,
-        options: { nowEpochMs: () => NOW },
+        options: { nowEpochMs: Date.now },
         wakeQueueEngine: () => undefined,
         currentAuthority: {
             readSession: (sessionId) => auth.findBySessionId(sessionId),
@@ -226,8 +233,8 @@ async function createCrdtWebSocketAuthorityFixture(
     const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(NOW));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
     const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
@@ -262,28 +269,38 @@ async function createCrdtWebSocketAuthorityFixture(
             assert.ok(socket);
             await socket.dispatchMessage(value);
         },
-        addCurrentSession: async (sessionId: string) => {
-            await auth.insertSessionBySessionId(
-                await toPersistedAuthSessionFixture({
-                    clientId: CLIENT_ID,
-                    username: USERNAME,
-                    sessionId,
-                    accessToken: `${sessionId}-token`,
-                    issuedAtEpochMs: NOW - 1_000,
-                    expiresAtEpochMs: NOW + 600_000
-                })
-            );
-            await clients.insertSession(clientSession(sessionId));
-            const socket = new PGliteTestSocket();
-            sockets.set(sessionId, socket);
-            socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
-        },
+        addCurrentSession: (sessionId: string) => addCurrentCrdtSession({ auth, clients, sockets, socketServer }, sessionId),
         revokeAuthSession: async (sessionId: string) => {
             const stored = await auth.findSessionBySessionIdEntry(sessionId);
             assert.ok(stored);
             await auth.deleteSessionBySessionIdIfRevision(sessionId, stored.entry.revision);
         }
     };
+}
+
+interface CrdtAuthoritySessionPorts {
+    readonly auth: AuthSessionRepository;
+    readonly clients: ClientStateRepository;
+    readonly sockets: Map<string, PGliteTestSocket>;
+    readonly socketServer: JsonWebSocketServer;
+}
+
+async function addCurrentCrdtSession(ports: CrdtAuthoritySessionPorts, sessionId: string): Promise<void> {
+    const { auth, clients, sockets, socketServer } = ports;
+    await auth.insertSessionBySessionId(
+        await toPersistedAuthSessionFixture({
+            clientId: CLIENT_ID,
+            username: USERNAME,
+            sessionId,
+            accessToken: `${sessionId}-token`,
+            issuedAtEpochMs: NOW - 1_000,
+            expiresAtEpochMs: NOW + 600_000
+        })
+    );
+    await clients.insertSession(clientSession(sessionId));
+    const socket = new PGliteTestSocket();
+    sockets.set(sessionId, socket);
+    socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
 }
 
 async function drain(
@@ -338,7 +355,8 @@ function message(
             envelope.document.applicationId,
             envelope.updateId
         ),
-        'all',
+        // A browser sends an app document's live update to its own world; a client's all is refused at ingress.
+        'world',
         RALLAR_CRDT_UPDATE_TYPE_ID,
         envelope
     );

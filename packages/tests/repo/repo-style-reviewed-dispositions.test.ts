@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import {
     mkdirSync,
     mkdtempSync,
@@ -15,12 +15,41 @@ import {
     it
 } from 'vitest';
 
+import { findingMagnitude } from '../../../scripts/repo-style-check/finding-magnitude.mjs';
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import { isReviewedDisposition, reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
+
+interface ReviewedStyleSourceFixtureDto {
+    readonly file: string;
+    readonly raw: string;
+}
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
 const fixtureRoots: string[] = [];
+const reviewedApiCaptureBoundaries = [
+    { file: 'apps/api-v1/test/configuration/read-api-v1-configuration.test.ts', symbol: 'readIceOverrideConfigurationResource' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackApiCapture' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertIndependentCaptureConsumer' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertOrdinaryExhaustiveApiCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts', symbol: 'assertSelectedFullStackSpaCommand' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts', symbol: 'toTimingCaptureObject' },
+    { file: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts', symbol: 'toReceiptCaptureObject' }
+] as const;
+const reviewedSchemaJsonBoundaries = [
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: undefined, cap: 6 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'validateJsonSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'toDiscriminatedSchema', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isExpectedType', cap: 1 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isSameJsonValue', cap: 2 },
+    { file: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts', symbol: 'isJsonRecordValue', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readJsonFile', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'expectValid', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: undefined, cap: 3 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'readGoldenCompatibilityCorpus', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'inlineRecipesInManifest', cap: 1 },
+    { file: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts', symbol: 'jsonCodeBlocks', cap: 1 }
+] as const;
 
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -29,6 +58,218 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
+    it('counts each real unknown detail as one occurrence', () => {
+        const file = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts');
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource('isSameJsonValue', 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findingMagnitude(findings[0])).toBe(1);
+    });
+
+    it('blocks an extra real unknown in one reviewed owner', () => {
+        const relativeFile = 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 0));
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        writeFixture(fixture, relativeFile, unknownSource('validateJsonSchema', 1));
+        const grown = runChangedChecker(fixture);
+        expect(grown.status, grown.stdout).toBe(1);
+        expect(grown.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('bounds actual scanner unknowns for $file / $symbol at $cap', ({ file: relativeFile, symbol, cap }) => {
+        const fixture = createReviewedFixture();
+        const raw = symbol === undefined
+            ? `interface OpaqueJson {\n${Array.from({ length: cap }, (_, index) => `readonly value${index}: unknown;`).join('\n')}\n}\n`
+            : unknownSource(symbol, cap - 1);
+        writeFixture(fixture, relativeFile, raw);
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        const grown = symbol === undefined
+            ? `${raw}\ninterface AddedOpaqueJson { readonly added: unknown; }\n`
+            : unknownSource(symbol, cap);
+        writeFixture(fixture, relativeFile, grown);
+        const rejected = runChangedChecker(fixture);
+        expect(rejected.status, rejected.stdout).toBe(1);
+        expect(rejected.stdout).toContain('boundary.unknown');
+    });
+
+    it.each(reviewedSchemaJsonBoundaries)('keeps wrong schema JSON keys and cap growth blocking for $file / $symbol', ({ file: relativeFile, symbol, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = symbol === undefined
+            ? 'export interface OpaqueJson { readonly value: unknown; }\n'
+            : unknownSource(symbol, 0);
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { layoutOnly: false } })
+            .findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        const finding = { ...findings[0], affectedCount: cap };
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, affectedCount: cap + 1 })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedSchemaBoundary' })).toBe(false);
+    });
+    it.each(reviewedApiCaptureBoundaries)('recognizes the exact API capture boundary $file / $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: unknownSource(symbol, 0) }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings).toHaveLength(1);
+        expect(findings[0].symbol).toBe(symbol);
+        expect(isReviewedDisposition(repoRoot, findings[0])).toBe(true);
+    });
+
+    it.each(reviewedApiCaptureBoundaries)('keeps wrong and neighboring API capture boundary keys blocking for $symbol', ({ file: relativeFile, symbol }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file,
+                raw: unknownSource(symbol, 0) +
+                    '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                    '\nconst anonymousCaptureBoundary: unknown = null;\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ symbol: owner }) => owner)).toEqual([symbol, 'unreviewedCaptureBoundary', undefined]);
+        const finding = findings[0];
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'wrongCaptureBoundary' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: undefined })).toBe(false);
+        for (const neighbor of findings.slice(1)) {
+            expect(isReviewedDisposition(repoRoot, { ...neighbor, message: finding.message })).toBe(false);
+        }
+    });
+
+    it('retains raw API capture boundary warnings while the CLI accepts only the seven reviewed owners', () => {
+        const fixture = createReviewedFixture();
+        const sources: readonly ReviewedStyleSourceFixtureDto[] = [...new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))].map((relativeFile) => ({
+            file: path.join(fixture, relativeFile),
+            raw: reviewedApiCaptureBoundaries.filter(({ file }) => file === relativeFile)
+                .map(({ symbol }) => unknownSource(symbol, 0)).join('')
+        }));
+        for (const { file, raw } of sources) {
+            writeFixture(fixture, path.relative(fixture, file), raw);
+        }
+        const findings = scanProductionSources({ repoRoot: fixture, sources, options: { layoutOnly: false } }).findings
+            .filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map(({ file, symbol }) => ({ file: path.relative(fixture, file), symbol }))).toEqual([...reviewedApiCaptureBoundaries]);
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('keeps named and anonymous API capture boundary neighbors blocking in the CLI', () => {
+        const fixture = createReviewedFixture();
+        for (const file of new Set(reviewedApiCaptureBoundaries.map(({ file }) => file))) {
+            writeFixture(fixture, file, '');
+        }
+        for (const { file, symbol } of reviewedApiCaptureBoundaries) {
+            appendFixture(fixture, file, unknownSource(symbol, 0));
+        }
+        appendFixture(
+            fixture,
+            'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+            '\nfunction unreviewedCaptureBoundary(value: unknown): string { return String(value); }\n' +
+                '\nconst anonymousCaptureBoundary: unknown = null;\n'
+        );
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('FAIL: 2 new or worsened repository style findings');
+        expect(result.stdout).toContain('boundary.unknown');
+    });
+
+    it('keeps an unchecked Relic browser cast blocking', () => {
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file: path.join(repoRoot, 'tests/playwright/relic-hunters/web.spec.ts'),
+                raw: 'void (window as unknown as { readonly __rallarWsOutbox: readonly string[]; }).__rallarWsOutbox;\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+
+        expect(findings).not.toEqual([]);
+        for (const finding of findings) {
+            expect(finding.symbol).toBeUndefined();
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(false);
+        }
+    });
+
+    it('preserves a genuine Relic command-kind predicate review', () => {
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file: path.join(repoRoot, 'tests/playwright/relic-hunters/web.spec.ts'),
+                raw: [
+                    'function isCommandKind(body: unknown, kind: string): boolean {',
+                    '    return typeof body === \'object\' &&',
+                    '        body !== null &&',
+                    '        \'kind\' in body &&',
+                    '        (body as { kind?: unknown; }).kind === kind;',
+                    '}',
+                    ''
+                ].join('\n')
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+
+        expect(findings).not.toEqual([]);
+        for (const finding of findings) {
+            expect(finding.symbol).toBe('isCommandKind');
+            expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        }
+    });
+
+    it.each([[12, true], [13, true], [14, false]] as const)(
+        'keeps the public barrel disposition bounded at %s exports',
+        (count, reviewed) => {
+            const findings = scanProductionSources({
+                repoRoot,
+                sources: [{ file: path.join(repoRoot, 'packages/shared-web/browser/rallar.ts'), raw: publicBarrelSource(count) }],
+                options: { cognitiveMetrics: true }
+            }).findings.filter(({ ruleId }) => ruleId === 'file.responsibility-count');
+            expect(findings).toHaveLength(1);
+            expect(findings[0].symbol).toBeUndefined();
+            expect(findings[0].message).toContain(`File exports ${count} runtime values`);
+            expect(isReviewedDisposition(repoRoot, findings[0])).toBe(reviewed);
+        }
+    );
+
+    it('keeps wrong public barrel owners, rules and magnitudes blocking', () => {
+        const finding = {
+            file: path.join(repoRoot, 'packages/shared-web/browser/rallar.ts'),
+            ruleId: 'file.responsibility-count',
+            symbol: undefined,
+            message: 'File exports 13 runtime values'
+        };
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedPublicOwner' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
+        for (const magnitude of [0, -1, 13.5, 14, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, message: `File exports ${magnitude} runtime values` })).toBe(false);
+        }
+        expect(isReviewedDisposition(repoRoot, { ...finding, message: 'unparseable magnitude' })).toBe(false);
+    });
+
+    it.each([[12, 0], [13, 0], [14, 1]] as const)(
+        'keeps the public barrel CLI decision bounded at %s exports',
+        (count, exit) => {
+            const fixture = createReviewedFixture();
+            writeFixture(fixture, 'packages/shared-web/browser/rallar.ts', publicBarrelSource(count));
+            const result = runChangedChecker(fixture);
+            expect(result.status, result.stdout).toBe(exit);
+            expect(result.stdout).toContain(exit === 0 ? 'PASS: no new repository style findings' : 'file.responsibility-count');
+        }
+    );
+
     it('keeps reviewed policy entries immutable', () => {
         expect(Object.isFrozen(reviewedDispositions)).toBe(true);
         for (const disposition of reviewedDispositions) {
@@ -75,11 +316,6 @@ describe('reviewed repository style dispositions', () => {
                 path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
                 ruleId: 'layout.primary-export-name',
                 symbol: 'parseRtcBaselineCommand'
-            },
-            {
-                path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
-                ruleId: 'layout.primary-export-name',
-                symbol: 'createRtcBaselineDenoAcceptance'
             },
             {
                 path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
@@ -170,7 +406,11 @@ describe('reviewed repository style dispositions', () => {
     it.each([
         { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts', maximumMagnitude: 117 },
         { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts', maximumMagnitude: 89 },
-        { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 105 }
+        { relativeFile: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts', maximumMagnitude: 91 },
+        { relativeFile: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts', maximumMagnitude: 117 },
+        { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 142 },
+        { relativeFile: 'packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts', maximumMagnitude: 51 },
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', maximumMagnitude: 87 }
     ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
         const finding = {
             file: path.join(repoRoot, relativeFile),
@@ -194,6 +434,49 @@ describe('reviewed repository style dispositions', () => {
         expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
         expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'otherOwner' })).toBe(false);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('exposes one canonical terminal receipt policy record at $cap for $relativeFile', ({ relativeFile, cap }) => {
+        const entries = reviewedDispositions.filter((entry) =>
+            entry.path === relativeFile && entry.rule === 'file.cognitive-load' && entry.symbol === undefined
+        );
+        expect(entries).toEqual([{
+            path: relativeFile,
+            rule: 'file.cognitive-load',
+            symbol: undefined,
+            maximumMagnitude: cap
+        }]);
+    });
+
+    it.each([
+        { relativeFile: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts', cap: 87 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts', cap: 53 },
+        { relativeFile: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts', cap: 66 }
+    ])('bounds the reviewed terminal receipt owner at $cap without matching another path or function in $relativeFile', ({ relativeFile, cap }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = Array.from({ length: cap }, (_, index) => `function receiptGuard${index}(value: boolean): number { if (value) { return 1; } return 0; }`)
+            .join('\n');
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { cognitiveMetrics: true } }).findings
+            .filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(findings).toHaveLength(1);
+        const finding = findings[0];
+        expect(finding.symbol).toBeUndefined();
+        expect(finding.message).toContain(`File cognitive load ${cap} `);
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'receiptGuard0' })).toBe(false);
+        const grown = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: `${raw}\nfunction addedReceiptGuard(value: boolean): number { if (value) { return 1; } return 0; }` }],
+            options: { cognitiveMetrics: true }
+        }).findings.filter(({ ruleId }) => ruleId === 'file.cognitive-load');
+        expect(grown).toHaveLength(1);
+        expect(grown[0].message).toContain(`File cognitive load ${cap + 1} `);
+        expect(isReviewedDisposition(repoRoot, grown[0])).toBe(false);
     });
 
     it('bounds directory review and distinguishes checker-owned prefixes at the same path', () => {
@@ -236,6 +519,317 @@ describe('reviewed repository style dispositions', () => {
         ).toBe(true);
     });
 
+    it.each([
+        {
+            file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+            symbols: [
+                'toRtcNativeObservationProjection',
+                'toNativeBody',
+                'toNativeControlBody',
+                'toRtcNativeIdentity',
+                'toNativeSnapshot',
+                'toNativeState',
+                'toNativeError',
+                'toNativeErrorFacts',
+                'toErrorReadout',
+                'toErrorCoverage',
+                'toCaptureStatus',
+                'toCandidate',
+                'toService',
+                'toServiceStage',
+                'toCompactChannel',
+                'toPeerSetup',
+                'toTimeoutReadout',
+                'toReadout',
+                'toJsonObject',
+                'hasOnlyKeys',
+                'isOneOf',
+                'isIdentityText',
+                'isNonnegative',
+                'isInteger'
+            ]
+        },
+        { file: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts', symbols: [undefined, 'readCandidateError'] },
+        { file: 'packages/shared/webrtc/qrtc-peer-connection.ts', symbols: [undefined] },
+        {
+            file: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+            symbols: [undefined, 'readRtcInteger', 'readRtcNativeErrorFacts', 'readRtcCandidateFragments', 'readRtcDataIceFragmentComparison']
+        },
+        { file: 'packages/tests/shared/webrtc/rtc-native-candidate-observation.test.ts', symbols: [undefined] }
+    ])('recognizes only the reviewed finite native boundary keys in $file', ({ file: relativeFile, symbols }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = symbols.map((symbol) =>
+            symbol === undefined
+                ? 'export interface OpaqueData { readonly value: unknown; }'
+                : unknownSource(symbol, 0)
+        ).join('\n');
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(new Set(findings.map(({ symbol }) => symbol))).toEqual(new Set(symbols));
+        expect(findings.filter((finding) => !isReviewedDisposition(repoRoot, finding))).toEqual([]);
+        for (const finding of findings) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedNativeDomain' })).toBe(false);
+        }
+        const neighbors = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: `${raw}\nexport function unreviewedNativeDomain(value: unknown): string { return String(value); }\n` }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId, symbol }) => ruleId === 'boundary.unknown' && symbol === 'unreviewedNativeDomain');
+        expect(neighbors).toHaveLength(1);
+        expect(isReviewedDisposition(repoRoot, { ...neighbors[0], message: findings[0].message })).toBe(false);
+    });
+
+    it.each([
+        {
+            file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 150,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/services/web-rtc-connection-service.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 142,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/webrtc/qrtc-data-channel.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 177,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 270,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 78,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+            ruleId: 'file.responsibility-count',
+            symbol: undefined,
+            cap: 13,
+            prefix: 'File exports ',
+            suffix: ' runtime values'
+        },
+        { file: 'packages/shared/webrtc/qrtc-peer-connection.ts', ruleId: 'file.length', symbol: undefined, cap: 1624, prefix: 'File length ', suffix: '' },
+        {
+            file: 'packages/shared/services/web-rtc-connection-service.ts',
+            ruleId: 'file.length',
+            symbol: undefined,
+            cap: 1360,
+            prefix: 'File length ',
+            suffix: ''
+        },
+        {
+            file: 'packages/shared/services',
+            ruleId: 'layout.directory-density',
+            symbol: 'services',
+            cap: 21,
+            prefix: 'directory has ',
+            suffix: ' direct production TypeScript files'
+        },
+        {
+            file: 'packages/shared/services',
+            ruleId: 'layout.feature-prefix-cluster',
+            symbol: 'prefix:web',
+            cap: 5,
+            prefix: 'prefix \'web\' appears in ',
+            suffix: ' direct files'
+        },
+        {
+            file: 'packages/shared/services',
+            ruleId: 'layout.feature-prefix-cluster',
+            symbol: 'prefix:webrtc',
+            cap: 5,
+            prefix: 'prefix \'webrtc\' appears in ',
+            suffix: ' direct files'
+        }
+    ])('bounds native $ruleId at $cap for $file / $symbol', ({ file, ruleId, symbol, cap, prefix, suffix }) => {
+        const finding = { file: path.join(repoRoot, file), ruleId, symbol, message: `${prefix}${cap}${suffix}` };
+        for (const magnitude of [cap - 1, cap]) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, message: `${prefix}${magnitude}${suffix}` })).toBe(true);
+        }
+        for (const magnitude of [cap + 1, 0, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, message: `${prefix}${magnitude}${suffix}` })).toBe(false);
+        }
+        expect(isReviewedDisposition(repoRoot, { ...finding, message: 'unparseable magnitude' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedNativeDomain' })).toBe(false);
+        if (ruleId === 'file.cognitive-load') {
+            expect(isReviewedDisposition(repoRoot, { ...finding, message: 'File cognitive load 330' })).toBe(false);
+        }
+    });
+
+    it('retains native warnings while the changed CLI recognizes the reviewed finite owner', () => {
+        const relativeFile = 'packages/shared/webrtc/rtc-native-observation-values.ts';
+        const raw = unknownSource('readRtcNativeErrorFacts', 7);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file: path.join(repoRoot, relativeFile), raw }],
+            options: { layoutOnly: false }
+        }).findings;
+        expect(findings.filter(({ ruleId }) => ruleId === 'boundary.unknown')).toHaveLength(6);
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, raw);
+        const reviewed = runChangedChecker(fixture);
+        expect(reviewed.status, reviewed.stdout).toBe(0);
+        appendFixture(fixture, relativeFile, '\nfunction unreviewedNativeDomain(a: string, b: string, c: string, d: string) { return a + b + c + d; }\n');
+        const unreviewed = runChangedChecker(fixture);
+        expect(unreviewed.status, unreviewed.stdout).toBe(1);
+        expect(unreviewed.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(unreviewed.stdout).toContain('function.input-contract');
+    });
+
+    it.each([
+        { cap: 1624, relativeFile: 'packages/shared/webrtc/qrtc-peer-connection.ts' },
+        { cap: 1360, relativeFile: 'packages/shared/services/web-rtc-connection-service.ts' }
+    ])('keeps approved length $cap bounded in the CLI for $relativeFile', ({ cap, relativeFile }) => {
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, '\n'.repeat(cap - 1));
+        const reviewed = runChangedChecker(fixture);
+        expect(reviewed.status, reviewed.stdout).toBe(0);
+        // Both comparisons use a finding-free base, so base growth tolerance cannot mask cap+1.
+        appendFixture(fixture, relativeFile, '\n');
+        const overCap = runChangedChecker(fixture);
+        expect(overCap.status, overCap.stdout).toBe(1);
+        expect(overCap.stdout).toContain(`File length ${cap + 1}`);
+    });
+
+    it('limits the service directory review to its two exact prefixes', () => {
+        const directory = 'packages/shared/services';
+        const sources = [
+            ...Array.from({ length: 5 }, (_, index) => `web-owner-${index}.ts`),
+            ...Array.from({ length: 5 }, (_, index) => `webrtc-owner-${index}.ts`),
+            ...Array.from({ length: 5 }, (_, index) => `other-owner-${index}.ts`),
+            'alpha.ts',
+            'beta.ts',
+            'gamma.ts',
+            'delta.ts',
+            'epsilon.ts',
+            'zeta.ts'
+        ].map((file) => ({ file: path.join(repoRoot, directory, file), raw: '' }));
+        const findings = scanProductionSources({ repoRoot, sources, options: { layoutOnly: true } }).findings;
+        const reviewed = findings.filter(({ symbol }) => symbol === 'services' || symbol === 'prefix:web' || symbol === 'prefix:webrtc');
+        expect(reviewed).toHaveLength(3);
+        expect(reviewed.every((finding) => isReviewedDisposition(repoRoot, finding))).toBe(true);
+        const other = findings.filter(({ symbol }) => symbol === 'prefix:other');
+        expect(other).toHaveLength(1);
+        expect(isReviewedDisposition(repoRoot, { ...other[0], message: reviewed[0].message })).toBe(false);
+        const fixture = createReviewedFixture();
+        for (const source of sources) {
+            writeFixture(fixture, path.relative(repoRoot, source.file), source.raw);
+        }
+        const result = runChangedChecker(fixture);
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(result.stdout).toContain('prefix \'other\'');
+    });
+
+    it.each([
+        { file: 'packages/shared-web/browser/rallar-operation-options.ts', symbols: ['toRallarRtcCaptureContext'] },
+        { file: 'packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts', symbols: [undefined] },
+        { file: 'packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts', symbols: [undefined] },
+        {
+            file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+            symbols: ['dataChannelLanes', 'decodeBlackBoxRallarConfigFields', 'decodeBlackBoxRallarConnectionConfig']
+        },
+        {
+            file: 'packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts',
+            symbols: ['validateRallarBlackBoxTestCommand']
+        },
+        { file: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts', symbols: [undefined] },
+        {
+            file: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+            symbols: ['toSafeBusinessSocketDecision', 'toSafeAuthenticatedScope']
+        }
+    ])('recognizes only the reviewed recipe capture boundary keys in $file', ({ file: relativeFile, symbols }) => {
+        const file = path.join(repoRoot, relativeFile);
+        const raw = symbols.map((symbol) =>
+            symbol === undefined
+                ? 'export interface OpaqueData { readonly value: unknown; }'
+                : unknownSource(symbol, 0)
+        ).join('\n');
+        const findings = scanProductionSources({ repoRoot, sources: [{ file, raw }], options: { layoutOnly: false } }).findings
+            .filter(({ ruleId, symbol }) => ruleId === 'boundary.unknown' && symbols.some((reviewed) => reviewed === symbol));
+        // Raw checker output remains visible; undefined means owner-level, not a named-method waiver.
+        expect(findings).toHaveLength(symbols.length);
+        expect(new Set(findings.map(({ symbol }) => symbol))).toEqual(new Set(symbols));
+        expect(findings.filter((finding) => !isReviewedDisposition(repoRoot, finding))).toEqual([]);
+        for (const finding of findings) {
+            expect(isReviewedDisposition(repoRoot, { ...finding, file: `${file}.other.ts` })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'function.input-contract' })).toBe(false);
+            expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'unreviewedRecipeCaptureDomain' })).toBe(false);
+        }
+        const neighbor = scanProductionSources({
+            repoRoot,
+            sources: [{ file, raw: `${raw}\nfunction unreviewedRecipeCaptureDomain(value: unknown): string { return String(value); }\n` }],
+            options: { layoutOnly: false }
+        }).findings
+            .filter(({ ruleId, symbol }) => ruleId === 'boundary.unknown' && symbol === 'unreviewedRecipeCaptureDomain');
+        expect(neighbor).toHaveLength(1);
+        expect(isReviewedDisposition(repoRoot, { ...neighbor[0], message: findings[0].message })).toBe(false);
+    });
+
+    it('bounds the cohesive auth acquisition owner at its reviewed cognitive magnitude', () => {
+        const file = path.join(repoRoot, 'packages/shared-web/browser/session/session-auth-lifecycle.ts');
+        const cognitive = { file, ruleId: 'file.cognitive-load', symbol: undefined, message: 'File cognitive load 50' };
+        expect(isReviewedDisposition(repoRoot, cognitive)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, { ...cognitive, message: 'File cognitive load 49' })).toBe(true);
+        for (const message of ['File cognitive load 51', 'File cognitive load 330', 'File cognitive load 0', 'unparseable magnitude']) {
+            expect(isReviewedDisposition(repoRoot, { ...cognitive, message })).toBe(false);
+        }
+        expect(isReviewedDisposition(repoRoot, { ...cognitive, file: `${file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...cognitive, ruleId: 'file.length' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...cognitive, symbol: 'connectWithIntent' })).toBe(false);
+    });
+
+    it('preserves raw recipe capture warnings while the gate accepts only its exact reviewed boundary', () => {
+        const relativeFile = 'packages/shared-web/browser/rallar-operation-options.ts';
+        const raw = unknownSource('toRallarRtcCaptureContext', 0);
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{ file: path.join(repoRoot, relativeFile), raw }],
+            options: { layoutOnly: false }
+        }).findings;
+        expect(findings.filter(({ ruleId }) => ruleId === 'boundary.unknown')).toHaveLength(1);
+        const fixture = createReviewedFixture();
+        writeFixture(fixture, relativeFile, raw);
+        const accepted = runChangedChecker(fixture);
+        expect(accepted.status, accepted.stdout).toBe(0);
+        appendFixture(
+            fixture,
+            relativeFile,
+            '\nfunction unreviewedRecipeCaptureDomain(a: string, b: string, c: string, d: string) { return a + b + c + d; }\n'
+        );
+        const rejected = runChangedChecker(fixture);
+        expect(rejected.status, rejected.stdout).toBe(1);
+        expect(rejected.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(rejected.stdout).toContain('function.input-contract');
+    });
+
     it('keeps function-owned unknown findings blocking beside a reviewed module owner', () => {
         const relativeFile = 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
         const findings = scanProductionSources({
@@ -251,13 +845,18 @@ describe('reviewed repository style dispositions', () => {
     });
 });
 
+/** Synthetic exports exercise policy without coupling a test to SDK implementation source. */
+function publicBarrelSource(count: number): string {
+    return Array.from({ length: count }, (_, index) => `export const publicValue${index} = ${index};`).join('\n');
+}
+
 function createReviewedFixture(): string {
     const fixture = createGitFixture({ 'README.md': 'fixture\n' });
     commitAll(fixture, 'base');
     return fixture;
 }
 
-function reviewedSources(root: string) {
+function reviewedSources(root: string): readonly ReviewedStyleSourceFixtureDto[] {
     return [
         {
             file: path.join(
@@ -272,13 +871,6 @@ function reviewedSources(root: string) {
                 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts'
             ),
             raw: primaryExportSource('parseRtcBaselineCommand')
-        },
-        {
-            file: path.join(
-                root,
-                'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts'
-            ),
-            raw: primaryExportSource('createRtcBaselineDenoAcceptance')
         },
         {
             file: path.join(
@@ -339,7 +931,7 @@ function commitAll(fixtureRoot: string, message: string): void {
     runGit(fixtureRoot, ['commit', '-m', message]);
 }
 
-function runChangedChecker(fixtureRoot: string) {
+function runChangedChecker(fixtureRoot: string): SpawnSyncReturns<string> {
     return spawnSync(process.execPath, [checkerPath, 'HEAD'], {
         cwd: fixtureRoot,
         encoding: 'utf8'

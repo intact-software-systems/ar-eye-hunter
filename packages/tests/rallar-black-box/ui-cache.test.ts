@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import type { RtcSignalingDiagnostics } from '../../shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { decodeManualRtcReadinessText } from '../../../apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts';
+import { toManualWorkbenchCommands } from '../../../apps/rallar-black-box/src/manual-workbench/manual-workbench-commands.ts';
 import {
     readStoredAppMode,
     readStoredAppTab,
@@ -74,6 +83,47 @@ const REST_COLLECTION = {
 };
 
 describe('rallar-black-box UI persistence', () => {
+    it.each(['{"intervalMs":75}', '{}', '{'])('retains readiness authoring text %s in the single Manual draft', (rtcReadinessText) => {
+        const storage = new MemoryStorage();
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcReadinessText };
+        writeStoredManualWorkbenchDraft(storage, { values, payloadPresetId: 'custom', payloadText: '{}' }, []);
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toMatchObject({
+            values: { rtcReadinessText }
+        });
+    });
+
+    it('reads an old valid Manual draft with missing readiness as blank next-Connect intent', () => {
+        const storage = new MemoryStorage();
+        const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'old-draft-room' };
+        Reflect.deleteProperty(values, 'rtcReadinessText');
+        storage.setItem(UI_STORAGE_KEYS.manualDraft, JSON.stringify({ values, payloadPresetId: 'custom', payloadText: '{}' }));
+        const restored = readStoredManualWorkbenchDraft(storage, SESSION_VALUES);
+        const [command] = toManualWorkbenchCommands({
+            action: 'connect',
+            values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
+            payload: {},
+            sequence: 1,
+            requestId: 'old-draft-connect',
+            rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
+        });
+        expect(command.kind).toBe('rtc.connect');
+        expect(command).not.toHaveProperty('readiness');
+        expect(restored?.values).toMatchObject({ groupId: 'old-draft-room', rtcReadinessText: '' });
+    });
+
+    it('discards the whole Manual draft when supplied readiness text is not a string', () => {
+        const storage = new MemoryStorage();
+        storage.setItem(
+            UI_STORAGE_KEYS.manualDraft,
+            JSON.stringify({
+                values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'corrupt-readiness-room', rtcReadinessText: 75 },
+                payloadPresetId: 'custom',
+                payloadText: '{}'
+            })
+        );
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toBeUndefined();
+    });
+
     it('stores the active tab as a small non-secret preference', () => {
         const storage = new MemoryStorage();
 
@@ -136,17 +186,67 @@ describe('rallar-black-box UI persistence', () => {
         expect(restored?.values.providerMode).toBe(DEFAULT_MANUAL_WORKBENCH_VALUES.providerMode);
     });
 
-    it('discards a Manual Rallar entry whose cached value has the wrong type', () => {
+    it.each<RtcSignalingDiagnostics.CaptureMode>(['off', 'native'])(
+        'restores explicit %s capture into the next Manual Connect command',
+        (rtcCaptureMode) => {
+            const storage = new MemoryStorage();
+            const values = { ...DEFAULT_MANUAL_WORKBENCH_VALUES, rtcCaptureMode };
+            writeStoredManualWorkbenchDraft(storage, {
+                values,
+                payloadPresetId: 'custom',
+                payloadText: '{}'
+            }, []);
+            const restored = readStoredManualWorkbenchDraft(storage, SESSION_VALUES);
+
+            expect(restored).toMatchObject({ values: { rtcCaptureMode } });
+            const [command] = toManualWorkbenchCommands({
+                action: 'connect',
+                values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
+                payload: {},
+                sequence: 1,
+                requestId: 'restored-capture-connect',
+                rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
+            });
+            expect(command).toMatchObject({ kind: 'rtc.connect', rallar: { rtcCaptureMode } });
+        }
+    );
+
+    it('keeps a saved draft with omitted capture as inherited connection input', () => {
         const storage = new MemoryStorage();
-        writeStoredManualWorkbenchDraft(storage, {
-            values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'persisted-room' },
-            payloadPresetId: 'custom',
-            payloadText: '{"kind":"ping"}'
-        }, []);
-        const stored = JSON.parse(storage.getItem(UI_STORAGE_KEYS.manualDraft) ?? '{}');
         storage.setItem(
             UI_STORAGE_KEYS.manualDraft,
-            JSON.stringify({ ...stored, values: { ...stored.values, timeoutMs: 'not-a-number' } })
+            JSON.stringify({
+                values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'saved-without-capture', rtcCaptureMode: undefined },
+                payloadPresetId: 'custom',
+                payloadText: '{}'
+            })
+        );
+        const restored = readStoredManualWorkbenchDraft(storage, SESSION_VALUES);
+
+        expect(restored?.values.groupId).toBe('saved-without-capture');
+        const [command] = toManualWorkbenchCommands({
+            action: 'connect',
+            values: restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES,
+            payload: {},
+            sequence: 1,
+            requestId: 'inherited-capture-connect',
+            rtcReadinessResult: decodeManualRtcReadinessText((restored?.values ?? DEFAULT_MANUAL_WORKBENCH_VALUES).rtcReadinessText)
+        });
+        expect(command.kind).toBe('rtc.connect');
+        if (command.kind === 'rtc.connect') {
+            expect(command.rallar?.rtcCaptureMode).toBeUndefined();
+        }
+    });
+
+    it('discards a Manual Rallar entry whose cached value has the wrong type', () => {
+        const storage = new MemoryStorage();
+        storage.setItem(
+            UI_STORAGE_KEYS.manualDraft,
+            JSON.stringify({
+                values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'persisted-room', timeoutMs: 'not-a-number' },
+                payloadPresetId: 'custom',
+                payloadText: '{"kind":"ping"}'
+            })
         );
 
         expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toBeUndefined();
@@ -181,11 +281,9 @@ describe('rallar-black-box UI persistence', () => {
 
     it('discards a Rallar Server request entry whose method is not a known method', () => {
         const storage = new MemoryStorage();
-        writeStoredRallarServerWorkbenchDraft(storage, RALLAR_SERVER_DRAFT, []);
-        const stored = JSON.parse(storage.getItem(UI_STORAGE_KEYS.rallarServerDraft) ?? '{}');
         storage.setItem(
             UI_STORAGE_KEYS.rallarServerDraft,
-            JSON.stringify({ ...stored, method: 'PATCH' })
+            JSON.stringify({ ...RALLAR_SERVER_DRAFT, method: 'PATCH' })
         );
 
         expect(readStoredRallarServerWorkbenchDraft(storage)).toBeUndefined();

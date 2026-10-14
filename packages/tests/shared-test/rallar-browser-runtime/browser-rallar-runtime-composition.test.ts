@@ -5,14 +5,18 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
+import type { BlackBoxBrowserRallarRuntimeDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/refresh-black-box-browser-room-state.ts';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
+import { createBrowserRtcCapture } from '@shared-web/browser/rtc/create-browser-rtc-capture.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type {
-    AuditStamp,
     GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
@@ -27,7 +31,11 @@ import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/reposit
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
-import { createTestGroup } from '../../create-test-group.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../../shared-web/api-middleware-test-double.ts';
+import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
+
+installFakeBroadcastChannelPerTest();
 
 const scope: StateScope = {
     applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -59,6 +67,48 @@ describe('black-box browser room-state refresh composition', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
+    });
+
+    it('refreshes and hydrates through the owned Native runtime without changing its connection', async () => {
+        const group = createGroupSnapshot();
+        const planned = createTopologySnapshot(group, 4);
+        const accepted = createTopologySnapshot(group, 3);
+        const fetch = vi.fn(async (url: RequestInfo | URL) =>
+            new Response(JSON.stringify(String(url).endsWith('/topology') ? topologyView(group, planned, accepted) : group), {
+                headers: {
+                    'cache-control': 'no-store',
+                    'content-type': 'application/json',
+                    'rallar-state-source': 'durable',
+                    'rallar-group-revision': String(group.causalRevision.groupRevision),
+                    'rallar-presence-revision': String(group.causalRevision.presenceRevision)
+                }
+            })
+        );
+        vi.stubGlobal('fetch', fetch);
+        const runtime = await createOwnedRuntime();
+        onTestFinished(() => runtime.disconnect());
+        await runtime.connect({ rtcCaptureMode: 'native' });
+        const receipt = runtime.rtcCapture();
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        const result = await runtime.refreshRoomState(groupRefOf(group), { scope, timeoutMs: 1_000 })
+            .then(() => 'refreshed', (error: Error) => error);
+
+        expect(result).toBe('refreshed');
+        expect(runtime.rtcCapture()).toBe(receipt);
+        expect(receipt).toMatchObject({
+            configuration: { mode: 'native', origin: 'step' },
+            application: { status: 'applied', mode: 'native' }
+        });
+        expect(runtime.isConnected()).toBe(true);
+        const overlayId = toScopedOverlayId(group.group);
+        expect(findPlannedOverlayById(overlayId)?.overlayVersion).toBe(4);
+        expect(findAcceptedOverlayById(overlayId)?.overlayVersion).toBe(3);
+        expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/topology'))).toBe(true);
+        await expect(runtime.connect()).rejects.toBeInstanceOf(RallarRtcCaptureConnectionRequiredError);
+        await expect(runtime.refreshRoomState(groupRefOf(group), { scope, timeoutMs: 1_000, rtcCaptureMode: 'off' }))
+            .rejects.toBeInstanceOf(RallarRtcCaptureConnectionRequiredError);
+        expect(runtime.rtcCapture()).toBe(receipt);
     });
 
     it('enforces one caller deadline across a stalled topology hydration', async () => {
@@ -157,6 +207,39 @@ describe('black-box browser room-state refresh composition', () => {
     });
 });
 
+async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDependency> {
+    const auth = await import('@shared/api/auth.ts');
+    const cache = await import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
+    const middleware = await import('@shared-web/browser/connection/initialise-browser-middleware.ts');
+    const { createBlackBoxBrowserRallarRuntimeDependency } = await import(
+        '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'
+    );
+    const { BlackBoxRallarVolatileLimits } = await import(
+        '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
+    );
+    const context = createDefaultApiMiddlewareTestDouble({
+        session: authSession,
+        middleware: { webRtcGroupManager: createWebRtcGroupManager() }
+    });
+    vi.spyOn(auth, 'readSession').mockReturnValue(authSession);
+    vi.spyOn(cache.browserStateCacheLifecycle, 'hydrate').mockResolvedValue();
+    vi.spyOn(middleware, 'initialiseMiddleware').mockImplementation(async (_session, _topic, options) => ({
+        middleware: context.middleware,
+        checkpoints: [],
+        rtcCaptureReceipt: createBrowserRtcCapture({
+            configuration: options.rtcCaptureConfiguration,
+            connectionId: { status: 'observed', value: 'owned-native' },
+            record: options.diagnosticsPorts.signalingDiagnostics,
+            nowEpochMs: () => 1
+        }).receipt
+    }));
+    configureApiClient({ apiBaseUrl: 'https://api.example.test' });
+    const limits = new BlackBoxRallarVolatileLimits();
+    const runtime = createBlackBoxBrowserRallarRuntimeDependency({ readVolatileSessionLimits: limits.get });
+    runtime.setDefaults({ ...scope, diagnosticsPorts: { signalingDiagnostics: () => {} } });
+    return runtime;
+}
+
 function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refreshBlackBoxBrowserRoomState>[0], 'options'> {
     const manager = createWebRtcGroupManager();
     return {
@@ -167,7 +250,7 @@ function createRefreshInput(group: GroupSnapshot): Omit<Parameters<typeof refres
             }))
         },
         session: {
-            connect: vi.fn(async () => ({
+            acquireConnection: vi.fn(async () => ({
                 session: authSession,
                 middleware: { webRtcGroupManager: manager }
             }))
@@ -212,40 +295,10 @@ function topologyView(
 }
 
 function createGroupSnapshot(): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({ ...scope, groupId: 'room-a', sessionIds: ['session-a', 'session-b'] });
     return {
-        causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        group: createTestGroup({
-            applicationId: scope.applicationId,
-            workspaceId: scope.workspaceId,
-            groupId: 'room-a',
-            displayName: 'room-a',
-            snapshotVersion: 1,
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: auditStamp(),
-            updated: auditStamp(),
-            activeMemberCount: 2,
-            ownerPrincipalId: 'session-a'
-        }),
-        members: [],
-        activeSessions: ['session-a', 'session-b'].map((sessionId) => ({
-            applicationId: scope.applicationId,
-            workspaceId: scope.workspaceId,
-            groupId: 'room-a',
-            sessionId,
-            principalId: sessionId,
-            generationId: 'generation-1',
-            generationVersion: 1,
-            status: 'active',
-            disconnectedAtEpochMs: null,
-            disconnectReason: null,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: Date.now() + 120_000
-        })),
-        memberCount: 2,
-        onlineMemberCount: 2
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 120_000 }))
     };
 }
 
@@ -278,15 +331,5 @@ function groupRefOf(group: GroupSnapshot): GroupRef {
         applicationId: group.group.applicationId,
         workspaceId: group.group.workspaceId,
         groupId: group.group.groupId
-    };
-}
-
-function auditStamp(): AuditStamp {
-    return {
-        atEpochMs: 1,
-        actor: { kind: 'principal', principalId: 'test' },
-        reason: null,
-        traceId: null,
-        requestId: null
     };
 }

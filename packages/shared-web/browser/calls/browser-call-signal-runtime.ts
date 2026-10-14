@@ -125,7 +125,7 @@ export class BrowserCallSignalRuntime {
             uniquePeerIds.map(async (peerId) => ({
                 peerId,
                 result: await this.input.messages.ws.send({
-                    scope: 'all',
+                    scope: 'world',
                     peerId,
                     topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
                     typeId: toCallSignalTypeId(payload.kind),

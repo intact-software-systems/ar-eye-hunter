@@ -1,15 +1,30 @@
+import { Temporal } from '@js-temporal/polyfill';
+
+import {
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import type { AppInboxOptions } from '../app-inbox-options.ts';
-import { normalizeAppInboxOptions } from '../app-inbox-options.ts';
+import { normalizeAppInboxOptions, type AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
+import type {
+    AppInboxQueueMessageCreationDto,
+    AppInboxQueueMessageFactory
+} from '../app-inbox-queue-entry.ts';
 import { AppInboxCommandClient } from './app-inbox-command-client.ts';
 import { AppInboxQueueEntryWriter } from './app-inbox-queue-entry-writer.ts';
 import { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
 import { AppInboxResultWaiter } from './app-inbox-result-waiter.ts';
 
 export interface CreateAppInboxClientRuntimeInput {
+    readonly creationNow?: QueueBoxUtilities.CreationClock;
+    readonly newResourceId?: () => string;
+    readonly createMessage?: AppInboxQueueMessageFactory;
     readonly inboxQueueReader: InboxQueueReader;
     readonly resourceInboxRepository: AppInboxEntryRepository;
     readonly resourceInboxResultsRepository: AppInboxResultRepository;
@@ -30,9 +45,15 @@ export interface AppInboxClientRuntime {
 export function createAppInboxClientRuntime(
     input: CreateAppInboxClientRuntimeInput
 ): AppInboxClientRuntime {
+    const creationNow = input.creationNow ?? Temporal.Now.instant;
+    const newResourceId = input.newResourceId ?? crypto.randomUUID.bind(crypto);
+    const createMessage = input.createMessage ?? createDefaultAppInboxQueueMessage;
     const options = normalizeAppInboxOptions(input.options ?? {});
     const queueEntryWriter = new AppInboxQueueEntryWriter(
         {
+            creationNow,
+            newResourceId,
+            createMessage,
             inboxQueueReader: input.inboxQueueReader,
             repository: input.resourceInboxRepository
         },
@@ -44,6 +65,7 @@ export function createAppInboxClientRuntime(
     );
     const resultWaiter = new AppInboxResultWaiter(
         {
+            completionNotifications: input.inboxQueueReader.completionNotifications,
             statusRepository: input.resourceInboxRepository,
             resultRepository: input.resourceInboxResultsRepository
         },
@@ -55,7 +77,7 @@ export function createAppInboxClientRuntime(
         }
     );
     const reservationClient = new AppInboxReservationClient(
-        { repository: input.resourceInboxRepository },
+        { repository: input.resourceInboxRepository, creationNow, createMessage },
         { serviceId: input.serviceId }
     );
     const commandClient = new AppInboxCommandClient(
@@ -73,4 +95,13 @@ export function createAppInboxClientRuntime(
         reservationClient,
         resultWaiter
     };
+}
+
+function createDefaultAppInboxQueueMessage(creation: AppInboxQueueMessageCreationDto): ALMessage {
+    return newALUntargetedMessage(
+        toAppQueueCreatedBy(creation.serviceId),
+        newALRoute(creation.key.topicId, creation.key.contextId, creation.key.resourceId),
+        creation.enqueue.type,
+        creation.enqueue
+    );
 }

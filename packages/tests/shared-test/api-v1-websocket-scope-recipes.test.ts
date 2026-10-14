@@ -136,7 +136,7 @@ it.each([
     { name: 'group-data-policy', groupCreation: 'createBlockedDataGroup', groupResponse: 'createBlockedDataGroup', urlCount: 2 },
     { name: 'drop-in-social-preset', groupCreation: 'createDropInGroup', groupResponse: 'createDropInGroup', urlCount: 2 },
     { name: 'websocket-addressed-sends', groupCreation: 'aliceCreatesTheRoom', groupResponse: 'aliceCreatesTheRoom', urlCount: 2 },
-    { name: 'websocket-topic-routing', groupCreation: 'createGroup', groupResponse: 'joinAliceToGroup', urlCount: 1 }
+    { name: 'websocket-topic-routing', groupCreation: 'createGroup', groupResponse: 'joinAliceToGroup', urlCount: 2 }
 ])('$name URL scope matches the HTTP group with nested {runId} variables', ({ name, groupCreation, groupResponse, urlCount }) => {
     const recipe = readApiV1Recipe(`tests/api-v1/api-v1-${name}.json`) as ScenarioRecipe;
     const recipePath = fileURLToPath(new URL(`../../shared-test/black-box-runner/tests/api-v1/api-v1-${name}.json`, import.meta.url));

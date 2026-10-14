@@ -31,9 +31,9 @@ export class BrowserDeliverySettlements {
     /**
      * Another tab of the session may hold the handle of a durable message this tab's carriers settle: the
      * owner tab dispatches every tab's durable sends, and any tab may admit the control that acknowledges
-     * one. A durable lane's settlement this tab holds no handle for is relayed once; the receiving tab
-     * records it through its own observers, never through an epoch, so it is not relayed again. A volatile
-     * lane's settlement stays in the tab that admitted the message, so none is relayed.
+     * one. A durable or checkpoint lane's settlement this tab holds no handle for is relayed once; the
+     * receiving tab records it through its own observers, never through an epoch, so it is not relayed
+     * again. A volatile lane's settlement stays in the tab that admitted the message, so none is relayed.
      */
     open(
         observers: BrowserDeliverySettlements.Observers,
@@ -46,7 +46,7 @@ export class BrowserDeliverySettlements {
                 return;
             }
             observers[event.carrier](event);
-            if (event.lane === 'durable' && !observers.holds(event.msgId)) {
+            if ((event.lane === 'durable' || event.lane === 'checkpoint') && !observers.holds(event.msgId)) {
                 relay.relaySettlement(event);
             }
         };

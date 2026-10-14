@@ -1,38 +1,74 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { areSameUniqueStringSet } from '../../shared-test/rallar-bb-test/assert/are-same-unique-string-set.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
-    RallarBlackBoxTestAssertResultValue,
+    RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-
-function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
-    let now = 1_000;
-    let sequence = 1;
-    return createRallarBlackBoxTestRuntime({
-        now: () => now++,
-        idFactory: (prefix) => `${prefix}-${sequence++}`
-    });
-}
+import { createDeterministicRuntime } from './rallar-bb-runtime/create-deterministic-runtime.ts';
 
 async function evaluateAssert(
     runtime: RallarBlackBoxTestRuntime,
-    assert: Omit<RallarBlackBoxTestAssertCommand, 'kind'>
-): Promise<RallarBlackBoxTestAssertResultValue & Readonly<{ ok: boolean; }>> {
-    const result = await runtime.execute({
+    assert: Omit<Extract<RallarBlackBoxTestAssertCommand, { comparisonSource?: never; }>, 'kind'>
+): Promise<RallarBlackBoxTestResult> {
+    return runtime.execute({
         kind: 'assert',
         ...assert
     });
-    return {
-        ...(result.value as RallarBlackBoxTestAssertResultValue),
-        ok: result.ok
-    };
 }
 
 describe('rallar-bb-test extended assert operators', () => {
+    it('compares complete unique recipient sets without depending on order', () => {
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-b', 'player-a'])).toBe(true);
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-a', 'player-c'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 'player-a'], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 'player-b'], ['player-a', 'player-a'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', ''], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', '  '], ['player-a', 'player-b'])).toBe(false);
+        expect(areSameUniqueStringSet(['player-a', 3], ['player-a', 'player-b'])).toBe(false);
+    });
+
+    it('records both resolved sources for a set comparison command', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'audience',
+            payload: { expected: ['player-a', 'player-b'], confirmed: ['player-b', 'player-a'] }
+        });
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'audience-set',
+            source: 'messages.0.payload.confirmed',
+            operator: 'sameUniqueStringSet',
+            comparisonSource: 'messages.0.payload.expected'
+        });
+        expect(result).toMatchObject({
+            ok: true,
+            value: {
+                comparisonSource: 'messages.0.payload.expected',
+                exists: true,
+                comparisonExists: true,
+                passed: true
+            }
+        });
+        expect(
+            (await runtime.execute({
+                kind: 'assert',
+                commandId: 'audience-missing',
+                source: 'messages.0.payload.confirmed',
+                operator: 'sameUniqueStringSet',
+                comparisonSource: 'messages.0.payload.absent'
+            })).ok
+        ).toBe(false);
+    });
     it('reads recorded evidence in the JSON form a control connection carries', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({
@@ -171,6 +207,39 @@ describe('rallar-bb-test extended assert operators', () => {
         ).toBe(false);
     });
 
+    it('passes matches on an array only when it is non-empty and the pattern matches every member', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'room.assert.rows',
+            payload: {
+                data: {
+                    allSent: ['sent', 'sent', 'sent'],
+                    lastNotReady: ['sent', 'not-ready'],
+                    none: [],
+                    numbers: [1, 2]
+                }
+            }
+        });
+        const matchesSent = async (field: string) =>
+            (await evaluateAssert(runtime, {
+                source: `messages.0.payload.data.${field}`,
+                operator: 'matches',
+                expected: '^sent$'
+            })).ok;
+
+        expect(await matchesSent('allSent')).toBe(true);
+        expect(await matchesSent('lastNotReady')).toBe(false);
+        expect(await matchesSent('none')).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.numbers',
+                operator: 'matches',
+                expected: '^[0-9]$'
+            })).ok
+        ).toBe(false);
+    });
+
     it('evaluates shape operators on lastResult and resultCache roots', async () => {
         const runtime = createDeterministicRuntime();
         await runtime.execute({
@@ -231,7 +300,7 @@ describe('rallar-bb-test extended assert operators', () => {
             }
         });
         expect(complete.ok).toBe(false);
-        expect(complete.passed).toBe(false);
+        expect(complete.value).toHaveProperty('passed', false);
 
         const completeExact = await evaluateAssert(runtime, {
             source: 'messages.0.payload.data',
@@ -267,10 +336,8 @@ describe('rallar-bb-test extended assert operators', () => {
         });
 
         expect(result.ok).toBe(false);
-        const value = result.value as RallarBlackBoxTestAssertResultValue;
-        expect((value.actual as { accessToken: string; }).accessToken).toBe('<redacted>');
-        const details = result.error?.details as { actual: { accessToken: string; }; };
-        expect(details.actual.accessToken).toBe('<redacted>');
+        expect(result.value).toHaveProperty('actual.accessToken', '<redacted>');
+        expect(result.error?.details).toHaveProperty('actual.accessToken', '<redacted>');
     });
 
     it('keeps the historical six operators and their quirks untouched', async () => {
@@ -304,7 +371,7 @@ describe('rallar-bb-test extended assert operators', () => {
                 source: 'state.messages.length',
                 operator,
                 expected: 1
-            } as never)).toEqual({ ok: true });
+            })).toEqual({ ok: true });
 
             expect(
                 validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
@@ -323,7 +390,7 @@ describe('rallar-bb-test extended assert operators', () => {
                 commandId: 'assert-unknown',
                 source: 'state.messages.length',
                 operator: 'matchesShapeExact'
-            } as never).ok
+            }).ok
         ).toBe(false);
 
         expect(

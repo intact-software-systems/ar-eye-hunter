@@ -32,12 +32,12 @@ export function assertPersistedALTargets(value: PersistedALValue): void {
 function assertPersistedALMulticastTargets(targets: PersistedALRecord): void {
     requirePersistedALFields(
         targets,
-        ['mode', 'groupRef', 'membershipEpoch', 'minSnapshotVersion', 'recipientPeerIds', 'snapshotVersion'],
+        ['mode', 'groupRef', 'minSnapshotVersion', 'rosterVersion', 'recipientPeerIds', 'snapshotVersion'],
         ['mode', 'groupRef']
     );
     assertCanonicalGroupRef(targets.groupRef);
-    requireOptionalPersistedALSafeInteger(targets.membershipEpoch, 0, 'membership epoch');
     requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
+    requireOptionalPersistedALSafeInteger(targets.rosterVersion, 1, 'roster version');
     if ((targets.recipientPeerIds === undefined) !== (targets.snapshotVersion === undefined)) {
         throw new TypeError(
             'Persisted AL multicast frozen audience needs its recipients and snapshot version together'
@@ -57,6 +57,7 @@ function assertPersistedALBroadcastTargets(targets: PersistedALRecord): void {
             'principalRef',
             'exceptPeerIds',
             'minSnapshotVersion',
+            'rosterVersion',
             'recipientPeerIds'
         ],
         ['mode', 'scope']
@@ -88,6 +89,7 @@ function assertPersistedALBroadcastTargets(targets: PersistedALRecord): void {
     requireOptionalPersistedALStringArray(targets.exceptPeerIds, 'broadcast exclusions');
     requireOptionalPersistedALUniqueStringArray(targets.recipientPeerIds, 'broadcast fixed recipients');
     requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
+    requireOptionalPersistedALSafeInteger(targets.rosterVersion, 1, 'roster version');
 }
 
 function assertCanonicalGroupRef(value: PersistedALValue | undefined): void {

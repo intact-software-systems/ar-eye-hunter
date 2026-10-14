@@ -1,13 +1,16 @@
 import type {
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelaySendResult,
+    RallarDirectorRelaySendStatus,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     isALDeliveryAdmitted,
@@ -32,6 +35,8 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+        /** The resource an intent claims; undefined for a shared intent and every sync request. */
+        readonly claim: RallarDirectorRelayClaim | undefined;
     }
 
     export interface SendRoomEnvelopeInput<T> {
@@ -58,8 +63,8 @@ export class BrowserDirectorRelayTransport {
         if (rejection) {
             return rejection;
         }
-        const { appointment, roomRef } = input.current;
-        if (!appointment || !roomRef) {
+        const roomRef = input.current.roomRef;
+        if (!roomRef) {
             throw new Error('Validated director command target is missing.');
         }
         try {
@@ -71,10 +76,13 @@ export class BrowserDirectorRelayTransport {
                     purpose: 'command'
                 })
                 .send(createEnvelope(input), {
-                    peerId: appointment.sessionId,
-                    strategy: 'rtc-with-ws-fallback'
+                    ack: 'group-leader',
+                    strategy: 'rtc-with-ws-fallback',
+                    ...(input.claim === undefined
+                        ? {}
+                        : { ownership: 'exclusive', resourceId: input.claim.resourceId, ttlMs: input.claim.ttlMs })
                 });
-            return await readDirectorReceipt(receipt);
+            return await readDirectorReceipt(receipt, toDirectorReceiptWaitMs(input.claim));
         }
         catch (error) {
             if (!isRallarValidationError(error)) {
@@ -198,18 +206,46 @@ export class BrowserDirectorRelayTransport {
     }
 }
 
-async function readDirectorReceipt(receipt: RallarMessageHandle): Promise<RallarDirectorRelaySendResult> {
-    const outcome = await receipt.wait({
-        until: ['acknowledged'],
-        timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
-    });
-    return outcome.lifecycle.state === 'acknowledged'
-        ? { status: 'sent', receipt }
-        : {
-            status: 'failed',
-            receipt,
-            reason: outcome.lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
-        };
+/** A claiming intent lives no longer than its claim, so its confirmation is awaited no longer either. */
+function toDirectorReceiptWaitMs(claim: RallarDirectorRelayClaim | undefined): number {
+    const commandTtlMs = AL_CHANNEL_SEND_DEFAULTS.command.ttlMs;
+    return claim === undefined ? commandTtlMs : Math.min(claim.ttlMs, commandTtlMs);
+}
+
+/**
+ * The room's leader confirms a command; a room without one refuses it `no-leader` on either carrier (D167), and the
+ * server refuses an intent claiming a resource another session holds `held-by-other` (D176).
+ */
+async function readDirectorReceipt(
+    receipt: RallarMessageHandle,
+    timeoutMs: number
+): Promise<RallarDirectorRelaySendResult> {
+    const outcome = await receipt.wait({ until: ['acknowledged'], timeoutMs });
+    const lifecycle = outcome.lifecycle;
+    if (lifecycle.state === 'acknowledged') {
+        return { status: 'sent', receipt };
+    }
+    return {
+        status: toDirectorCommandFailureStatus(lifecycle.evidence.failure),
+        receipt,
+        reason: lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
+    };
+}
+
+function toDirectorCommandFailureStatus(
+    failure: ALDeliveryFailure | undefined
+): Extract<RallarDirectorRelaySendStatus, 'no-director' | 'held-by-other' | 'failed'> {
+    switch (failure?.kind) {
+        case 'refused':
+            return failure.reason === 'no-leader' ? 'no-director' : 'failed';
+        case 'relay-rejected':
+            if (failure.rejection.reason === 'no-leader') {
+                return 'no-director';
+            }
+            return failure.rejection.reason === 'held-by-other' ? 'held-by-other' : 'failed';
+        default:
+            return 'failed';
+    }
 }
 
 function createEnvelope<T>(

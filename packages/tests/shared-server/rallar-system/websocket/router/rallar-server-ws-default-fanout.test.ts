@@ -89,6 +89,109 @@ it('ends the receipt of a live-only at-least-once room send timed out, naming th
         .toBeUndefined();
 });
 
+it('sends a room send with a fixed list live to the listed receiver alone and expects it alone', async () => {
+    const fixture = createLiveRoomFixture(['receiver-a', 'receiver-b']);
+    const message: ALMessage = {
+        ...createReceiverRoomSend('listed-live', Date.now(), undefined),
+        targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM, exceptPeerIds: ['origin'], recipientPeerIds: ['receiver-a'] }
+    };
+
+    fixture.origin.receive(JSON.stringify(message));
+
+    await expect.poll(() => readDeliveredCount(fixture.receivers['receiver-a']!, message.id.msgId))
+        .toBe(1);
+    await expect.poll(() => readOriginReceipts(fixture.origin)).toEqual([
+        { phase: 'admitted', expected: ['receiver-a'], confirmed: [] }
+    ]);
+    expect(readDeliveredCount(fixture.receivers['receiver-b']!, message.id.msgId)).toBe(0);
+});
+
+it('delivers a client world broadcast on a fanout-none topic to no peer when a router owns fanout', async () => {
+    const fixture = createWorldFixture({ routerFanout: 'none' });
+    const message = createWorldSend('world-none');
+
+    expect((await fixture.service.acceptIncomingMessage(message, 'origin')).right).toEqual({ kind: 'admitted' });
+    await settleDelivery();
+
+    for (const sessionId of ['origin', 'receiver', 'foreign']) {
+        expect(readDeliveredCount(fixture.sockets[sessionId]!, message.id.msgId), sessionId).toBe(0);
+    }
+});
+
+it.each(['live-only', 'outbox'] as const)(
+    'delivers a client world broadcast on a %s topic once to each session of its scope, never to the sender or another scope',
+    async (routerFanout) => {
+        const fixture = createWorldFixture({ routerFanout });
+        const message = createWorldSend(`world-${routerFanout}`);
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'origin')).right).toEqual({ kind: 'admitted' });
+        await expect.poll(() => readDeliveredCount(fixture.sockets['receiver']!, message.id.msgId)).toBe(1);
+        await settleDelivery();
+
+        expect(readDeliveredCount(fixture.sockets['receiver']!, message.id.msgId)).toBe(1);
+        expect(readDeliveredCount(fixture.sockets['origin']!, message.id.msgId)).toBe(0);
+        expect(readDeliveredCount(fixture.sockets['foreign']!, message.id.msgId)).toBe(0);
+    }
+);
+
+it('forwards a client world broadcast itself when no router owns fanout', async () => {
+    const fixture = createWorldFixture({ routerFanout: undefined });
+    const message = createWorldSend('world-standalone');
+
+    expect((await fixture.service.acceptIncomingMessage(message, 'origin')).right).toEqual({ kind: 'admitted' });
+    await expect.poll(() => readDeliveredCount(fixture.sockets['receiver']!, message.id.msgId)).toBe(1);
+    await settleDelivery();
+
+    expect(readDeliveredCount(fixture.sockets['receiver']!, message.id.msgId)).toBe(1);
+    expect(readDeliveredCount(fixture.sockets['foreign']!, message.id.msgId)).toBe(0);
+});
+
+interface WorldFixture {
+    readonly service: WsQueueBoxServerService;
+    readonly sockets: Readonly<Record<string, TestWebSocket>>;
+}
+
+/** `origin` and `receiver` share the scope; `foreign` is another application's session. */
+function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only' | 'outbox' | undefined; }): WorldFixture {
+    const socketServer = new JsonWebSocketServer();
+    const sockets: Record<string, TestWebSocket> = {};
+    for (const sessionId of ['origin', 'receiver', 'foreign']) {
+        const socket = new TestWebSocket(`ws://${sessionId}`);
+        socket.open();
+        socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        sockets[sessionId] = socket;
+    }
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage }).workQueue,
+        socket: socketServer,
+        name: 'server-1',
+        forwardsRoomScopedMessages: input.routerFanout === undefined,
+        readAuthenticatedConnectionScope: (connection) => ({
+            scope: connection.id === 'foreign' ? { ...SCOPE, applicationId: 'app-2' } : SCOPE,
+            expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+        }),
+        targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
+            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
+            resolveBroadcastRecipients: () => Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId }))
+        }
+    });
+    onTestFinished(() => service.dispose());
+    if (input.routerFanout !== undefined) {
+        new RallarServerWsRouter(service, {}).install().defineTopic({ topicId: 'app.news', fanout: input.routerFanout });
+    }
+    return { service, sockets };
+}
+
+function createWorldSend(msgId: string): ALMessage {
+    const base = newALBroadcastMessage('origin', newALRoute('app.news', 'world', msgId), 'world', 'news.v1', {});
+    return { ...base, id: { ...base.id, msgId } };
+}
+
+async function settleDelivery(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture {
     const socketServer = new JsonWebSocketServer();
     const origin = new TestWebSocket('ws://origin');
@@ -164,7 +267,7 @@ function createReceiverRoomSend(
     );
     return {
         ...base,
-        id: { v: 2, msgId, senderId: 'origin', ts: nowMs },
+        id: { v: 3, msgId, senderId: 'origin', ts: nowMs },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         ...(expiresAtMs === undefined ? {} : { constraints: { ...base.constraints, expiresAtMs } })
     };
@@ -172,7 +275,7 @@ function createReceiverRoomSend(
 
 function createReceiverAck(ackedMsgId: string, recipientId: string, nowMs: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `${recipientId}-ack-${ackedMsgId}`, senderId: recipientId, ts: nowMs },
+        { v: 3, msgId: `${recipientId}-ack-${ackedMsgId}`, senderId: recipientId, ts: nowMs },
         {
             ackedMsgId,
             fromPeerId: recipientId,

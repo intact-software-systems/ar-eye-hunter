@@ -11,6 +11,7 @@ import {
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -153,8 +154,12 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
     onTestFinished(() => runtime.clearAuthExpiryTimer());
     const middleware = createDefaultApiMiddlewareTestDouble();
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime);
-    const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue(middleware);
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transportRuntime, readSession);
+    const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue({
+        middleware,
+        diagnosticsPorts: Object.freeze(toRallarDiagnosticsPorts(undefined)),
+        rtcCapture: { status: 'unavailable', reason: 'absent' }
+    });
     runtime.setConnectState('connected');
     const disconnect = async (): Promise<void> => {
         runtime.setConnectState('idle');
@@ -166,7 +171,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
         connectionRuntime: runtime,
         transportRuntime,
         authRuntime: runtime,
-        connectionLifecycle: { connect, disconnect },
+        connectionLifecycle: { connect, disconnect, readRtcCaptureConfiguration: () => transportRuntime.readRtcCaptureConfiguration() },
         emitState,
         closeDataScopes: () => Promise.resolve()
     });
@@ -175,7 +180,7 @@ function createDefaultAuthFixture(emitState: () => void): AuthFixture {
 
 function openObservedMessage(fixture: AuthFixture, msgId: string): RallarMessageHandle {
     return fixture.deliveries.open({
-        id: { v: 2, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId },
+        id: { v: 3, msgId, ts: Date.now(), senderId: fixture.middleware.session.sessionId },
         route: { topicId: 'app.event', contextId: 'all', resourceId: msgId },
         payload: { typeId: 'app.event', resource: 'true' },
         delivery: { reliability: 'at-least-once', ack: 'receiver' }

@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
@@ -11,6 +10,7 @@ import {
 
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -28,6 +28,7 @@ import {
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
@@ -40,7 +41,7 @@ import {
     removeGroupStateSnapshotByRef,
     setGroupStateSnapshot
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -59,13 +60,15 @@ beforeEach(() => {
     configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
 });
 
-afterEach(() => {
-    clearSession();
-    vi.clearAllTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    TestWebSocket.instances.length = 0;
+beforeEach(() => {
+    onTestFinished(() => {
+        clearSession();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
 });
 
 it('a fresh WS owner recovers the same pending IndexedDB original with a fresh fault map and no second enqueue', async () => {
@@ -96,9 +99,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -108,9 +113,12 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     }
     oldNative.open();
     const oldOwner = await oldConnecting;
-    onTestFinished(() => {
-        oldOwner.close();
-        oldEngine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     const original = {
         ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
@@ -124,8 +132,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     expect(oldNative.sent).toEqual([]);
     const retained = await Promise.all((await oldOwner.outbox.getAllKeys()).map((key) => oldOwner.outbox.getItem(key)));
     expect(retained.some((entry) => entry && (entry.status === EntityStatus.NEW || entry.status === EntityStatus.RETRY))).toBe(true);
-    oldOwner.close();
-    oldEngine.stop();
+    const retiring = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
+    const retirementFailure = retiring.find((outcome) => outcome.status === 'rejected');
+    if (retirementFailure?.status === 'rejected') {
+        throw retirementFailure.reason;
+    }
 
     // Recreate both runtime store wrappers and transport owners while keeping the same real IndexedDB namespace/session.
     configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
@@ -145,9 +156,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -157,9 +170,12 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     }
     freshNative.open();
     const freshOwner = await freshConnecting;
-    onTestFinished(() => {
-        freshOwner.close();
-        freshEngine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([freshOwner.close(), freshEngine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     await drainFresh();
     await drainFresh();
@@ -221,8 +237,11 @@ it('retains the restored room original until actual scoped presence authorizes i
     expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
     await old.drain();
     expect(old.native.sent).toEqual([]);
-    old.service.close();
-    old.engine.stop();
+    const retiring = await Promise.allSettled([old.service.close(), old.engine.stop()]);
+    const retirementFailure = retiring.find((outcome) => outcome.status === 'rejected');
+    if (retirementFailure?.status === 'rejected') {
+        throw retirementFailure.reason;
+    }
     const fresh = await openRecoveryOwner(sessionId, principalId, createScriptedTransportFaultPort());
     const authorizationInput = {
         message: original,
@@ -234,7 +253,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     };
     expect(await authorize(authorizationInput)).toMatchObject({
         authorized: false,
-        reason: 'unauthorized',
+        reason: 'membership-fenced',
         logMessage: expect.stringContaining('member-not-active')
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -304,7 +323,7 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
     const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
-    const control = newALNackControlMessage({ v: 2, msgId: crypto.randomUUID(), senderId: sessionId, ts: Date.now() }, {
+    const control = newALNackControlMessage({ v: 3, msgId: crypto.randomUUID(), senderId: sessionId, ts: Date.now() }, {
         fromPeerId: sessionId,
         toPeerId: 'peer',
         msgId: 'missing',
@@ -391,7 +410,7 @@ it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work af
         owner.service.cancelOutbox(original.id.msgId);
     }
     if (ending === 'dispose') {
-        owner.service.close();
+        await owner.service.close();
     }
     await vi.advanceTimersByTimeAsync(ending === 'expiry' ? 30_001 : 2_000);
     setGroupStateSnapshot(createGroupSnapshotFixture({ ...ref, sessionIds: [sessionId] }));
@@ -472,9 +491,11 @@ async function openRecoveryOwner(
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget()
+            createDefaultVolatileSessionBudget(),
+            createPassThroughALStorageEventSink()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -484,9 +505,12 @@ async function openRecoveryOwner(
     }
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { engine, drain, native, service, settlements };
 }

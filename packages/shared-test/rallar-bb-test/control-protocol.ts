@@ -1,78 +1,95 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { decodeRecipeExecutionSegment, type RecipeExecutionSegment } from './recipe/run-recipe-commands.ts';
 
+import { decodeRallarBlackBoxTestResult, isRallarBlackBoxTestError } from './composite-results.ts';
 import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
 import { decodeControlAgentIdentity } from './distributed/decode-control-agent-identity.ts';
 import {
     type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestError,
     type RallarBlackBoxTestEvent,
+    type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestResult
 } from './rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
-export type ControlCommandEnvelope = Readonly<{
-    kind: 'command';
-    protocolVersion: 1;
-    runId: string;
-    agentId?: string;
-    commandId: string;
-    command: RallarBlackBoxTestCommand;
-    deadlineEpochMs?: number;
-}>;
+export interface ControlCommandEnvelope {
+    readonly kind: 'command';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId?: string;
+    readonly commandId: string;
+    readonly command: RallarBlackBoxTestCommand;
+    readonly deadlineEpochMs?: number;
+    /** Owned linear reload lifecycle; does not alter authored recipe or run policy provenance. */
+    readonly recipeExecution?: {
+        readonly rootCommandId: string;
+        readonly first: boolean;
+        readonly last: boolean;
+        readonly segment?: RecipeExecutionSegment;
+    };
+}
 
-export type ControlRegisterEnvelope = Readonly<{
-    kind: 'register';
-    protocolVersion: 1;
-    runId: string;
-    agentId: string;
-    token?: string;
-    atEpochMs: number;
-    identity: RallarBlackBoxControlAgentIdentity;
-    resume: Readonly<{
-        completedCommandIds: readonly string[];
-    }>;
-}>;
+export interface ControlRegisterResume {
+    readonly completedCommandIds: readonly string[];
+}
 
-export type ControlHeartbeatEnvelope = Readonly<{
-    kind: 'heartbeat';
-    protocolVersion: 1;
-    runId: string;
-    agentId: string;
-    atEpochMs: number;
-    status: string;
-    identity: RallarBlackBoxControlAgentIdentity;
-    lastCommandId?: string;
-    lastEventAtEpochMs?: number;
-}>;
+export interface ControlRegisterEnvelope {
+    readonly kind: 'register';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly token?: string;
+    readonly atEpochMs: number;
+    readonly identity: RallarBlackBoxControlAgentIdentity;
+    readonly resume: ControlRegisterResume;
+}
 
-export type ControlResultEnvelope = Readonly<{
-    kind: 'result';
-    protocolVersion: 1;
-    runId: string;
-    agentId: string;
-    commandId: string;
-    ok: boolean;
-    result?: RallarBlackBoxTestResult;
-    error?: Readonly<{
-        code: string;
-        message: string;
-        details?: unknown;
-    }>;
-    replayed?: boolean;
-}>;
+export interface ControlHeartbeatEnvelope {
+    readonly kind: 'heartbeat';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly atEpochMs: number;
+    readonly status: string;
+    readonly identity: RallarBlackBoxControlAgentIdentity;
+    readonly lastCommandId?: string;
+    readonly lastEventAtEpochMs?: number;
+}
 
-export type ControlEventEnvelope = Readonly<{
-    kind: 'event' | 'diagnostic' | 'stats' | 'report';
-    protocolVersion: 1;
-    runId: string;
-    agentId: string;
-    atEpochMs: number;
-    eventId?: string;
-    commandId?: string;
-    payload: unknown;
-}>;
+/** Snapshot ownership is unavailable when finite retention omitted its queued command. */
+export interface ControlResultAttributionUnavailable {
+    readonly status: 'unavailable';
+    readonly reason: 'queued-command-not-retained';
+}
+
+export interface ControlResultEnvelope {
+    readonly kind: 'result';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly ok: boolean;
+    readonly result?: RallarBlackBoxTestResult;
+    /** Present only for retained historical facts; it cannot certify live completion. */
+    readonly attribution?: ControlResultAttributionUnavailable;
+    readonly error?: RallarBlackBoxTestError;
+    readonly replayed?: boolean;
+}
+
+export interface ControlEventEnvelope {
+    readonly kind: 'event' | 'diagnostic' | 'stats' | 'report';
+    readonly protocolVersion: 1;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly atEpochMs: number;
+    readonly eventId?: string;
+    readonly commandId?: string;
+    readonly payload: unknown;
+}
 
 export type ControlClientEnvelope =
     | ControlRegisterEnvelope
@@ -93,10 +110,8 @@ export interface ControlClientIdentity {
     readonly agentId: string;
 }
 
-type ControlEnvelopeRecord = Readonly<Record<string, unknown>>;
-
 type ControlEnvelopeRecordResult =
-    | Readonly<{ ok: true; value: ControlEnvelopeRecord; }>
+    | Readonly<{ ok: true; value: RallarBlackBoxTestRecord; }>
     | Readonly<{ ok: false; error: string; }>;
 
 type ControlCommandAddressResult =
@@ -125,6 +140,10 @@ export function parseControlServerMessage(
             issues: commandValidation.issues
         };
     }
+    const recipeExecution = decodeControlRecipeExecution(envelope.recipeExecution);
+    if (!recipeExecution.ok) {
+        return recipeExecution;
+    }
     const deadlineEpochMs = envelope.deadlineEpochMs;
     if (deadlineEpochMs !== undefined && typeof deadlineEpochMs !== 'number') {
         return { ok: false, error: 'Control command deadlineEpochMs must be a number.' };
@@ -139,8 +158,34 @@ export function parseControlServerMessage(
             agentId: address.agentId,
             commandId: address.commandId,
             command: envelope.command as RallarBlackBoxTestCommand,
-            deadlineEpochMs
+            deadlineEpochMs,
+            ...(recipeExecution.value === undefined ? {} : { recipeExecution: recipeExecution.value })
         }
+    };
+}
+
+function decodeControlRecipeExecution(value: unknown):
+    | Readonly<{ ok: true; value: ControlCommandEnvelope['recipeExecution']; }>
+    | Readonly<{ ok: false; error: string; }> {
+    if (value === undefined) {
+        return { ok: true, value: undefined };
+    }
+    if (!isJsonRecordValue(value)) {
+        return { ok: false, error: 'Control recipe execution must be an object.' };
+    }
+    const { rootCommandId, first, last } = value;
+    if (
+        typeof rootCommandId !== 'string' || !rootCommandId || typeof first !== 'boolean' || typeof last !== 'boolean'
+    ) {
+        return { ok: false, error: 'Control recipe execution requires an owned root and lifecycle boundaries.' };
+    }
+    const segment = value.segment === undefined ? undefined : decodeRecipeExecutionSegment(value.segment);
+    if (segment?.left !== undefined || (segment?.right !== undefined && segment.right.first !== first)) {
+        return { ok: false, error: 'Control command has an invalid owned recipe segment.' };
+    }
+    return {
+        ok: true,
+        value: { rootCommandId, first, last, ...(segment?.right === undefined ? {} : { segment: segment.right }) }
     };
 }
 
@@ -204,7 +249,7 @@ function toControlEventEnvelopeKind(event: RallarBlackBoxTestEvent): ControlEven
 }
 
 function decodeControlCommandAddress(
-    envelope: ControlEnvelopeRecord,
+    envelope: RallarBlackBoxTestRecord,
     expected: ControlClientIdentity
 ): ControlCommandAddressResult {
     const { agentId, commandId } = envelope;
@@ -244,7 +289,7 @@ function decodeControlEnvelopeRecord(
 }
 
 function decodeRegisterEnvelope(
-    envelope: ControlEnvelopeRecord,
+    envelope: RallarBlackBoxTestRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
     const { atEpochMs, resume } = envelope;
@@ -276,7 +321,7 @@ function decodeRegisterEnvelope(
 }
 
 function decodeHeartbeatEnvelope(
-    envelope: ControlEnvelopeRecord,
+    envelope: RallarBlackBoxTestRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
     const { atEpochMs, status } = envelope;
@@ -310,10 +355,26 @@ function decodeHeartbeatEnvelope(
 }
 
 function decodeResultEnvelope(
-    envelope: ControlEnvelopeRecord,
+    envelope: RallarBlackBoxTestRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
     const { commandId, ok } = envelope;
+    const error = envelope.error;
+    const attribution = envelope.attribution;
+    if (
+        attribution !== undefined &&
+        (!isJsonRecordValue(attribution) || attribution.status !== 'unavailable' ||
+            attribution.reason !== 'queued-command-not-retained')
+    ) {
+        return { ok: false, error: 'Control result attribution must name unavailable retained queue ownership.' };
+    }
+    if (error !== undefined && !isRallarBlackBoxTestError(error)) {
+        return { ok: false, error: 'Control result error requires code and message.' };
+    }
+    const result = envelope.result === undefined ? undefined : decodeRallarBlackBoxTestResult(envelope.result);
+    if (result?.left !== undefined) {
+        return { ok: false, error: `Control result lifecycle is invalid: ${result.left.join(', ')}.` };
+    }
     if (typeof commandId !== 'string' || commandId.length === 0) {
         return { ok: false, error: 'Control result requires commandId.' };
     }
@@ -328,15 +389,18 @@ function decodeResultEnvelope(
             ...identity,
             commandId,
             ok,
-            result: envelope.result as RallarBlackBoxTestResult | undefined,
-            error: envelope.error as ControlResultEnvelope['error'],
+            result: result?.right,
+            ...(attribution === undefined
+                ? {}
+                : { attribution: { status: 'unavailable', reason: 'queued-command-not-retained' } as const }),
+            error,
             replayed: typeof envelope.replayed === 'boolean' ? envelope.replayed : undefined
         }
     };
 }
 
 function decodeEventEnvelope(
-    envelope: ControlEnvelopeRecord,
+    envelope: RallarBlackBoxTestRecord,
     address: ControlClientIdentity & Pick<ControlEventEnvelope, 'kind'>
 ): ParseControlClientMessageResult {
     const atEpochMs = envelope.atEpochMs;

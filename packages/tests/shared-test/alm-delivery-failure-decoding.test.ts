@@ -16,6 +16,7 @@ const OBSERVATION = {
     attempts: 1,
     attemptOutcomes: ['sent'],
     attemptCarriers: ['rtc'],
+    attemptRefusalReasons: [],
     reason: 'Hop relay-session refused the message: stale.'
 };
 
@@ -23,6 +24,8 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
     it.each(
         [
             { kind: 'refused', reason: 'capacity' },
+            { kind: 'refused', reason: 'capacity', limit: 'tracks' },
+            { kind: 'refused', reason: 'congested' },
             {
                 kind: 'relay-rejected',
                 rejection: { relay: 'trusted-server', reason: 'unauthorized' }
@@ -57,6 +60,9 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         { failure: 'refused', field: 'failure.kind' },
         { failure: { kind: 'lost' }, field: 'failure.kind' },
         { failure: { kind: 'refused', reason: 'busy' }, field: 'failure.reason' },
+        { failure: { kind: 'refused', reason: 'capacity', limit: 'rate' }, field: 'failure.limit' },
+        { failure: { kind: 'refused', reason: 'unsupported', limit: 'bytes' }, field: 'failure.limit' },
+        { failure: { kind: 'refused', reason: 'congested', limit: 'bytes' }, field: 'failure.limit' },
         {
             failure: {
                 kind: 'relay-rejected',
@@ -91,6 +97,13 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
 describe('the durability downgrade a delivery observation carries', () => {
     it('reads the requested durability and the storage cause of a downgraded send', () => {
         const durabilityDowngrade = { requested: 'local-outbox', cause: 'quota' };
+
+        expect(decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }).durabilityDowngrade)
+            .toEqual(durabilityDowngrade);
+    });
+
+    it('reads a downgraded local-checkpoint send', () => {
+        const durabilityDowngrade = { requested: 'local-checkpoint', cause: 'missing' };
 
         expect(decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }).durabilityDowngrade)
             .toEqual(durabilityDowngrade);

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { validateJsonSchema, type JsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 

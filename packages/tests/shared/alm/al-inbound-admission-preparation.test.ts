@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -15,6 +23,7 @@ import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/val
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
+    ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
@@ -26,15 +35,8 @@ import {
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 describe('inbound admission preparation boundary', () => {
     afterEach(() => {
@@ -91,8 +93,25 @@ describe('inbound admission preparation boundary', () => {
             }
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
+    });
+
+    it('remembers an ordering track the default stores wrote for the hour its sender keeps the head', async () => {
+        const clock = { nowMs: Date.now() };
+        const startedAtMs = clock.nowMs;
+        const stores = createDefaultInMemoryALInboundRuntimeStores({ nowMs: () => clock.nowMs });
+        const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1), nowMs: startedAtMs });
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
+        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+        const readTrackAfter = async (elapsedMs: number) => {
+            clock.nowMs = startedAtMs + elapsedMs;
+            const next = await readAdmission({ store: stores.admissionStore, message: createMessage(2), nowMs: clock.nowMs });
+            return next.read.orderingSnapshot;
+        };
+
+        expect(await readTrackAfter(5 * 60_000 + 1)).toMatchObject({ lastContiguousSeq: 1 });
+        expect(await readTrackAfter(60 * 60_000 + 1)).toBeUndefined();
     });
 
     it('computes one repeatable final bundle from captured read, policy, and effect facts', async () => {
@@ -320,7 +339,7 @@ describe('inbound admission preparation boundary', () => {
             expect(await stores.workQueue.getAllKeys()).toEqual([]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -373,7 +392,7 @@ describe('inbound admission preparation boundary', () => {
                 .toBe(8 * 130_000);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -467,7 +486,7 @@ describe('inbound admission preparation boundary', () => {
             expect(controls).not.toEqual(candidates[0]!.durableEffects);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -501,7 +520,7 @@ describe('inbound admission preparation boundary', () => {
                 .toEqual([firstAck, firstAck]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -565,7 +584,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
     return {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
-        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     };
 }
 
@@ -621,7 +640,7 @@ function toBufferedReleaseRead(
     prepared: PreparedAdmission,
     message: ALMessage,
     durability: 'volatile' | 'durable'
-): Parameters<typeof computeALInboundBufferedRelease>[0]['read'] {
+): ALInboundBufferedReleaseReadDto {
     return {
         kind: 'buffered-release',
         orderingTrackTtlMs: prepared.read.orderingTrackTtlMs,

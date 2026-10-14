@@ -39,8 +39,9 @@ export function toBlackBoxRallarDefaults(
     const scope = blackBoxRallarScopeOf(config);
     const roomRef = blackBoxRallarRoomRefOf(config);
     const roomId = config.roomId ?? roomRef?.groupId;
+    const captureMode = config.rallar.rtc?.captureMode;
     if (!scope?.applicationId) {
-        return undefined;
+        return captureMode === undefined ? undefined : { rtc: { captureMode } };
     }
 
     const room = roomId || roomRef
@@ -59,6 +60,7 @@ export function toBlackBoxRallarDefaults(
             ...(config.rallar.openTimeoutMs !== undefined ? { openTimeoutMs: config.rallar.openTimeoutMs } : {})
         },
         rtc: {
+            ...(captureMode === undefined ? {} : { captureMode }),
             ...(config.rallar.dataChannelLanes !== undefined
                 ? { dataChannelLanes: config.rallar.dataChannelLanes }
                 : {})

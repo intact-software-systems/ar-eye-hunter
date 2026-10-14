@@ -3,8 +3,8 @@ import type { ALMessageRejection } from '@shared/al-contracts/al-message-persist
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -30,6 +30,13 @@ interface InstallMiddlewareLiveWsNoticeSubscriberInput {
     readonly wsQBoxServerService: RallarMiddlewareInfrastructure['wsQBoxServerService'];
 }
 
+interface CreateMiddlewareWsQueueBoxServerInput {
+    readonly options: CreateRallarMiddlewareOptions;
+    readonly queueEngine: InboxOutboxEngine;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly targetResolver: WsServerTargetResolver;
+}
+
 export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
@@ -42,31 +49,17 @@ export function createRallarMiddlewareInfrastructure(
             findClientSnapshotByRef: options.findClientSnapshotByRef,
             now: options.now
         });
-    const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+    const wsQBoxServerService = createMiddlewareWsQueueBoxServer({
+        options,
         queueEngine,
-        outbox: options.outbox ?? options.inbox,
-        socket: webSocketServer,
-        name: options.wsRuntimeName ?? 'default-qbox-server',
-        targetResolver,
-        readProducerProvenance: options.readWsOutboxProducerProvenance,
-        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
-        inboundStores: options.inboundStores,
-        outboundStores: options.outboundStores,
-        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
-        deliveryDiagnostics: options.wsDeliveryDiagnostics,
-        outboundDiagnostics: options.wsOutboundDiagnostics,
-        outboundSettlements: options.wsOutboundSettlements,
-        inboundDiagnostics: options.wsInboundDiagnostics,
-        validateInboundMessage: validateMiddlewareALIngress,
-        publishRelayedAck: options.relayedAckNotices
-            ? createRelayedAckPublisher(options.relayedAckNotices)
-            : undefined,
-        forwardsRoomScopedMessages: false
+        webSocketServer,
+        targetResolver
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
         ? installQueueBoxPubSubBridge({
             ...options.queuePubSubBridge,
             wsQBoxServerService,
+            receiptObserver: options.wsReceiptObserver,
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
@@ -80,7 +73,7 @@ export function createRallarMiddlewareInfrastructure(
         options.relayedAckNotices
             ? installRelayedAckNoticeSubscriber({
                 ...options.relayedAckNotices,
-                acceptRelayedAck: (message) => wsQBoxServerService.acceptRelayedAck(message)
+                acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
             })
             : Promise.resolve()
     ]).then(() => undefined);
@@ -98,6 +91,33 @@ export function createRallarMiddlewareInfrastructure(
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function createMiddlewareWsQueueBoxServer(
+    { options, queueEngine, webSocketServer, targetResolver }: CreateMiddlewareWsQueueBoxServerInput
+): RallarMiddlewareInfrastructure['wsQBoxServerService'] {
+    return createDefaultWsQueueBoxServerService({
+        queueEngine,
+        outbox: options.outbox ?? options.inbox,
+        socket: webSocketServer,
+        name: options.wsRuntimeName ?? 'default-qbox-server',
+        targetResolver,
+        readProducerProvenance: options.readWsOutboxProducerProvenance,
+        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
+        inboundStores: options.inboundStores,
+        outboundStores: options.outboundStores,
+        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
+        deliveryDiagnostics: options.wsDeliveryDiagnostics,
+        outboundDiagnostics: options.wsOutboundDiagnostics,
+        outboundSettlements: options.wsOutboundSettlements,
+        inboundDiagnostics: options.wsInboundDiagnostics,
+        receiptObserver: options.wsReceiptObserver,
+        authorizeInboundMessage: authorizeMiddlewareALIngress,
+        publishRelayedAck: options.relayedAckNotices
+            ? createRelayedAckPublisher(options.relayedAckNotices)
+            : undefined,
+        forwardsRoomScopedMessages: false
+    });
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(
@@ -129,7 +149,7 @@ function installMiddlewareLiveWsNoticeSubscriber(
     });
 }
 
-function validateMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
     if (
         isStateSnapshotTopic(message.route.topicId) || isStateSnapshotTopic(message.payload.typeId) ||
         message.route.topicId === AppTopics.clientStateEvent || message.payload.typeId === AppTopics.clientStateEvent ||

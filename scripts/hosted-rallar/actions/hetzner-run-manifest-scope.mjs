@@ -1,7 +1,36 @@
 const SCOPE_ROLE = 'scope';
+
 const PARALLEL_GROUPS_ROLE = 'parallel-groups';
+
 const PARALLEL_GROUP_ROLE = 'parallel-group';
+
+const WAIT_MATCH_ROLE = 'wait-match';
+
+const stateGroupPathPattern = new RegExp(
+    String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)/groups` +
+        String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?=/|$)`
+);
+
 const identityFieldNames = new Set(['applicationId', 'workspaceId', 'groupId', 'roomId']);
+
+// Match complete JSON string tokens without requiring the surrounding fragment or runtime placeholders to parse.
+const serializedRoomIdPattern =
+    /(^|[{,]\s*)("roomId"\s*:\s*)("(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*")/g;
+
+export function validateHetznerRunManifestScope(value, expectedGroupRef) {
+    return validateManifestScopeValue(value, expectedGroupRef, {
+        location: '$',
+        role: SCOPE_ROLE
+    });
+}
+
+export function toEffectiveHetznerRunManifestScope(value, sourceGroupRef, effectiveGroupRef) {
+    return toEffectiveScopeValue(
+        value,
+        { sourceGroupRef, effectiveGroupRef },
+        { key: '', role: SCOPE_ROLE }
+    );
+}
 
 function decodePathSegment(value, location, issues) {
     try {
@@ -21,11 +50,7 @@ function validateEmbeddedPathScope(value, expectedGroupRef, location) {
     }
 
     const issues = [];
-    const groupPathPattern = new RegExp(
-        String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)/groups` +
-            String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?:/|$)`
-    );
-    const match = value.match(groupPathPattern);
+    const match = value.match(stateGroupPathPattern);
     if (!match) {
         return [`${location} has an unrecognized state group path ${JSON.stringify(value)}`];
     }
@@ -55,16 +80,12 @@ function validateEmbeddedPathScope(value, expectedGroupRef, location) {
 }
 
 function validateEmbeddedRequestScope(value, expectedGroupRef, location) {
-    const marker = value.includes(':ensure-group:')
-        ? ':ensure-group:'
-        : value.includes(':ensure-member:')
-        ? ':ensure-member:'
-        : undefined;
-    if (!marker) {
+    const request = toScopedRequestIdentity(value);
+    if (!request) {
         return [];
     }
 
-    const scope = value.slice(value.indexOf(marker) + marker.length).split(':');
+    const scope = request.segments;
     const expectedScope = [
         expectedGroupRef.applicationId,
         expectedGroupRef.workspaceId,
@@ -85,7 +106,7 @@ function validateEmbeddedRequestScope(value, expectedGroupRef, location) {
 }
 
 function validateEmbeddedScope(input) {
-    const { value, key, expectedGroupRef, location } = input;
+    const { value, key, role, expectedGroupRef, location } = input;
     if (typeof value !== 'string') {
         return [];
     }
@@ -95,14 +116,34 @@ function validateEmbeddedScope(input) {
     if (key === 'requestId' || key.toLowerCase() === 'idempotency-key') {
         return validateEmbeddedRequestScope(value, expectedGroupRef, location);
     }
+    if (role === WAIT_MATCH_ROLE && key === 'contains') {
+        return validateSerializedRoomScope(value, expectedGroupRef, location);
+    }
     return [];
 }
 
-export function validateHetznerRunManifestScope(value, expectedGroupRef) {
-    return validateManifestScopeValue(value, expectedGroupRef, {
-        location: '$',
-        role: SCOPE_ROLE
-    });
+function validateSerializedRoomScope(value, expectedGroupRef, location) {
+    const issues = [];
+    for (const [, , , encodedRoomId] of value.matchAll(serializedRoomIdPattern)) {
+        const roomId = JSON.parse(encodedRoomId);
+        if (roomId !== expectedGroupRef.groupId) {
+            issues.push(
+                `${location} contains serialized room ${encodedRoomId}; ` +
+                    `expected ${JSON.stringify(expectedGroupRef.groupId)}`
+            );
+        }
+    }
+    return issues;
+}
+
+function resolveScopeTraversalRole(value, key, currentRole) {
+    if (currentRole === WAIT_MATCH_ROLE && key === 'contains') {
+        return WAIT_MATCH_ROLE;
+    }
+    if (value.kind === 'parallel' && key === 'groups') {
+        return PARALLEL_GROUPS_ROLE;
+    }
+    return value.kind === 'wait' && key === 'match' ? WAIT_MATCH_ROLE : SCOPE_ROLE;
 }
 
 function validateManifestScopeValue(value, expectedGroupRef, traversal) {
@@ -132,6 +173,7 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
             ...validateEmbeddedScope({
                 value: entry,
                 key,
+                role: traversal.role,
                 expectedGroupRef,
                 location: entryLocation
             })
@@ -151,7 +193,7 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
         issues.push(
             ...validateManifestScopeValue(entry, expectedGroupRef, {
                 location: entryLocation,
-                role: value.kind === 'parallel' && key === 'groups' ? PARALLEL_GROUPS_ROLE : SCOPE_ROLE
+                role: resolveScopeTraversalRole(value, key, traversal.role)
             })
         );
     }
@@ -159,35 +201,66 @@ function validateManifestScopeValue(value, expectedGroupRef, traversal) {
     return issues;
 }
 
-function toEmbeddedScope(value, groupRefs, key) {
-    const { sourceGroupRef, effectiveGroupRef } = groupRefs;
-    if (key === 'path') {
-        const sourcePrefix = `/apps/${encodeURIComponent(sourceGroupRef.applicationId)}` +
-            `/workspaces/${encodeURIComponent(sourceGroupRef.workspaceId)}/groups`;
-        const effectivePrefix = `/apps/${encodeURIComponent(effectiveGroupRef.applicationId)}` +
-            `/workspaces/${encodeURIComponent(effectiveGroupRef.workspaceId)}/groups`;
-        return value
-            .replaceAll(sourcePrefix, effectivePrefix)
-            .replaceAll(
-                `/${encodeURIComponent(sourceGroupRef.groupId)}`,
-                `/${encodeURIComponent(effectiveGroupRef.groupId)}`
-            );
+function toScopedRequestIdentity(value) {
+    const marker = value.includes(':ensure-group:')
+        ? ':ensure-group:'
+        : value.includes(':ensure-member:')
+        ? ':ensure-member:'
+        : undefined;
+    if (!marker) {
+        return undefined;
     }
-
-    const sourceRequestScope = `:${sourceGroupRef.applicationId}:` +
-        `${sourceGroupRef.workspaceId}:${sourceGroupRef.groupId}:`;
-    const effectiveRequestScope = `:${effectiveGroupRef.applicationId}:` +
-        `${effectiveGroupRef.workspaceId}:${effectiveGroupRef.groupId}:`;
-    return value
-        .replaceAll(sourceRequestScope, effectiveRequestScope)
-        .replaceAll(sourceGroupRef.groupId, effectiveGroupRef.groupId);
+    const scopeStart = value.indexOf(marker) + marker.length;
+    return { prefix: value.slice(0, scopeStart), segments: value.slice(scopeStart).split(':') };
 }
 
-export function toEffectiveHetznerRunManifestScope(value, sourceGroupRef, effectiveGroupRef) {
-    return toEffectiveScopeValue(
-        value,
-        { sourceGroupRef, effectiveGroupRef },
-        { key: '', role: SCOPE_ROLE }
+function toEmbeddedScope(value, groupRefs, traversal) {
+    const { sourceGroupRef, effectiveGroupRef } = groupRefs;
+    const { key, role } = traversal;
+    if (role === WAIT_MATCH_ROLE && key === 'contains') {
+        return toSerializedRoomScope(value, groupRefs);
+    }
+    if (key === 'path') {
+        const match = value.match(stateGroupPathPattern);
+        if (!match) {
+            return value;
+        }
+        const effectivePrefix = `/api/state/apps/${encodeURIComponent(effectiveGroupRef.applicationId)}` +
+            `/workspaces/${encodeURIComponent(effectiveGroupRef.workspaceId)}/groups`;
+        const groupSegment = match[3] === undefined ? '' : `/${encodeURIComponent(effectiveGroupRef.groupId)}`;
+        return `${effectivePrefix}${groupSegment}${value.slice(match[0].length)}`;
+    }
+    if (key !== 'requestId' && key.toLowerCase() !== 'idempotency-key') {
+        return value;
+    }
+    const request = toScopedRequestIdentity(value);
+    if (!request) {
+        return value;
+    }
+    const sourceIdentity = [sourceGroupRef.applicationId, sourceGroupRef.workspaceId, sourceGroupRef.groupId];
+    if (!sourceIdentity.every((segment, index) => request.segments[index] === segment)) {
+        return value;
+    }
+    const segments = [
+        effectiveGroupRef.applicationId,
+        effectiveGroupRef.workspaceId,
+        effectiveGroupRef.groupId,
+        ...request.segments.slice(3)
+    ];
+    return `${request.prefix}${segments.join(':')}`;
+}
+
+function toSerializedRoomScope(value, groupRefs) {
+    const { sourceGroupRef, effectiveGroupRef } = groupRefs;
+    if (sourceGroupRef.groupId === effectiveGroupRef.groupId) {
+        return value;
+    }
+    return value.replace(
+        serializedRoomIdPattern,
+        (field, prefix, key, encodedRoomId) =>
+            JSON.parse(encodedRoomId) === sourceGroupRef.groupId
+                ? `${prefix}${key}${JSON.stringify(effectiveGroupRef.groupId)}`
+                : field
     );
 }
 
@@ -207,7 +280,7 @@ function toEffectiveScopeValue(value, groupRefs, traversal) {
         if (typeof value !== 'string') {
             return value;
         }
-        return toEmbeddedScope(value, groupRefs, traversal.key);
+        return toEmbeddedScope(value, groupRefs, traversal);
     }
 
     return Object.fromEntries(
@@ -229,7 +302,7 @@ function toEffectiveScopeValue(value, groupRefs, traversal) {
                 entryKey,
                 toEffectiveScopeValue(entry, groupRefs, {
                     key: entryKey,
-                    role: value.kind === 'parallel' && entryKey === 'groups' ? PARALLEL_GROUPS_ROLE : SCOPE_ROLE
+                    role: resolveScopeTraversalRole(value, entryKey, traversal.role)
                 })
             ];
         })

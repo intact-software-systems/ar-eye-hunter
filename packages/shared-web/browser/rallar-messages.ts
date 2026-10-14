@@ -1,6 +1,7 @@
 export type * from '@shared-web/browser/rallar-core.ts';
 
 export type {
+    RallarChannelRecovery,
     RallarMessage,
     RallarMessageDeliveryListener,
     RallarMessageDeliveryOutcome,
@@ -8,6 +9,7 @@ export type {
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessagePayload,
+    RallarMessageScope,
     RallarMessageSendBase,
     RallarMessageTransport,
     RallarMessageWaitOptions,
@@ -48,3 +50,5 @@ export type {
     ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';

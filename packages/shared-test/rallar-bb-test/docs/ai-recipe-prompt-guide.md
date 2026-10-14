@@ -343,7 +343,7 @@ Constraints:
   expects an inclusive [low, high] pair. gte/lte stay strictly numeric.
 - length expects the exact length of an array or string source.
 - matches expects a regular-expression source string tested against a string
-  value.
+  value, or against every member of a non-empty array of strings.
 - matchesShape checks json-compare compatible mode (expected is a subset with
   equal values). matchesShapeComplete additionally requires arrays to be
   complete, so an unexpected array element fails; use it to pin fan-out

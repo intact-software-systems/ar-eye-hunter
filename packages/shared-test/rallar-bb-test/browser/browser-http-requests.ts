@@ -1,4 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -25,6 +27,14 @@ import { decodeBrowserCommandRecord } from './browser-command-values.ts';
 type HttpRequestCommand = Extract<CommandWithId, { kind: 'http.request'; }>;
 
 type HttpResponseBody = RallarBlackBoxTestJsonValue | undefined;
+
+interface HttpRequestFailure {
+    readonly kind: 'http-request-failed';
+    readonly commandId: string;
+    readonly phase: 'fetch' | 'body' | 'response';
+    readonly scopeAborted: boolean;
+    readonly scopeAbortOrigin: 'timeout' | 'parent' | null;
+}
 
 interface BrowserHttpRequest {
     readonly url: string;
@@ -82,6 +92,7 @@ export class BrowserHttpRequests {
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const prepared = await this.readRequest(command, context);
         const abort = createBrowserCommandAbortScope(command, context, this.environment.now);
+        let phase: HttpRequestFailure['phase'] = 'fetch';
         try {
             const response = await requireBrowserCommandFetch(this.environment)(prepared.url, {
                 method: prepared.resolvedRequest.method,
@@ -91,11 +102,48 @@ export class BrowserHttpRequests {
                 mode: prepared.resolvedRequest.mode,
                 signal: abort.signal
             });
+            phase = 'body';
             const body = await readHttpBody(response, command.response, this.environment.defaultHttpBodyLimit);
+            phase = 'response';
             return recordHttpResponse(command, context, { response, body, url: prepared.url });
+        }
+        catch (caught) {
+            this.recordFailure(context, {
+                kind: 'http-request-failed',
+                commandId: command.commandId,
+                phase,
+                scopeAborted: abort.signal?.aborted === true,
+                scopeAbortOrigin: abort.origin ?? null
+            });
+            throw caught;
         }
         finally {
             abort.cleanup();
+        }
+    }
+
+    private recordFailure(context: RallarBlackBoxTestCommandContext, failure: HttpRequestFailure): void {
+        try {
+            const topic = 'rallar.bb.http.failure';
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic,
+                commandId: failure.commandId,
+                transport: 'http',
+                severity: 'error',
+                payload: toRallarBlackBoxRuntimeDiagnostic({
+                    topic,
+                    commandId: failure.commandId,
+                    severity: 'error',
+                    transport: 'http',
+                    source: 'browser-http-request',
+                    atEpochMs: this.environment.now(),
+                    detail: failure
+                })
+            });
+        }
+        catch {
+            // Supplemental evidence must not replace the request's original rejection.
         }
     }
 
@@ -112,7 +160,7 @@ export class BrowserHttpRequests {
         const resolvedRequest = replaceCommandPlaceholders(command.request, { config, session, wsTicket });
         const resolvedCommand = { ...command, request: resolvedRequest };
         const url = toRequestUrl(resolvedCommand, config, session);
-        const headers = shouldAttachRallarAuth(resolvedCommand, config, url)
+        const headers = shouldAttachRallarAuth(config, url)
             ? withRallarAuthHeaders(resolvedRequest.headers, session)
             : resolvedRequest.headers;
         return { url, headers, resolvedRequest };
@@ -160,13 +208,9 @@ function recordHttpResponse(
 }
 
 function shouldAttachRallarAuth(
-    command: HttpRequestCommand,
     config: RallarBlackBoxTestConfig | undefined,
     url: string
 ): boolean {
-    if (command.request.path) {
-        return true;
-    }
     const apiBaseUrl = resolveConfigApiBaseUrl(config);
     return apiBaseUrl !== undefined && (url === apiBaseUrl || url.startsWith(`${apiBaseUrl}/`));
 }

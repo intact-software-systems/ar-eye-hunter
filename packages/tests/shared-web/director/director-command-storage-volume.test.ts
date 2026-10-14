@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
@@ -9,7 +10,7 @@ import type {
     RallarTypedMessageChannelDefinition
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { shouldPersistOutbox } from '@shared/al-contracts/al-policy.ts';
+import { resolveALOutboundStoreDurability } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -62,7 +63,7 @@ describe('director command browser storage volume (D60, D87)', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: shouldPersistOutbox(normalizeALQosPolicy(msg).effective),
+                lane: resolveALOutboundStoreDurability(normalizeALQosPolicy(msg).effective.durability.algo),
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -83,7 +84,8 @@ describe('director command browser storage volume (D60, D87)', () => {
             current: CLIENT_STATUS,
             topicId: 'room.director',
             typeId: 'room.director.intent.v1',
-            payload: { kind: 'pickup-intent' }
+            payload: { kind: 'pickup-intent' },
+            claim: undefined
         });
         await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
         const counts = observer.getCounts();
@@ -91,8 +93,8 @@ describe('director command browser storage volume (D60, D87)', () => {
 
         expect(admitted).toHaveLength(1);
         expect(admitted[0]).toMatchObject({
-            targets: { mode: 'unicast', toPeerId: 'director', groupRef: ROOM_REF },
-            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            targets: { mode: 'multicast', groupRef: ROOM_REF },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' },
             qos: { durability: { algo: 'volatile' } }
         });
         expect(counts.byOwner['al-admission'], 'a director command commits nothing to IndexedDB')
@@ -108,14 +110,18 @@ function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDire
         inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 }),
         sender,
         rtc: { onMessage: () => () => {} },
-        ws: { onMessage: () => () => {} }
+        ws: { onMessage: () => () => {} },
+        recoveryOwners: new BrowserChannelRecoveryOwners()
     });
     return new BrowserDirectorRelayTransport({
         messages: {
             rtc: { send: rejectLaneSend, onMessage: () => () => {} },
             ws: { send: rejectLaneSend, onMessage: () => () => {} },
             channel: <T>(definition: RallarTypedMessageChannelDefinition) => channels.channel<T>(definition),
-            room: <T>(definition: RallarRoomMessageChannelDefinition) => channels.room<T>(definition)
+            room: <T>(definition: RallarRoomMessageChannelDefinition) => channels.room<T>(definition),
+            readUsage: () => {
+                throw new Error('A director command reads no ledger.');
+            }
         },
         readSession: () => ({
             clientId: 'client',
@@ -143,7 +149,7 @@ function recordDirectorReceipt(
         carrier: 'rtc',
         msgId: message.id.msgId,
         atMs: Date.now(),
-        mode: 'receiver',
+        mode: 'leader',
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: ['director'],

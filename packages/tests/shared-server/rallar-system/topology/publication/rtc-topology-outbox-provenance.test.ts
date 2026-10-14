@@ -16,7 +16,7 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -108,9 +108,12 @@ describe('RTC topology producer provenance', () => {
                     expiresAtEpochMs: publication.expiresAtEpochMs
                 })
             });
-            onTestFinished(() => {
-                service.dispose();
-                engine.stop();
+            onTestFinished(async () => {
+                const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+                const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+                if (failure?.status === 'rejected') {
+                    throw failure.reason;
+                }
             });
             const original = computed.outboxWrites[0]!.entry;
             const entry = recipient === 'changed-row' ? { ...original, resource: `${original.resource} ` } : original;

@@ -9,14 +9,24 @@ import {
 } from 'vitest';
 
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
-import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import {
+    toAdminPruneOutbox,
+    type AdminPrunePageWork
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import { computeBlackBoxRunnerPlanPreflight } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
 import { computeBlackBoxRunnerEnvRequirements } from '@shared-test/black-box-runner/preflight/preflight-env-variables.ts';
+import {
+    decodePreflightJsonObject,
+    toPreflightJsonArray,
+    toPreflightJsonObject
+} from '@shared-test/black-box-runner/preflight/preflight-json-values.ts';
+import { validateBlackBoxRunnerScenarioRecipe } from '@shared-test/black-box-runner/schema.ts';
 import type { OutboxRow } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import { toExactPersistedEvidenceMatches } from '@shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts';
+import { formatJsonSchemaValidationErrors } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 
@@ -34,17 +44,33 @@ const taskRecipes = [
     'api-v1-idempotency-contract.json'
 ];
 
+interface RecipeEvidenceFixture {
+    readonly variables: ApiJsonObject;
+    readonly steps: readonly ApiJsonObject[];
+}
+
+function readRecipeEvidenceFixture(file: string): RecipeEvidenceFixture {
+    const recipe = decodePreflightJsonObject(JSON.parse(readFileSync(file, 'utf8')));
+    const validation = validateBlackBoxRunnerScenarioRecipe(recipe);
+    if (!validation.ok) {
+        throw new Error(formatJsonSchemaValidationErrors(validation.errors));
+    }
+    return {
+        variables: toPreflightJsonObject(recipe.variables),
+        steps: toPreflightJsonArray(recipe.steps).map(toPreflightJsonObject)
+    };
+}
+
 describe('API-v1 state-write recipe evidence', () => {
     it('selects auth ticket races by the redacted secret and exact durable digest', async () => {
-        const recipe = JSON.parse(readFileSync(
-            path.join(
-                recipeRoot,
-                'api-v1-auth-session.json'
-            ),
-            'utf8'
-        )) as { steps: Array<Record<string, any>>; };
+        const recipe = readRecipeEvidenceFixture(path.join(
+            recipeRoot,
+            'api-v1-auth-session.json'
+        ));
         const evidence = recipe.steps.find((step) => step.name === 'exposeStateWriteEvidence');
-        expect(evidence?.request.stateWriteEvidence.match).toBe('{singleUseAgentTicket}');
+        const request = toPreflightJsonObject(evidence?.request);
+        const evidenceSpec = toPreflightJsonObject(request.stateWriteEvidence);
+        expect(evidenceSpec.match).toBe('{singleUseAgentTicket}');
         const matches = await toExactPersistedEvidenceMatches('race-ticket-secret');
         expect(matches).toEqual({
             raw: 'race-ticket-secret',
@@ -53,30 +79,27 @@ describe('API-v1 state-write recipe evidence', () => {
     });
 
     it('executes the topology exact-revision assertions before every cleanup step', async () => {
-        const recipe = JSON.parse(readFileSync(
-            path.join(
-                recipeRoot,
-                'api-v1-rtc-topology-convergence.json'
-            ),
-            'utf8'
-        )) as { steps: Array<Record<string, any>>; };
-        const terminalNames = [
-            'assertPrimaryExactRevisions',
-            'assertTertiaryExactRevisions',
-            'assertEnvelopePayloadsAcrossPrimaryAndTertiary',
-            'heldLandingLeftAcceptedLayoutUnpromoted',
-            'closeAliceWebSocket',
-            'closeBobWebSocket',
-            'logoutAliceThroughPrimary',
-            'logoutBobThroughSecondary'
-        ];
-        // The held-landing read and the four cleanup steps are not assert
-        // steps, so the synthetic execution below stands them in as SETs.
-        const trailingNonAssertCount = 5;
-        expect(recipe.steps.slice(-terminalNames.length).map((step) => step.name))
-            .toEqual(terminalNames);
-
-        const assertionSteps = recipe.steps.slice(-terminalNames.length, -trailingNonAssertCount);
+        const recipe = readRecipeEvidenceFixture(path.join(
+            recipeRoot,
+            'api-v1-rtc-topology-convergence.json'
+        ));
+        const firstExactRevision = recipe.steps.findIndex((step) => step.type === 'assert' && toPreflightJsonObject(step.actual).firstRevision !== undefined);
+        expect(firstExactRevision).toBeGreaterThan(-1);
+        const terminalSteps = recipe.steps.slice(firstExactRevision);
+        const assertionSteps = terminalSteps.filter((step) => step.type === 'assert');
+        const cleanupSteps = terminalSteps.filter((step) =>
+            step.type === 'ws.close' ||
+            (step.type === 'http' &&
+                toPreflightJsonObject(step.request).method === 'POST' &&
+                String(toPreflightJsonObject(step.request).path).startsWith('/api/auth/logout/requests/'))
+        );
+        expect(assertionSteps).toHaveLength(3);
+        expect(cleanupSteps).toHaveLength(4);
+        for (const assertion of assertionSteps) {
+            for (const cleanup of cleanupSteps) {
+                expect(terminalSteps.indexOf(assertion)).toBeLessThan(terminalSteps.indexOf(cleanup));
+            }
+        }
         expect(assertionSteps[0].actual).toEqual({
             firstRevision: '{primaryFirstEnvelope.event.causalRevision.groupRevision}',
             secondRevision: '{primarySecondEnvelope.event.causalRevision.groupRevision}'
@@ -105,39 +128,57 @@ describe('API-v1 state-write recipe evidence', () => {
             tertiaryFirstEnvelope: toEnvelope(4, 8),
             tertiarySecondEnvelope: toEnvelope(3, 7)
         };
-        const interactions = [
-            ...assertionSteps.map((step, index) => ({
-                ASSERT: {
+        const interactions = terminalSteps.map((step, index) => {
+            if (typeof step.name !== 'string') {
+                throw new TypeError('The selected terminal fixture needs its explicit name');
+            }
+            if (step.type === 'assert') {
+                return {
+                    ASSERT: {
+                        request: {
+                            actual: step.actual,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: index + 1
+                        },
+                        response: toPreflightJsonObject(step.expect)
+                    },
+                    [step.name]: { type: 'assert' }
+                };
+            }
+            // The owned SET output observes whether the real runner admitted a
+            // trailing read or cleanup after its preceding exact assertions.
+            return {
+                SET: {
                     request: {
-                        actual: step.actual,
+                        output: `${step.name}Observed`,
+                        value: true,
                         scenarioExecutionNumber: 1,
                         interactionExecutionNumber: index + 1
                     },
-                    response: step.expect
-                },
-                [step.name]: { type: 'assert' }
-            })),
-            ...terminalNames.slice(-trailingNonAssertCount).map((name, index) => ({
-                SET: {
-                    request: {
-                        output: `${name}Observed`,
-                        value: true,
-                        scenarioExecutionNumber: 1,
-                        interactionExecutionNumber: assertionSteps.length + index + 1
-                    },
                     response: {}
                 },
-                [name]: { type: 'set' }
-            }))
-        ];
+                [step.name]: { type: 'set' }
+            };
+        });
         const report = await executeBlackBox(interactions, 0, {
             failFast: true,
             variables
         });
 
         expect(report.summary).toMatchObject({ total: 8, success: 8, failure: 0 });
-        for (const name of terminalNames) {
-            expect(report.resultsByName[name], name).toHaveLength(1);
+        for (const step of terminalSteps) {
+            expect(report.resultsByName[String(step.name)], String(step.name)).toHaveLength(1);
+        }
+        const failed = await executeBlackBox(interactions, 0, {
+            failFast: true,
+            variables: {
+                ...variables,
+                primarySecondEnvelope: toEnvelope(99, 8)
+            }
+        });
+        expect(failed.summary.failure).toBe(1);
+        for (const step of cleanupSteps) {
+            expect(failed.outputs).not.toHaveProperty(`${step.name}Observed`);
         }
     });
 
@@ -156,9 +197,7 @@ describe('API-v1 state-write recipe evidence', () => {
                 ]
             ] as const
         ) {
-            const recipe: Readonly<{ steps: readonly ApiJsonObject[]; }> = JSON.parse(
-                readFileSync(path.join(recipeRoot, name), 'utf8')
-            );
+            const recipe = readRecipeEvidenceFixture(path.join(recipeRoot, name));
             const terminalIndex = recipe.steps.findIndex((step) => step.name === terminalStep);
             for (const connection of socketConnections) {
                 const readyIndex = recipe.steps.findIndex((step) => step.name === `${connection}AuthorizationReady`);
@@ -182,16 +221,13 @@ describe('API-v1 state-write recipe evidence', () => {
     });
 
     it('isolates CRDT AppInbox evidence by recipe command prefixes', () => {
-        const recipe = JSON.parse(readFileSync(
-            path.join(
-                recipeRoot,
-                'api-v1-crdt-app-inbox.json'
-            ),
-            'utf8'
-        )) as { steps: Array<Record<string, any>>; };
+        const recipe = readRecipeEvidenceFixture(path.join(
+            recipeRoot,
+            'api-v1-crdt-app-inbox.json'
+        ));
         const evidence = recipe.steps.find((step) => step.name === 'exposeStateWriteEvidence');
 
-        expect(evidence?.request.stateWriteEvidence).toMatchObject({
+        expect(toPreflightJsonObject(evidence?.request).stateWriteEvidence).toMatchObject({
             match: 'crdt-update-{runId}',
             commandIdPrefixes: ['crdt-delivery-', 'crdt-update-']
         });
@@ -205,12 +241,12 @@ describe('API-v1 state-write recipe evidence', () => {
                 ['api-v1-state-medium-scale-churn.json', ['control-']]
             ] as const
         ) {
-            const recipe = JSON.parse(
-                readFileSync(path.join(recipeRoot, name), 'utf8')
-            ) as { steps: Array<Record<string, any>>; };
+            const recipe = readRecipeEvidenceFixture(path.join(recipeRoot, name));
             const evidence = recipe.steps.find((step) => step.name === 'exposeStateWriteEvidence');
 
-            expect(evidence?.request.stateWriteEvidence.commandIdPrefixes).toEqual([
+            const request = toPreflightJsonObject(evidence?.request);
+            const evidenceSpec = toPreflightJsonObject(request.stateWriteEvidence);
+            expect(evidenceSpec.commandIdPrefixes).toEqual([
                 'group-app-inbox:',
                 ...retainedPrefixes
             ]);
@@ -219,9 +255,7 @@ describe('API-v1 state-write recipe evidence', () => {
 
     it('forbids literal SET values from claiming durable state-write evidence', () => {
         for (const name of taskRecipes) {
-            const recipe: Readonly<{ steps: readonly ApiJsonObject[]; }> = JSON.parse(
-                readFileSync(path.join(recipeRoot, name), 'utf8')
-            );
+            const recipe = readRecipeEvidenceFixture(path.join(recipeRoot, name));
             const evidence = recipe.steps.find((step) => step.output === 'stateWriteEvidence');
 
             expect(evidence, name).toMatchObject({
@@ -233,26 +267,23 @@ describe('API-v1 state-write recipe evidence', () => {
     });
 
     it('uses one bounded execution identity for the command and its evidence', () => {
-        const recipe = JSON.parse(readFileSync(
-            path.join(
-                recipeRoot,
-                'api-v1-admin-operations.json'
-            ),
-            'utf8'
-        )) as {
-            variables: ApiJsonObject;
-            steps: Array<Record<string, any>>;
-        };
+        const recipe = readRecipeEvidenceFixture(path.join(
+            recipeRoot,
+            'api-v1-admin-operations.json'
+        ));
         const boundedPrune = recipe.steps.find((step) => step.name === 'runBoundedPruneToCompletion');
         const evidence = recipe.steps.find((step) => step.output === 'stateWriteEvidence');
 
-        expect(boundedPrune?.request.path)
+        const pruneRequest = toPreflightJsonObject(boundedPrune?.request);
+        const evidenceRequest = toPreflightJsonObject(evidence?.request);
+        const evidenceSpec = toPreflightJsonObject(evidenceRequest.stateWriteEvidence);
+        expect(pruneRequest.path)
             .toBe(
                 '/api/admin/operations/maintenance/prune-expired/requests/' +
                     'bb-request-prune-{executionToken}'
             );
-        expect(boundedPrune?.request.body).not.toHaveProperty('requestId');
-        expect(evidence?.request.stateWriteEvidence.match)
+        expect(pruneRequest.body).not.toHaveProperty('requestId');
+        expect(evidenceSpec.match)
             .toBe('bb-request-prune-{executionToken}');
         expect(recipe.variables.executionToken).toEqual({
             env: 'RALLAR_BB_EXECUTION_TOKEN',
@@ -362,7 +393,11 @@ describe('API-v1 state-write recipe evidence', () => {
             expectedEffectsByCommandType: { GROUP_MEMBER_UPSERT: ['group-presence-summary'] }
         };
 
-        const valid = deriveApiV1StateWriteEvidence(spec, inbox, [canonical, nestedOnly]);
+        const valid = deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [canonical, nestedOnly]
+        });
         expect(valid).toMatchObject({
             atomicCompletionFailures: 0,
             resourceOutbox: [{
@@ -371,19 +406,23 @@ describe('API-v1 state-write recipe evidence', () => {
                 effectKind: 'group-presence-summary'
             }]
         });
-        const duplicate = deriveApiV1StateWriteEvidence(spec, inbox, [canonical, {
-            ...canonical,
-            ri_resource_id: 'effect-duplicate'
-        }]);
+        const duplicate = deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [canonical, {
+                ...canonical,
+                ri_resource_id: 'effect-duplicate'
+            }]
+        });
         expect(duplicate).toMatchObject({
             atomicCompletionFailures: 1,
             finalEffectFailures: ['inbox-1']
         });
-        const truncated = deriveApiV1StateWriteEvidence(
-            { ...spec, evidenceSampleLimit: 0 },
-            inbox,
-            [canonical, { ...canonical, ri_resource_id: 'effect-duplicate' }]
-        );
+        const truncated = deriveApiV1StateWriteEvidence({
+            spec: { ...spec, evidenceSampleLimit: 0 },
+            rawRows: inbox,
+            rawOutboxRows: [canonical, { ...canonical, ri_resource_id: 'effect-duplicate' }]
+        });
         expect(truncated).toMatchObject({
             atomicCompletionFailures: 1,
             finalEffectFailureCount: 1,
@@ -391,13 +430,17 @@ describe('API-v1 state-write recipe evidence', () => {
             resourceOutboxCount: 2,
             resourceOutbox: []
         });
-        const unexpectedDirect = deriveApiV1StateWriteEvidence(spec, inbox, [canonical, {
-            ...canonical,
-            ri_resource_id: 'effect-unexpected',
-            ri_type_id: 'WS_OUTBOX',
-            ri_topic_id: 'client-state.event',
-            ri_resource: JSON.stringify({ id: { msgId: 'cmd-1:principal-state:event' } })
-        }]);
+        const unexpectedDirect = deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [canonical, {
+                ...canonical,
+                ri_resource_id: 'effect-unexpected',
+                ri_type_id: 'WS_OUTBOX',
+                ri_topic_id: 'client-state.event',
+                ri_resource: JSON.stringify({ id: { msgId: 'cmd-1:principal-state:event' } })
+            }]
+        });
         expect(unexpectedDirect).toMatchObject({
             atomicCompletionFailures: 1,
             finalEffectFailures: ['inbox-1']
@@ -483,17 +526,17 @@ describe('API-v1 state-write recipe evidence', () => {
             ri_status: 'NEW',
             ri_resource: JSON.stringify({ id: { msgId }, payload: { typeId } })
         }));
-        const evidence = deriveApiV1StateWriteEvidence(
-            {
+        const evidence = deriveApiV1StateWriteEvidence({
+            spec: {
                 match: 'update-1',
                 commandTypes: ['CRDT_UPDATE_APPEND'],
                 expectedEffectsByCommandType: {
                     CRDT_UPDATE_APPEND: ['crdt-append-reply', 'crdt-update-fanout']
                 }
             },
-            inbox,
-            outbox
-        );
+            rawRows: inbox,
+            rawOutboxRows: outbox
+        });
 
         expect(evidence).toMatchObject({
             atomicCompletionFailures: 0,
@@ -595,32 +638,32 @@ describe('API-v1 state-write recipe evidence', () => {
         const runtimeStatePage = toPageOutbox('runtime-state');
         const resourceInboxPage = toPageOutbox('resource-inbox');
 
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            inbox,
-            [runtimeStatePage, resourceInboxPage],
-            [],
-            undefined,
-            [commandEvidence]
-        ))
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [runtimeStatePage, resourceInboxPage],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [commandEvidence]
+        }))
             .toMatchObject({ atomicCompletionFailures: 0, resourceOutboxCount: 2 });
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            inbox,
-            [runtimeStatePage],
-            [],
-            undefined,
-            [commandEvidence]
-        ))
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [runtimeStatePage],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [commandEvidence]
+        }))
             .toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
-        expect(deriveApiV1StateWriteEvidence(
-            spec,
-            inbox,
-            [runtimeStatePage, resourceInboxPage, resourceInboxPage],
-            [],
-            undefined,
-            [commandEvidence]
-        )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+        expect(deriveApiV1StateWriteEvidence({
+            spec: spec,
+            rawRows: inbox,
+            rawOutboxRows: [runtimeStatePage, resourceInboxPage, resourceInboxPage],
+            intermediateMutationIntents: [],
+            overdueRecoveryFixture: undefined,
+            commandEvidence: [commandEvidence]
+        })).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
 
         const pageResource = JSON.parse(resourceInboxPage.ri_resource);
         const pageWork = JSON.parse(pageResource.payload.resource);
@@ -640,14 +683,14 @@ describe('API-v1 state-write recipe evidence', () => {
             }
         ];
         for (const malformedPage of malformedPages) {
-            expect(deriveApiV1StateWriteEvidence(
-                spec,
-                inbox,
-                [runtimeStatePage, malformedPage],
-                [],
-                undefined,
-                [commandEvidence]
-            )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+            expect(deriveApiV1StateWriteEvidence({
+                spec: spec,
+                rawRows: inbox,
+                rawOutboxRows: [runtimeStatePage, malformedPage],
+                intermediateMutationIntents: [],
+                overdueRecoveryFixture: undefined,
+                commandEvidence: [commandEvidence]
+            })).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
         }
 
         const canonicalPagesFromAnotherCommand = [
@@ -659,14 +702,14 @@ describe('API-v1 state-write recipe evidence', () => {
             toPageOutbox('app-data', { appData: { namespace: 'another-namespace', storeName: null } })
         ];
         for (const canonicalPage of canonicalPagesFromAnotherCommand) {
-            expect(deriveApiV1StateWriteEvidence(
-                spec,
-                inbox,
-                [runtimeStatePage, canonicalPage],
-                [],
-                undefined,
-                [commandEvidence]
-            )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+            expect(deriveApiV1StateWriteEvidence({
+                spec: spec,
+                rawRows: inbox,
+                rawOutboxRows: [runtimeStatePage, canonicalPage],
+                intermediateMutationIntents: [],
+                overdueRecoveryFixture: undefined,
+                commandEvidence: [commandEvidence]
+            })).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
         }
     });
 });

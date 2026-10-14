@@ -13,7 +13,7 @@ import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-me
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
-import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import type { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
 import { toWsQueueBoxServerInboundPlan } from './ws-queue-box-server-inbound-plan.ts';

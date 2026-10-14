@@ -23,7 +23,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { decodePayloadPathValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 import { OUTBOUND_LEASE_RECOVERY_BOUND_MS } from '../shared/alm/outbound-runtime-test-fixture.ts';
@@ -122,7 +122,7 @@ describe('durable-takeover conformance scenario', () => {
     )('ends the fallback owner\'s poll on the first receipt with a WS attempt (receipts %j, passes %s)', async (stages, passes, expectedReads) => {
         const poll = findTakeover('rtc-with-ws-fallback').sender.commands.at(-2);
         let reads = 0;
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             sleep: async () => {},
             commandExecutor: (command) => {
                 if (command.kind !== 'messages.receipts') {

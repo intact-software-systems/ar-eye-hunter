@@ -1,13 +1,74 @@
-import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { load } from 'js-yaml';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+interface RtcB06WorkflowSelection {
+    readonly captureMode: string | undefined;
+    readonly almDiagnostics: string;
+    readonly routineBrowserDiagnostics: string;
+}
+
+interface RtcB06SourceAdmission {
+    readonly result: SpawnSyncReturns<string>;
+    readonly outputs: Readonly<Record<string, string>>;
+}
+
+interface RtcB06CaptureRecord {
+    readonly mode: string | null;
+    readonly arguments: readonly string[];
+}
+
+interface RtcB06WorkflowStep {
+    readonly run: string;
+    readonly env: Readonly<Record<string, string>>;
+    readonly id: string | undefined;
+}
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 const fixtureRoots: string[] = [];
+const captureRecorderScript = `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const names = [
+    'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+    'DATABASE_URL',
+    'RALLAR_ICE_MODE',
+    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
+    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR',
+    'RALLAR_BLACK_BOX_STORAGE_DIR'
+];
+appendFileSync(
+    process.env.RTC_B06_ENVIRONMENT_RECORD,
+    JSON.stringify(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))) + '\\n'
+);
+if (process.env.RTC_B06_CAPTURE_RECORD !== undefined) {
+    appendFileSync(process.env.RTC_B06_CAPTURE_RECORD, JSON.stringify({
+        mode: process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE ?? null,
+        arguments: process.argv.slice(2)
+    }) + '\\n');
+}
+process.stdout.write('fake RTC-B06 execution ' + process.argv.slice(2).join(' ') + '\\n');
+process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
+`;
 
 afterEach(() => {
     for (const root of fixtureRoots.splice(0)) {
@@ -16,8 +77,180 @@ afterEach(() => {
 });
 
 describe('RTC-B06 observation workflow environment', () => {
+    it.each(['true', 'false'])('forwards ALM %s into baseline initialization and the retention worker', (selection) => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const baseline = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        mkdirSync(`${fixtureRoot}/output`);
+        const baselineResult = spawnSync('bash', ['-euo', 'pipefail', '-c', baseline.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                ...readSelectedCaptureEnvironment(baseline.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: selection,
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                }),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_OBSERVATION_OUTPUT: `${fixtureRoot}/output`,
+                RTC_SOURCE_REF: 'codex/alm-selection',
+                GITHUB_RUN_ID: '123456789',
+                GITHUB_RUN_ATTEMPT: '2',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(baselineResult).toMatchObject({ status: 0, stderr: '' });
+        expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual([selection]);
+        const diagnostic = readWorkflowStep('Exercise RTC-B06 diagnostic cases');
+        mkdirSync(`${fixtureRoot}/diagnostic`);
+        const diagnosticResult = spawnSync('bash', ['-euo', 'pipefail', '-c', diagnostic.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                ...readSelectedCaptureEnvironment(diagnostic.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: selection,
+                    routineBrowserDiagnostics: selection === 'true' ? 'disabled' : 'enabled'
+                }),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'conflicting-ambient',
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_DIAGNOSTIC_OUTPUT: `${fixtureRoot}/diagnostic`,
+                RUNNER_TEMP: fixtureRoot
+            }
+        });
+        expect(diagnosticResult).toMatchObject({ status: 0, stderr: '' });
+        expect(readEnvironmentRecords(fixtureRoot).slice(1).map((entry) => entry.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS)).toEqual(['true', 'true', selection]);
+        expect(readEnvironmentRecords(fixtureRoot).map((entry) => entry.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS)).toEqual([
+            selection === 'true' ? 'disabled' : 'enabled',
+            'enabled',
+            'enabled',
+            selection === 'true' ? 'disabled' : 'enabled'
+        ]);
+    });
+
+    it.each([['disabled', 'off'], ['signaling', 'signaling'], ['native', 'native'], [undefined, 'signaling']])(
+        'passes selected %s capture to the publish CLI independently of runner inheritance',
+        (selection, mode) => {
+            const fixtureRoot = createEnvironmentCaptureFixture();
+            const step = readWorkflowStep('Capture RTC-B06 E3-memory observation');
+            const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                        captureMode: selection,
+                        almDiagnostics: 'true',
+                        routineBrowserDiagnostics: 'enabled'
+                    }),
+                    PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                    RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
+                    RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                    RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
+                    RTC_OBSERVATION_OUTPUT: `${fixtureRoot}/output`,
+                    GITHUB_RUN_ID: '123456789',
+                    GITHUB_RUN_ATTEMPT: '2',
+                    GITHUB_SERVER_URL: 'https://github.com',
+                    GITHUB_REPOSITORY: 'example/repository'
+                }
+            });
+
+            expect(result).toMatchObject({ status: 0, stderr: '' });
+            const records = readCaptureRecords(fixtureRoot);
+            expect(records).toHaveLength(1);
+            expect(records[0]?.arguments.filter((argument) => argument.startsWith('--rtc-capture-mode='))).toEqual([`--rtc-capture-mode=${mode}`]);
+            expect(records[0]?.mode).toBeNull();
+        }
+    );
+
+    it.each([['disabled', 'off'], ['signaling', 'signaling'], ['native', 'native']])(
+        'uses selected %s capture for all three diagnostic worker cases',
+        (selection, mode) => {
+            const fixtureRoot = createEnvironmentCaptureFixture();
+            const outputDirectory = path.join(fixtureRoot, 'diagnostic');
+            mkdirSync(outputDirectory);
+            const step = readWorkflowStep('Exercise RTC-B06 diagnostic cases');
+            const result = spawnSync('bash', ['-e', '-c', step.run], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                    ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                        captureMode: selection,
+                        almDiagnostics: 'true',
+                        routineBrowserDiagnostics: 'enabled'
+                    }),
+                    PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                    RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
+                    RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                    RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
+                    RTC_DIAGNOSTIC_OUTPUT: outputDirectory,
+                    RUNNER_TEMP: fixtureRoot
+                }
+            });
+
+            expect(result).toMatchObject({ status: 0, stderr: '' });
+            const records = readCaptureRecords(fixtureRoot);
+            expect(records.map((record) => record.mode)).toEqual([mode, mode, mode]);
+            expect(records.map((record) => record.arguments.filter((argument) => argument.startsWith('--retries='))))
+                .toEqual([['--retries=0'], ['--retries=0'], ['--retries=0']]);
+        }
+    );
+
+    it.each([['disabled', 'off'], ['signaling', 'signaling'], ['native', 'native']])('passes selected %s to the governed baseline CLI', (selection, mode) => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const step = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: selection,
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'inherited-invalid-mode',
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
+                RTC_OBSERVATION_OUTPUT: fixtureRoot,
+                RTC_SOURCE_REF: 'codex/rtc-baseline-refresh',
+                GITHUB_RUN_ID: '123456789',
+                GITHUB_RUN_ATTEMPT: '2',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+
+        expect(result).toMatchObject({ status: 0, stderr: '' });
+        const records = readCaptureRecords(fixtureRoot);
+        expect(records[0]?.arguments.slice(0, 5)).toEqual(['run', '--silent', 'perf:rtc-baseline', '--', 'capture-live-rtc']);
+        expect(records[0]?.arguments.filter((argument) => argument.startsWith('--rtc-capture-mode='))).toEqual([`--rtc-capture-mode=${mode}`]);
+        expect(records[0]?.mode).toBeNull();
+    });
+
+    it.each(['off', 'Native', '', 'invalid'])('refuses invalid dispatch selection %s without publishing output or starting a producer', (selection) => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const admission = admitWorkflowSource(fixtureRoot, selection);
+
+        expect(admission.result.status).toBe(1);
+        expect(admission.result.stdout).toContain('::error::');
+        expect(readFileSync(path.join(fixtureRoot, 'github-output'), 'utf8')).toBe('');
+        expect(existsSync(path.join(fixtureRoot, 'capture.jsonl'))).toBe(false);
+        expect(existsSync(path.join(fixtureRoot, 'environment.json'))).toBe(false);
+    });
+
     it('reserves publication for main while accepting an exact branch diagnostic source', () => {
-        const validateSource = readRunCommand('Validate the requested source');
+        const validateSource = readWorkflowStep('Validate the requested source').run;
         const sourceSha = 'a'.repeat(40);
         const diagnostic = spawnSync('bash', ['-euo', 'pipefail', '-c', validateSource], {
             cwd: repoRoot,
@@ -69,14 +302,58 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(mainPublication).toMatchObject({ status: 0, stderr: '' });
     });
 
+    it('runs a governed branch capture with real source attribution and propagates capture failure', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const output = path.join(fixtureRoot, 'output');
+        mkdirSync(output);
+        const step = readWorkflowStep('Capture RTC-B06 governed branch baseline');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: 'native',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`,
+                RTC_B06_FAKE_EXIT_STATUS: '23',
+                RTC_OBSERVATION_OUTPUT: output,
+                RTC_SOURCE_REF: 'codex/rtc-baseline-refresh',
+                GITHUB_RUN_ID: '123456789',
+                GITHUB_RUN_ATTEMPT: '2',
+                GITHUB_SERVER_URL: 'https://github.com',
+                GITHUB_REPOSITORY: 'example/repository'
+            }
+        });
+        expect(result.status).toBe(23);
+        const records = readCaptureRecords(fixtureRoot);
+        expect(records[0]?.arguments).toContain('capture-live-rtc');
+        expect(records[0]?.arguments).toContain('--source-ref=codex/rtc-baseline-refresh');
+        expect(records[0]?.arguments).toContain('--rtc-capture-mode=native');
+        expect(records[0]?.mode).toBeNull();
+        expect(readFileSync(path.join(output, 'capture.log'), 'utf8')).toContain('fake RTC-B06 execution');
+    });
+
     it('starts the controller with complete catalog values and a memory-only producer boundary', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
-        const capture = readRunCommand('Capture RTC-B06 E3-memory observation');
+        const step = readWorkflowStep('Capture RTC-B06 E3-memory observation');
+        const capture = step.run;
         const result = spawnSync('bash', ['-euo', 'pipefail', '-c', capture], {
             cwd: repoRoot,
             encoding: 'utf8',
             env: {
                 ...process.env,
+                RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                ...readSelectedCaptureEnvironment(step.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
                 DATABASE_URL: 'postgres://inherited.invalid/database',
                 RALLAR_ICE_MODE: 'inherited-ice-mode',
@@ -96,11 +373,14 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(readEnvironmentRecords(fixtureRoot)).toEqual([
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
-                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null
+                RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null,
+                RALLAR_BLACK_BOX_STORAGE_DIR: null
             }
         ]);
     });
@@ -109,23 +389,39 @@ describe('RTC-B06 observation workflow environment', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
         const outputDirectory = path.join(fixtureRoot, 'diagnostic');
         mkdirSync(outputDirectory);
-        const diagnostic = readRunCommand('Exercise RTC-B06 diagnostic cases');
+        const diagnosticStep = readWorkflowStep('Exercise RTC-B06 diagnostic cases');
+        const diagnostic = diagnosticStep.run;
         const result = spawnSync('bash', ['-e', '-c', diagnostic], {
             cwd: repoRoot,
             encoding: 'utf8',
             env: {
                 ...process.env,
                 PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                ...readSelectedCaptureEnvironment(diagnosticStep.env, fixtureRoot, {
+                    captureMode: 'signaling',
+                    almDiagnostics: 'true',
+                    routineBrowserDiagnostics: 'enabled'
+                }),
                 RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
                 RTC_B06_FAKE_EXIT_STATUS: '23',
-                RTC_DIAGNOSTIC_OUTPUT: outputDirectory
+                RTC_DIAGNOSTIC_OUTPUT: outputDirectory,
+                RUNNER_TEMP: fixtureRoot
             }
         });
 
         expect(result.status).toBe(23);
-        expect(readEnvironmentRecords(fixtureRoot)).toEqual([
+        const records = readEnvironmentRecords(fixtureRoot);
+        const storageDirectories = records.map((record) => record.RALLAR_BLACK_BOX_STORAGE_DIR);
+        expect(new Set(storageDirectories).size).toBe(3);
+        for (const directory of storageDirectories) {
+            expect(directory?.startsWith(path.join(fixtureRoot, 'rtc-b06-recorder-'))).toBe(true);
+            expect(directory?.startsWith(outputDirectory + path.sep)).toBe(false);
+        }
+        expect(records.map(({ RALLAR_BLACK_BOX_STORAGE_DIR, ...environment }) => environment)).toEqual([
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -138,6 +434,8 @@ describe('RTC-B06 observation workflow environment', () => {
             },
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: null,
@@ -150,6 +448,8 @@ describe('RTC-B06 observation workflow environment', () => {
             },
             {
                 DATABASE_URL: null,
+                RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: 'true',
+                RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: 'enabled',
                 RALLAR_ICE_MODE: null,
                 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: null,
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
@@ -166,25 +466,143 @@ describe('RTC-B06 observation workflow environment', () => {
                 readFileSync(path.join(outputDirectory, caseId, 'diagnostic.log'), 'utf8')
             ).toContain('fake RTC-B06 execution');
         }
-        expect(result.stdout.match(/--retries=0/g)).toHaveLength(3);
     });
 });
 
-function readRunCommand(stepName: string): string {
-    const workflowPath = path.join(
-        repoRoot,
-        '.github/workflows/rtc-b06-performance-observation.yml'
-    );
-    const workflow = load(readFileSync(workflowPath, 'utf8')) as {
-        jobs: Record<string, { steps?: Array<{ name?: string; run?: string; }>; }>;
-    };
-    const command = Object.values(workflow.jobs)
-        .flatMap(({ steps }) => steps ?? [])
-        .find(({ name }) => name === stepName)?.run;
-    if (command === undefined) {
-        throw new Error(`RTC-B06 ${stepName} command is missing.`);
+function readWorkflowStep(stepName: string): RtcB06WorkflowStep {
+    const jobs = decodeWorkflowMapping(Reflect.get(readWorkflow(), 'jobs'));
+    const steps = Object.values(jobs).flatMap((job) => {
+        const steps = Reflect.get(decodeWorkflowMapping(job), 'steps');
+        if (!Array.isArray(steps)) {
+            throw new Error('Workflow job steps must be an array.');
+        }
+        return steps;
+    });
+    const selectedStep = steps.find((step) => Reflect.get(decodeWorkflowMapping(step), 'name') === stepName);
+    expect(selectedStep, `RTC-B06 ${stepName} must provide an executable boundary`).toBeDefined();
+    return decodeWorkflowStep(selectedStep);
+}
+
+function decodeWorkflowStep(value: unknown): RtcB06WorkflowStep {
+    const step = decodeWorkflowMapping(value);
+    const run = Reflect.get(step, 'run');
+    const id = Reflect.get(step, 'id');
+    if (typeof run !== 'string' || (id !== undefined && typeof id !== 'string')) {
+        throw new Error('Workflow shell step must provide an executable command and a string step id when present.');
     }
-    return command;
+    return { run, id, env: decodeWorkflowStringMapping(Reflect.get(step, 'env') ?? {}) };
+}
+
+function admitWorkflowSource(fixtureRoot: string, selection: string): RtcB06SourceAdmission {
+    const source = decodeWorkflowMapping(Reflect.get(decodeWorkflowMapping(Reflect.get(readWorkflow(), 'jobs')), 'source'));
+    const steps = Reflect.get(source, 'steps');
+    if (!Array.isArray(steps) || steps.length === 0) {
+        throw new Error('Source admission must have executable steps.');
+    }
+    const output = path.join(fixtureRoot, 'github-output');
+    const stepOutputs: Record<string, string> = {};
+    let result: SpawnSyncReturns<string> | undefined;
+    for (const authoredStep of steps) {
+        const step = decodeWorkflowStep(authoredStep);
+        writeFileSync(output, '');
+        result = spawnSync('bash', ['-euo', 'pipefail', '-c', step.run], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RTC_CAPTURE_MODE: 'conflicting-ambient-mode',
+                ...toWorkflowEnvironment(step.env, {
+                    '${{ inputs.rtc_capture_mode }}': selection,
+                    '${{ inputs.mode }}': 'publish',
+                    '${{ github.event.repository.default_branch }}': 'main',
+                    '${{ github.ref }}': 'refs/heads/main',
+                    '${{ github.sha }}': 'a'.repeat(40)
+                }),
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                GITHUB_OUTPUT: output,
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_B06_CAPTURE_RECORD: `${fixtureRoot}/capture.jsonl`
+            }
+        });
+        if (result.status !== 0) {
+            return { result, outputs: {} };
+        }
+        Object.assign(stepOutputs, readStepOutputs(output, step.id));
+    }
+    if (result === undefined) {
+        throw new Error('Source admission did not execute.');
+    }
+    return { result, outputs: toWorkflowEnvironment(decodeWorkflowStringMapping(Reflect.get(source, 'outputs') ?? {}), stepOutputs) };
+}
+
+function readSelectedCaptureEnvironment(
+    environment: Readonly<Record<string, string>>,
+    fixtureRoot: string,
+    selection: RtcB06WorkflowSelection
+): Readonly<Record<string, string>> {
+    const workflow = readWorkflow();
+    const dispatch = decodeWorkflowMapping(Reflect.get(decodeWorkflowMapping(Reflect.get(workflow, 'on')), 'workflow_dispatch'));
+    const capture = decodeWorkflowMapping(Reflect.get(decodeWorkflowMapping(Reflect.get(dispatch, 'inputs')), 'rtc_capture_mode'));
+    const defaultMode = Reflect.get(capture, 'default');
+    if (typeof defaultMode !== 'string') {
+        throw new Error('Capture mode default must be a string.');
+    }
+    const admission = admitWorkflowSource(fixtureRoot, selection.captureMode ?? defaultMode);
+    expect(admission.result).toMatchObject({ status: 0, stderr: '' });
+    const consumerOutputs = Object.fromEntries(Object.entries(admission.outputs).map(([name, value]) => [`${'${{'} needs.source.outputs.${name} }}`, value]));
+    return toWorkflowEnvironment(environment, {
+        ...consumerOutputs,
+        '${{ inputs.rtc_capture_mode }}': selection.captureMode ?? defaultMode,
+        '${{ inputs.alm_diagnostics }}': selection.almDiagnostics,
+        '${{ inputs.routine_browser_diagnostics }}': selection.routineBrowserDiagnostics,
+        '${{ github.ref_name }}': 'codex/rtc-baseline-refresh'
+    });
+}
+
+function readStepOutputs(output: string, stepId: string | undefined): Readonly<Record<string, string>> {
+    return Object.fromEntries(
+        readFileSync(output, 'utf8').trim().split('\n').filter(Boolean).map((line) => {
+            const separator = line.indexOf('=');
+            if (stepId === undefined || separator < 1) {
+                throw new Error('Workflow output requires a step id and name=value record.');
+            }
+            return [`${'${{'} steps.${stepId}.outputs.${line.slice(0, separator)} }}`, line.slice(separator + 1)];
+        })
+    );
+}
+
+function toWorkflowEnvironment(environment: Readonly<Record<string, string>>, values: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+    return Object.fromEntries(
+        Object.entries(environment).map(([name, value]) => {
+            if (value.startsWith('${{') && values[value] === undefined) {
+                throw new Error(`Unresolved workflow environment expression: ${value}`);
+            }
+            return [name, values[value] ?? value];
+        })
+    );
+}
+
+function readWorkflow(): object {
+    return decodeWorkflowMapping(load(readFileSync(path.join(repoRoot, '.github/workflows/rtc-b06-performance-observation.yml'), 'utf8')));
+}
+
+function decodeWorkflowMapping(value: unknown): object {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new Error('Workflow value must be a mapping.');
+    }
+    return value;
+}
+
+function decodeWorkflowStringMapping(value: unknown): Readonly<Record<string, string>> {
+    const mapping = decodeWorkflowMapping(value);
+    return Object.fromEntries(
+        Object.entries(mapping).map(([name, value]) => {
+            if (typeof value !== 'string') {
+                throw new Error('Workflow environment and output values must be strings.');
+            }
+            return [name, value];
+        })
+    );
 }
 
 function createEnvironmentCaptureFixture(): string {
@@ -192,26 +610,7 @@ function createEnvironmentCaptureFixture(): string {
     const fakeNpmPath = path.join(fixtureRoot, 'bin', 'npm');
     fixtureRoots.push(fixtureRoot);
     mkdirSync(path.dirname(fakeNpmPath));
-    writeFileSync(
-        fakeNpmPath,
-        `#!/usr/bin/env node
-const { appendFileSync } = require('node:fs');
-const names = [
-    'DATABASE_URL',
-    'RALLAR_ICE_MODE',
-    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
-    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR'
-];
-appendFileSync(
-    process.env.RTC_B06_ENVIRONMENT_RECORD,
-    JSON.stringify(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))) + '\\n'
-);
-process.stdout.write('fake RTC-B06 execution ' + process.argv.slice(2).join(' ') + '\\n');
-process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
-`
-    );
+    writeFileSync(fakeNpmPath, captureRecorderScript);
     chmodSync(fakeNpmPath, 0o755);
     return fixtureRoot;
 }
@@ -222,5 +621,34 @@ function readEnvironmentRecords(
     return readFileSync(`${fixtureRoot}/environment.json`, 'utf8')
         .trim()
         .split('\n')
-        .map((line) => JSON.parse(line));
+        .map((line) => decodeEnvironmentRecord(JSON.parse(line)));
+}
+
+function readCaptureRecords(fixtureRoot: string): readonly RtcB06CaptureRecord[] {
+    return readFileSync(`${fixtureRoot}/capture.jsonl`, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => decodeCaptureRecord(JSON.parse(line)));
+}
+
+function decodeEnvironmentRecord(value: unknown): Readonly<Record<string, string | null>> {
+    const record = decodeWorkflowMapping(value);
+    return Object.fromEntries(
+        Object.entries(record).map(([name, value]) => {
+            if (value !== null && typeof value !== 'string') {
+                throw new Error('Recorded environment values must be strings or null.');
+            }
+            return [name, value];
+        })
+    );
+}
+
+function decodeCaptureRecord(value: unknown): RtcB06CaptureRecord {
+    const record = decodeWorkflowMapping(value);
+    const mode = Reflect.get(record, 'mode');
+    const arguments_ = Reflect.get(record, 'arguments');
+    if ((mode !== null && typeof mode !== 'string') || !Array.isArray(arguments_) || !arguments_.every((argument) => typeof argument === 'string')) {
+        throw new Error('Recorded capture requires a string or null mode and string arguments.');
+    }
+    return { mode, arguments: arguments_ };
 }

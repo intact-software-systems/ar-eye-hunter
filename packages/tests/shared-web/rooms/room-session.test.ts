@@ -9,7 +9,6 @@ import {
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import type { CreateRoomSessionInput } from '@shared-web/browser/rooms/room-session.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -26,7 +25,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
-    readRoomWorkflowMocks,
+    getRoomWorkflowMocks,
     resetRoomWorkflowTestRuntime,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
@@ -234,7 +233,7 @@ it.each(['equal', 'aborted', 'stale-session', 'wrong-scope', 'failed'] as const)
             controller.abort();
         }
         if (outcome === 'stale-session') {
-            const runtime = readRoomWorkflowMocks();
+            const runtime = getRoomWorkflowMocks();
             runtime.readSession.mockReturnValue({ ...runtime.session, sessionId: 'replacement-session' });
         }
         const acquired = outcome === 'wrong-scope'
@@ -285,18 +284,13 @@ function createEmptyTopology(groupRef: GroupRef): GroupTopologyManagementView {
 }
 
 it('gives a named room message the notification purpose and passes a declared one through', async () => {
-    const { createRoomSession } = await import('@shared-web/browser/rooms/room-session.ts');
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-    const room: CreateRoomSessionInput['messages']['room'] = vi.fn();
-    const session = createRoomSession({
-        roomRef,
-        stateStore: {} as CreateRoomSessionInput['stateStore'],
-        messages: { room } as CreateRoomSessionInput['messages'],
-        realtime: {} as CreateRoomSessionInput['realtime'],
-        leaveRoom: vi.fn(),
-        refreshRoom: vi.fn(),
-        createFormation: vi.fn()
-    });
+    seedRoomSnapshots([createRoomSnapshot('room-1', ['session-1'])]);
+    const facade = createRallarFacade();
+    const room = vi.spyOn(facade.messages, 'room');
+    onTestFinished(() => room.mockRestore());
+    const session = facade.rooms.session(roomRef);
 
     session.message('chat');
     session.message({
@@ -306,7 +300,7 @@ it('gives a named room message the notification purpose and passes a declared on
         durability: 'local-outbox'
     });
 
-    const definitions = vi.mocked(room).mock.calls.map(([definition]) => definition);
+    const definitions = room.mock.calls.map(([definition]) => definition);
     expect(definitions).toEqual([
         { topicId: 'room.chat', typeId: 'room.chat.v1', roomRef, purpose: 'notification' },
         {
@@ -320,18 +314,13 @@ it('gives a named room message the notification purpose and passes a declared on
 });
 
 it('passes a declared storage choice through to the room channel', async () => {
-    const { createRoomSession } = await import('@shared-web/browser/rooms/room-session.ts');
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-    const room: CreateRoomSessionInput['messages']['room'] = vi.fn();
-    const session = createRoomSession({
-        roomRef,
-        stateStore: {} as CreateRoomSessionInput['stateStore'],
-        messages: { room } as CreateRoomSessionInput['messages'],
-        realtime: {} as CreateRoomSessionInput['realtime'],
-        leaveRoom: vi.fn(),
-        refreshRoom: vi.fn(),
-        createFormation: vi.fn()
-    });
+    seedRoomSnapshots([createRoomSnapshot('room-1', ['session-1'])]);
+    const facade = createRallarFacade();
+    const room = vi.spyOn(facade.messages, 'room');
+    onTestFinished(() => room.mockRestore());
+    const session = facade.rooms.session(roomRef);
 
     session.message({
         topicId: 'room.cmd',
@@ -341,7 +330,7 @@ it('passes a declared storage choice through to the room channel', async () => {
         onStorageUnavailable: 'volatile'
     });
 
-    const definitions = vi.mocked(room).mock.calls.map(([definition]) => definition);
+    const definitions = room.mock.calls.map(([definition]) => definition);
     expect(definitions).toEqual([{
         topicId: 'room.cmd',
         typeId: 'room.cmd.v1',

@@ -7,7 +7,7 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
@@ -16,11 +16,13 @@ import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts'
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
+import type { ALInboundResyncRequired } from './al-inbound-resync-required.ts';
 import {
     toALInboundAdmissionDiagnostics,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import type { ALInboundAcknowledgementEvidence } from './control/al-inbound-acknowledgement-evidence.ts';
 import type { ALInboundControlAdmissionResult } from './control/al-inbound-control-admission.ts';
 import { isALOriginAcknowledgement } from './control/is-al-origin-acknowledgement.ts';
 import { admitALInboundVolatileBudget } from './lane/admit-al-inbound-volatile-budget.ts';
@@ -30,10 +32,10 @@ import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
 import {
+    readALInboundMessageAuthorization,
     toALInboundReceiver,
-    validateALInboundMessage,
     type ALInboundReceiver
-} from './validate-al-inbound-message.ts';
+} from './read-al-inbound-message-authorization.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -155,6 +157,11 @@ export namespace ALInboundMessageRuntime {
         readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
+        /**
+         * Receives each message this runtime admits `resync-required`, or rejects at its ordered release, after
+         * its NACK commits. Absence means no recovery owner exists anywhere: the server's case.
+         */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
@@ -216,10 +223,15 @@ export class ALInboundMessageRuntime {
         return durable;
     }
 
-    dispose(): void {
+    /** Every lane cancels before any join, so producers cannot keep another lane alive. */
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.durable.dispose();
-        this.volatile?.dispose();
+        const disposed = await Promise.allSettled([this.durable.dispose(), this.volatile?.dispose()]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
     }
 
     async admitIncomingMessage(
@@ -240,20 +252,42 @@ export class ALInboundMessageRuntime {
         return admitted.mapRight(toALInboundAcceptance);
     }
 
-    /** A value that never decoded has no identity to record; every identity that does gets one event. */
+    /**
+     * A data message its ingress authority cannot judge yet, already decoded and validated at that ingress: kept as
+     * a pending admission whose replay re-authorizes it until it is judged or its deadline passes.
+     */
+    async retainIncomingMessage(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        await this.ready();
+        if (this.disposed) {
+            return { kind: 'disposed' };
+        }
+        const lane = this.resolveDataLane(msg);
+        const retained = await lane.retainData(msg, source, this.dependencies.planIncomingMessage);
+        this.recordVolatileBudget(lane, msg, retained);
+        this.recordAdmissionOutcome(msg, source, Either.ofRight(retained));
+        return retained;
+    }
+
+    /** A value that never decoded has no identity to record; this observation is optional. */
     private recordAdmissionOutcome(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
     ): void {
-        this.dependencies.diagnostics?.({
-            kind: 'admission-outcome',
-            workerId: this.dependencies.effectWorkerId,
-            msgId: msg.id.msgId,
-            typeId: msg.payload.typeId,
-            carrier: toALDeliveryCarrier(source),
-            ...toALInboundAdmissionDiagnostics(admitted)
-        });
+        try {
+            this.dependencies.diagnostics?.({
+                kind: 'admission-outcome',
+                workerId: this.dependencies.effectWorkerId,
+                msgId: msg.id.msgId,
+                typeId: msg.payload.typeId,
+                carrier: toALDeliveryCarrier(source),
+                ...toALInboundAdmissionDiagnostics(admitted)
+            });
+        }
+        catch { /* Optional diagnostics cannot change mandatory work. */ }
     }
 
     private async admitDecodedMessage(
@@ -261,7 +295,7 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Admission>> {
-        const validated = validateALInboundMessage(
+        const authorization = readALInboundMessageAuthorization(
             msg,
             source,
             toALInboundReceiver(
@@ -269,8 +303,8 @@ export class ALInboundMessageRuntime {
                 this.dependencies.readRelayedAckRejection
             )
         );
-        if (validated.left) {
-            return Either.ofLeft(validated.left);
+        if (authorization.left) {
+            return Either.ofLeft(authorization.left);
         }
         await this.ready();
         if (this.disposed) {
@@ -281,15 +315,23 @@ export class ALInboundMessageRuntime {
         }
         const lane = this.resolveDataLane(msg);
         const admitted = await lane.admitData(msg, source, planIncomingMessage);
+        this.recordVolatileBudget(lane, msg, admitted.right);
+        return admitted;
+    }
+
+    private recordVolatileBudget(
+        lane: ALInboundStoreLane,
+        msg: ALMessage,
+        acceptance: ALInboundMessageRuntime.Acceptance | undefined
+    ): void {
         if (lane === this.volatile) {
             admitALInboundVolatileBudget({
                 msg,
-                acceptance: admitted.right,
+                acceptance,
                 budget: this.dependencies.volatileStores?.budget,
                 nowMs: this.dependencies.clock.nowMs()
             });
         }
-        return admitted;
     }
 
     /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */
@@ -303,30 +345,53 @@ export class ALInboundMessageRuntime {
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageRuntime.Admission> {
-        const admitted = isALOriginAcknowledgement(msg, this.dependencies.effectPreparation.selfPeerId)
-            ? { kind: 'not-handled' as const }
-            : await this.admitControlInLanes(msg, source);
-        if (admitted.kind === 'pending-control') {
-            return { kind: 'pending-admission' };
+        const diagnostics = this.dependencies.diagnostics;
+        const evidence = diagnostics?.acknowledgementCapture?.evidence.tryCreate({
+            msg,
+            carrier: toALDeliveryCarrier(source),
+            sink: diagnostics,
+            workerId: this.dependencies.effectWorkerId
+        });
+        let result: ALInboundMessageRuntime.Admission | undefined;
+        try {
+            const terminalOrigin = isALOriginAcknowledgement(msg, this.dependencies.effectPreparation.selfPeerId);
+            if (terminalOrigin) {
+                evidence?.originBypass();
+            }
+            const admitted = terminalOrigin
+                ? { kind: 'not-handled' as const }
+                : await this.admitControlInLanes(msg, source, evidence);
+            if (admitted.kind === 'pending-control') {
+                result = { kind: 'pending-admission' };
+                return result;
+            }
+            const acceptance: ALControlAcceptance = admitted.kind === 'committed'
+                ? admitted.acceptance
+                : { handled: false, completedPendingAcks: [] };
+            const handedOver = this.disposed ? undefined : await this.dependencies.onControlMessage?.(msg, acceptance);
+            const unpersisted = admitted.kind === 'storage-unavailable' ? admitted : handedOver || undefined;
+            result = unpersisted === undefined
+                ? { kind: 'control', handled: acceptance.handled }
+                : {
+                    kind: 'unpersisted-control',
+                    unavailable: { cause: unpersisted.cause, detail: unpersisted.detail }
+                };
+            return result;
         }
-        const acceptance: ALControlAcceptance = admitted.kind === 'committed'
-            ? admitted.acceptance
-            : { handled: false, completedPendingAcks: [] };
-        const handedOver = this.disposed ? undefined : await this.dependencies.onControlMessage?.(msg, acceptance);
-        const unpersisted = admitted.kind === 'storage-unavailable' ? admitted : handedOver || undefined;
-        return unpersisted === undefined
-            ? { kind: 'control', handled: acceptance.handled }
-            : { kind: 'unpersisted-control', unavailable: { cause: unpersisted.cause, detail: unpersisted.detail } };
+        finally {
+            evidence?.publishAssociation('ingress', result?.kind ?? 'threw');
+        }
     }
 
     /** Memory first, so a control the memory lane handles never reaches IndexedDB. */
     private async admitControlInLanes(
         msg: ALMessage,
-        source: ALInboundMessageRuntime.Source
+        source: ALInboundMessageRuntime.Source,
+        evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
-        const volatile = await this.volatile?.admitControl(msg, source);
+        const volatile = await this.volatile?.admitControl(msg, source, evidence);
         return volatile === undefined || volatile.kind === 'not-handled'
-            ? await this.durable.admitControl(msg, source)
+            ? await this.durable.admitControl(msg, source, evidence)
             : volatile;
     }
 }

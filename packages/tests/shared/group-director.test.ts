@@ -6,7 +6,8 @@ import {
     readRallarGroupDirectorAppointment,
     readRallarGroupDirectorFreshness,
     readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility
+    resolveRallarGroupDirectorAppointmentEligibility,
+    resolveRallarGroupLeaderSessionId
 } from '@shared/api/group-director.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -83,6 +84,21 @@ describe('Rallar group director metadata', () => {
             .toBe('fresh');
         expect(readRallarGroupDirectorFreshness(appointment, 1_200, 1_800))
             .toBe('stale');
+    });
+
+    it('resolves the room leader as the appointed director session while it is present', () => {
+        const appointment = createRallarGroupDirectorAppointment({
+            session: { clientId: 'principal-1', sessionId: 'session-1' },
+            now: 1_000
+        });
+        const snapshot = createSnapshot(appointment);
+
+        expect(resolveRallarGroupLeaderSessionId(snapshot)).toBe('session-1');
+        expect(resolveRallarGroupLeaderSessionId({ ...snapshot, activeSessions: [] })).toBeUndefined();
+        expect(resolveRallarGroupLeaderSessionId({ ...snapshot, group: { ...snapshot.group, metadata: {} } }))
+            .toBeUndefined();
+        expect(resolveRallarGroupLeaderSessionId(createSnapshot({ ...appointment, principalId: 'principal-2' })))
+            .toBeUndefined();
     });
 
     it('allows active owners and admins to appoint the room director', () => {

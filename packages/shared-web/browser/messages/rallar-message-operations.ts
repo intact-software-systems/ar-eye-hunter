@@ -9,6 +9,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 export interface RallarRtcMessageLane {
     send<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageHandle>;
@@ -35,4 +36,6 @@ export interface RallarMessagesOperations {
     room<T>(
         definition: RallarRoomMessageChannelDefinition
     ): RallarTypedMessageChannel<T>;
+    /** The connected session's volatile ledger: what it holds, its four bounds, and whether it sheds (D180). */
+    readUsage(): ALVolatileSessionReport;
 }

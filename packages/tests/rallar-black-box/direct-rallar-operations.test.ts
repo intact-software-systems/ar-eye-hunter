@@ -807,7 +807,7 @@ function createDirectMessage(input: DirectMessageInput): RallarMessage<RallarMes
         senderId: 'sender',
         receivedAtEpochMs: 1,
         raw: {
-            id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+            id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
             route: { topicId: input.topicId, contextId: 'bb-group', resourceId: '' },
             payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
         }

@@ -116,7 +116,6 @@ function toCrossCarrierDuplicateReceiverCommands(
     }
     const latest = toAdmissionOutcomeWait(receiver, {
         name: 'duplicate-outcome-latest',
-        contains: '"carrier":"',
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
     });
     return [

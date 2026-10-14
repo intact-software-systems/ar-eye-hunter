@@ -1,12 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import {
+    newALBroadcastMessage,
+    newALRoute,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { captureALOutboundPolicy, type ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     toALOutboundIdentityEntry,
@@ -14,7 +27,21 @@ import {
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+// Corruption scenarios deliberately replace the stored reference after the row is written.
+interface CapturedAudienceStoredMessage extends Omit<ALStoredOutboundMessage, 'reference'> {
+    reference: ALStoredOutboundMessage['reference'];
+}
+
+interface CapturedAudienceFixture {
+    readonly store: ALOutboundAdmissionStore<never>;
+    readonly state: ALAdmissionMemoryState;
+    readonly stored: CapturedAudienceStoredMessage;
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+}
 
 describe('captured outbound audience read', () => {
     it('returns the captured set, including empty, and distinguishes a missing admission', async () => {
@@ -66,7 +93,10 @@ describe('captured outbound audience read', () => {
     });
 });
 
-async function createFixture(admittedAudience: readonly string[] | undefined, recipientScope?: StateScope) {
+async function createFixture(
+    admittedAudience: readonly string[] | undefined,
+    recipientScope?: StateScope
+): Promise<CapturedAudienceFixture> {
     const nowMs = Date.now();
     const scope = 'server-scope';
     const namespace = 'server-namespace';
@@ -78,9 +108,9 @@ async function createFixture(admittedAudience: readonly string[] | undefined, re
         { value: 1 },
         { ttlMs: 60_000, groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
     );
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const reference = toALOutboundMessageReference(scope, entry, message);
-    const stored = {
+    const stored: CapturedAudienceStoredMessage = {
         msgId: message.id.msgId,
         reference,
         supersedenceKey: undefined,
@@ -90,7 +120,7 @@ async function createFixture(admittedAudience: readonly string[] | undefined, re
         policy: captureALOutboundPolicy({
             msg: message,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             admittedAudience,
             ...(recipientScope === undefined ? {} : { recipientScope })

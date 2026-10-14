@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -14,15 +22,7 @@ import {
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { waitForSettledOutboundWork } from '../../wait-for-al-outbound-work.ts';
 import {
@@ -78,7 +78,7 @@ describe('AL outbound dequeue work', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
@@ -87,7 +87,7 @@ describe('AL outbound dequeue work', () => {
             }
         });
         const message = createDequeuedMessage('dequeue-admits');
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE);
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
         await outbox.enqueueIfAbsent(queued);
 
         await runtime.ready();
@@ -109,7 +109,7 @@ describe('AL outbound dequeue work', () => {
                     msg,
                     dropReason: 'Dropped before a route exists',
                     dropReasonCode,
-                    persist: false,
+                    lane: 'volatile',
                     preparedMessages: []
                 }),
                 afterDequeueAdmission: async (msg) => {
@@ -118,7 +118,7 @@ describe('AL outbound dequeue work', () => {
                 sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
             });
             const message = createDequeuedMessage(`discarded-${dropReasonCode}`);
-            const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE);
+            const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE, Temporal.Now.instant());
             await outbox.enqueueIfAbsent(queued);
 
             await runtime.ready();
@@ -142,17 +142,17 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) =>
                 msg.route.resourceId === 'no-route'
-                    ? { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }
+                    ? { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }
                     : {
                         msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                         dropReasonCode: undefined,
-                        persist: false,
+                        lane: 'volatile',
                         preparedMessages: []
                     },
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
-        const noRoute = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('no-route'), DEQUEUE_TYPE);
-        const failed = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('failed'), DEQUEUE_TYPE);
+        const noRoute = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('no-route'), DEQUEUE_TYPE, Temporal.Now.instant());
+        const failed = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('failed'), DEQUEUE_TYPE, Temporal.Now.instant());
         await outbox.enqueueIfAbsent(noRoute);
         await outbox.enqueueIfAbsent(failed);
 
@@ -178,7 +178,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReason: 'No outbound transport route',
                 dropReasonCode: 'no-route',
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
@@ -191,7 +191,7 @@ describe('AL outbound dequeue work', () => {
             { text: 'stranded' },
             { ttlMs: 3_600_000 }
         );
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(stranded, DEQUEUE_TYPE);
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(stranded, DEQUEUE_TYPE, Temporal.Now.instant());
         await outbox.enqueueIfAbsent(queued);
         await runtime.ready();
 
@@ -216,14 +216,14 @@ describe('AL outbound dequeue work', () => {
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         for (const resourceId of ['charged-1', 'charged-2', 'charged-3']) {
             await outbox.enqueueIfAbsent(
-                QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(resourceId), DEQUEUE_TYPE)
+                QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage(resourceId), DEQUEUE_TYPE, Temporal.Now.instant())
             );
         }
 
@@ -240,14 +240,14 @@ describe('AL outbound dequeue work', () => {
             outbox,
             queueEngine,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         for (let charge = 0; charge < 3; charge += 1) {
             resilience.failure();
         }
-        const queued = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('gated'), DEQUEUE_TYPE);
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('gated'), DEQUEUE_TYPE, Temporal.Now.instant());
         await outbox.enqueueIfAbsent(queued);
 
         await drainEngine(queueEngine);

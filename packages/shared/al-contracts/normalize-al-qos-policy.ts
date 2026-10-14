@@ -86,7 +86,12 @@ interface ALAlgorithmAuthorizationPolicy<TAlgo extends string, TOpts extends obj
     readonly supported: readonly TAlgo[];
 }
 
-export const AL_DURABILITY_ALGOS: readonly ALDurabilityAlgo[] = ['volatile', 'local-outbox', 'local-inbox'];
+export const AL_DURABILITY_ALGOS: readonly ALDurabilityAlgo[] = [
+    'volatile',
+    'local-checkpoint',
+    'local-outbox',
+    'local-inbox'
+];
 
 export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     supportedDelivery: ['best-effort', 'at-least-once'],
@@ -110,6 +115,7 @@ export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
 
 const DURABILITY_ORDER: readonly ALDurabilityAlgo[] = [
     'volatile',
+    'local-checkpoint',
     'local-outbox',
     'local-inbox'
 ];
@@ -417,7 +423,7 @@ function pickFallbackAlgorithm<TAlgo extends string>(
         supersedence: ['latest-wins', 'none'],
         fanout: ['limit', 'all', 'random-k'],
         congestion: ['drop-low', 'defer', 'reject'],
-        durability: ['local-inbox', 'local-outbox', 'volatile'],
+        durability: ['local-inbox', 'local-outbox', 'local-checkpoint', 'volatile'],
         ownership: ['shared', 'exclusive']
     };
 
@@ -456,7 +462,7 @@ function toAckAlgo(ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-
         case 'all-logical-recipients':
             return 'receiver';
         case 'group-leader':
-            return 'subtree';
+            return 'leader';
     }
 }
 

@@ -336,7 +336,7 @@
           "request": {
             "send": {
               "id": {
-                "v": 2,
+                "v": 3,
                 "msgId": "crdt-history-{historySize}-seed-delivery-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
@@ -397,7 +397,7 @@
           "request": {
             "send": {
               "id": {
-                "v": 2,
+                "v": 3,
                 "msgId": "crdt-history-{historySize}-warm-replay-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
@@ -592,7 +592,7 @@
           "request": {
             "send": {
               "id": {
-                "v": 2,
+                "v": 3,
                 "msgId": "crdt-history-{historySize}-new-delivery-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",
@@ -653,7 +653,7 @@
           "request": {
             "send": {
               "id": {
-                "v": 2,
+                "v": 3,
                 "msgId": "crdt-history-{historySize}-replay-{loop.iteration}-{runId}",
                 "ts": 0,
                 "senderId": "{crdtWriterSessionId}",

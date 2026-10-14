@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { AppInboxIdempotencyConflictError, AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
@@ -6,7 +12,6 @@ import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-stat
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { GROUP_CONNECT_REJECTION_CODES } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
-import { describe, expect, it } from 'vitest';
 
 describe('AppInbox error classification', () => {
     it('serializes typed validation issues into the current failure contract', () => {
@@ -23,6 +28,7 @@ describe('AppInbox error classification', () => {
 
         expect(classification).toEqual({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code: 'group-topology-config-validation-failed',
             result: {
                 type: 'app-inbox-failure',
@@ -50,6 +56,7 @@ describe('AppInbox error classification', () => {
 
         expect(classification).toMatchObject({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code: 'auth-mutation-rejected',
             result: {
                 code: 'auth-mutation-rejected',
@@ -75,6 +82,7 @@ describe('AppInbox error classification', () => {
 
         expect(classification).toMatchObject({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code: 'group-policy-denied',
             result: {
                 code: 'group-policy-denied',
@@ -96,6 +104,7 @@ describe('AppInbox error classification', () => {
 
         expect(classifyAppInboxError(forgedError)).toMatchObject({
             kind: 'terminal',
+            queueFailure: 'operational',
             code: 'app-inbox-failure-metadata-invalid',
             result: {
                 code: 'app-inbox-failure-metadata-invalid',
@@ -111,6 +120,7 @@ describe('AppInbox error classification', () => {
 
         expect(classification).toEqual({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code: 'group-already-exists',
             result: {
                 type: 'app-inbox-failure',
@@ -127,6 +137,7 @@ describe('AppInbox error classification', () => {
     it.each([...GROUP_CONNECT_REJECTION_CODES])('maps the %s connect conflict to its own 409', (code) => {
         expect(classifyAppInboxError(new GroupConnectDeniedError(code, `Rejected: ${code}`))).toEqual({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code,
             result: {
                 type: 'app-inbox-failure',
@@ -145,11 +156,29 @@ describe('AppInbox error classification', () => {
             classifyAppInboxError(new GroupMutationRejectedError('The mutation is invalid'))
         ).toMatchObject({
             kind: 'terminal',
+            queueFailure: 'command-rejected',
             code: 'group-mutation-rejected',
             result: {
                 code: 'group-mutation-rejected',
                 status: 400
             }
+        });
+    });
+
+    it.each([
+        ['group-state-repository-invariant-corruption', 500],
+        ['client-state-event-collision', 409],
+        ['state-mutation-outbox-collision', 409]
+    ])('keeps %s as an operational queue failure', (code, status) => {
+        const error = Object.assign(new Error('Persistence failed'), { code });
+        expect(classifyAppInboxError(error)).toMatchObject({ kind: 'terminal', queueFailure: 'operational', result: { code, status } });
+    });
+
+    it('keeps malformed commands as operational failures', () => {
+        expect(classifyAppInboxError(new TypeError('Malformed persisted command'))).toMatchObject({
+            kind: 'terminal',
+            queueFailure: 'operational',
+            result: { status: 400 }
         });
     });
 

@@ -1138,7 +1138,7 @@ type MockWsFrame = Readonly<{
 /** The server's own ACK, built by the AL control codec's own constructor, as the server builds it. */
 function toServerAckFrame(command: MockWsFrame): string {
     return JSON.stringify(newALAckControlMessage(
-        { v: 2, msgId: `ack-${command.id.msgId}`, ts: Date.now(), senderId: MOCK_SERVER_PEER_ID },
+        { v: 3, msgId: `ack-${command.id.msgId}`, ts: Date.now(), senderId: MOCK_SERVER_PEER_ID },
         {
             ackedMsgId: command.id.msgId,
             fromPeerId: MOCK_SERVER_PEER_ID,
@@ -1799,6 +1799,7 @@ function relicSnapshotWithPlayers(
         phase,
         round: options.round ?? 1,
         maxRounds: 10,
+        createdAtEpochMs: 1,
         updatedAtEpochMs: Date.now(),
         roundTimeLimitMs: options.roundTimeLimitMs ?? 180_000,
         roundStartedAtEpochMs: options.roundStartedAtEpochMs,

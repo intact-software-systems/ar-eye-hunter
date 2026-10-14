@@ -1,4 +1,11 @@
-import { normalize } from 'node:path';
+import {
+    isAbsolute,
+    normalize,
+    relative,
+    resolve,
+    sep
+} from 'node:path';
+import process from 'node:process';
 
 import {
     COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE,
@@ -9,6 +16,10 @@ import {
 } from './api-v1-state-write-regression-reasons.ts';
 
 export const STATE_WRITE_REQUIRED_CONCURRENCY = 10;
+
+export type StateWriteDiagnosticConfiguration =
+    | { readonly kind: 'disabled'; }
+    | { readonly kind: 'enabled'; readonly directory: string; };
 
 const MAX_WARMUP_RUNS = 10;
 const MAX_MEASURED_RUNS = 100;
@@ -28,6 +39,7 @@ export interface StateWriteBenchmarkOptions {
     readonly runs: number;
     readonly concurrency: number;
     readonly out: string;
+    readonly diagnostics: StateWriteDiagnosticConfiguration;
     readonly regressionReasonsFile?: string;
     readonly regressionReasonProfile?:
         | typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
@@ -44,27 +56,12 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
             return [key, rest.join('=')];
         })
     );
-    const regressionReasonsFile = values.get('regression-reasons-file');
-    const regressionReasonProfile = values.get('regression-reason-profile');
-    if (regressionReasonsFile !== undefined) {
-        assertPerfInputPath(regressionReasonsFile);
+    const diagnosticsDirectory = values.get('diagnostics-dir');
+    if (diagnosticsDirectory !== undefined && diagnosticsDirectory.trim().length === 0) {
+        throw new Error('Diagnostic directory must be nonempty');
     }
-    if (
-        regressionReasonProfile !== undefined &&
-        regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
-    ) {
-        throw new Error(
-            `Unsupported state-write regression reason profile: ${regressionReasonProfile}`
-        );
-    }
-    if (regressionReasonsFile !== undefined && regressionReasonProfile !== undefined) {
-        throw new Error('--regression-reasons-file and --regression-reason-profile cannot be combined');
-    }
-    return {
+    const regressionReasons = parseRegressionReasonOptions(values);
+    const options: StateWriteBenchmarkOptions = {
         backend: values.get('backend') || 'postgres',
         warmup: parseIntegerOption({
             name: 'warmup',
@@ -88,6 +85,63 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
             maximum: MAX_CONCURRENCY
         }),
         out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
+        diagnostics: diagnosticsDirectory === undefined
+            ? { kind: 'disabled' }
+            : { kind: 'enabled', directory: diagnosticsDirectory },
+        ...regressionReasons
+    };
+    const issues = validateStateWriteOutputDestinations(options, process.cwd());
+    if (issues.length > 0) {
+        throw new Error(issues.join('; '));
+    }
+    return options;
+}
+
+export function validateStateWriteOutputDestinations(
+    options: Pick<StateWriteBenchmarkOptions, 'out' | 'diagnostics'>,
+    currentDirectory: string
+): readonly string[] {
+    if (options.diagnostics.kind === 'disabled') {
+        return [];
+    }
+    const directory = resolve(currentDirectory, options.diagnostics.directory);
+    const destination = resolve(currentDirectory, options.out);
+    const fromDirectory = relative(directory, destination);
+    const fromDestination = relative(destination, directory);
+    const outside = (path: string): boolean => path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+    if (!outside(fromDirectory) || !outside(fromDestination)) {
+        return ['Canonical output and diagnostic directory must be disjoint'];
+    }
+    return [];
+}
+
+function parseRegressionReasonOptions(
+    values: ReadonlyMap<string | undefined, string>
+): Pick<StateWriteBenchmarkOptions, 'regressionReasonsFile' | 'regressionReasonProfile'> {
+    const regressionReasonsFile = values.get('regression-reasons-file');
+    const regressionReasonProfile = values.get('regression-reason-profile');
+    if (regressionReasonsFile !== undefined) {
+        const issues = validatePerfInputPath(regressionReasonsFile);
+        if (issues.length > 0) {
+            throw new Error(issues.join('; '));
+        }
+    }
+    if (
+        regressionReasonProfile !== undefined &&
+        regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
+    ) {
+        throw new Error(
+            `Unsupported state-write regression reason profile: ${regressionReasonProfile}`
+        );
+    }
+    if (regressionReasonsFile !== undefined && regressionReasonProfile !== undefined) {
+        throw new Error('--regression-reasons-file and --regression-reason-profile cannot be combined');
+    }
+    return {
         ...(regressionReasonsFile === undefined ? {} : { regressionReasonsFile }),
         ...(regressionReasonProfile === undefined ? {} : { regressionReasonProfile })
     };
@@ -104,9 +158,10 @@ function parseIntegerOption(input: ParseIntegerOptionInput): number {
     return value;
 }
 
-function assertPerfInputPath(path: string): void {
+function validatePerfInputPath(path: string): readonly string[] {
     const normalized = normalize(path).replaceAll('\\', '/');
     if (normalized !== path || !normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
-        throw new Error(`Regression-reason input must remain under tmp/perf/: ${path}`);
+        return [`Regression-reason input must remain under tmp/perf/: ${path}`];
     }
+    return [];
 }

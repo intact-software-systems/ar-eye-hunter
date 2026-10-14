@@ -1,5 +1,6 @@
 import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
+    RallarBlackBoxTestEvent,
     RallarBlackBoxTestEventKind,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -41,7 +42,7 @@ export type WebSocketCommandCenterValues = Readonly<{
     applicationId: string;
     workspaceId: string;
     groupId: string;
-    wsScope: 'room' | 'all' | 'world';
+    wsScope: 'room' | 'world';
     typeId: string;
     topicId: string;
     contextId: string;
@@ -60,7 +61,7 @@ export type WebSocketEventRow = Readonly<{
     topic: string;
     atEpochMs: number;
     severity: string;
-    payload?: unknown;
+    payload?: RallarBlackBoxTestEvent['payload'];
 }>;
 
 export type WebSocketReceivedMessageRow = Readonly<{
@@ -72,7 +73,7 @@ export type WebSocketReceivedMessageRow = Readonly<{
     topicId: string;
     contextId: string;
     resourceId: string;
-    payload?: unknown;
+    payload?: RallarBlackBoxTestEvent['payload'];
 }>;
 
 export type WebSocketDiagnostic = Readonly<{
@@ -81,8 +82,8 @@ export type WebSocketDiagnostic = Readonly<{
     statusLabel: string;
     lastOpenAtEpochMs?: number;
     lastCloseAtEpochMs?: number;
-    closeCode?: unknown;
-    closeReason?: unknown;
+    closeCode?: number;
+    closeReason?: string;
     inboundCount: number;
     outboundCount: number;
     errorCount: number;
