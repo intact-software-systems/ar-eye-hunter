@@ -6,6 +6,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import {
     mkdir,
+    readFile,
     rm,
     writeFile
 } from 'node:fs/promises';
@@ -19,11 +20,13 @@ import {
     vi
 } from 'vitest';
 
+import { readApiV1Configuration } from '../../../apps/api-v1/src/configuration/read-api-v1-configuration.ts';
 import {
     assertFullStackApiConfigEvidence,
     assertFullStackControlHealthEvidence,
     assertFullStackReadinessHttpEvidence,
     createDefaultFullStackApiV1WebServer,
+    createFullStackApiProfileEnvBlock,
     evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
@@ -33,6 +36,7 @@ import { loadLiveRtcPerformanceAttempt } from '../../../tests/playwright/rallar-
 import type { ApiJsonObject } from '../../shared/api/api-json-value.ts';
 
 const CONFIG_LOADER_TEST_TIMEOUT_MS = 30_000;
+const LARGEST_CO_LOCATED_ALM_COHORT = 50;
 const captureProbeEnvironment: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     LANG: 'C',
@@ -289,6 +293,36 @@ describe('rallar-black-box full-stack API server mode', () => {
         );
         expect(server.command).not.toContain('DATABASE_URL');
         expect(server.command).not.toContain('--env-file=');
+    });
+
+    it('admits the largest co-located ALM cohort through one IP per registration and login window', async () => {
+        const profileEnvironment = new Map(
+            createFullStackApiProfileEnvBlock().split(' ').map((entry) => {
+                const separator = entry.indexOf('=');
+                return [entry.slice(0, separator), entry.slice(separator + 1)];
+            })
+        );
+        const resource = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
+
+        const configuration = await readApiV1Configuration({
+            environment: { get: (name) => profileEnvironment.get(name) },
+            readTextFile: (url) => readFile(url, 'utf8'),
+            defaultsUrl: resource('configuration/defaults-config.json'),
+            profileUrls: {
+                dev: resource('configuration/dev-config.json'),
+                prod: resource('configuration/prod-config.json'),
+                'prod-in-memory': resource('configuration/prod-in-memory-config.json'),
+                'prod-hardened': resource('configuration/prod-hardened-config.json')
+            },
+            staticClientsUrl: resource('authorised-clients.json')
+        });
+
+        const { rateLimits } = configuration.authentication;
+        expect(configuration.profile.name).toBe('prod-in-memory');
+        expect(rateLimits.windowMs).toBe(60_000);
+        expect(rateLimits.registrationIp).toBeGreaterThanOrEqual(LARGEST_CO_LOCATED_ALM_COHORT);
+        expect(rateLimits.loginIp).toBeGreaterThanOrEqual(LARGEST_CO_LOCATED_ALM_COHORT);
+        expect(rateLimits.loginUsername).toBe(100);
     });
 
     it.each([

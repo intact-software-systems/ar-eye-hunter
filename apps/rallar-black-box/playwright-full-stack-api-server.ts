@@ -76,6 +76,9 @@ const FULL_STACK_API_SERVER_MODES = [
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8080';
 const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
+const CO_LOCATED_AGENT_CEILING = 50;
+const AUTH_REQUESTS_PER_CO_LOCATED_AGENT_PER_WINDOW = 4;
+const CO_LOCATED_AUTH_IP_RATE_LIMIT = CO_LOCATED_AGENT_CEILING * AUTH_REQUESTS_PER_CO_LOCATED_AGENT_PER_WINDOW;
 
 export function readFullStackApiServerMode(
     env: Readonly<NodeJS.ProcessEnv> = process.env
@@ -248,6 +251,8 @@ export function createFullStackApiProfileEnvBlock(): string {
     return [
         'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
+        `RALLAR_REGISTRATION_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
+        `RALLAR_LOGIN_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}`,
         'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1',
         'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1'
     ].join(' ');

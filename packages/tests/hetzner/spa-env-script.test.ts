@@ -153,6 +153,44 @@ describe('Hetzner SPA public env wiring', () => {
         expect(result.stderr).not.toContain(authSecret);
     });
 
+    it('admits the largest co-located agent cohort through the controller per-IP auth limits', async () => {
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
+            'utf8'
+        );
+        const coLocatedLimit = /^CO_LOCATED_AUTH_IP_RATE_LIMIT=(\d+)$/mu.exec(deployScript);
+        expect(Number(coLocatedLimit?.[1])).toBeGreaterThanOrEqual(50);
+        expect(deployScript).toMatch(/^RALLAR_REGISTRATION_IP_RATE_LIMIT=\$\{CO_LOCATED_AUTH_IP_RATE_LIMIT\}$/mu);
+        expect(deployScript).toMatch(/^RALLAR_LOGIN_IP_RATE_LIMIT=\$\{CO_LOCATED_AUTH_IP_RATE_LIMIT\}$/mu);
+
+        const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+        const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
+        await writeFile(
+            apiEnvironmentFile,
+            'RALLAR_REGISTRATION_IP_RATE_LIMIT=200\nRALLAR_LOGIN_IP_RATE_LIMIT=200\n'
+        );
+
+        await execFileAsync(
+            'bash',
+            [path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh')],
+            {
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'normalize-api-environment',
+                    RALLAR_API_ENV_FILE: apiEnvironmentFile
+                }
+            }
+        );
+
+        expect(await readFile(apiEnvironmentFile, 'utf8')).toBe([
+            'RALLAR_REGISTRATION_IP_RATE_LIMIT=200',
+            'RALLAR_LOGIN_IP_RATE_LIMIT=200',
+            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+            ''
+        ].join('\n'));
+    });
+
     it('writes non-empty optional API overrides and removes them when rollout inputs are blank', async () => {
         const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');

@@ -197,6 +197,19 @@ The 30- and 50-agent runs occupy 16 and 18 of the account's roughly 20
 concurrent jobs, so dispatch them when no other workflow is running. TURN is
 configured on the Hetzner plane, so cross-runner RTC edges form.
 
+Agents on one host share one source IP, and the API admits 20 registrations
+and 30 logins per IP per 60 s window by default
+(`authentication.rateLimits.registrationIp` and `loginIp`), so a co-located
+cohort above 20 agents is refused at its first sign-in. The all-local
+lifecycle's API env block and the controller env written by
+`02-deploy-controller.sh` raise both to 200 (50 agents, four auth requests
+each per window); product defaults are unchanged. `08-rollout-controller.sh`
+keeps the two settings but does not add them, so redeploy a controller set up
+before this change. An `operator-spa` agent whose sign-in is refused now fails
+the worker at start with the refusal text; a `headless` agent registers at its
+recipe's first connection, where a refused registration still surfaces as that
+login's 401.
+
 In `all-local` mode only manifest 19 is a meaningful dispatch: the 4 vCPU
 runner already fails the 15-agent window while 6 agents pass, and 30 or 50
 browser contexts beside the API and control server exceed it. Carrying those
