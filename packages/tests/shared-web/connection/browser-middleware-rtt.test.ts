@@ -1,7 +1,8 @@
 import {
     BROWSER_RTT_HEARTBEAT_TTL_MS,
     createBrowserRttHeartbeatMessage,
-    registerBrowserRttEgress
+    registerBrowserRttEgress,
+    type BrowserRttEgressInput
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -13,7 +14,8 @@ import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbou
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -24,14 +26,17 @@ import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 
 const RTT_EGRESS_SESSION_ID = 'rtt-egress-session';
 
-type RegisterBrowserRttEgressInput = Parameters<typeof registerBrowserRttEgress>[0];
-type RegisterBrowserRttEgressStreamer = Parameters<typeof registerBrowserRttEgress>[1];
 type RttHeartbeatCallback = (rtt: RttMeasurementInfo) => Promise<void>;
 
 interface RttEgressFixture {
     readonly socket: TestWebSocket;
     readonly observer: ReturnType<typeof createCountingIndexedDbOperationObserver>;
     readonly heartbeat: RttHeartbeatCallback;
+}
+
+interface RttEgressConnection {
+    readonly client: JsonWebSocketClient;
+    readonly socket: TestWebSocket;
 }
 
 describe('Browser middleware RTT heartbeat messages', () => {
@@ -83,14 +88,7 @@ function rtt(version: number): RttMeasurementInfo {
  * owner's own operations rather than a stand-in the production path never touches.
  */
 async function createRttEgressFixture(): Promise<RttEgressFixture> {
-    vi.stubGlobal('WebSocket', TestWebSocket);
-    const client = new JsonWebSocketClient('ws://rtt-egress-test', createPassThroughTransportFaultPort());
-    const connected = client.connect();
-    await Promise.resolve();
-    const socket = TestWebSocket.instances.at(-1)!;
-    socket.open();
-    await connected;
-
+    const { client, socket } = await connectRttEgressSocket();
     const observer = createCountingIndexedDbOperationObserver();
     const backend = new IndexedDbAdmissionBackend({
         schemaId: AL_ADMISSION_SCHEMA_ID,
@@ -122,27 +120,38 @@ async function createRttEgressFixture(): Promise<RttEgressFixture> {
         outboundStores,
         queueEngine
     });
-    onTestFinished(() => {
-        service.close();
-        queueEngine.stop();
+    onTestFinished(async () => {
+        await service.close();
+        await queueEngine.stop();
     });
     queueEngine.start();
 
     let capturedHeartbeat: RttHeartbeatCallback | undefined;
-    const rtcRxStreamer = {
-        onRttMeasurementDo: (_topicId: string, callbacks: { onHeartbeat: RttHeartbeatCallback; }) => {
+    const rtcRxStreamer: Pick<WebRtcRxStreamerService, 'onRttMeasurementDo'> = {
+        onRttMeasurementDo: (_topicId, callbacks) => {
             capturedHeartbeat = callbacks.onHeartbeat;
         }
-    } as unknown as RegisterBrowserRttEgressStreamer;
-    const input = {
-        webSocketTransport: { webSocketQueueBox: service, qboxEngine: queueEngine },
-        clientData: { clientId: 'rtt-client', sessionId: RTT_EGRESS_SESSION_ID, isOnline: true },
-        creation: { createMessage: newALUntargetedMessage, newConnectionRequestId: () => 'rtt-request' }
-    } as unknown as RegisterBrowserRttEgressInput;
+    };
+    const input: BrowserRttEgressInput = {
+        webSocketTransport: { webSocketQueueBox: service },
+        clientData: { sessionId: RTT_EGRESS_SESSION_ID },
+        creation: { createMessage: newALUntargetedMessage }
+    };
 
     registerBrowserRttEgress(input, rtcRxStreamer);
     if (!capturedHeartbeat) {
         throw new Error('registerBrowserRttEgress did not register an RTT heartbeat callback.');
     }
     return { socket, observer, heartbeat: capturedHeartbeat };
+}
+
+async function connectRttEgressSocket(): Promise<RttEgressConnection> {
+    vi.stubGlobal('WebSocket', TestWebSocket);
+    const client = new JsonWebSocketClient('ws://rtt-egress-test', createPassThroughTransportFaultPort());
+    const connected = client.connect();
+    await Promise.resolve();
+    const socket = TestWebSocket.instances.at(-1)!;
+    socket.open();
+    await connected;
+    return { client, socket };
 }

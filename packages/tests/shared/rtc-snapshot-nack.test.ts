@@ -1,3 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
@@ -13,13 +22,7 @@ import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
@@ -55,7 +58,7 @@ describe('RTC snapshot rejection controls', () => {
             expect(fixture.delivered).toEqual([]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -75,7 +78,7 @@ describe('RTC snapshot rejection controls', () => {
             }
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -107,7 +110,7 @@ describe('RTC snapshot rejection controls', () => {
             }));
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -121,7 +124,7 @@ describe('RTC snapshot rejection controls', () => {
             expect(fixture.delivered).toEqual([]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -146,7 +149,7 @@ describe('RTC snapshot rejection controls', () => {
             expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 });
@@ -190,7 +193,7 @@ function createSnapshotAdmissionFixture(
                 nowMs: observations.nowMs
             });
         },
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

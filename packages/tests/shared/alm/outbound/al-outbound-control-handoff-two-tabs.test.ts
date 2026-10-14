@@ -1,17 +1,23 @@
-import '../../../setup-browser-indexeddb.ts';
-
-import { afterEach, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type {
     ALOutboundMessageRuntime,
-    ALOutboundRuntimeStores
+    ALOutboundRuntimeStores,
+    ALOutboundSettledSendResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+import '../../../setup-browser-indexeddb.ts';
 
 import {
     createOutboundTestRuntimeFor,
@@ -65,11 +71,13 @@ it('sends each control two tabs hand off for one admission once, in hand-off ord
 it('sends each control once, in hand-off order, when the tab that committed the first closes before sending it', async () => {
     const session = createTwoTabSession();
     const [first, second] = session.tabs as [TwoTabRuntime, TwoTabRuntime];
+    let disposing: Promise<void> | undefined;
+    onTestFinished(() => disposing);
     const commitBundle = first.stores.admissionStore.commitBundle.bind(first.stores.admissionStore);
     vi.spyOn(first.stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
         const status = await commitBundle(bundle);
         // The tab closes the moment its commit lands, before its worker claims the send.
-        first.runtime.dispose();
+        disposing = first.runtime.dispose();
         return status;
     });
 
@@ -101,37 +109,48 @@ it('sends each control once, in hand-off order, when the tab that committed the 
 });
 
 it('retries a control the closed tab never finished sending only once that tab lease lapses', async () => {
-    const session = createTwoTabSession({ crashFirstTabInsideTransport: true });
+    const abandonedSend = Promise.withResolvers<ALOutboundSettledSendResult>();
+    let beforeCleanup: readonly (ResourceEntry | undefined)[] | undefined;
+    let disposing: Promise<void> | undefined;
+    const session = createTwoTabSession({ abandonedSend: abandonedSend.promise });
     const [first, second] = session.tabs as [TwoTabRuntime, TwoTabRuntime];
 
-    expect(
-        (await first.runtime.enqueueAllIfAbsent([
+    try {
+        expect(
+            (await first.runtime.enqueueAllIfAbsent([
+                createControlMessage('control-1', session.nowMs())
+            ]))[0]!.verdict.kind
+        )
+            .toBe('admitted');
+        await expect.poll(() => session.crashedInsideTransport).toBe(true);
+        disposing = first.runtime.dispose();
+        const retried = await second.runtime.enqueueAllIfAbsent([
             createControlMessage('control-1', session.nowMs())
-        ]))[0]!.verdict.kind
-    )
-        .toBe('admitted');
-    await expect.poll(() => session.crashedInsideTransport).toBe(true);
-    first.runtime.dispose();
-    const retried = await second.runtime.enqueueAllIfAbsent([
-        createControlMessage('control-1', session.nowMs())
-    ]);
-    expect(retried[0]!.verdict.kind).toBe('duplicate');
-    await drainTabs(session, [second]);
-    // The closed tab's lease still holds the send, on either commit path, until it lapses: the only
-    // attempt so far is the closed tab's own, which may or may not have reached the wire.
-    expect(session.attempts).toEqual([{ tab: 'first', msgId: 'control-1' }]);
-    expect(session.sent).toEqual([]);
+        ]);
+        expect(retried[0]!.verdict.kind).toBe('duplicate');
+        await drainTabs(session, [second]);
+        // The closed tab's lease still holds the send, on either commit path, until it lapses: the only
+        // attempt so far is the closed tab's own, which may or may not have reached the wire.
+        expect(session.attempts).toEqual([{ tab: 'first', msgId: 'control-1' }]);
+        expect(session.sent).toEqual([]);
 
-    session.advanceMs(AL_OUTBOUND_WORK_LEASE_MS + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
-    await drainTabs(session, [second]);
+        session.advanceMs(AL_OUTBOUND_WORK_LEASE_MS + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
+        await drainTabs(session, [second]);
 
-    // Delivery after a crash inside a send is at least once; the retry is the one and only further attempt.
-    expect(session.attempts).toEqual([
-        { tab: 'first', msgId: 'control-1' },
-        { tab: 'second', msgId: 'control-1' }
-    ]);
-    expect(session.sent).toEqual([{ tab: 'second', msgId: 'control-1' }]);
-    expect(await readOwnerRows(second.stores)).toEqual({ canonical: 1, identity: 1 });
+        // Delivery after a crash inside a send is at least once; the retry is the one and only further attempt.
+        expect(session.attempts).toEqual([
+            { tab: 'first', msgId: 'control-1' },
+            { tab: 'second', msgId: 'control-1' }
+        ]);
+        expect(session.sent).toEqual([{ tab: 'second', msgId: 'control-1' }]);
+        expect(await readOwnerRows(second.stores)).toEqual({ canonical: 1, identity: 1 });
+        beforeCleanup = await readQueueRows(second.stores);
+    }
+    finally {
+        abandonedSend.resolve({ status: 'cancelled', submissionAttempted: false });
+        await (disposing ?? first.runtime.dispose());
+    }
+    expect(await readQueueRows(second.stores)).toEqual(beforeCleanup);
 });
 
 interface TransportSend {
@@ -156,13 +175,13 @@ interface TwoTabSession {
 }
 
 interface TwoTabSessionInput {
-    /** The first tab's transport never returns, as a tab closed while a send is in flight. */
-    readonly crashFirstTabInsideTransport: boolean;
+    /** Held through the crash/lease assertions; the test owns final settlement. */
+    readonly abandonedSend: Promise<ALOutboundSettledSendResult> | undefined;
 }
 
 /** Two tabs of one session: one IndexedDB database, one namespace and one sender, and the browser's one Web Lock. */
 function createTwoTabSession(
-    input: TwoTabSessionInput = { crashFirstTabInsideTransport: false }
+    input: TwoTabSessionInput = { abandonedSend: undefined }
 ): TwoTabSession {
     stubSharedWebLocks();
     let nowMs = Date.now();
@@ -199,9 +218,9 @@ function createTwoTabSession(
             }),
             sendPreparedMessage: async (prepared) => {
                 attempts.push({ tab, msgId: prepared.msgId! });
-                if (tab === 'first' && input.crashFirstTabInsideTransport) {
+                if (tab === 'first' && input.abandonedSend !== undefined) {
                     session.crashedInsideTransport = true;
-                    return await new Promise(() => {});
+                    return await input.abandonedSend;
                 }
                 sent.push({ tab, msgId: prepared.msgId! });
                 return { status: 'sent', submissionAttempted: true };
@@ -283,4 +302,11 @@ async function readOwnerRows(
         canonical: rows.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE').length,
         identity: rows.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY').length
     };
+}
+
+/** Full queue readback proves the old actor's cleanup cannot overwrite the recovered owner's rows. */
+async function readQueueRows(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>
+): Promise<readonly (ResourceEntry | undefined)[]> {
+    return await Promise.all((await stores.workQueue.getAllKeys()).map((key) => stores.workQueue.getItem(key)));
 }

@@ -1,7 +1,7 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import { computeALSeqRangePage } from '../../al-contracts/al-seq-range.ts';
-import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAdmissionStore,

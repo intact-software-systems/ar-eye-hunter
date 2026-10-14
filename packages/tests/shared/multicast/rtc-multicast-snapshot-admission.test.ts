@@ -1,9 +1,9 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
@@ -12,6 +12,7 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -22,6 +23,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
@@ -40,7 +42,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.ack.enabled).toBe(false);
         expect(plan.repair.enabled).toBe(false);
         expect(plan.nack).toMatchObject({ enabled: true, toPeerId: 'peer-1', reason: 'not-yet-in-sync' });
-        manager.dispose();
     });
 
     it('replans the same inbound message after the exact snapshot catches up', () => {
@@ -59,7 +60,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(admitted.dropReason).toBeUndefined();
         expect(admitted.localDelivery.enabled).toBe(true);
         expect(admitted.nack.enabled).toBe(false);
-        manager.dispose();
     });
 
     it.each(
@@ -83,7 +83,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
             onlineMemberCount: 2
         });
         expect(manager.planIncomingMessage(createRoomMessage(mode), { kind: 'rtc-peer', peerId: 'peer-1' }).localDelivery.enabled).toBe(deliversToNonmember);
-        manager.dispose();
     });
 
     it('does not substitute another workspace snapshot sharing the room id', () => {
@@ -98,7 +97,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
             'not-yet-in-sync: Awaiting a room authority observation'
         );
-        manager.dispose();
     });
 
     it('does not forward a current room broadcast through an explicitly foreign overlay', () => {
@@ -131,7 +129,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.dropReason).toBe('unauthorized');
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.forwarding).toMatchObject({ enabled: false, nextHopPeerIds: [] });
-        manager.dispose();
     });
 
     it('does not revive an expired cache observation through peek', () => {
@@ -142,7 +139,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(
             'not-yet-in-sync: Awaiting a room authority observation'
         );
-        manager.dispose();
     });
 
     it.each([
@@ -156,7 +152,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         const manager = createDefaultSnapshotAdmissionManager(groupCache);
 
         expect(manager.planIncomingMessage(createRoomMessage('multicast'), { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBe(dropReason);
-        manager.dispose();
     });
 
     it.each([
@@ -204,7 +199,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(plan.dropReason).toBe(`not-yet-in-sync: ${reason}`);
         expect(plan.dropReasonCode).toBe('not-yet-in-sync');
         expect(plan.nack).toMatchObject({ enabled: true, toPeerId: fromPeerId, reason: 'not-yet-in-sync' });
-        manager.dispose();
     });
 
     it('requires authority for unversioned and originating room plans', () => {
@@ -218,7 +212,6 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
         expect(manager.planIncomingMessage(versioned).dropReason).toBe(
             'not-yet-in-sync: Awaiting a room authority observation'
         );
-        manager.dispose();
     });
 });
 
@@ -226,7 +219,9 @@ function createDefaultSnapshotAdmissionManager(
     groupCache: LatestRepository<string, GroupSnapshot>,
     overlayCache = new LatestRepository<string, OverlayInfo>()
 ): WebRtcOverlayMulticastManager {
-    return new WebRtcOverlayMulticastManager({
+    const manager = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: {
             input: { sessionId: 'self' },
             readyPeerIdsForLane: () => ['peer-1', 'peer-2', 'outsider'],
@@ -246,6 +241,8 @@ function createDefaultSnapshotAdmissionManager(
         faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    onTestFinished(() => manager.dispose());
+    return manager;
 }
 
 function createRoomMessage(mode: 'multicast' | 'broadcast'): ALMessage {

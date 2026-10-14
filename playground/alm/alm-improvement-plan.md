@@ -331,7 +331,7 @@ inside QueueBox accounts for it, with cross-backend tests.
 | Cross-tab coordination                | Web Locks in [dispatch admission](../../packages/shared/alm/outbound/al-outbound-dispatch-admission.ts)                                                                                                                                                                      | A per-session durable-owner claim as a second lock name on the shared BrowserLocks port (D123); no new coordination primitive. |
 | Group authority for audiences, fences | [group-state contracts](../../packages/shared/api/group-types.ts) (`snapshotVersion`, `rosterVersion`, `GroupStateCausalRevision`), [director appointment](../../packages/shared-web/browser/director/appoint-room-director.ts)                                              | ALM consumes these; it never mints its own epoch or leader.                                                                    |
 | Exclusive claims                      | [the admission store's exclusive claim](../../packages/shared/alm/inbound/al-inbound-admission-store.ts): a row keyed by the room-scoped resource key, expiring with the message, dropped `held-by-other` with a NACK                                                        | Surface through ALM with typed outcomes; no second claim system.                                                               |
-| Browser storage                       | [IndexedDB admission database](../../packages/shared/alm/open-indexed-db-admission-database.ts), [open-indexed-db](../../packages/shared/persistence/open-indexed-db.ts)                                                                                                     | Fixed two-store schema with a schema identity and delete-on-mismatch.                                                          |
+| Browser storage                       | [IndexedDB admission database](../../packages/shared/alm/open-indexed-db-admission-database.ts), [open-indexed-db](../../packages/shared/persistence/open-indexed-db.ts)                                                                                                     | Fixed two-store schema with a schema identity and fail-closed mismatch preservation.                                           |
 
 Decision D8 governs every gap: search first, reuse, ask before a new internal library, no new
 external dependency. The [Motion buffer](../../packages/shared/rallar-motion/buffer.ts) is not a
@@ -1471,7 +1471,11 @@ file is deleted with the close). V1b-i is delivered (#650 as `84472ce`, from
 file is deleted with the close). V1b-ii is delivered (#651 as `53a9267`, from
 [alm-v1b-ii-design-proposal.md](alm-v1b-ii-design-proposal.md), decisions D189–D193 with their "As applied" notes; its plan
 file is deleted with the close). V1c (15/30/50-agent manifests sending the match payload shapes with ALM metrics
-asserted against the declared budgets) is next; its design is not written. V1d follows. Recover the current owner, entry, dataflow, failure boundary, and tests from the repository
+asserted against the declared budgets) is next; its workload, complete-workload deadline and native
+acceptance evidence are defined in [alm-v1c-design-proposal.md](alm-v1c-design-proposal.md). V1d follows as a
+60-minute retention and memory-growth proof, including delivered-marker history; its workload and budgets
+remain outcome-shaped until V1c evidence earns the design. Recover the current owner, entry, dataflow, failure
+boundary, and tests from the repository
 before editing; this roadmap is not a navigation map. When a release completes, move the next two
 slices into the concrete horizon here and leave the rest outcome-shaped. Do not add pull request
 status prose to this document.

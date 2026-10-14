@@ -1,4 +1,11 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { installQueueBoxPubSubBridge, toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -16,7 +23,7 @@ import type { ALOutboundPlanningAuthority } from '@shared/alm/outbound/admission
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -53,7 +60,7 @@ describe('verified direct room row delivery', () => {
             groupRef: ROOM,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         const winner = await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['winner-peer'], recipientScope: undefined });
         expect(winner.verdict.kind).toBe('admitted');
         const authorities: (ALOutboundPlanningAuthority | undefined)[] = [];
@@ -92,9 +99,12 @@ describe('verified direct room row delivery', () => {
             outboundStores: fixture.stores,
             queueEngine: winnerEngine
         });
-        onTestFinished(() => {
-            winnerService.dispose();
-            winnerEngine.stop();
+        onTestFinished(async () => {
+            const cleanup = await Promise.allSettled([winnerService.dispose(), winnerEngine.stop()]);
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
         vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
@@ -247,6 +257,13 @@ describe('verified direct room row delivery', () => {
     });
 });
 
+namespace RoomFixture {
+    export interface Publication {
+        readonly message: ALMessage;
+        readonly entry: ResourceEntry;
+    }
+}
+
 class RoomFixture {
     readonly repository = new FakeRuntimeStateRepository();
     readonly socket = new JsonWebSocketServer();
@@ -255,6 +272,7 @@ class RoomFixture {
     readonly stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now });
     readonly outcomes: WsOutboxDeliveryOutcome[] = [];
+    readonly retiredCompletions: Promise<PromiseSettledResult<void>[]>[] = [];
     engine = new InboxOutboxEngine();
     service = this.createService();
 
@@ -262,10 +280,14 @@ class RoomFixture {
         for (const id of ['session', 'peer-socket', 'late']) {
             this.addSocket(id);
         }
-        onTestFinished(() => {
-            this.service.dispose();
-            this.engine.stop();
+        onTestFinished(async () => {
+            this.retireTransport();
+            const outcomes = (await Promise.all(this.retiredCompletions)).flat();
             vi.restoreAllMocks();
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
     }
 
@@ -291,10 +313,14 @@ class RoomFixture {
     }
 
     restart(): void {
-        this.service.dispose();
-        this.engine.stop();
+        this.retireTransport();
         this.engine = new InboxOutboxEngine();
         this.service = this.createService();
+    }
+
+    private retireTransport(): void {
+        // Restart can happen inside a send; cancellation is immediate and final cleanup joins it.
+        this.retiredCompletions.push(Promise.allSettled([this.service.dispose(), this.engine.stop()]));
     }
 
     async redeliver(entry: ResourceEntry): Promise<void> {
@@ -308,7 +334,7 @@ class RoomFixture {
         await expect.poll(async () => (await this.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
     }
 
-    async publish(audience: readonly string[], corruption = '') {
+    async publish(audience: readonly string[], corruption = ''): Promise<RoomFixture.Publication> {
         const broadcast = newALBroadcastMessage(
             'server',
             { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
@@ -325,7 +351,7 @@ class RoomFixture {
         const message: ALMessage = corruption === 'principal'
             ? { ...broadcast, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...SCOPE, principalId: 'principal' } } }
             : broadcast;
-        const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         expect(decodePersistedALMessage(raw.resource)).toEqual(message);
         const entry = corruption === 'forged-canonical-key' ? { ...raw, key: { ...raw.key, topicId: 'AL_OUTBOUND_MESSAGE' } } : raw;
         const proof = await createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });

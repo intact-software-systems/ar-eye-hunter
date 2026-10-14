@@ -34,6 +34,7 @@ const SCHEMA_BASE_ID = 'https://rallar.dev/schemas/black-box';
 const anySchema: JsonSchema = {};
 
 const stringSchema: JsonSchema = { type: 'string' };
+const nonEmptyStringSchema: JsonSchema = { type: 'string', pattern: '\\S' };
 const numberSchema: JsonSchema = { type: 'number' };
 const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
@@ -560,11 +561,33 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         match: waitMatchSchema,
         absent: { const: true }
     }),
-    assert: strictCommandSchema('assert', {
-        source: stringSchema,
-        operator: assertOperatorSchema,
-        expected: anySchema
-    }),
+    assert: {
+        properties: { kind: { const: 'assert' } },
+        oneOf: [
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: assertOperatorSchema,
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator', 'comparisonSource'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: { const: 'sameUniqueStringSet' },
+                    comparisonSource: nonEmptyStringSchema
+                },
+                additionalProperties: false
+            }
+        ]
+    },
     barrier: strictCommandSchema('barrier', {
         barrierId: stringSchema,
         timeoutMs: { type: 'integer', minimum: 1 },

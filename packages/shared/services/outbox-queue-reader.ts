@@ -1,9 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+
+import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export class OutboxQueueReader {
@@ -16,10 +20,14 @@ export class OutboxQueueReader {
 
     public readonly outbox: QueueBoxResourceEntryRepository;
 
-    constructor(outbox: QueueBoxResourceEntryRepository) {
+    constructor(
+        outbox: QueueBoxResourceEntryRepository,
+        creationNow: QueueBoxUtilities.CreationClock = Temporal.Now.instant
+    ) {
         this.outbox = outbox;
         this.reader = new QueueMessageReader(outbox, {
             enqueueType: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+            creationNow,
             dequeueOptions: {}
         });
     }

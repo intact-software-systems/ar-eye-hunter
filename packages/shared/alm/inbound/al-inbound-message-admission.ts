@@ -17,7 +17,20 @@ import { toALInboundResyncCursor } from './al-inbound-resync-required.ts';
 import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
-import { toALInboundReceiver, validateALInboundMessage } from './validate-al-inbound-message.ts';
+import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
+
+/** A replay that never reached a commit wrote nothing, so it has no work to announce. */
+const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
+    outcome: 'completed',
+    wroteWork: false
+};
+
+/** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
+const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
+    kind: 'completed',
+    acceptance: { kind: 'not-admitted', reason: 'expired' },
+    wroteWork: false
+};
 
 export namespace ALInboundMessageAdmission {
     export interface Dependencies extends
@@ -58,19 +71,6 @@ export namespace ALInboundMessageAdmission {
         }
         | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission | undefined; };
 }
-
-/** A replay that never reached a commit wrote nothing, so it has no work to announce. */
-const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
-    outcome: 'completed',
-    wroteWork: false
-};
-
-/** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
-const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
-    kind: 'completed',
-    acceptance: { kind: 'not-admitted', reason: 'expired' },
-    wroteWork: false
-};
 
 /** One conditional admission per call; the existing QueueBox worker owns retries. */
 export class ALInboundMessageAdmission {
@@ -227,7 +227,7 @@ export class ALInboundMessageAdmission {
                 wroteWork: false
             };
         }
-        const validation = validateALInboundMessage(
+        const authorization = readALInboundMessageAuthorization(
             pending.msg,
             authority.source,
             toALInboundReceiver(
@@ -235,8 +235,8 @@ export class ALInboundMessageAdmission {
                 this.dependencies.readRelayedAckRejection
             )
         );
-        if (validation.left) {
-            return { outcome: { kind: 'non-retryable', reason: validation.left.message }, wroteWork: false };
+        if (authorization.left) {
+            return { outcome: { kind: 'non-retryable', reason: authorization.left.message }, wroteWork: false };
         }
         const result = await this.attempt(pending.msg, authority.source, this.dependencies.planIncomingMessage);
         if (result.left) {

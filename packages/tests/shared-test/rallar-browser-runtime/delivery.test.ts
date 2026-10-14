@@ -1,9 +1,10 @@
+import { Temporal } from '@js-temporal/polyfill';
 import 'fake-indexeddb/auto';
 import {
-    afterEach,
     beforeEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -37,13 +38,13 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-m
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     holdOutboundClaims,
+    readOutboundTestAdmission,
     runOutboundWorkTask
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
@@ -101,6 +102,15 @@ const unknownObservation = {
     enqueued: false
 };
 
+/** Own the connection before any subsequent fixture setup or connect can fail. */
+async function loadDeliveryRuntime(): Promise<BlackBoxRallarRuntime> {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    return runtime;
+}
+
 function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined): DeliveryFixture {
     const handle = openFacadeDelivery('ws', verdict);
     return { registry: facade.deliveries, handle, msgId: handle.msgId };
@@ -133,16 +143,17 @@ async function readEveryLedgerView(
 }
 
 beforeEach(() => {
+    onTestFinished(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
     resetFacade();
+    const registry = facade.deliveries;
+    onTestFinished(() => registry.releaseAll());
     vi.useFakeTimers();
 });
-afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-});
-
 it('projects queued, submitted and acknowledged evidence without bridging settlements', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -242,7 +253,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
 });
 
 it('projects the carrier of every settled attempt beside its outcome, in attempt order (D56)', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -283,7 +294,7 @@ it('projects the carrier of every settled attempt beside its outcome, in attempt
 });
 
 it('projects the reason of a refused admission leg the fallback carrier took over, beside its row (D185)', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -325,7 +336,7 @@ it('projects the reason of a refused admission leg the fallback carrier took ove
 });
 
 it('cancels owner attempts, preserves handles on reconnect and ends waits on an unrequested terminal state', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -333,11 +344,16 @@ it('cancels owner attempts, preserves handles on reconnect and ends waits on an 
     await runtime.close();
     await runtime.connect(connection);
     const observing = runtime.observeDelivery({ ...query, state: ['acknowledged'], timeoutMs: 100 });
+    void observing.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        await Promise.allSettled([observing]);
+    });
     expect(await runtime.cancelDelivery(query)).toMatchObject({ state: 'cancelled' });
     expect(facade.records.cancelledMessageIds).toEqual([delivery.msgId]);
     expect(await observing).toMatchObject({ state: 'cancelled' });
     expect(await runtime.readReceipts(query)).toMatchObject({ state: 'cancelled' });
-    const reloaded = await loadRuntime();
+    const reloaded = await loadDeliveryRuntime();
     for (const operation of ['observeDelivery', 'cancelDelivery', 'readReceipts'] as const) {
         expect(await reloaded[operation]({ ...query, state: ['acknowledged'], timeoutMs: 100 })).toEqual({
             handleId: 'h-1',
@@ -348,7 +364,7 @@ it('cancels owner attempts, preserves handles on reconnect and ends waits on an 
 
 it('observes a retained pending admission without storage reads and wakes on the outbound replay settlement', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     const observer = createCountingIndexedDbOperationObserver();
     const backend = new IndexedDbAdmissionBackend({
@@ -382,10 +398,15 @@ it('observes a retained pending admission without storage reads and wakes on the
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
     const commit = admissionStore.commitBundle.bind(admissionStore);
     vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mockImplementation(async (message) => {
-        const competitor = await computeOutboundTestAdmission(admissionStore, {
-            ...message,
-            id: { ...message.id, msgId: 'competing-sender-version' },
-            route: { ...message.route, resourceId: 'competing-sender-version' }
+        const competitor = await readOutboundTestAdmission({
+            store: admissionStore,
+            message: {
+                ...message,
+                id: { ...message.id, msgId: 'competing-sender-version' },
+                route: { ...message.route, resourceId: 'competing-sender-version' }
+            },
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
         });
         vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
             expect(await commit(competitor)).toBe('committed');
@@ -402,6 +423,16 @@ it('observes a retained pending admission without storage reads and wakes on the
     );
     await runtime.connect(connection);
     const sending = runtime.sendMessage({ ...send, timeoutMs: 37, ttlMs: 60_000 });
+    void sending.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await runtime.close();
+        }
+        finally {
+            await Promise.allSettled([sending]);
+        }
+    });
     const admission = await carrierAdmission.promise;
     expect(admission.verdict).toEqual({ kind: 'pending' });
     await vi.advanceTimersByTimeAsync(0);
@@ -423,21 +454,29 @@ it('observes a retained pending admission without storage reads and wakes on the
     await vi.advanceTimersByTimeAsync(37);
     expect(await sending).toMatchObject({ status: 'submitted' });
     const observing = runtime.observeDelivery({ ...query, state: ['acknowledged'], timeoutMs: 100 });
+    void observing.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        await Promise.allSettled([observing]);
+    });
     const timedOut = expect(observing).rejects.toThrow('Delivery handle h-1 did not reach [acknowledged]; last state submitted');
     await vi.advanceTimersByTimeAsync(100);
     await timedOut;
     expect(observer.getCounts()).toEqual(storageBefore);
     const replayed = runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 1_000 });
+    void replayed.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        await Promise.allSettled([replayed]);
+    });
     let settled = false;
     void replayed.then(() => {
         settled = true;
-    });
+    }, () => {});
     await vi.advanceTimersByTimeAsync(50);
     expect(settled).toBe(false);
     expect(observer.getCounts()).toEqual(storageBefore);
-    const releasing = claims.release();
-    await vi.advanceTimersByTimeAsync(1);
-    await releasing;
+    await claims.release(outbound);
     await runOutboundWorkTask(outbound);
     expect(settled).toBe(true);
     expect(await replayed).toMatchObject({ state: 'queued', enqueued: true });
@@ -447,12 +486,12 @@ it('observes a retained pending admission without storage reads and wakes on the
 });
 
 it.each(AL_DELIVERY_STATES)('decodes the shared %s state and returns a lost observation', async (state) => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     expect(await runtime.observeDelivery({ ...query, state: [state], timeoutMs: 0 })).toMatchObject({ state: 'unobservable' });
 });
 
 it('projects the real rejected handle and preserves its reason', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     sendThroughProductionSender(8);
     await runtime.connect(connection);
     expect(await runtime.sendMessage({ ...send, payload: { text: 'too large' } })).toMatchObject({
@@ -466,7 +505,7 @@ it('projects the real rejected handle and preserves its reason', async () => {
 it.each([new Error('ws lane closed'), new RallarValidationError('Invalid payload.', [])])(
     'propagates pre-envelope errors without inventing a ledger entry: %s',
     async (error) => {
-        const runtime = await loadRuntime();
+        const runtime = await loadDeliveryRuntime();
         facade.behavior.typedSend.mockRejectedValue(error);
         await runtime.connect(connection);
         await expect(runtime.sendMessage(send)).rejects.toThrow(error);
@@ -475,7 +514,7 @@ it.each([new Error('ws lane closed'), new RallarValidationError('Invalid payload
 );
 
 it('projects a durable admission as enqueued and a queued admission as queued', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -485,7 +524,7 @@ it('projects a durable admission as enqueued and a queued admission as queued', 
 });
 
 it('replays a handle\'s envelope on the named carrier and reports that admission\'s verdict, opening no handle', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -513,7 +552,7 @@ it('replays a handle\'s envelope on the named carrier and reports that admission
 });
 
 it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     facade.behavior.resolveRoomSendFence.mockReturnValue({ minSnapshotVersion: 12, rosterVersion: 3 });
     await runtime.connect(connection);
     const rtcSend = { ...send, carrier: 'rtc' };
@@ -538,7 +577,7 @@ it('stamps an absolute floor as given and resolves aboveCurrentBy against the se
 });
 
 it('passes a stated QoS request to the typed send as given, and none without one', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     const rtcSend = { ...send, carrier: 'rtc', ack: 'receiver' };
     await runtime.sendMessage({ ...rtcSend, handleId: 'h-hop', qos: { ack: { algo: 'hop' } } });
@@ -557,7 +596,7 @@ it('passes a stated QoS request to the typed send as given, and none without one
 });
 
 it('passes an exclusive claim on a named resource to the typed send as given, and neither without one', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     await runtime.sendMessage({ ...send, handleId: 'h-claim', ownership: 'exclusive', resourceId: 'pickup-7' });
     await runtime.sendMessage({ ...send, handleId: 'h-shared' });
@@ -577,7 +616,7 @@ it('passes an exclusive claim on a named resource to the typed send as given, an
 });
 
 it('addresses a lane role through the page: the server by its peer id, the receiver as the room\'s one other session', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.serverPeerId.mockReturnValue('server-peer');
     facade.behavior.getRoomSessions.mockReturnValue([
@@ -602,7 +641,7 @@ it('addresses a lane role through the page: the server by its peer id, the recei
 });
 
 it('fails a lane role the page cannot resolve with its own failure, before any handle opens', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession('bob-session'),
@@ -635,7 +674,7 @@ it('fails a lane role the page cannot resolve with its own failure, before any h
 });
 
 it('passes a principal audience as given and a fixed audience by its role, resolved by principal through the page', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession(facade.session.sessionId, { principalId: facade.session.clientId }),
@@ -658,7 +697,7 @@ it('passes a principal audience as given and a fixed audience by its role, resol
 });
 
 it('fails a fixed audience or a scope the page cannot send with its own failure, before any handle opens', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession('bob-session', { principalId: 'bob' }),
@@ -684,7 +723,7 @@ it('fails a fixed audience or a scope the page cannot send with its own failure,
 });
 
 it('lists recipient-b by its role as the one other session of another principal that is not the room\'s leader', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession(facade.session.sessionId, { principalId: facade.session.clientId }),
@@ -706,7 +745,7 @@ it('lists recipient-b by its role as the one other session of another principal 
 });
 
 it('projects a group-leader room send on rtc, refused no-leader by the injected middleware double, as rejected with no carrier attempt', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
@@ -732,7 +771,7 @@ it('projects a group-leader room send on rtc, refused no-leader by the injected 
 });
 
 it('projects a world send on rtc, refused unsupported by the injected middleware double, as rejected with no carrier attempt', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
@@ -758,7 +797,7 @@ it('projects a world send on rtc, refused unsupported by the injected middleware
 });
 
 it('projects the hand-over to the fallback carrier on every ledger view (D56)', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     await runtime.connect(connection);
     const { msgId } = await runtime.sendMessage(send);
     facade.deliveries.record({
@@ -815,7 +854,7 @@ it('decodes a declared send durability and refuses an unknown one', () => {
 });
 
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 0 });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await runtime.connect(connection);
@@ -829,7 +868,7 @@ it.each([
     { reason: 'circuit-open' as const, backpressured: true },
     { reason: 'no-route' as const, backpressured: false }
 ])('reads an unroutable $reason admission as backpressured=$backpressured', async ({ reason, backpressured }) => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     const detail = `${reason} at the ws carrier`;
     facade.behavior.typedSend.mockImplementation(async () => {
         const handle = openFacadeDelivery('ws', { kind: 'unroutable', reason, detail });
@@ -856,7 +895,7 @@ it.each([
 
 it('reads a handle the session registry dropped after terminal retention as unobservable', async () => {
     vi.setSystemTime(1_000);
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     sendThroughProductionSender(8);
     await runtime.connect(connection);
     expect(await runtime.sendMessage({ ...send, handleId: 'h-old', payload: { text: 'too large' } })).toMatchObject({ status: 'rejected' });
@@ -870,7 +909,7 @@ it('reads a handle the session registry dropped after terminal retention as unob
 });
 
 it('reads a live handle the session registry evicted past its entry bound as unobservable', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     sendThroughProductionSender(64);
     await runtime.connect(connection);
     await runtime.sendMessage({ ...send, handleId: 'h-first', payload: true });
@@ -881,11 +920,16 @@ it('reads a live handle the session registry evicted past its entry bound as uno
 });
 
 it('reads a handle the session registry evicted while an observe waited on it as unobservable', async () => {
-    const runtime = await loadRuntime();
+    const runtime = await loadDeliveryRuntime();
     sendThroughProductionSender(64);
     await runtime.connect(connection);
     await runtime.sendMessage({ ...send, handleId: 'h-first', payload: true });
     const observing = runtime.observeDelivery({ ...query, handleId: 'h-first', state: ['acknowledged'], timeoutMs: 1_000 });
+    void observing.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        await Promise.allSettled([observing]);
+    });
     await sendPastTheEntryBound(runtime);
 
     expect(await observing).toEqual({ handleId: 'h-first', ...unknownObservation });
@@ -893,7 +937,7 @@ it('reads a handle the session registry evicted while an observe waited on it as
 
 it('waits the 5,000 ms default admission budget when a send names neither timeout nor deadline', async () => {
     vi.setSystemTime(1_000);
-    const native = await loadRuntime();
+    const native = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
@@ -906,9 +950,19 @@ it('waits the 5,000 ms default admission budget when a send names neither timeou
     const { timeoutMs: _timeoutMs, ...unbounded } = send;
     let settled = false;
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'default-budget', ...unbounded, ttlMs: 60_000 });
+    void sending.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([sending]);
+        }
+    });
     void sending.then(() => {
         settled = true;
-    });
+    }, () => {});
 
     await vi.advanceTimersByTimeAsync(4_999);
     expect(settled).toBe(false);
@@ -918,7 +972,7 @@ it('waits the 5,000 ms default admission budget when a send names neither timeou
 
 it('clamps an already-elapsed command deadline to a zero admission wait', async () => {
     vi.setSystemTime(2_000);
-    const native = await loadRuntime();
+    const native = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
@@ -937,6 +991,16 @@ it('clamps an already-elapsed command deadline to a zero admission wait', async 
         now: Date.now
     });
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'elapsed', ...send, timeoutMs: 500, deadlineEpochMs: 1_500, ttlMs: 60_000 });
+    void sending.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([sending]);
+        }
+    });
 
     await vi.advanceTimersByTimeAsync(0);
     expect((await sending).value).toMatchObject({ status: 'submitted', msgId: delivery.msgId });
@@ -945,7 +1009,7 @@ it('clamps an already-elapsed command deadline to a zero admission wait', async 
 
 it('carries the earlier absolute command deadline into a pending admission wait', async () => {
     vi.setSystemTime(1_000);
-    const native = await loadRuntime();
+    const native = await loadDeliveryRuntime();
     const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
@@ -956,6 +1020,16 @@ it('carries the earlier absolute command deadline into a pending admission wait'
         now: Date.now
     });
     const sending = runtime.execute({ kind: 'messages.send', commandId: 'bounded', ...send, timeoutMs: 500, deadlineEpochMs: 1_037, ttlMs: 60_000 });
+    void sending.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([sending]);
+        }
+    });
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(37);
     const outcome = await sending;
@@ -964,9 +1038,20 @@ it('carries the earlier absolute command deadline into a pending admission wait'
 });
 
 it('reports a typed RTC rejection as a failed recipe command with its reason', async () => {
-    const { runtime } = await connectRtcRecipeRuntime();
+    const { runtime, native } = await connectRtcRecipeRuntime();
     const admission = deferRtcAdmission();
     const running = runtime.execute({ kind: 'rtc.send', commandId: 'rejected-rtc', transport: 'messages.rtc', send: { payload: true } });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     await vi.advanceTimersByTimeAsync(0);
     admission.resolve({ kind: 'refused', reason: 'oversized', detail: 'Payload exceeds 8 bytes.' });
     const result = await running;
@@ -976,7 +1061,7 @@ it('reports a typed RTC rejection as a failed recipe command with its reason', a
 });
 
 it('keeps the authored bounded-rejection cancellation probe aligned with a real terminal handle', async () => {
-    const native = await loadRuntime();
+    const native = await loadDeliveryRuntime();
     sendThroughProductionSender(8);
     await native.connect(connection);
     vi.stubGlobal('window', { __blackBoxRallar: native });
@@ -1008,6 +1093,7 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
 function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
+    onTestFinished(() => admission.resolve({ kind: 'failed', detail: 'Test cleanup' }));
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message): Promise<ALOutboundEnqueueResult> => {
         const verdict = await admission.promise;
         return { message, verdict, entries: [], trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message) };
@@ -1017,7 +1103,7 @@ function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
 }
 
 async function connectRtcRecipeRuntime(): Promise<RtcRecipeRuntime> {
-    const native = await loadRuntime();
+    const native = await loadDeliveryRuntime();
     await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
     vi.stubGlobal('window', { __blackBoxRallar: native });
     return {
@@ -1031,7 +1117,7 @@ it.each([
     { reason: 'circuit-open' as const, backpressured: true },
     { reason: 'no-route' as const, backpressured: false }
 ])('waits for delayed RTC $reason admission before evaluating loop backpressure', async ({ reason, backpressured }) => {
-    const { runtime } = await connectRtcRecipeRuntime();
+    const { runtime, native } = await connectRtcRecipeRuntime();
     const admission = deferRtcAdmission();
     let settled = false;
     const running = runtime.execute({
@@ -1042,9 +1128,20 @@ it.each([
         thresholds: { failOnBackpressure: true },
         commands: [{ kind: 'rtc.send', commandId: 'admission-send', transport: 'messages.rtc', send: { payload: true } }]
     });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     void running.then(() => {
         settled = true;
-    });
+    }, () => {});
     await vi.advanceTimersByTimeAsync(20);
     expect(settled).toBe(false);
     admission.resolve({ kind: 'unroutable', reason, detail: reason });
@@ -1058,7 +1155,7 @@ it.each([
     { reason: 'circuit-open' as const, backpressured: true },
     { reason: 'no-route' as const, backpressured: false }
 ])('waits for delayed RTC $reason admission before evaluating stream backpressure', async ({ reason, backpressured }) => {
-    const { runtime } = await connectRtcRecipeRuntime();
+    const { runtime, native } = await connectRtcRecipeRuntime();
     const admission = deferRtcAdmission();
     const running = runtime.execute({
         kind: 'rtc.stream',
@@ -1069,6 +1166,17 @@ it.each([
         continueOnSendFailure: true,
         thresholds: { maxBackpressureCount: 0 },
         send: { payload: true }
+    });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
     });
     await vi.advanceTimersByTimeAsync(20);
     admission.resolve({ kind: 'unroutable', reason, detail: reason });
@@ -1081,9 +1189,20 @@ it.each([
 });
 
 it.each(['rtc.send', 'rtc.stream'] as const)('projects delayed durable admission through %s without waiting for delivery', async (kind) => {
-    const { runtime } = await connectRtcRecipeRuntime();
+    const { runtime, native } = await connectRtcRecipeRuntime();
     const admission = deferRtcAdmission();
     const running = runtime.execute({ kind, commandId: 'durable', transport: 'messages.rtc', count: 1, intervalMs: 1, send: { payload: true } });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     await vi.advanceTimersByTimeAsync(20);
     admission.resolve({ kind: 'admitted', durable: true, queuedAttempts: 1 });
     const result = await running;
@@ -1097,8 +1216,8 @@ it.each(['rtc.send', 'rtc.stream'] as const)('projects delayed durable admission
 
 it.each(['messages.rtc', undefined] as const)('bounds a pending RTC admission with the earlier deadline for transport %s', async (transport) => {
     vi.setSystemTime(1_000);
-    const { runtime } = await connectRtcRecipeRuntime();
-    deferRtcAdmission();
+    const { runtime, native } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
     let settled = false;
     const running = runtime.execute({
         kind: 'rtc.send',
@@ -1108,9 +1227,20 @@ it.each(['messages.rtc', undefined] as const)('bounds a pending RTC admission wi
         deadlineEpochMs: 1_037,
         send: { payload: true, ttlMs: 60_000 }
     });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     void running.then(() => {
         settled = true;
-    });
+    }, () => {});
     await vi.advanceTimersByTimeAsync(36);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -1120,9 +1250,20 @@ it.each(['messages.rtc', undefined] as const)('bounds a pending RTC admission wi
 
 it('uses the default 5,000 ms RTC admission budget and clears the wait when the runtime closes', async () => {
     const { native } = await connectRtcRecipeRuntime();
-    deferRtcAdmission();
+    const admission = deferRtcAdmission();
     let settled = false;
     const running = native.send({ payload: true, ttlMs: 60_000 });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     void running.then(() => {
         settled = true;
     }, () => {
@@ -1138,8 +1279,8 @@ it('uses the default 5,000 ms RTC admission budget and clears the wait when the 
 
 it.each(['rtc.send', 'rtc.stream'] as const)('clamps an elapsed %s deadline instead of waiting for admission', async (kind) => {
     vi.setSystemTime(2_000);
-    const { runtime } = await connectRtcRecipeRuntime();
-    deferRtcAdmission();
+    const { runtime, native } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
     const running = runtime.execute({
         kind,
         commandId: 'elapsed-rtc',
@@ -1149,6 +1290,17 @@ it.each(['rtc.send', 'rtc.stream'] as const)('clamps an elapsed %s deadline inst
         count: 1,
         intervalMs: 1,
         send: { payload: true, ttlMs: 60_000 }
+    });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
     });
     await vi.advanceTimersByTimeAsync(0);
     expect((await running).value).toMatchObject(
@@ -1160,8 +1312,19 @@ it.each(['rtc.send', 'rtc.stream'] as const)('clamps an elapsed %s deadline inst
 
 it('returns the still-submitted RTC evidence when the default admission budget ends', async () => {
     const { native } = await connectRtcRecipeRuntime();
-    deferRtcAdmission();
+    const admission = deferRtcAdmission();
     const running = native.send({ payload: true, ttlMs: 60_000 });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await running).toMatchObject({ message: { state: 'submitted', enqueued: false, backpressured: false } });
     expect(vi.getTimerCount()).toBe(0);
@@ -1169,8 +1332,8 @@ it('returns the still-submitted RTC evidence when the default admission budget e
 
 it.each(['messages.rtc', undefined] as const)('shares the stream command deadline across delayed frames for transport %s', async (transport) => {
     vi.setSystemTime(1_000);
-    const { runtime } = await connectRtcRecipeRuntime();
-    deferRtcAdmission();
+    const { runtime, native } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
     const running = runtime.execute({
         kind: 'rtc.stream',
         commandId: 'bounded-stream',
@@ -1180,6 +1343,17 @@ it.each(['messages.rtc', undefined] as const)('shares the stream command deadlin
         count: 2,
         intervalMs: 20,
         send: { payload: true, ttlMs: 60_000 }
+    });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
     });
     await vi.advanceTimersByTimeAsync(37);
     expect((await running).value).toMatchObject({
@@ -1196,13 +1370,35 @@ it('deducts sender connection time from the RTC admission deadline', async () =>
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     const connection = Promise.withResolvers<typeof fixture.middleware>();
     fixture.connect.mockReturnValue(connection.promise);
-    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockReturnValue(new Promise(() => undefined));
+    const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
+    onTestFinished(() => {
+        connection.resolve(fixture.middleware);
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+    });
+    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
+        message,
+        verdict: await admission.promise,
+        entries: [],
+        trackedReceiptAlgo: 'none'
+    }));
     facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     let settled = false;
     const running = native.send({ payload: true, ttlMs: 60_000 }, 1_037);
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        connection.resolve(fixture.middleware);
+        admission.resolve({ kind: 'failed', detail: 'Test cleanup' });
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     void running.then(() => {
         settled = true;
-    });
+    }, () => {});
     await vi.advanceTimersByTimeAsync(20);
     connection.resolve(fixture.middleware);
     await vi.advanceTimersByTimeAsync(16);
@@ -1225,7 +1421,7 @@ it.each(
         { scenarioId: 'deadline-expiry', state: 'failed' }
     ] as const
 )('requires successful admission for $scenarioId after the handle reaches $state', async ({ scenarioId, state }) => {
-    const { runtime } = await connectRtcRecipeRuntime();
+    const { runtime, native } = await connectRtcRecipeRuntime();
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
     if (state === 'rejected' || state === 'failed') {
         vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
@@ -1270,6 +1466,16 @@ it.each(
         (command.kind === 'assert' && command.commandId?.includes('assert-admitted'))
     );
     const running = runtime.execute({ kind: 'recipe.run', commandId: 'conformance', recipe: { ...scenario.sender, commands } });
+    void running.catch(() => {});
+    onTestFinished(async () => {
+        facade.deliveries.releaseAll();
+        try {
+            await native.close();
+        }
+        finally {
+            await Promise.allSettled([running]);
+        }
+    });
     await vi.advanceTimersByTimeAsync(3_000);
     const result = await running;
     expect(result.ok, result.error?.message).toBe(state !== 'rejected' && state !== 'failed');

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -393,7 +394,7 @@ describe('volatile inbound canonical envelope reclamation', () => {
                 selfPeerId: 'receiver',
                 stores: durableStores,
                 volatileStores,
-                toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+                toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
             }),
             carrier: 'ws',
             planIncomingMessage: planner,

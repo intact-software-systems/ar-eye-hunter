@@ -34,7 +34,7 @@ export const MUTATION_ROUTE_OWNER_PATHS = {
 } as const;
 
 export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
-    'AppAdminInboxService.processCommand': 'processCommand',
+    'AppAdminInboxService.pruneExpiredCommand': 'pruneExpiredCommand',
     'AuthInboxHandler.processAuthMutation': 'authInboxHandler.processAuthMutation',
     'AppClientInboxService.processAuthorisedWsConnect': 'processAuthorisedWsConnect',
     'AppClientInboxService.processAuthorisedWsDisconnect': 'processAuthorisedWsDisconnect',
@@ -1001,6 +1001,6 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         enqueueSource: 'ap',
         enqueueMarker: 'pruneExpired',
         ownerSource: 'N',
-        owner: 'AppAdminInboxService.processCommand'
+        owner: 'AppAdminInboxService.pruneExpiredCommand'
     }
 ];

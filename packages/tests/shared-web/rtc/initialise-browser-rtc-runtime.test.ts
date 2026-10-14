@@ -36,7 +36,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import {
     createDefaultWsQueueBoxClientService,
@@ -165,7 +165,7 @@ describe('browser RTC runtime composition', () => {
             }
             finally {
                 try {
-                    queueBox.close();
+                    await queueBox.close();
                 }
                 finally {
                     nativeRuntime.dispose();

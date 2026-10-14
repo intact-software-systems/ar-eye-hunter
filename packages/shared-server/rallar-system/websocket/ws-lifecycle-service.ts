@@ -25,7 +25,7 @@ export interface RallarWsLifecycleHandlers {
 export interface RallarWsLifecycleRuntime {
     getPendingCloseCount(): number;
     retryPending(): Promise<void>;
-    stop(): void;
+    stop(): Promise<void>;
 }
 
 export interface RallarWsLifecycleSocketService {
@@ -58,6 +58,7 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
     private readonly handlers: RallarWsLifecycleHandlers;
     private readonly pending = new Map<string, PendingClose>();
     private stopped = false;
+    private readonly closeWrites = new Set<Promise<void>>();
 
     constructor(
         wsQBoxServerService: RallarWsLifecycleSocketService,
@@ -90,16 +91,24 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
     async retryPending(): Promise<void> {
         await Promise.all([...this.pending.values()].map(async (entry) => {
             entry.cancelScheduledRetry?.();
-            await this.writeClose(entry.input, entry.token);
+            await this.startCloseWrite(entry.input, entry.token);
         }));
     }
 
-    stop(): void {
+    async stop(): Promise<void> {
         this.stopped = true;
         for (const entry of [...this.pending.values()]) {
             this.release(entry.input);
         }
         this.wsQBoxServerService.socket.removeWebsocketCallbackById(WS_LIFECYCLE_CALLBACK_ID);
+        const outcomes = await Promise.allSettled([...this.closeWrites]);
+        const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
+        if (failures.length > 0) {
+            throw new AggregateError(
+                failures.map((failure) => failure.reason),
+                'WebSocket close work failed during shutdown'
+            );
+        }
     }
 
     private observeClose(input: RallarWsLifecycleCloseInput): void {
@@ -125,7 +134,7 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
             token: {}
         };
         this.pending.set(closeKey(input), entry);
-        void this.writeClose(input, entry.token);
+        void this.startCloseWrite(input, entry.token);
     }
 
     private hasNewerGeneration(input: RallarWsLifecycleCloseInput): boolean {
@@ -133,6 +142,16 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
             candidate.input.sessionId === input.sessionId &&
             compareGeneration(candidate.input, input) > 0
         );
+    }
+
+    private startCloseWrite(input: RallarWsLifecycleCloseInput, token: object): Promise<void> {
+        const completion = this.writeClose(input, token);
+        this.closeWrites.add(completion);
+        void completion.then(
+            () => this.closeWrites.delete(completion),
+            () => this.closeWrites.delete(completion)
+        );
+        return completion;
     }
 
     private async writeClose(
@@ -154,10 +173,14 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
         };
         this.pending.set(closeKey(input), attempted);
         try {
-            await Promise.all([
-                this.handlers.enqueueClientSessionDisconnect(input),
-                this.handlers.enqueueGroupSessionCleanup(input)
+            const outcomes = await Promise.allSettled([
+                (async () => await this.handlers.enqueueClientSessionDisconnect(input))(),
+                (async () => await this.handlers.enqueueGroupSessionCleanup(input))()
             ]);
+            const failures = outcomes.filter((outcome) => outcome.status === 'rejected');
+            if (failures.length > 0) {
+                throw new AggregateError(failures.map((failure) => failure.reason), 'WebSocket close enqueues failed');
+            }
             this.release(input);
         }
         catch (error) {
@@ -180,7 +203,7 @@ class WsLifecycleCloseRuntime implements RallarWsLifecycleRuntime {
         );
         const cancelScheduledRetry = this.handlers.retry.schedule(
             this.handlers.retry.delaysMs[delayIndex]!,
-            async () => await this.writeClose(entry.input, entry.token)
+            async () => await this.startCloseWrite(entry.input, entry.token)
         );
         this.pending.set(closeKey(entry.input), { ...entry, cancelScheduledRetry });
     }

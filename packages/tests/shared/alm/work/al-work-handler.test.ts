@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -11,12 +19,17 @@ import type {
 } from '@shared/alm/work/al-work-handler.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from '@shared/alm/work/al-work-queue-port.ts';
+import type {
+    ALWorkClaim,
+    ALWorkOutcome,
+    ALWorkQueuePort,
+    ALWorkRelease
+} from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
 import {
     collectProbe,
     fakePort,
@@ -59,13 +72,13 @@ describe('ALWorkHandler', () => {
             runClaim: async (claim) => claim.entry.key.contextId === 'w-2' ? { status: 'retry' } : { status: 'completed' },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
         await handler.ready();
         expect(released).toEqual(['w-1:completed', 'w-2:retry']);
 
         const before = Date.now();
         handler.committed({ dueByMs: 1_000, writtenKeys: [] });
         expect(Date.now() - before).toBeLessThan(5);
-        handler.dispose();
     });
 
     it('classifies thrown errors: corruption rejects, other errors retry, retained results settle later', async () => {
@@ -98,6 +111,7 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -106,7 +120,6 @@ describe('ALWorkHandler', () => {
         // two the flush wrote have an order relative to each other.
         expect(released.filter((entry) => entry !== 'c-3:completed')).toEqual(['c-1:non-retryable', 'c-2:retry']);
         expect(released).toContain('c-3:completed');
-        handler.dispose();
     });
 
     it('resolves ready() only once the batch its bootstrap started has settled', async () => {
@@ -137,14 +150,15 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
+        onTestFinished(() => releaseClaim?.());
         const readyPromise = handler.ready();
         expect(released).toEqual([]);
 
         releaseClaim?.();
         await readyPromise;
         expect(released).toEqual(['slow-1:completed']);
-        handler.dispose();
     });
 
     it('finalizes a seeded exhausted claim as non-retryable and counts it in diagnostics', async () => {
@@ -170,6 +184,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => diagnosticsEvents.push(event)
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -182,8 +197,6 @@ describe('ALWorkHandler', () => {
             rescheduledCount: 0,
             rejectedCount: 1
         });
-
-        handler.dispose();
     });
 
     it('splits one batch into its selection, its reservation, its claims and their releases', async () => {
@@ -224,6 +237,7 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: (event) => diagnosticsEvents.push(event)
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -248,8 +262,6 @@ describe('ALWorkHandler', () => {
             queueWaitMs: PHASE_QUEUE_WAIT_MS,
             startedAtMs: runLoopStartedAtMs
         }]);
-
-        handler.dispose();
     });
 
     it('counts the exhaustion sweep\'s own release in the batch it ran in', async () => {
@@ -275,6 +287,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => diagnosticsEvents.push(event)
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -294,8 +307,6 @@ describe('ALWorkHandler', () => {
             queueWaitMs: 0,
             startedAtMs: PHASE_BATCH_START_MS
         }]);
-
-        handler.dispose();
     });
 
     it('starts a batch through the engine\'s isWork -> runnable path when the probe reports due work', async () => {
@@ -335,6 +346,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         expect(released).toEqual([]);
@@ -348,8 +360,6 @@ describe('ALWorkHandler', () => {
             await engine.executeOnce();
             return released;
         }).toEqual(['engine-driven:completed']);
-
-        handler.dispose();
     });
 
     it('drives readiness from the injected probe alone', async () => {
@@ -390,6 +400,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         wakeAtCalls.length = 0;
@@ -409,8 +420,6 @@ describe('ALWorkHandler', () => {
             await engine.executeOnce();
             return released;
         }).toEqual(['later:completed']);
-
-        handler.dispose();
     });
 
     it('runs a follow-up batch for work committed mid-batch, without the engine ever running', async () => {
@@ -463,6 +472,8 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
+        onTestFinished(() => releaseFirst?.());
 
         // The engine is never started (ownsQueueEngine: false), so only the bootstrap batch runs here.
         await handler.ready();
@@ -484,7 +495,6 @@ describe('ALWorkHandler', () => {
         // Two distinct claim() calls after ready() prove the second entry arrived through the follow-up
         // batch that the finally block of runBatch() starts, not through the claim() call of the first batch.
         expect(claimCallCount).toBe(2);
-        handler.dispose();
     });
 
     it('flushes one batch of mixed outcomes in a single releaseAll, in claim order', async () => {
@@ -513,20 +523,22 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
         expect(flushes).toHaveLength(1);
         expect(flushes[0]!.map((release) => `${release.claim.entry.key.contextId}:${release.outcome.status}`))
             .toEqual(['flush-1:completed', 'flush-2:retry', 'flush-3:non-retryable']);
-        handler.dispose();
     });
 
     it('flushes the claim a disposed batch already ran before it abandons the rest', async () => {
         const flushes: ALWorkRelease[][] = [];
         const port = recordingPort(['abort-1', 'abort-2'], flushes);
-        let handler: ALWorkHandler | undefined;
-        handler = new ALWorkHandler({
+        const claimEntered = Promise.withResolvers<void>();
+        const finishClaim = Promise.withResolvers<void>();
+        onTestFinished(() => finishClaim.resolve());
+        const handler = new ALWorkHandler({
             workerId: 'abort-worker',
             port,
             queueEngine: createEngine(),
@@ -538,15 +550,21 @@ describe('ALWorkHandler', () => {
             selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
             claimSuccessor: undefined,
             runClaim: async () => {
-                handler?.dispose();
+                claimEntered.resolve();
+                await finishClaim.promise;
                 return { status: 'completed' };
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
-        await handler.ready();
+        const bootstrap = handler.ready();
+        await claimEntered.promise;
+        const disposing = handler.dispose();
+        finishClaim.resolve();
+        await bootstrap;
+        await disposing;
 
-        // The second claim is never run, and the first is not stranded reserved by the disposal.
         expect(flushes).toHaveLength(1);
         expect(flushes[0]!.map((release) => release.claim.entry.key.contextId)).toEqual(['abort-1']);
     });
@@ -574,6 +592,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -583,7 +602,6 @@ describe('ALWorkHandler', () => {
             .toEqual([['stranded-finalization']]);
         expect(consoleErrorSpy).toHaveBeenCalledWith('ALM work batch failed', expect.any(Error));
         consoleErrorSpy.mockRestore();
-        handler.dispose();
     });
 
     it('selects no work once dispose() lands while the exhausted-work finalization is in flight', async () => {
@@ -615,12 +633,15 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
+        onTestFinished(() => releaseFinalize.resolve());
         const bootstrap = handler.ready();
         await finalizeEntered.promise;
-        handler.dispose();
+        const disposing = handler.dispose();
         releaseFinalize.resolve();
         await bootstrap;
+        await disposing;
 
         expect(selectCallCount).toBe(0);
     });
@@ -638,7 +659,12 @@ describe('ALWorkHandler', () => {
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'cas-loser'));
         let attemptCount = 0;
-        const engine = createEngine();
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => nowMs,
+            random: () => 0.5,
+            reportTaskFailure: () => undefined
+        });
+        onTestFinished(() => engine.stop());
         const handler = new ALWorkHandler({
             workerId: 'cas-worker',
             port,
@@ -656,6 +682,7 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         expect(attemptCount).toBe(1);
@@ -670,7 +697,8 @@ describe('ALWorkHandler', () => {
         expect(attemptCount).toBe(1);
 
         nowMs = 10_001;
-        await engine.executeOnce();
+        expect(await engine.executeOnce()).toBe(true);
+        await engine.stop();
         expect(attemptCount).toBe(2);
 
         // The second loss earns the policy's second delay, so the same passes still buy no attempt.
@@ -680,8 +708,6 @@ describe('ALWorkHandler', () => {
         expect(attemptCount).toBe(2);
         expect((await port.readEntry(newWorkEntry('AL_TEST', 'cas-loser').key))?.dequeueAudit.nextTs?.epochMilliseconds)
             .toBe(10_003);
-
-        handler.dispose();
     });
 
     it('leaves an empty batch to the probe\'s next ready time instead of re-entering on the same tick', async () => {
@@ -718,6 +744,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -732,8 +759,6 @@ describe('ALWorkHandler', () => {
         expect(selectCallCount).toBe(1);
         expect(new Set(wakeAtCalls)).toEqual(new Set([readyAtMs]));
         expect(wakeCalls).toEqual([]);
-
-        handler.dispose();
     });
 
     it('answers a thousand idle engine rounds from the one storage probe that opened them', async () => {
@@ -756,6 +781,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         probeCount = 0;
@@ -765,7 +791,6 @@ describe('ALWorkHandler', () => {
         }
 
         expect(probeCount).toBe(1);
-        handler.dispose();
     });
 
     it('reads nothing for its own commit whose batch claimed it clean, and probes once after an engine batch', async () => {
@@ -794,6 +819,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         probeCount = 0;
@@ -821,8 +847,6 @@ describe('ALWorkHandler', () => {
         }
         expect(released).toEqual(['committed-row:completed', 'engine-row:completed']);
         expect(probeCount).toBe(3);
-
-        handler.dispose();
     });
 
     it('names what emptied the memory every probe replaces', async () => {
@@ -849,6 +873,7 @@ describe('ALWorkHandler', () => {
             runClaim: async (claim) => claim.entry.key.contextId === 'retried-row' ? { status: 'retry' } : { status: 'completed' },
             diagnostics: (event) => collectProbe(probes, event)
         });
+        onTestFinished(() => handler.dispose());
 
         // The bootstrap batch empties nothing: no probe has taken a memory for it to invalidate.
         await handler.ready();
@@ -882,8 +907,6 @@ describe('ALWorkHandler', () => {
             { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000, durationMs: 0 },
             { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 15_000, durationMs: 0 }
         ]);
-
-        handler.dispose();
     });
 
     it('re-probes storage when a retained claim settles after its own batch ended', async () => {
@@ -917,6 +940,8 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'retained', settled }),
             diagnostics: (event) => collectProbe(probes, event)
         });
+        onTestFinished(() => handler.dispose());
+        onTestFinished(() => settleRetained?.({ status: 'completed' }));
 
         await handler.ready();
         probeCount = 0;
@@ -935,8 +960,6 @@ describe('ALWorkHandler', () => {
         expect(probeCount).toBe(2);
         // The release, not the batch that ended long before it, is what emptied the standing memory.
         expect(probes.map((probe) => probe.cause)).toEqual(['no-memory', 'retained-release']);
-
-        handler.dispose();
     });
 
     it('claims a row another writer enqueued once the wake that announced it reaches the owner', async () => {
@@ -969,6 +992,7 @@ describe('ALWorkHandler', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         await engine.executeOnce();
@@ -981,7 +1005,6 @@ describe('ALWorkHandler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(claimed).toEqual(['externally-written']);
-        handler.dispose();
     });
 
     it('leaves the other owner on one engine its remembered answer when an owner wakes for itself', async () => {
@@ -1008,6 +1031,7 @@ describe('ALWorkHandler', () => {
             })
         );
         for (const handler of handlers) {
+            onTestFinished(() => handler.dispose());
             await handler.ready();
         }
         await engine.executeOnce();
@@ -1024,9 +1048,6 @@ describe('ALWorkHandler', () => {
         await engine.executeOnce();
 
         expect(probeCounts.outbound).toBeGreaterThan(afterBootstrap.outbound);
-        for (const handler of handlers) {
-            handler.dispose();
-        }
     });
 
     it('turns a remembered ready time into a batch without reading storage again', async () => {
@@ -1056,6 +1077,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         probeCount = 0;
@@ -1071,8 +1093,6 @@ describe('ALWorkHandler', () => {
 
         expect(released).toEqual(['later:completed']);
         expect(probeCount).toBe(1);
-
-        handler.dispose();
     });
 
     it('re-probes storage once the remembered answer reaches the idle bound', async () => {
@@ -1096,6 +1116,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
         probeCount = 0;
@@ -1111,8 +1132,6 @@ describe('ALWorkHandler', () => {
         nowMs = 10_000 + AL_WORK_READINESS_MEMORY_MS;
         await engine.executeOnce();
         expect(probeCount).toBe(2);
-
-        handler.dispose();
     });
 
     it('owns a committed()-triggered corruption without an unhandled rejection, while ready() on a fresh handler still rejects', async () => {
@@ -1134,8 +1153,9 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => freshHandler.dispose());
         await expect(freshHandler.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        freshHandler.dispose();
+        await freshHandler.dispose();
 
         let shouldCorrupt = false;
         const selectReady = async (p: ALWorkQueuePort, size: number): Promise<ALWorkReadySelection> => {
@@ -1158,6 +1178,7 @@ describe('ALWorkHandler', () => {
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         const unhandled: Error[] = [];
         const onUnhandledRejection: NodeJS.UnhandledRejectionListener = (reason) => {
@@ -1177,7 +1198,6 @@ describe('ALWorkHandler', () => {
         finally {
             process.off('unhandledRejection', onUnhandledRejection);
             consoleErrorSpy.mockRestore();
-            handler.dispose();
         }
     });
 
@@ -1205,6 +1225,7 @@ describe('ALWorkHandler', () => {
             diagnostics: undefined,
             storageHealth: new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) })
         });
+        onTestFinished(() => handler.dispose());
 
         try {
             await handler.ready();
@@ -1222,7 +1243,6 @@ describe('ALWorkHandler', () => {
         }
         finally {
             consoleErrorSpy.mockRestore();
-            handler.dispose();
         }
     });
 
@@ -1246,6 +1266,7 @@ describe('ALWorkHandler', () => {
             diagnostics: undefined,
             storageHealth
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -1254,7 +1275,6 @@ describe('ALWorkHandler', () => {
                 .toEqual(['failing', 'healthy'])
         );
         expect(events[1]).toMatchObject({ lastRecoveryPointAtMs: 2_000 });
-        handler.dispose();
     });
 });
 
@@ -1288,6 +1308,7 @@ describe('ALWorkHandler successor claims', () => {
                 }
             }
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
@@ -1296,7 +1317,6 @@ describe('ALWorkHandler successor claims', () => {
             .toEqual([['chain-1:completed', 'chain-2:completed', 'chain-3:completed']]);
         expect(batches).toHaveLength(1);
         expect(batches[0]).toMatchObject({ claimedCount: 3, completedCount: 3 });
-        handler.dispose();
     });
 
     it.each(['retry', 'non-retryable', 'not-ready', 'thrown'] as const)(
@@ -1332,12 +1352,12 @@ describe('ALWorkHandler successor claims', () => {
                 },
                 diagnostics: undefined
             });
+            onTestFinished(() => handler.dispose());
 
             await handler.ready();
 
             expect(runs).toEqual(['ended']);
             expect(asked).toEqual([]);
-            handler.dispose();
         }
     );
 
@@ -1364,12 +1384,12 @@ describe('ALWorkHandler successor claims', () => {
             diagnostics: undefined,
             storageHealth: new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) })
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
         expect(runs).toEqual(['first', 'second']);
         expect(events.some((event) => event.kind === 'health' && event.status === 'failing')).toBe(true);
-        handler.dispose();
     });
 
     it('runs at most a page per batch, its successors included', async () => {
@@ -1393,17 +1413,19 @@ describe('ALWorkHandler successor claims', () => {
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
 
         await handler.ready();
 
         expect(runs).toEqual(['page-1', 'page-2', 'promoted-1', 'promoted-2']);
         expect(promoted).toBe(2);
-        handler.dispose();
     });
 });
 
 function createEngine(): InboxOutboxEngine {
-    return new InboxOutboxEngine();
+    const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
+    return engine;
 }
 
 /** A port whose every flush is kept whole, so a pin can count the batches and read their order. */

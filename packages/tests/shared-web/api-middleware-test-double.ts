@@ -56,6 +56,7 @@ export function createDefaultApiMiddlewareTestDouble(
                 ...middlewareOverrides.webRtcGroupManager
             }),
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
+                dispose: vi.fn<NonNullable<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>['dispose']>(() => Promise.resolve()),
                 ...middlewareOverrides.webRtcOverlayMulticastManager
             }),
             heartbeat: createHeartbeatDouble(
@@ -107,7 +108,7 @@ function createQboxEngineDouble(
 ): RallarBrowserMiddleware['qboxEngine'] {
     return toServiceTestDouble<RallarBrowserMiddleware['qboxEngine']>({
         wake: vi.fn(),
-        stop: vi.fn(),
+        stop: vi.fn<RallarBrowserMiddleware['qboxEngine']['stop']>(() => Promise.resolve()),
         ...override
     });
 }
@@ -135,7 +136,7 @@ function createWebSocketQueueBoxDouble(
             maxReconnectAttempts: 12,
             reconnectExhausted: false
         })),
-        close: vi.fn(),
+        close: vi.fn<RallarBrowserMiddleware['webSocketQueueBox']['close']>(() => Promise.resolve()),
         onAnyInboxMessageDo: vi.fn(() => queueBox),
         removeAnyInboxMessageCallback: vi.fn(() => true),
         socket: createWebSocketClientDouble(),
@@ -212,7 +213,7 @@ function createRtcRxStreamerDouble(
         setMediaPolicy: vi.fn(),
         stopLocalMedia: vi.fn(),
         stopAllHeartbeats: vi.fn(),
-        dispose: vi.fn(),
+        dispose: vi.fn<RallarBrowserMiddleware['rtcRxStreamer']['dispose']>(() => Promise.resolve()),
         ...override
     });
 

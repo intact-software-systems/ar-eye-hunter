@@ -1,23 +1,31 @@
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type {
+    EntityStatus,
+    Key,
+    ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     rowsToMap,
     toDomain,
-    type ResourceInboxRow
+    toResourceInboxStatusAndAttempts,
+    type ResourceInboxRow,
+    type ResourceInboxStatusAndAttempts
 } from './resource-inbox-row-codec.ts';
 
 const MAX_ROWS_TO_RETURN = 50;
 
 export class PSqlResourceInboxEntryReader {
     private readonly sql: PSqlSql;
+    private readonly now: () => Date;
 
-    constructor(sql: PSqlSql) {
+    constructor(sql: PSqlSql, now: () => Date) {
         this.sql = sql;
+        this.now = now;
     }
 
     async findByKey(key: Key): Promise<ResourceEntry | null> {
-        const now = new Date();
+        const now = this.now();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -48,19 +56,20 @@ export class PSqlResourceInboxEntryReader {
         topicId: string,
         resourceId: string
     ): Promise<readonly ResourceEntry[]> {
+        const now = this.now();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_topic_id = ${topicId}
               and ri_resource_id = ${resourceId}
-              and expire_ts > (now() at time zone 'UTC')
+              and expire_ts > ${now}
             order by ri_row_id
         `;
         return rows.map(toDomain);
     }
 
     async findAllKeys(): Promise<Key[]> {
-        const now = new Date();
+        const now = this.now();
         const rows = await this.sql<Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]>`
             select ri_topic_id, ri_resource_id, fk_ext_bank_id
             from resource_inbox
@@ -76,7 +85,7 @@ export class PSqlResourceInboxEntryReader {
     }
 
     async findByTopicId(topicId: string): Promise<Map<string, ResourceEntry>> {
-        const now = new Date();
+        const now = this.now();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -89,7 +98,7 @@ export class PSqlResourceInboxEntryReader {
     }
 
     async findByTypeId(typeId: string): Promise<Map<string, ResourceEntry>> {
-        const now = new Date();
+        const now = this.now();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -106,7 +115,7 @@ export class PSqlResourceInboxEntryReader {
             return false;
         }
 
-        const now = new Date();
+        const now = this.now();
         const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
@@ -118,23 +127,18 @@ export class PSqlResourceInboxEntryReader {
         return rows.length > 0;
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        if (statuses.length === 0) {
-            return false;
-        }
-
-        const now = new Date();
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
+    async readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined> {
+        const now = this.now();
+        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_status' | 'ri_attempts'>[]>`
+            select ri_status, ri_attempts
             from resource_inbox
-            where ri_status in ${this.sql(statuses)}
-              and ri_topic_id = ${key.topicId}
+            where ri_topic_id = ${key.topicId}
               and ri_resource_id = ${key.resourceId}
               and fk_ext_bank_id = ${key.contextId}
               and expire_ts > ${now}
             limit 1
         `;
 
-        return rows.length > 0;
+        return rows.length === 0 ? undefined : toResourceInboxStatusAndAttempts(rows[0]);
     }
 }

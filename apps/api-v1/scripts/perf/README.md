@@ -215,6 +215,73 @@ Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. The state-write gate requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
+## Opt-in state-write diagnostic timeline
+
+Add `--diagnostics-dir=tmp/perf/<fresh-directory>` to retain a supplemental timeline.
+The default is disabled. The enabled writer reserves a new private directory;
+existing directories and files are never reused. Canonical v6 output, collection,
+workload, comparator and thresholds remain unchanged.
+
+The canonical `--out` file and diagnostic directory must be disjoint: neither
+may equal or contain the other. Options reject normalized lexical overlaps.
+Before reserving the directory and again before canonical publication, the writer
+resolves existing filesystem ancestors, including symlink aliases, and applies
+the same policy. An unresolved existing path (including a dangling symlink) is
+rejected without writing canonical output. A rejected publication preserves phase
+and partial evidence and finalizes diagnostics as incomplete. Use sibling paths,
+for example `--out=tmp/perf/run.json --diagnostics-dir=tmp/perf/run-timeline`.
+These checks cover existing path identities; they do not lock parent directories
+against concurrent external filesystem changes.
+
+Each warmup or measured phase writes `phase-<ordinal>.ndjson` after its duration,
+CPU and PostgreSQL counters have been captured. Fixed ceilings are 100,000 retained
+timing plus release records per phase, 33,554,432 serialized bytes per phase and
+536,870,912 serialized bytes per run. Boundary records are counted separately;
+command/kind boundaries and release facts have priority over timing events.
+These limits are safeguards, not measured event maxima. No canonical arrays are
+truncated. The phase footer reports total, retained, unassociated, rejected and
+truncated counts. Expected process-level SQL or unavailable attempt/worker facts
+are disclosed; invalid joins and capacity loss make the projection incomplete.
+
+The sidecar exports fixed labels and phase-local command ordinals. Private exact
+logical/physical AppInbox expectations associate profile and instance separately.
+Originating command stack and observing timing stack are distinct; release worker
+identity is unavailable. Raw identities, authority, payloads, SQL and error text
+are excluded. Command/run monotonic bounds reuse existing clock reads, with the
+performance clock origin read outside timing. Timing completion stamps and rounded
+durations retain their original meaning; completion minus duration is approximate,
+and kind intervals are derived command envelopes. Exact kind endpoints, selected
+due timestamps and native-profiler alignment are unavailable. The SQL transaction
+wrapper's status is not commit evidence. A failed command retains its observed
+start and explicitly unavailable end.
+
+A final `receipt.json` is complete only when all requested projections and writes
+succeeded. Fixed status stages disclose the first failure; `projection` includes
+invalid associations and phase truncation, whose counts are in the phase footer.
+Each file is written and closed at an exclusive `.partial` path before reserving
+an empty canonical path and renaming over that owned reservation. A failed write,
+close or rename retains partial evidence and may leave an empty canonical file;
+only a published canonical receipt establishes completeness. No fallible cleanup
+follows successful publication. Receipt byte accounting conservatively reserves
+all projected phase bytes, including failed writes, plus 1,024 bytes for the
+receipt, so partial evidence also remains within the run ceiling. The writer
+reports incomplete status without source error text. An otherwise successful
+benchmark still writes v6 and exits nonzero for incomplete diagnostics; an
+original operation failure remains the original failure.
+
+Scalar stores and allocations in the mapper are diagnostic overhead. Post-phase
+projection and I/O can affect later phases. This overlay is not a performance
+improvement claim and does not authorize or replace the governed comparison.
+
+For source navigation, start at `api-v1-state-write-concurrency-bench.ts` for
+SQL/phase/artifact lifecycle. Under `state-write/`, `state-write-workload.ts` owns
+the complete seven-kind command and queue-pump flow, `seed-complete-state.ts` owns
+setup, and `state-write-measurement.ts` owns summaries. Exact command/operation association
+policy lives in `state-write-diagnostic-association.ts`; record projection and caps
+live in `state-write-diagnostic-projection.ts`; file lifecycle lives
+in `state-write-diagnostic-writer.ts`. `state-write-benchmark-output.ts` owns the
+mandatory v6 file effect followed by supplemental finalization.
+
 ## Pinned Benchmark Environment
 
 The dev container in `docker-compose.yml` is deliberately convenient — floating
@@ -261,10 +328,44 @@ node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
   --out tmp/perf/env/position-1.txt
 ```
 
+Preflight uses the already installed pinned image; it does not pull from a registry.
+Docker stores may expose a configuration ID (classic store) or an OCI index ID
+(containerd store). `read-api-v1-state-write-image-identity.mjs` derives the
+existing governed `image_id` from original configuration bytes. For containerd,
+it binds the actual container's selected manifest descriptor to the local export,
+checks original manifest and configuration SHA256 digests, sizes and declared
+platform, and retains their provenance separately from the reconstructed export
+index. The reconstructed index digest is not the pinned repository digest.
+Classic exports must hash to the native container image ID.
+
+This capture requires a POSIX `tar` supporting `-tf`, `-tvf` and `-xOf` with
+`--` before the named member, and Docker image-save platform selection. The
+reader was verified with native macOS BSD tar on the retained arm64 export;
+Linux/GNU tar and Windows execution have not been verified by that local proof.
+No layers are extracted and metadata/process output is bounded. Each preflight
+reserves a fresh `<out>.acquisition` directory; an existing directory or output
+is rejected. The native export is written directly there, without a temporary
+transport copy. Original container/image inspection bytes, export index or classic
+metadata, selected manifest (containerd) and configuration bytes remain readable.
+The sidecar's `imageProof.acquisition` binds their absolute paths, byte sizes and
+SHA256 hashes. The directory is private to the capture; raw inspection documents
+may contain sensitive native configuration and should stay with private evidence.
+Failed attempts retain any acquired bytes for diagnosis and emit no successful
+sidecar; use a fresh output for a later authorized attempt rather than reusing it.
+Local export, metadata I/O and archive hashing occur before benchmark timing.
+Metadata acquisition milliseconds cover export through retained archive hashing,
+excluding initial native inspection, so preparation cost remains visible.
+
 The postflight stage validates before writing, so a descriptor that reaches
-disk is one the pooling protocol accepts. A non-empty preflight database, a
-container restarted mid-run, or an overlapping container fails the capture
-rather than surviving into a verdict.
+disk is one the pooling protocol accepts. It preserves preflight empty-table
+counts and samples current container identity, exact native running-session start,
+restart count, governed resources, and process/container overlap. The sidecar
+requires a usable native start identity; historical sidecars without it are rejected.
+A non-empty preflight database, a changed start identity (including a manual restart
+whose restart count is zero), a reported restart, changed governed resources,
+or overlap present at postflight fails capture.
+These boundary samples do not continuously observe transient overlap or resource
+changes that revert before postflight.
 
 The order-balanced protocol runs four positions — approved-base, candidate,
 candidate, approved-base — each against a freshly recreated container, and
@@ -295,8 +396,64 @@ The workflow refuses a candidate that changes the comparator or a module it impo
 `perf:api-v1:state-write` and `db:migrate` scripts.
 
 The artifact `state-write-comparison-<run>-<attempt>` keeps the four captures, their environment records,
-the harness overlay patch and `comparison.log`. The job log carries each position's workload summaries,
-including `sql.serializedResultBytes`.
+the harness overlay patch, original acquisition bytes, command streams and `comparison.log`. Each
+benchmark's stdout retains its workload summaries, including `sql.serializedResultBytes`.
+
+## Hosted bounded diagnostic
+
+Manual dispatch accepts `mode=comparison` (the default) or `mode=diagnostic`. The supported PR label
+continues to select comparison. Concurrency includes the selected mode and label, so an unrelated
+label or a diagnostic cannot cancel a comparison.
+
+Diagnostic mode checks out one candidate with persisted checkout credentials disabled. It records
+that immutable commit, tree, clean tracked state, hashes of the workflow, compose fixture, dependency
+inputs and every tracked performance executable, plus toolchain and native runner facts. It checks
+those source inputs again immediately before the benchmark. It does not resolve or synthesize a base,
+apply a harness overlay, pool samples, or invoke the comparative verdict.
+
+On an admitted `ubuntu-24.04` GitHub-hosted runner, it executes exactly once:
+
+```sh
+npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=3 --concurrency=10 \
+  --out=tmp/perf/state-write-diagnostic/<run>-<attempt>/artifacts/state-write.json \
+  --diagnostics-dir=tmp/perf/state-write-diagnostic/<run>-<attempt>/diagnostics
+```
+
+The workflow substitutes the actual GitHub run ID and attempt. Fresh `commands/`, `artifacts/`,
+`diagnostics/` and capture-owned `.acquisition` destinations keep producer originals separate.
+All three workloads, twelve phases, 8,400 total commands and 6,300 measured commands are required.
+The unchanged exported `validateStateWriteArtifact` validates canonical v6 correctness. The hosted
+owner also checks every diagnostic phase, the complete receipt, byte accounting and the fixed
+100,000 timing/release records per phase, 33,554,432 bytes per phase and 536,870,912 bytes per run.
+A successful workflow is diagnostic evidence; it does not repair a failed comparison or satisfy
+frozen scale acceptance.
+
+`run-api-v1-state-write-measurement.mjs` owns the provisioning, migration, capture, benchmark,
+postflight, database-log and cleanup lifecycle for both modes. Admission requires at least four CPUs,
+no pre-existing containers and no existing state-write workload. It provisions only the explicit
+pinned compose fixture under `state-write-comparison`, outside measurement timing. Every command
+retains argv, cwd, UTC start/end, actual child PID and terminal outcome. The owner settles that same
+child and its process group before a later capture, log, cleanup or export, including interruption or
+metadata/stream recording failure. Postflight is attempted whenever preflight exists; logs and owned
+project/volume removal are attempted on every provisioned exit. The first failure is retained
+separately from secondary failures. A changed container/project/service/image/context refuses
+cleanup; no unrelated process or local development container is stopped or restored.
+
+The separately named 14-day `state-write-diagnostic-originals-<run>-<attempt>` artifact includes the
+canonical output, diagnostic receipt and phases, command streams, source binding, hashes/inventory,
+and original native inspections, image archive and metadata chain. Raw upload is admitted only after
+the capture-produced original configuration matches image-default environment plus the three literal
+compose database overrides, the fixed compose labels/context, no custom environment or bind/custom
+mount, and one fresh image-declared anonymous database volume. The pinned public image's image-save
+archive excludes container database data and the runner environment. Ephemeral IDs, addresses,
+session facts and public runner paths are expected disclosure. Unexpected configuration refuses raw
+upload without printing its values; `state-write-terminal-<run>-<attempt>` retains safe failure and
+refusal evidence. Failed or incomplete evidence is retained as failed or incomplete.
+
+The existing native image reader and descriptor validator remain authoritative. Linux/GNU-tar
+portability must be established by the actual hosted acquisition; local BSD-tar evidence and fake
+command-port tests do not establish it.
 
 ## Interpreting Results
 

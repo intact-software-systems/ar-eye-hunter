@@ -11,7 +11,7 @@ import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOut
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -66,12 +66,15 @@ it('settles an answer delayed by admission conflict without applying it to a rep
             await releaseBlocker.promise;
         }
     });
-    onTestFinished(() => {
+    onTestFinished(async () => {
         releaseBlocker.resolve();
         connectionService.removePeerIfPresent('sender');
-        queueBoxClient.close();
-        queueEngine.stop();
+        const cleanup = await Promise.allSettled([queueBoxClient.close(), queueEngine.stop()]);
         nativeRuntime.dispose();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     queueEngine.start();
     const connecting = connectionService.connectSignaler();

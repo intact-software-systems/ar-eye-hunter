@@ -38,8 +38,9 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -57,6 +58,7 @@ import {
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
+import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -187,7 +189,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
         }
 
         expect((observer.getCounts().byKind['work-page'] ?? 0) - before).toBe(4);
-        handler.dispose();
+        await handler.dispose();
     });
     it('claims a row an external writer enqueued once a wake announces it', async () => {
         const observer = createCountingIndexedDbOperationObserver();
@@ -222,7 +224,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
         await engine.executeOnce();
 
         await vi.waitFor(() => expect(claimed).toEqual(['external-write']));
-        handler.dispose();
+        await handler.dispose();
     });
 });
 
@@ -252,7 +254,7 @@ describe('outbound default send IndexedDB volume', () => {
                 'takes the committed canonical pair in memory instead of two work reads, and only the ' +
                 'bootstrap batch sweeps for exhausted rows and lapsed leases'
         ).toBe(9);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -296,7 +298,7 @@ describe('outbound volatile send IndexedDB volume', () => {
         expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         // S3c-ii (D74): the session budget counts the send in memory and moves no IndexedDB counter.
         expect(budget.readReport(Date.now()).usage.admissions, 'the bounded send is counted once').toBe(1);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -353,7 +355,7 @@ describe('outbound local-checkpoint send IndexedDB volume', () => {
         expect(checkpoint.total, 'one checkpoint is one IndexedDB write, whatever the sends changed').toBe(1);
         expect(timers.armed(), 'nothing is armed while the lane is clean').toBe(0);
         expect(observer.getCounts().total, 'nothing runs while the lane is clean').toBe(0);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -391,7 +393,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         expect(first.byKind['work-probe'] ?? 0, 'the bootstrap inspects the empty queue').toBeGreaterThan(0);
         expect(computeNonProbeWorkOperations(first), 'the bootstrap changes nothing').toBe(0);
         expect(second.total, 'a warm runtime spends nothing on a volatile send').toBe(0);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('spends only probes on batches over an empty queue across the readiness memory and the rate window', async () => {
@@ -430,7 +432,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         expect(counts.byOwner['al-admission']).toBe(0);
         expect(counts.byKind['work-probe'] ?? 0, 'the idle owner still inspects its queue').toBeGreaterThan(0);
         expect(computeNonProbeWorkOperations(counts), 'a reservation that changed nothing is not work').toBe(0);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -603,7 +605,8 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
     await engine.executeOnce();
     await batchSettled;
     const released = (observer.getCounts().byKind['work-release'] ?? 0) - before;
-    handler.dispose();
+    await handler.dispose();
+    await engine.stop();
     return released;
 }
 
@@ -618,11 +621,13 @@ interface IdleInboundRotation {
 /** An owner with an empty queue, driven for ten idle seconds of engine passes and nothing else. */
 async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'): Promise<IdleInboundRotation> {
     const observer = createCountingIndexedDbOperationObserver();
+    const batches = new ALWorkBatchTestObserver();
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
         effectWorkerId: INBOUND_WORKER_ID,
-        canDispatchMessage: () => false
+        canDispatchMessage: () => false,
+        acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
     await fixture.runtime.ready();
     if (scanned === 'deferred-row') {
@@ -631,15 +636,15 @@ async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'):
             INBOUND_TEST_SOURCE
         );
     }
-    // The batch a commit schedules for itself is not awaited by its caller: let it leave the window.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Commit-started batches publish only after their real owned operations finish.
+    await batches.waitForPublishedBatches();
     observer.reset();
     const eventsBefore = fixture.diagnostics.length;
 
     for (let round = 0; round < INBOUND_IDLE_ROUNDS; round += 1) {
         await fixture.queueEngine.executeOnce();
-        // A round whose task is still in flight asks the owner nothing: let the pass before it end.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // This fixture never starts its engine; stop joins the pass without starting another one.
+        await fixture.queueEngine.stop();
     }
 
     const counts = observer.getCounts();

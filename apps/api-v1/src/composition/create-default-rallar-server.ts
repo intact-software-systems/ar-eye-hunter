@@ -37,6 +37,7 @@ import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts'
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
 import { createApiV1WsLivePublication } from './create-api-v1-ws-live-publication.ts';
+import { createApiV1WsReceiptObserver } from './create-api-v1-ws-receipt-observer.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 
 export interface CreateDefaultRallarServerInput {
@@ -185,6 +186,12 @@ function createConfiguredApiV1Runtime(
         authCredentialSecret: configuration.authentication.credentialSecret,
         nowEpochMs,
         timing,
+        wsReceiptObserver: createApiV1WsReceiptObserver({
+            enabled: configuration.observability.timingLogs,
+            timing,
+            serviceId: myServerId,
+            publisherId: myPublisherId
+        }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers

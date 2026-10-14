@@ -30,6 +30,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 
 import type {
     GroupPolicyCapacityConfig
@@ -92,6 +93,7 @@ export interface CreateApiV1RuntimeInput {
     readonly authCredentialSecret: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
+    readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
@@ -125,6 +127,7 @@ interface CreateSharedMiddlewareInput {
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
+    readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly nowEpochMs: () => number;
 }
@@ -192,6 +195,7 @@ export function constructApiV1Runtime(
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
         timing: input.timing,
+        wsReceiptObserver: input.wsReceiptObserver,
         almReceiptDiagnostics,
         nowEpochMs: input.nowEpochMs
     });
@@ -315,6 +319,7 @@ function createSharedMiddleware(
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
+        wsReceiptObserver: input.wsReceiptObserver,
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             createTopologyInboxService(input, inboxQueueReader, wakeQueueEngine),

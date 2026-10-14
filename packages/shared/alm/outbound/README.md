@@ -60,11 +60,52 @@ verdict through the lane's settlement sink and writes nothing else: the handle r
 [`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three message-shaped effects
 — `admit-message`, `dequeue-message`, and `send-prepared`.
 [`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the existing
-[`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts) through
+[`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts) through
 [`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable reservation, release,
 expiry, retry, and exhausted-attempt recovery. A queued native send retains its claimed work until
 transport settlement; it does not block available peers or complete merely because the carrier
 accepted local queue ownership.
+
+## Private server receipt work evidence
+
+[`ALOutboundReceiptWorkEvidence`](./lane/al-outbound-receipt-observation.ts) owns the
+closed receipt/work snapshot for a decoded claim. WS-server construction installs
+its optional `Capture` capability: the concrete `createALOutboundReceiptWorkEvidence`
+function, the [batch observation resource](../work/al-work-batch-observations.ts) constructor
+and the server observer. Browser composition installs none of these and the lane
+imports only the evidence type, so receipt projection is outside browser bundles.
+The factory reads readonly decoded facts, without policy, clocks, storage or sink calls;
+the lane guards construction failure and still carries the batch deferral to transport.
+The evidence captures the immutable receipt, worker, effect kind, attempt count and existing audit/batch/lease stamps;
+message effects add the authority, actual admission return and known failure stage.
+`effectLocator` hashes the exact effect/attempt id; `workLocator` hashes the exact
+work key. They are compact diagnostic joins, not authority: raw identities may
+contain session, trace or prepared-message data and are never published.
+
+Capture-enabled [`ALWorkHandler`](../work/al-work-handler.ts) batches supply a
+private observation deferral capability from that resource. The handler calls the installed class's `tryCreate` and owns when to call `publish`;
+the resource guards its own construction and owns the callback array,
+ordered reentrant drain and per-sink guards. Their references to the canonical
+deferral/resource types are erased, so their two-way type dependency is not a runtime cycle.
+The lane carries the deferral on the existing send
+lifecycle to the WS recipient/cluster owner and registered publisher. Each producer
+freezes its own facts before deferring the sink call. The handler drains that bounded
+batch after release, timing, readiness/end and pending-commit scheduling, also on
+failure; no new clock or storage read is made. Disabled batches create no capture
+buffer. If an enabled batch resource fails to construct, the handler supplies the
+resource's inert `discard` deferral: work/native/cluster diagnostic records are lost, never published
+early or treated as negative delivery facts. Per-claim evidence construction
+failure with a healthy batch still permits native diagnostics after release.
+The installed canonical static methods are the verified capability; `tryCreate`
+constructs the selected subclass through `new this()`. Arbitrary static overrides
+are outside these guarantees.
+A `callbackOutcome` is the callback's actual return or `threw`, never a
+release-success receipt. A retained callback can settle and release later, outside
+that batch; this server receipt transport currently returns settled results only.
+
+The [WS server map](../../services/ws-queue-box-server/README.md#private-receipt-evidence)
+owns the native, publisher and wrapper distinctions. Missing or lost evidence proves
+no negative delivery fact, and producer clocks are not synchronized across processes.
 
 ## Construction and registration
 
@@ -317,9 +358,11 @@ deadline read storage. Its safety rests on its key and on the reference check, n
 resets: an entry is found only for a work row committed with the same effect id, and a held row that
 does not match that work row's reference fails closed as corruption and is never sent. Dispose
 clears it, and a commit that resolves after dispose records nothing. A storage reset clears it only
-when the lane hears of it: the IndexedDB pair's own open tells the lane through
-`ALStorageResetListeners`, while the browser session cleanup's and expiry eviction's reset events
-(and another tab's reset) do not reach it; the memory pair's lane has none.
+when the lane is notified through `ALStorageResetListeners`: the IndexedDB pair's own
+open forwards an observed external recreation. Database-wide cleanup reports such an
+observation on its database-named storage sink, which does not notify this pair. Cleanup
+itself removes selected rows and never resets the database; the memory pair's lane has
+no IndexedDB reset listener.
 After `attempt-started` the claim reads its guards, supersedence and then (unless superseded)
 receipt state, in one readonly session (`readSendGuards`), so a hand-off hit costs the claim one
 admission read session and a miss two: the canonical read stays its own session before the
@@ -1109,8 +1152,9 @@ can use the same `IndexedDbConnection` as admission; opening that connection rem
 an explicit storage effect.
 
 Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
-the database existed, was created, was reset, or was created again after this document
-had opened it (another context's reset after a `versionchange`, an eviction without one).
+the database existed or was genuinely absent and created. A creation after this document
+had opened it is observed as another context's reset (`other-context`) after a
+`versionchange` closed it, or as an eviction without that observation.
 A creation, reset or eviction one store of a connect found is a fact of that connect
 ([`ALStorageConnectOpenings`](../storage/al-storage-connect-openings.ts), one per connect):
 each store of the connect reports it once, though another store's open found it, and a
@@ -1155,17 +1199,28 @@ QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and 
 admission decision together. Browser composition supplies its existing engine to the
 outbound runtime. Due-work inspection uses the bounded QueueBox `readWorkPage` port;
 the existing browser cleanup owner removes expired and session-owned work from the
-shared store through those bounded key ranges. That owner and a storage reset are
-IndexedDB-only; the memory pair is swept by its own lane (Store lanes, above).
+shared store through those bounded key ranges. It requires a valid current-schema database
+and never resets or rewrites it. Independent reset observations concern IndexedDB; the
+memory pair is swept by its own lane (Store lanes, above).
 
-A browser database whose stores or recorded schema identity do not match is deleted
-and recreated once, and the reset is reported through the required `onStorageReset`
-port with the previous and current schema ids; the browser composition states it as
-the `reset` event of the store on its `storage` port. An undecodable schema row is treated
-as "no schema record yet" and resets the same way. A mismatch that survives that
-single reset is a storage invariant failure and throws; a delete that stays blocked by
-another open connection throws `ALStorageResetBlockedError`. Unrelated application
-storage is preserved, and only ALM-owned databases are reset.
+The canonical opener creates stores and their initial schema record only in a genuinely
+absent database. Existing stores, key paths, indexes and recorded schema identity must
+match without a rewrite. A store/schema mismatch or a missing/different identity throws
+`ALStorageSchemaMismatchError`; an unreadable or undecodable identity throws
+`ALStorageSchemaIdentityError` with its original Error cause. Metadata inspection is an
+explicit read before pure schema validation. Every acquired handle closes on inspection,
+identity, callback or opening-initialization failure. Refusal preserves the existing
+schema and every row, including live and unselected data; it performs no delete/recreate
+attempt or deletion timeout. The exported `ALStorageResetBlockedError` class is removed.
+
+The required `onStorageReset` callback now reports an external recreation this opener
+observes after this document recorded `versionchange`: reason `other-context`, current
+schema id and `previousSchemaId: undefined`. The browser composition forwards it as the
+store's `reset` event on the `storage` port; database-wide cleanup names the database.
+Recreation without a recorded `versionchange` remains an eviction observation. Current
+external descriptor-input contracts still accept independently supplied
+`schema-id-mismatch`/`store-schema-mismatch` notifications and `reset-blocked` failure
+descriptors; those observations do not authorize the opener to perform a destructive reset.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical

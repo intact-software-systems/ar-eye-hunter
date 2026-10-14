@@ -1,4 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -13,25 +22,23 @@ import type {
     ALInboundAdmissionMutation,
     ALInboundAdmissionStore
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
     toALInboundWorkKey
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
     createInboundTestMessage,
@@ -40,19 +47,22 @@ import {
     INBOUND_TEST_SOURCE,
     setNextInboundCommitConflicted
 } from './inbound-runtime-test-fixture.ts';
+import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        })
+    );
 
     it('retries persisted effects after a transient claim failure', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         await resources.admissionStore.commitBundle({
@@ -69,7 +79,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 observedAtMs: Date.now(),
                 effectId: 'persisted-dispatch',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
             })]
         });
         const reserveEntries = resources.workQueue.reserveEntries.bind(resources.workQueue);
@@ -101,7 +111,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await expect.poll(() => deliveredMessageIds).toEqual([message.id.msgId]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -109,7 +119,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         vi.spyOn(resources.workQueue, 'readWorkPage').mockRejectedValue(
             new ALAdmissionCorruptionError('queuebox:page', new TypeError('invalid stored queue metadata'))
@@ -127,7 +137,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -135,7 +145,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = newALUnicastMessage(
             'sender',
@@ -158,7 +168,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 observedAtMs: Date.now(),
                 effectId: 'corrupt-delivery',
                 expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
             })]
         });
         const runtime = new ALInboundMessageRuntime({
@@ -183,7 +193,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(stored).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1, nextTs: undefined } });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -192,7 +202,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const nowMs = Date.now();
         const work = computeALInboundWorkEntry({
@@ -245,10 +255,11 @@ describe('inbound durable effect worker lifecycle', () => {
 
     it('rejects work missing its ingress source without blocking a valid sibling', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const missingSource = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' }, 'receiver', 'chat', {});
         const work = computeALInboundWorkEntry({
@@ -257,7 +268,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
             effectId: 'missing-source',
-            payload: { kind: 'dispatch-local', message: toMessageReference(missingSource) }
+            payload: { kind: 'dispatch-local', message: toALInboundMessageReference(missingSource) }
         });
         // A surviving queue entry with lost provenance cannot regain authority by retrying.
         await resources.workQueue.enqueueIfAbsent(work.entry);
@@ -290,7 +301,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'buffered', contextId: 'room' }, 'receiver', 'chat', {});
         await resources.admissionStore.commitBundle({
@@ -336,14 +347,14 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(stored).toMatchObject({ status: EntityStatus.NON_RETRYABLE, dequeueAudit: { attempts: 1, nextTs: undefined } });
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
     it('completes a replayed buffered release when retained progress proves delivery', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const store = resources.admissionStore;
         const delivered: string[] = [];
@@ -366,7 +377,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const trackKey = toALOrderingTrackKey(message)!;
         await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         await expect.poll(async () => (await store.readOrderedDelivery(trackKey, 2)).completedThrough).toBe(1);
-        runtime.dispose();
+        await runtime.dispose();
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
 
         const work = computeALInboundWorkEntry({
@@ -388,7 +399,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...dependencies,
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
+                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant()),
                 stores: { admissionStore: store, workQueue: resources.workQueue }
             }),
             diagnostics: undefined
@@ -402,7 +413,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('converges after a crash between the progress commit and the claim release', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = {
             ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'crash', contextId: 'room' }, 'receiver', 'chat', {}),
@@ -453,7 +464,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('returns from admission without waiting for the delivery it committed', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const dispatchStarted = Promise.withResolvers<void>();
         const releaseDispatch = Promise.withResolvers<void>();
@@ -470,7 +481,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => {
             releaseDispatch.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'unawaited', contextId: 'room' }, 'receiver', 'chat', {});
 
@@ -484,7 +495,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('returns from control admission without waiting for the delivery it committed', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const sendStarted = Promise.withResolvers<void>();
         const releaseSend = Promise.withResolvers<void>();
@@ -501,7 +512,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => {
             releaseSend.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         await runtime.ready();
 
@@ -557,7 +568,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: new InboxOutboxEngine(),
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
@@ -637,8 +648,9 @@ describe('inbound durable effect worker lifecycle', () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: new InboxOutboxEngine(),
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
+        const batches = new ALWorkBatchTestObserver();
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             carrier: 'ws',
@@ -648,10 +660,13 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessages: async (messages) => {
                 controls.push(...messages);
             },
-            diagnostics: undefined
+            diagnostics: Object.assign(() => {}, {
+                acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
+            })
         });
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
+        await batches.waitForPublishedBatches();
 
         // The retained row of the pin above, behind the page the bootstrap batch already read. No
         // engine round is ever driven here, so only an announcement can bring the batch that claims it.
@@ -692,8 +707,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
 
         const acceptance = await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await batches.waitForPublishedBatches();
 
         expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'expired' });
         expect(controls).toEqual([]);
@@ -729,7 +743,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: new InboxOutboxEngine(),
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
@@ -752,7 +766,7 @@ describe('inbound durable effect worker lifecycle', () => {
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
         await resources.workQueue.enqueueIfAbsent(
-            toRetainedControlAdmission(resources.admissionStore.namespace, tracked)
+            toRetainedControlAdmission(resources.admissionStore.namespace, tracked, Date.now())
         );
 
         await runtime.ready();
@@ -766,7 +780,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('marks a buffered release without its canonical message NON_RETRYABLE instead of completing the work', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const store = resources.admissionStore;
         const buffered = {
@@ -818,7 +832,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('wakes work admitted while a prior reservation is being finalized', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const finalizationStarted = Promise.withResolvers<void>();
         const releaseFinalization = Promise.withResolvers<void>();
@@ -859,16 +873,17 @@ describe('inbound durable effect worker lifecycle', () => {
         }
         finally {
             releaseFinalization.resolve();
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
     it('keeps one page read in flight when admission overlaps work advertisement', async () => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
@@ -885,7 +900,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const resumeRead = Promise.withResolvers<void>();
         onTestFinished(() => {
             resumeRead.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         await runtime.ready();
         const readStarted = Promise.withResolvers<void>();
@@ -916,9 +931,31 @@ describe('inbound durable effect worker lifecycle', () => {
             admissionWoke.resolve();
         });
         const advertised = engine.executeOnce();
+        void advertised.catch(() => {});
+        onTestFinished(async () => {
+            const stopped = runtime.dispose();
+            resumeRead.resolve();
+            const outcomes = await Promise.allSettled([advertised, stopped]);
+            for (const outcome of outcomes) {
+                if (outcome.status === 'rejected') {
+                    throw outcome.reason;
+                }
+            }
+        });
         await readStarted.promise;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'overlapping-read', contextId: 'room' }, 'receiver', 'chat', {});
         const admission = runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
+        void admission.catch(() => {});
+        onTestFinished(async () => {
+            const stopped = runtime.dispose();
+            resumeRead.resolve();
+            const outcomes = await Promise.allSettled([admission, stopped]);
+            for (const outcome of outcomes) {
+                if (outcome.status === 'rejected') {
+                    throw outcome.reason;
+                }
+            }
+        });
         await admissionWoke.promise;
         resumeRead.resolve();
         await Promise.all([advertised, admission]);
@@ -935,7 +972,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const external = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'external-work', contextId: 'room' }, 'receiver', 'chat', {});
         const expireAtTimestamp = Math.max(
             Date.now() + 60_000,
-            QueueBoxUtilities.toResourceEntryFromMsg(external, 'inbox').audit.expiryTs.epochMilliseconds
+            QueueBoxUtilities.toResourceEntryFromMsg(external, 'inbox', Temporal.Now.instant()).audit.expiryTs.epochMilliseconds
         );
         const store = resources.admissionStore;
         await store.commitBundle({
@@ -952,7 +989,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 effectId: 'externally-admitted-work',
                 observedAtMs: Date.now(),
                 expireAtTimestamp,
-                payload: { kind: 'dispatch-local', message: toMessageReference(external) }
+                payload: { kind: 'dispatch-local', message: toALInboundMessageReference(external) }
             })]
         });
         await expect.poll(async () => {
@@ -966,7 +1003,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({
@@ -986,7 +1023,7 @@ describe('inbound durable effect worker lifecycle', () => {
             await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
             await expect.poll(() => attempts).toBe(1);
 
-            runtime.dispose();
+            await runtime.dispose();
             vi.setSystemTime(Date.now() + 30_000);
             await resources.queueEngine.executeOnce();
             await runtime.ready();
@@ -995,7 +1032,7 @@ describe('inbound durable effect worker lifecycle', () => {
             expect(attempts).toBe(1);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -1003,7 +1040,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const store = resources.admissionStore;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: stage, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
@@ -1013,7 +1050,7 @@ describe('inbound durable effect worker lifecycle', () => {
             effectId: 'paused-delivery',
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
-            payload: { kind: 'dispatch-local', message: toMessageReference(message) }
+            payload: { kind: 'dispatch-local', message: toALInboundMessageReference(message) }
         });
         await store.commitBundle({
             admissionExpiresAtMs: null,
@@ -1059,13 +1096,30 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime(dependencies);
         onTestFinished(() => {
             resumeOperation.resolve();
-            runtime.dispose();
+            return runtime.dispose();
         });
         const ready = runtime.ready();
+        void ready.catch(() => {});
+        onTestFinished(async () => {
+            const stopped = runtime.dispose();
+            resumeOperation.resolve();
+            const outcomes = await Promise.allSettled([ready, stopped]);
+            for (const outcome of outcomes) {
+                if (outcome.status === 'rejected') {
+                    throw outcome.reason;
+                }
+            }
+        });
         await operationStarted.promise;
-        runtime.dispose();
+        const disposing = runtime.dispose();
+        void disposing.catch(() => {});
+        onTestFinished(async () => {
+            resumeOperation.resolve();
+            await disposing;
+        });
         resumeOperation.resolve();
         await ready;
+        await disposing;
         await resources.queueEngine.executeOnce();
         expect(deliveredMessageIds).toEqual([]);
         expect(await resources.workQueue.getItem(work.entry.key)).toMatchObject({
@@ -1078,7 +1132,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ...dependencies,
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
-                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
+                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant()),
                 stores: { admissionStore: store, workQueue: resources.workQueue }
             }),
             diagnostics: undefined
@@ -1102,10 +1156,6 @@ function planIncomingMessage(
         groupMemberPeerIds: ['sender', 'receiver'],
         overlayNeighborPeerIds: []
     });
-}
-
-function toMessageReference(message: ALMessage) {
-    return { senderId: message.id.senderId, msgId: message.id.msgId };
 }
 
 function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): ALInboundAdmissionMutation {
@@ -1135,8 +1185,8 @@ function toCanonicalMessageMutation(message: ALMessage, expireAtTimestamp: numbe
 }
 
 /** A retained `admit-control` row for the acknowledgement that completes a tracked message's pending ack. */
-function toRetainedControlAdmission(namespace: string, tracked: ALMessage): ResourceEntry {
-    const expiresAtMs = Date.now() + 60_000;
+function toRetainedControlAdmission(namespace: string, tracked: ALMessage, observedAtMs: number): ResourceEntry {
+    const expiresAtMs = observedAtMs + 60_000;
     const ack = newALAckControlMessage({ v: 3, msgId: 'retained-control-ack', ts: 1, senderId: 'sender' }, {
         ackedMsgId: tracked.id.msgId,
         originPeerId: tracked.id.senderId,
@@ -1151,7 +1201,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage): Reso
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingControlId(ack),
-        observedAtMs: Date.now(),
+        observedAtMs,
         expireAtTimestamp: expiresAtMs,
         payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs }
     }).entry;

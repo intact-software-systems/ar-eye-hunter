@@ -44,7 +44,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     },
     parallel: { required: ['groups'], optional: ['maxConcurrency', 'failFast', 'continueOnFailure'] },
     wait: { required: ['match'], optional: ['absent'] },
-    assert: { required: ['source', 'operator'], optional: ['expected'] },
+    assert: { required: ['source', 'operator'], optional: ['expected', 'comparisonSource'] },
     barrier: { required: ['barrierId', 'timeoutMs'], optional: ['participants'] },
     'rtc.connect': {
         required: [],

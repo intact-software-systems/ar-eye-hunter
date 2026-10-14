@@ -136,7 +136,13 @@ const GROUP_ASSERTION_VERDICTS = Object.keys(
 
 const MATCHING_GROUP_ASSERTION_AGGREGATES = ['allMatch', 'noneMatch', 'countMatching'] as const;
 
-const EQUALITY_GROUP_ASSERTION_AGGREGATES = ['allEqual', 'allEqualWithin'] as const;
+const EQUALITY_GROUP_ASSERTION_AGGREGATES = Object.keys(
+    {
+        allEqual: true,
+        allEqualWithin: true,
+        sameUniqueStringSetAsRole: true
+    } satisfies Record<RallarBlackBoxEqualityGroupAssertionResult['aggregate'], true>
+) as readonly RallarBlackBoxEqualityGroupAssertionResult['aggregate'][];
 
 type GroupAssertionAggregateCounts =
     | Pick<RallarBlackBoxMatchingGroupAssertionResult, 'aggregate' | 'participants'>

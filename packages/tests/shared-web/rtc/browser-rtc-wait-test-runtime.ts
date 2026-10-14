@@ -293,6 +293,7 @@ function resetRtcTransportMocks(): void {
     });
     mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
         mocks.webSocketClient.close(code, reason);
+        return Promise.resolve();
     });
     mocks.webSocketClient.onWebsocketCallbacksDo.mockReturnValue(mocks.webSocketClient);
     mocks.webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);

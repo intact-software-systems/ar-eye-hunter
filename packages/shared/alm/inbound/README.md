@@ -28,7 +28,7 @@ uses, with `maxConcurrency` fixed at one task. The inbound half of that worker i
 [`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts): it owns the rotating
 new/retry/reserved page scan that answers the handler's readiness probe and turns one observed
 page into claims. The worker registers
-with [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts); registration does
+with [`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts); registration does
 not invoke admission or delivery. Storage readiness precedes the first work scan.
 Disposal prevents further local work and unregisters the task. A runtime-owned
 engine stops; a supplied shared engine remains available to its other tasks.
@@ -335,8 +335,8 @@ already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
 The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence'`. An
-existing browser database at a different schema identity is deleted and
-recreated once, as described under
+existing browser database at a different schema identity is refused without deletion or
+rewriting, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
 S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
@@ -384,7 +384,7 @@ is what is out of date. The refusal is symmetric: an old-build page also
 refuses a new-build `al.control.ack.v2`, until it reloads.
 
 **The scoped-delivery window.** The WS server's PostgreSQL rows carry no schema identity, so the
-scoped-delivery bump resets browsers only. On the server:
+browser identity check refuses an older schema without resetting it. On the server:
 
 - A server rolled back past this change cannot decode a captured policy, a prepared recipient or a
   `ws-client` source this build wrote; each stays undecodable for its row's TTL.
@@ -394,7 +394,7 @@ scoped-delivery bump resets browsers only. On the server:
   dropped once as corrupt.
 
 **The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
-range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
+browser identity check refuses an older schema without resetting it. On the server, a buffered-slot row, a retained
 `repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
 decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, by default the repository
 TTL of 60 minutes) bounds the buffered slots of a track, and the message deadlines bound the
@@ -404,7 +404,8 @@ page still running the old build sends is refused `unsupported` (`al.control.nac
 above.
 
 **The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
-resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
+makes older browser schemas incompatible, which current opening refuses without resetting them.
+On the server, a row an older build wrote holds a `v: 2` envelope and fails
 decoding `unsupported` at its next read; no row is migrated. A page still running the old build
 sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
 `v: 3` symmetrically.
@@ -786,7 +787,8 @@ that batch spent its time — selection, claim, run and release, which do not su
 duration, for the reasons the contract document states — and how long the earliest row it
 claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ran to an
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
-decoded and a claim that throws are counted by the drain and named by no event; and
+decoded and a claim that throws are counted by the drain but emit no `claim-settled` event.
+Enabled ACK association or handoff evidence can separately record a thrown claim. The owner relays
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
 `longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
 also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
@@ -804,6 +806,31 @@ into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
 
+Explicit ACK capture is owned by
+[`ALInboundAcknowledgementEvidence`](./control/al-inbound-acknowledgement-evidence.ts).
+The black-box browser diagnostic installer supplies its class and the existing
+`ALWorkBatchObservations` resource through the callable sink's optional
+`acknowledgementCapture`. Runtime/lane/admission reference that owner only as a
+type; ordinary sinks create no new ACK evidence. The association retains exact
+received and generated control identities, logical recipient, prior owner/source,
+pending parent, candidate validity, actual conditional commit and retention results.
+A conflict's candidate IDs remain distinguishable from a replay's newly generated
+IDs. Terminal sender ACKs bypass inbound storage without inventing upward work.
+
+Capture copies closed owned facts before mutable consumers, with guarded snapshots.
+The evidence owner selects and snapshots claim context in `tryCreateClaim`;
+`publishClaim` selects replay or handoff from that snapshot. The lane retains
+mandatory work and clocks. A returned handoff remains returned if the enclosing
+claim later throws, for example at its existing duration-clock read.
+Ingress publishes after its mandatory lane wake and outbound callback, including
+original exception unwind. Replay and actual `sendControlInRound` outcomes use the
+handler's existing deferral and publish after mandatory release/end/failure/clear/
+pending-commit work. Failed optional batch construction discards publications.
+There are no additional store reads, generated IDs or clock reads. Commit return
+is not independent persisted readback; handoff is not native receipt; absent events
+are not proof of absent work. The detailed field meanings and clock limitations
+are in the diagnostic contract linked above.
+
 [`decodeALInboundWorkEntry`](./al-inbound-work-entry.ts) checks the stored variant,
 namespace, full identity, queue slot, and deadline. Malformed claimed work becomes
 `NON_RETRYABLE`; valid work from the same batch continues. Operational failures
@@ -818,9 +845,12 @@ and per owned canonical scope, and each range ends its `resourceId` with the `/`
 delimiter so a neighbouring owner whose id is a string prefix is never pulled in.
 Unrelated work is preserved.
 
-A browser database whose stores or recorded schema identity do not match is deleted
-and recreated once and the reset is reported through the required `onStorageReset`
-port; the details are in the
+A browser database whose stores or recorded schema identity do not match is refused with
+`ALStorageSchemaMismatchError`, preserving its schema and rows. Unreadable or undecodable
+identity throws `ALStorageSchemaIdentityError` with its original cause; acquired handles
+close on failure. Genuine absence still creates the current stores. The required
+`onStorageReset` callback reports observed external `other-context` recreation after a
+recorded `versionchange`, not a destructive mismatch recovery; the details are in the
 [outbound navigation map](../outbound/README.md#atomic-indexeddb-work-storage).
 The outbound canonical storage cutover does not establish the roadmap's
 zero-IndexedDB volatile path for inbound work.

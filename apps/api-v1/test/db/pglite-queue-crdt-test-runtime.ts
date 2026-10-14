@@ -2,7 +2,10 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 
 const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
@@ -19,6 +22,7 @@ interface CreateResourceEntryOptions {
     readonly status?: EntityStatus;
     readonly payload?: JsonWireValue;
     readonly expiryTs?: Temporal.Instant;
+    readonly createdTs?: Temporal.PlainDateTime;
 }
 
 export const CRDT_DOCUMENT_REF: RallarCrdtDocumentRef = {
@@ -34,6 +38,7 @@ export function createResourceEntry(
     resourceId: string,
     options: CreateResourceEntryOptions = {}
 ): ResourceEntry {
+    const createdTs = options.createdTs ?? CREATED_TS;
     return {
         key: {
             topicId: options.topicId ?? 'topic-smoke',
@@ -44,9 +49,9 @@ export function createResourceEntry(
         typeId: options.typeId ?? 'TYPE_A',
         status: options.status ?? EntityStatus.NEW,
         audit: {
-            date: CREATED_TS.toPlainTime(),
+            date: createdTs.toPlainTime(),
             createdBy: 'tester',
-            createdTs: CREATED_TS,
+            createdTs,
             expiryTs: options.expiryTs ?? FUTURE_INSTANT
         },
         dequeueAudit: {

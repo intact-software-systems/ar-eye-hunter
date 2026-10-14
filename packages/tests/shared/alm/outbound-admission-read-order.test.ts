@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
@@ -6,13 +16,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     createDefaultOutboundTestRuntime,
@@ -44,7 +48,7 @@ describe('outbound admission observation order', () => {
                     workQueue: backend.workQueue,
                     nowMs: Date.now
                 }),
-                toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+                toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
                 browserLocks: undefined,
@@ -74,6 +78,10 @@ describe('outbound admission observation order', () => {
             origin: 'send',
             options: {},
             planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+        });
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
         });
         await captured.promise;
         const won = await winner.commit({
@@ -128,7 +136,7 @@ describe('outbound admission observation order', () => {
                 workQueue: backend.workQueue,
                 nowMs: Date.now
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -160,6 +168,10 @@ describe('outbound admission observation order', () => {
             message.id.msgId,
             (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
+        });
         await captured.promise;
         expect(
             await store.commitBundle({
@@ -198,7 +210,7 @@ describe('outbound admission observation order', () => {
                 workQueue: backend.workQueue,
                 nowMs: Date.now
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -236,6 +248,10 @@ describe('outbound admission observation order', () => {
             message.id.msgId,
             (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
+        });
         await captured.promise;
         expect(
             await store.commitBundle({

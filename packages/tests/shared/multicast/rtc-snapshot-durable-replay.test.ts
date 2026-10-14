@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
@@ -10,16 +20,9 @@ import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/al
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
 interface ReplayObservedState {
@@ -93,7 +96,7 @@ describe('RTC admitted-message consumption', () => {
                 expect(fixture.delivered).toEqual([message.id.msgId]);
             }
             finally {
-                fixture.runtime.dispose();
+                await fixture.runtime.dispose();
             }
         }
     );
@@ -130,7 +133,7 @@ describe('RTC admitted-message consumption', () => {
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeUndefined();
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -158,7 +161,7 @@ describe('RTC admitted-message consumption', () => {
             }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -174,7 +177,7 @@ describe('RTC admitted-message consumption', () => {
         });
         await initial.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
         expect(initial.delivered).toEqual([]);
-        initial.runtime.dispose();
+        await initial.runtime.dispose();
 
         const resumed = createReplayFixture(false, initial.stores);
         try {
@@ -185,7 +188,7 @@ describe('RTC admitted-message consumption', () => {
             }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
-            resumed.runtime.dispose();
+            await resumed.runtime.dispose();
         }
     });
 
@@ -206,7 +209,7 @@ describe('RTC admitted-message consumption', () => {
             ]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -216,7 +219,7 @@ describe('RTC admitted-message consumption', () => {
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
             const result = await commit(bundle);
             fixture.observed.snapshot = undefined;
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
             return result;
         });
 
@@ -260,7 +263,7 @@ describe('RTC admitted-message consumption', () => {
             });
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
@@ -292,23 +295,35 @@ describe('RTC admitted-message consumption', () => {
             }).toEqual([first.id.msgId, second.id.msgId]);
         }
         finally {
-            fixture.runtime.dispose();
+            await fixture.runtime.dispose();
         }
     });
 
-    it('leaves claimed work unconsumed when disposed while its storage read is in flight', async () => {
+    it('leaves claimed work unconsumed and completes disposal when cancellation starts inside its storage read', async () => {
         const fixture = createReplayFixture(false);
         const reserve = fixture.stores.workQueue.reserveEntries.bind(fixture.stores.workQueue);
+        const entered = Promise.withResolvers<void>();
+        let disposing: Promise<void> | undefined;
+        let readCompleted = false;
         vi.spyOn(fixture.stores.workQueue, 'reserveEntries').mockImplementation(async (request) => {
             const reserved = await reserve(request);
             if (reserved.size > 0) {
-                fixture.runtime.dispose();
+                disposing = fixture.runtime.dispose();
+                entered.resolve();
+                readCompleted = true;
             }
             return reserved;
         });
-
-        await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
-
+        try {
+            await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
+            await entered.promise;
+            await disposing;
+            expect(readCompleted, 'The owned storage read must return before its disposal can join the same batch').toBe(true);
+        }
+        finally {
+            await Promise.allSettled([disposing, fixture.runtime.dispose(), fixture.engine.stop()]);
+        }
+        expect(readCompleted).toBe(true);
         expect(fixture.delivered).toEqual([]);
         expect(vi.getTimerCount()).toBe(0);
     });
@@ -359,7 +374,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         stores,
         queueEngine: engine,
         planIncomingMessage: planner,
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

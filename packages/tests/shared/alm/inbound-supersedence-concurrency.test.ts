@@ -1,5 +1,4 @@
-import '../../setup-browser-indexeddb.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -25,11 +24,13 @@ import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-en
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import '../../setup-browser-indexeddb.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+import type { InboundTestDecision } from './inbound-runtime-test-fixture.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supersedence in %s', (storage) => {
     it('admits independent messages from the same sender using their original reads', async () => {
@@ -185,7 +186,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
     });
 });
 
-async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
+async function createStore(storage: 'memory' | 'indexeddb' | 'pglite'): Promise<ALInboundRuntimeStores> {
     const namespace = `inbound-supersedence-${crypto.randomUUID()}`;
     if (storage === 'indexeddb') {
         onTestFinished(() =>
@@ -209,7 +210,7 @@ async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: createPassThroughIndexedDbOperationObserver()
         })
-        : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace);
+        : new PSqlAdmissionWorkBackend((await createPSqlAdmissionTestStorage()).sql, namespace, Date.now);
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: Date.now,
@@ -244,7 +245,7 @@ function createMessage(senderId: string, version: number, supersedenceKey = 'sha
     return { ...message, id: { ...message.id, ts: createdTs }, audit: { ...message.audit, createdTs } };
 }
 
-async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) {
+async function readDecision(store: ALInboundAdmissionStore, message: ALMessage): Promise<InboundTestDecision> {
     const nowMs = Date.now();
     const source = { kind: 'ws-client' as const, peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
@@ -262,7 +263,7 @@ function readEffectFacts(nowMs: number) {
     return readALInboundEffectFacts(nowMs, {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
-        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
 }
 

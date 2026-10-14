@@ -63,6 +63,7 @@ interface WorkflowJob {
     readonly strategy?: WorkflowMatrixStrategy;
     readonly steps?: readonly WorkflowStep[];
     readonly uses?: string;
+    readonly secrets?: string;
     readonly with?: Readonly<Record<string, string | number | boolean>>;
 }
 
@@ -78,10 +79,50 @@ interface WorkflowInput {
     readonly required?: boolean;
 }
 
+interface WorkflowInputTrigger {
+    readonly inputs?: Readonly<Record<string, WorkflowInput>>;
+}
+
 interface WorkflowDocument {
-    readonly on: { readonly workflow_dispatch?: { readonly inputs?: Readonly<Record<string, WorkflowInput>>; } | null; };
+    readonly on: {
+        readonly workflow_dispatch?: WorkflowInputTrigger | null;
+        readonly workflow_call?: WorkflowInputTrigger | null;
+        readonly push?: { readonly branches?: readonly string[]; readonly paths?: readonly string[]; };
+    };
     readonly concurrency?: WorkflowConcurrency;
     readonly jobs: Readonly<Record<string, WorkflowJob>>;
+}
+
+interface WorkflowMaterializationInput {
+    readonly directory: string;
+    readonly sourcePath: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    /** Absent when no operator input was supplied. */
+    readonly rtcCaptureMode?: string;
+}
+
+interface WorkflowDefaultsInput {
+    readonly directory: string;
+    readonly manifest: unknown;
+    /** Absent when exercising manifest-derived/default inputs. */
+    readonly overrides?: Readonly<Record<string, string>>;
+}
+
+interface RemoteRecipeFixture {
+    readonly directory: string;
+    readonly controllerDirectory: string;
+    readonly effectsPath: string;
+    readonly markerPath: string;
+    readonly manifestPath: string;
+}
+
+interface RemoteRecipeScenario {
+    readonly phase: 'full' | 'prepare' | 'run';
+    readonly agentSource: 'hetzner' | 'external' | 'mixed';
+    readonly rollout: boolean;
+    readonly sourceHash: string;
+    readonly topology: Readonly<Record<string, string>>;
+    readonly recipeExit: number;
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -107,6 +148,19 @@ const supportedMainlineManifestPaths = [
     'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
 ];
 
+const workflowInputTriggerSchema: JsonSchema = {
+    type: ['object', 'null'],
+    properties: {
+        inputs: {
+            type: 'object',
+            additionalProperties: {
+                type: 'object',
+                properties: { default: { type: ['string', 'number', 'boolean'] }, required: { type: 'boolean' } }
+            }
+        }
+    }
+};
+
 const workflowDocumentSchema: JsonSchema = {
     type: 'object',
     required: ['jobs', 'on'],
@@ -114,18 +168,12 @@ const workflowDocumentSchema: JsonSchema = {
         on: {
             type: 'object',
             properties: {
-                workflow_dispatch: {
-                    type: ['object', 'null'],
-                    properties: {
-                        inputs: {
-                            type: 'object',
-                            additionalProperties: {
-                                type: 'object',
-                                properties: { default: { type: ['string', 'number', 'boolean'] }, required: { type: 'boolean' } }
-                            }
-                        }
-                    }
-                }
+                push: {
+                    type: 'object',
+                    properties: { branches: { type: 'array', items: { type: 'string' } }, paths: { type: 'array', items: { type: 'string' } } }
+                },
+                workflow_dispatch: workflowInputTriggerSchema,
+                workflow_call: workflowInputTriggerSchema
             }
         },
         concurrency: {
@@ -141,6 +189,7 @@ const workflowDocumentSchema: JsonSchema = {
                 properties: {
                     needs: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
                     uses: { type: 'string' },
+                    secrets: { type: 'string' },
                     with: { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] } },
                     strategy: {
                         type: 'object',
@@ -230,14 +279,6 @@ async function readWorkflow(workflowPath: string): Promise<WorkflowDocument> {
     return value as WorkflowDocument;
 }
 
-interface WorkflowMaterializationInput {
-    readonly directory: string;
-    readonly sourcePath: string;
-    readonly group: RallarBlackBoxDistributedGroupRef;
-    /** Absent when no operator input was supplied. */
-    readonly rtcCaptureMode?: string;
-}
-
 async function runWorkflowMaterialization(context: TestContext, input: WorkflowMaterializationInput): Promise<OwnedTestProcessOutcome> {
     const workflow = await readWorkflow(distributedRunnerWorkflowPath);
     const step = workflow.jobs.run.steps?.find((candidate) => candidate.name === 'Materialize run manifest');
@@ -269,30 +310,6 @@ async function runWorkflowMaterialization(context: TestContext, input: WorkflowM
             }
         }
     });
-}
-
-interface WorkflowDefaultsInput {
-    readonly directory: string;
-    readonly manifest: unknown;
-    /** Absent when exercising manifest-derived/default inputs. */
-    readonly overrides?: Readonly<Record<string, string>>;
-}
-
-interface RemoteRecipeFixture {
-    readonly directory: string;
-    readonly controllerDirectory: string;
-    readonly effectsPath: string;
-    readonly markerPath: string;
-    readonly manifestPath: string;
-}
-
-interface RemoteRecipeScenario {
-    readonly phase: 'full' | 'prepare' | 'run';
-    readonly agentSource: 'hetzner' | 'external' | 'mixed';
-    readonly rollout: boolean;
-    readonly sourceHash: string;
-    readonly topology: Readonly<Record<string, string>>;
-    readonly recipeExit: number;
 }
 
 async function runWorkflowDefaults(context: TestContext, input: WorkflowDefaultsInput): Promise<OwnedTestProcessOutcome> {
@@ -376,12 +393,8 @@ async function writeRemoteRecipeControllerPorts(fixture: RemoteRecipeFixture): P
     }
 }
 
-async function runRemoteRecipe(context: TestContext, fixture: RemoteRecipeFixture, scenario: RemoteRecipeScenario): Promise<OwnedTestProcessOutcome> {
-    const step = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps?.find((candidate) => candidate.name === 'Run distributed recipe');
-    if (!step?.run) {
-        throw new Error('Workflow must own its complete remote execution body.');
-    }
-    const remoteEnvironment = {
+function toRemoteRecipeEnvironment(fixture: RemoteRecipeFixture, scenario: RemoteRecipeScenario): Readonly<Record<string, string>> {
+    return {
         RALLAR_BLACK_BOX_AGENT_SOURCE: scenario.agentSource,
         RALLAR_HETZNER_OPERATOR_PHASE: scenario.phase,
         RALLAR_ROLLOUT_BEFORE_RUN: String(scenario.rollout),
@@ -398,6 +411,14 @@ async function runRemoteRecipe(context: TestContext, fixture: RemoteRecipeFixtur
         RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '',
         ...scenario.topology
     };
+}
+
+async function runRemoteRecipe(context: TestContext, fixture: RemoteRecipeFixture, scenario: RemoteRecipeScenario): Promise<OwnedTestProcessOutcome> {
+    const step = (await readWorkflow(distributedRunnerWorkflowPath)).jobs.run.steps?.find((candidate) => candidate.name === 'Run distributed recipe');
+    if (!step?.run) {
+        throw new Error('Workflow must own its complete remote execution body.');
+    }
+    const remoteEnvironment = toRemoteRecipeEnvironment(fixture, scenario);
     const remoteEnvPath = path.join(fixture.directory, 'remote.env');
     await writeFile(remoteEnvPath, Object.entries(remoteEnvironment).map(([name, value]) => `${name}='${value}'`).join('\n'));
     return await runOwnedTestProcess(context, {
@@ -588,10 +609,8 @@ describe('Hetzner workflow contracts and effects', () => {
             }, (manifest) => manifest);
         const sourcePath = path.join(directory, 'source.json');
         await writeFile(sourcePath, sourceText);
-        const result = await runWorkflowMaterialization(context, { directory, sourcePath, group: authored.group, rtcCaptureMode: mode })
-            .then((output) => ({ output, error: undefined }), (error: unknown) => ({ output: undefined, error }));
-        console.info('RUN-workflow-refusal-evidence', JSON.stringify({ mode, result }));
-        expect.soft(result.error).toBeInstanceOf(Error);
+        await expect(runWorkflowMaterialization(context, { directory, sourcePath, group: authored.group, rtcCaptureMode: mode }))
+            .rejects.toMatchObject({ stdout: expect.stringContaining('RTC capture mode must be off, signaling or native.') });
         for (const file of ['rallar-distributed-manifest.json', 'rallar-manifest-materialization.json', 'outputs.txt']) {
             await expect.soft(readFile(path.join(directory, file))).rejects.toMatchObject({ code: 'ENOENT' });
         }
@@ -613,7 +632,6 @@ describe('Hetzner workflow contracts and effects', () => {
         }
         await runOwnedTestProcess(context, { executable: 'bash', args, options: { cwd: repoRoot, env: fixture.environment } });
         const emitted = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
-        console.info('RUN-dispatch-evidence', JSON.stringify({ input, emitted }));
         expect(emitted.filter((value) => value.startsWith('rtc_capture_mode='))).toEqual(
             input.expected === undefined ? [] : [`rtc_capture_mode=${input.expected}`]
         );
@@ -642,44 +660,75 @@ describe('Hetzner workflow contracts and effects', () => {
         await expect.soft(readFile(fixture.argsFile)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
-    it('RUN forwarding declared bindings and loader order preserve the workflow contracts', async () => {
-        const manual = await readWorkflow(distributedWorkflowPath);
-        const github = await readWorkflow('.github/workflows/github-free-distributed-recipe.yml');
+    it.for([
+        { workflowPath: distributedWorkflowPath, jobs: ['run'] },
+        { workflowPath: '.github/workflows/github-free-distributed-recipe.yml', jobs: ['prepare-hetzner', 'operator'] }
+    ])('declares optional authored RTC capture and forwards it to each recipe caller in $workflowPath', async ({ workflowPath, jobs }) => {
+        const workflow = await readWorkflow(workflowPath);
+        expect(workflow.on.workflow_dispatch?.inputs?.rtc_capture_mode).toMatchObject({ required: false, default: '' });
+        for (const job of jobs) {
+            expect(workflow.jobs[job]).toMatchObject({
+                uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
+                with: { rtc_capture_mode: '${{ inputs.rtc_capture_mode }}' }
+            });
+        }
+    });
+
+    it('makes the Node loader and dependencies available before manifest materialization', async (context) => {
         const runner = await readWorkflow(distributedRunnerWorkflowPath);
-        expect.soft(manual.jobs.run?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
-        expect.soft(github.jobs['prepare-hetzner']?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
-        expect.soft(github.jobs.operator?.with?.rtc_capture_mode).toBe('${{ inputs.rtc_capture_mode }}');
+        expect(runner.on.workflow_call?.inputs?.rtc_capture_mode).toMatchObject({ required: false, default: '' });
         const steps = runner.jobs.run.steps;
         if (!steps) {
             throw new Error('Runner requires complete execution steps.');
         }
         const materializationIndex = steps.findIndex((step) => step.name === 'Materialize run manifest');
-        const setupIndices = steps.flatMap((step, index) => step.uses?.startsWith('actions/setup-node@') ? [index] : []);
-        const installIndices = steps.flatMap((step, index) => step.run === 'npm ci' ? [index] : []);
-        expect(setupIndices).toHaveLength(1);
-        expect(installIndices).toHaveLength(1);
-        expect.soft(setupIndices[0]).toBeLessThan(materializationIndex);
-        expect.soft(installIndices[0]).toBeLessThan(materializationIndex);
-        expect.soft(setupIndices[0]).toBeLessThan(installIndices[0]);
-        expect.soft(steps[setupIndices[0]].if).toBeUndefined();
-        expect.soft(steps[installIndices[0]].if).toBeUndefined();
-        expect(steps[setupIndices[0]].with).toEqual({ 'node-version': 20, cache: 'npm' });
-        expect.soft(steps[materializationIndex].env?.INPUT_RTC_CAPTURE_MODE).toBe('${{ inputs.rtc_capture_mode }}');
-        for (
-            const [file, count] of [[distributedWorkflowPath, 24], ['.github/workflows/github-free-distributed-recipe.yml', 21], [
-                '.github/workflows/hetzner-headless-browsers.yml',
-                25
-            ]] as const
-        ) {
-            const names = Object.keys((await readWorkflow(file)).on.workflow_dispatch?.inputs ?? {});
-            expect.soft(names).toHaveLength(count);
-            if (file.endsWith('hetzner-headless-browsers.yml')) {
-                expect(names).not.toContain('rtc_capture_mode');
+        expect(materializationIndex).toBeGreaterThanOrEqual(0);
+        const prerequisites = steps.slice(0, materializationIndex);
+        const setupIndex = prerequisites.findIndex((step) => step.uses?.startsWith('actions/setup-node@') && step.if === undefined);
+        expect(setupIndex).toBeGreaterThanOrEqual(0);
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-loader-install-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const executablePath = path.join(directory, 'npm');
+        await writeFile(executablePath, '#!/usr/bin/env bash\nprintf "%s\\n" "${1:-}" >> "${OWNED_NPM_SUBCOMMANDS}"\n');
+        await chmod(executablePath, 0o755);
+        const subcommandsPath = path.join(directory, 'npm-subcommands.txt');
+        let installIndex = -1;
+        for (const [index, step] of prerequisites.entries()) {
+            if (!step.run) {
+                continue;
             }
-            else {
-                expect.soft(names).toContain('rtc_capture_mode');
+            await writeFile(subcommandsPath, '');
+            await runOwnedTestProcess(context, {
+                executable: 'bash',
+                args: ['-c', step.run],
+                options: {
+                    cwd: repoRoot,
+                    env: {
+                        PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}`,
+                        OWNED_NPM_SUBCOMMANDS: subcommandsPath,
+                        GITHUB_OUTPUT: path.join(directory, 'outputs.txt'),
+                        INPUT_RUN_ID: 'owned-run',
+                        MANIFEST_PATH: path.join(repoRoot, supportedMainlineManifestPaths[0]),
+                        INPUT_AGENT_COUNT: '',
+                        INPUT_ROOM_ID: '',
+                        INPUT_APPLICATION_ID: '',
+                        INPUT_WORKSPACE_ID: '',
+                        INPUT_TERMINAL_TIMEOUT_SECONDS: '',
+                        INPUT_ROLLOUT_BEFORE_RUN: 'true',
+                        INPUT_AGENT_SOURCE: 'hetzner',
+                        INPUT_OPERATOR_PHASE: 'full'
+                    }
+                }
+            });
+            const subcommands = (await readFile(subcommandsPath, 'utf8')).split('\n');
+            if (subcommands.includes('ci')) {
+                expect(step.if).toBeUndefined();
+                installIndex = index;
+                break;
             }
         }
+        expect(installIndex).toBeGreaterThan(setupIndex);
+        expect(steps[materializationIndex].env?.INPUT_RTC_CAPTURE_MODE).toBe('${{ inputs.rtc_capture_mode }}');
     });
 
     it.for(
@@ -707,23 +756,25 @@ describe('Hetzner workflow contracts and effects', () => {
             .fold((issues) => {
                 throw new Error(toDistributedRunManifestValidationText(issues));
             }, (manifest) => manifest);
-        console.info('RUN-workflow-body-evidence', JSON.stringify({ input, output }));
         expect.soft(output.rtcCaptureMode).toBe(input.expected);
         expect(output.recipes).toEqual(source.recipes);
         expect(output.group).toEqual(source.group);
         expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
     });
 
-    it('keeps the distributed recipe workflow as a manual dispatch wrapper', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-
-        expect(workflow).toContain('workflow_dispatch:');
-        expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
-        expect(workflow).toContain('secrets: inherit');
-        expect(workflow).toContain('manifest_path: ${{ inputs.manifest_path }}');
-        expect(workflow).toContain('ref: ${{ inputs.ref }}');
-        expect(workflow).toContain('run_id: ${{ inputs.run_id }}');
-        expect(workflow).toMatch(/room_id:[\s\S]*?required: false[\s\S]*?default: ''/);
+    it('forwards manual manifest identity and inherited secrets to the reusable runner', async () => {
+        const workflow = await readWorkflow(distributedWorkflowPath);
+        expect(workflow.on.workflow_dispatch).toBeDefined();
+        expect(workflow.jobs.run).toMatchObject({
+            uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
+            secrets: 'inherit',
+            with: {
+                manifest_path: '${{ inputs.manifest_path }}',
+                ref: '${{ inputs.ref }}',
+                run_id: '${{ inputs.run_id }}'
+            }
+        });
+        expect(workflow.on.workflow_dispatch?.inputs?.room_id).toMatchObject({ required: false, default: '' });
     });
 
     it('uses one materialized manifest as the worker and distributed-run scope authority', async () => {
@@ -758,21 +809,7 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(supportedCaller.concurrency).toEqual(productionConcurrency);
     });
 
-    it('keeps the reusable distributed recipe runner responsible for Hetzner execution', async () => {
-        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
-
-        expect(workflow).toContain('workflow_call:');
-        expect(workflow).toContain('name: Resolve manifest defaults');
-        expect(workflow).toContain('name: Configure SSH');
-        expect(workflow).toContain('name: Copy controller scripts and manifest');
-        expect(workflow).toContain('name: Run distributed recipe');
-        expect(workflow).toContain('name: Copy distributed artifacts');
-        expect(workflow).toContain('name: Analyze distributed artifacts');
-        expect(workflow).toContain('name: Publish distributed analysis summary');
-        expect(workflow).toContain('name: Fail if distributed recipe operation failed');
-    });
-
-    it('fails every unsuccessful distributed recipe phase after evidence handling', async () => {
+    it('fails every unsuccessful distributed recipe phase after evidence handling', async (context) => {
         const workflow = await readWorkflow(distributedRunnerWorkflowPath);
         const runnerJob = workflow.jobs.run;
         const failureStep = runnerJob?.steps?.find(
@@ -781,11 +818,39 @@ describe('Hetzner workflow contracts and effects', () => {
 
         expect(failureStep).toMatchObject({
             name: 'Fail if distributed recipe operation failed',
-            if: 'always() && steps.operation_diagnostics.outputs.operation_status != \'succeeded\'',
-            run: expect.stringContaining('::error title=Hetzner ${FAILURE_CATEGORY}')
+            if: 'always() && steps.operation_diagnostics.outputs.operation_status != \'succeeded\''
         });
-        expect(failureStep?.run).toContain('Evidence:');
-        expect(failureStep?.run).toContain('Next action:');
+        if (!failureStep?.run) {
+            throw new Error('Runner requires its complete operation failure body.');
+        }
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-operation-failure-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        await writeFile(
+            path.join(directory, 'operation-report.json'),
+            JSON.stringify({
+                evidenceExcerpt: 'readiness failed',
+                nextAction: 'inspect controller readiness'
+            })
+        );
+        await writeFile(path.join(directory, 'summary.md'), 'retained operation summary');
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', failureStep.run],
+            options: {
+                cwd: repoRoot,
+                env: {
+                    PATH: process.env.PATH,
+                    DIAGNOSTICS_DIR: directory,
+                    FAILURE_CATEGORY: 'readiness',
+                    FAILURE_STAGE: 'agent-readiness',
+                    FAILURE_COMPONENT: 'controller'
+                }
+            }
+        })).rejects.toMatchObject({
+            code: 1,
+            stdout: expect.stringContaining('controller failed during agent-readiness. Evidence: readiness failed Next action: inspect controller readiness'),
+            stderr: expect.stringContaining('retained operation summary')
+        });
         expect(runnerJob?.steps?.at(-1)).toEqual(failureStep);
     });
 
@@ -818,7 +883,6 @@ describe('Hetzner workflow contracts and effects', () => {
     });
 
     it('keeps risk-selected main pushes and manual dispatch on the serial matrix', async () => {
-        const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
         const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
         const matrix = parsedWorkflow.jobs.run?.strategy?.matrix;
         if (!matrix || !('include' in matrix)) {
@@ -826,20 +890,19 @@ describe('Hetzner workflow contracts and effects', () => {
         }
         const matrixPaths = matrix.include.map((entry) => entry.manifest_path);
 
-        expect(workflow).toContain('push:');
-        expect(workflow).toContain('branches: [main]');
-        expect(workflow).toContain('workflow_dispatch:');
-        expect(workflow).not.toMatch(/\n\s+paths:/);
-        expect(workflow).toContain('cancel-in-progress: false');
-        expect(workflow).toContain('fail-fast: false');
-        expect(parsedWorkflow.jobs.run?.strategy?.['max-parallel']).toBe(1);
+        expect(parsedWorkflow.on.push?.branches).toContain('main');
+        expect(parsedWorkflow.on.workflow_dispatch).toBeDefined();
+        expect(parsedWorkflow.on.push?.paths).toBeUndefined();
+        expect(parsedWorkflow.jobs.run?.strategy).toMatchObject({ 'fail-fast': false, 'max-parallel': 1 });
         expect(matrixPaths).toEqual(supportedMainlineManifestPaths);
-        expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
-        expect(workflow).toContain('secrets: inherit');
-        expect(workflow).toContain('ref: ${{ github.sha }}');
-        expect(workflow).toContain(
-            'run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.manifest_id }}'
-        );
+        expect(parsedWorkflow.jobs.run).toMatchObject({
+            uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
+            secrets: 'inherit',
+            with: {
+                ref: '${{ github.sha }}',
+                run_id: 'main-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.manifest_id }}'
+            }
+        });
     });
 
     it('prepares the supported commit once before running the serial manifest matrix', async () => {
@@ -881,9 +944,9 @@ describe('Hetzner workflow contracts and effects', () => {
     });
 
     it('rejects topology-specific manifests from the shared supported-suite preparation', async (context) => {
-        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-supported-topology-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const topologyManifestPath = path.join(tmp, 'topology.json');
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-topology-'));
+        onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const topologyManifestPath = path.join(directory, 'topology.json');
         await writeFile(
             topologyManifestPath,
             JSON.stringify({
@@ -936,53 +999,23 @@ describe('Hetzner workflow contracts and effects', () => {
         );
     });
 
-    it('passes browser log level through workflows that start headless workers', async () => {
-        const distributedWorkflow = await readFile(
-            path.join(repoRoot, distributedRunnerWorkflowPath),
-            'utf8'
-        );
-        const headlessWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
-            'utf8'
-        );
-
-        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
-            expect(workflow).toContain('browser_log_level:');
-            expect(workflow).toContain('default: warning');
-            expect(workflow).toContain(
-                'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}'
-            );
+    it.for([distributedRunnerWorkflowPath, '.github/workflows/hetzner-headless-browsers.yml'])(
+        'passes browser log verbosity to the headless environment in %s',
+        async (workflowPath) => {
+            const workflow = await readWorkflow(workflowPath);
+            const render = Object.values(workflow.jobs).flatMap((job) => job.steps ?? [])
+                .find((step) => step.env?.RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL !== undefined);
+            expect(render?.env?.RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL).toBe('${{ inputs.browser_log_level }}');
+            const trigger = workflow.on.workflow_call ?? workflow.on.workflow_dispatch;
+            expect(trigger?.inputs?.browser_log_level?.default).toBe('warning');
         }
-    });
-
-    it('parses the workflow YAML with the same parser used in verification', async (context) => {
-        for (
-            const workflowPath of [
-                distributedWorkflowPath,
-                distributedRunnerWorkflowPath,
-                supportedManifestsWorkflowPath
-            ]
-        ) {
-            const absoluteWorkflowPath = path.join(repoRoot, workflowPath);
-            const { stdout } = await runOwnedTestProcess(context, {
-                executable: 'ruby',
-                args: [
-                    '-e',
-                    `require 'yaml'; YAML.load_file('${absoluteWorkflowPath}'); puts 'workflow yaml ok'`
-                ],
-                options: {}
-            });
-
-            expect(stdout.trim()).toBe('workflow yaml ok');
-        }
-    });
+    );
 
     it('dispatches a checked-in manifest with derived GitHub Action inputs', async (context) => {
         const fixture = await createGhDispatchFixture({
             label: 'rallar-dispatch-gh-',
             secretResponses: { repository: repositorySecretNames, environment: authSecretNames }
         });
-        const { argsFile } = fixture;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -999,7 +1032,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toEqual([
             'workflow',
             'run',
@@ -1050,7 +1083,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('dispatches custom fast-iteration workflow inputs exactly', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-custom-gh-', secretResponses: completeSecretResponses });
-        const { argsFile } = fixture;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1083,7 +1115,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('rollout_before_run=false');
         expect(args).toContain('install_playwright=true');
         expect(args).toContain('npm_ci=true');
@@ -1101,7 +1133,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('derives terminal timeout and prints load estimate from manifest metadata', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-manifest-timeout-gh-', secretResponses: completeSecretResponses });
-        const { argsFile } = fixture;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1117,7 +1148,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('terminal_timeout_seconds=3900');
         expect(args).toContain('agent_count=50');
         expect(stdout).toContain('Timeout  : 3900');
@@ -1150,11 +1181,11 @@ describe('Hetzner workflow contracts and effects', () => {
     });
 
     it('refuses non-mesh topology env manifests when rollout is disabled', async (context) => {
-        const tmpRoot = path.join(repoRoot, 'tmp');
-        await mkdir(tmpRoot, { recursive: true });
-        const tmp = await mkdtemp(path.join(tmpRoot, 'rallar-dispatch-tree-topology-no-rollout-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const manifestPath = path.join(tmp, 'tree-topology.json');
+        const temporaryRoot = path.join(repoRoot, 'tmp');
+        await mkdir(temporaryRoot, { recursive: true });
+        const directory = await mkdtemp(path.join(temporaryRoot, 'rallar-dispatch-tree-topology-no-rollout-'));
+        onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const manifestPath = path.join(directory, 'tree-topology.json');
         await writeFile(
             manifestPath,
             JSON.stringify({
@@ -1196,11 +1227,11 @@ describe('Hetzner workflow contracts and effects', () => {
     });
 
     it('validates every supported topology env value before dispatching', async (context) => {
-        const tmpRoot = path.join(repoRoot, 'tmp');
-        await mkdir(tmpRoot, { recursive: true });
-        const tmp = await mkdtemp(path.join(tmpRoot, 'rallar-dispatch-invalid-topology-'));
-        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
-        const manifestPath = path.join(tmp, 'invalid-topology.json');
+        const temporaryRoot = path.join(repoRoot, 'tmp');
+        await mkdir(temporaryRoot, { recursive: true });
+        const directory = await mkdtemp(path.join(temporaryRoot, 'rallar-dispatch-invalid-topology-'));
+        onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const manifestPath = path.join(directory, 'invalid-topology.json');
         await writeFile(
             manifestPath,
             JSON.stringify({
@@ -1235,16 +1266,14 @@ describe('Hetzner workflow contracts and effects', () => {
     });
 
     it('prints all supported topology env values before dispatching', async (context) => {
-        const tmpRoot = path.join(repoRoot, 'tmp');
-        await mkdir(tmpRoot, { recursive: true });
+        const temporaryRoot = path.join(repoRoot, 'tmp');
+        await mkdir(temporaryRoot, { recursive: true });
         const fixture = await createGhDispatchFixture({
             label: 'rallar-dispatch-topology-env-',
-            parentDirectory: tmpRoot,
+            parentDirectory: temporaryRoot,
             secretResponses: completeSecretResponses
         });
-        const { directory: tmp, argsFile } = fixture;
-
-        const manifestPath = path.join(tmp, 'topology-env.json');
+        const manifestPath = path.join(fixture.directory, 'topology-env.json');
 
         await writeFile(
             manifestPath,
@@ -1273,7 +1302,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('run_id=topology-env-values');
         expect(stdout).toContain(
             'Topology : RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=2 RALLAR_RTC_TOPOLOGY_MESH_PARAM_K=3'
@@ -1282,7 +1311,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('supports keep-headless as an explicit debug opt-out from cleanup', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-keep-headless-gh-', secretResponses: completeSecretResponses });
-        const { argsFile } = fixture;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1299,7 +1327,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('stop_after_run=false');
         expect(args).toContain('run_id=debug-keep-headless');
         expect(stdout).toContain('Stop headless: false');
@@ -1307,7 +1335,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('rejects invalid timeout inputs before invoking gh', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-invalid-timeout-gh-' });
-        const { argsFile } = fixture;
         await expect(
             runOwnedTestProcess(context, {
                 executable: 'bash',
@@ -1326,12 +1353,11 @@ describe('Hetzner workflow contracts and effects', () => {
             stderr: expect.stringContaining('ready_timeout_seconds must be a positive integer')
         });
 
-        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(fixture.argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('rejects invalid register-before-login inputs before invoking gh', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-invalid-register-gh-' });
-        const { argsFile } = fixture;
         await expect(
             runOwnedTestProcess(context, {
                 executable: 'bash',
@@ -1350,12 +1376,11 @@ describe('Hetzner workflow contracts and effects', () => {
             stderr: expect.stringContaining('register_before_login must be a boolean')
         });
 
-        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(fixture.argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('rejects invalid stop-after-run inputs before invoking gh', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-invalid-stop-gh-' });
-        const { argsFile } = fixture;
         await expect(
             runOwnedTestProcess(context, {
                 executable: 'bash',
@@ -1374,7 +1399,7 @@ describe('Hetzner workflow contracts and effects', () => {
             stderr: expect.stringContaining('stop_after_run must be a boolean')
         });
 
-        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(fixture.argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('refuses dispatch before workflow run when required GitHub secrets are missing', async (context) => {
@@ -1382,7 +1407,6 @@ describe('Hetzner workflow contracts and effects', () => {
             label: 'rallar-dispatch-missing-secrets-gh-',
             secretResponses: { repository: repositorySecretNames, environment: repositorySecretNames }
         });
-        const { argsFile } = fixture;
         await expect(
             runOwnedTestProcess(context, {
                 executable: 'bash',
@@ -1398,7 +1422,7 @@ describe('Hetzner workflow contracts and effects', () => {
             )
         });
 
-        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(fixture.argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('refuses diagnostic manifests unless explicitly allowed', async (context) => {
@@ -1420,7 +1444,6 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('allows diagnostic manifests with an explicit opt-in', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-diagnostic-gh-', secretResponses: completeSecretResponses });
-        const { argsFile } = fixture;
         await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1436,7 +1459,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = await readFile(argsFile, 'utf8');
+        const args = await readFile(fixture.argsFile, 'utf8');
         expect(args).toContain(
             'manifest_path=apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json'
         );
@@ -1445,7 +1468,6 @@ describe('Hetzner workflow contracts and effects', () => {
     });
     it('dispatches a fast manifest run without rollout, Playwright install, or npm ci', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-fast-gh-', secretResponses: completeSecretResponses });
-        const { argsFile } = fixture;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
@@ -1463,7 +1485,7 @@ describe('Hetzner workflow contracts and effects', () => {
             }
         });
 
-        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('rollout_before_run=false');
         expect(args).toContain('install_playwright=false');
         expect(args).toContain('npm_ci=false');

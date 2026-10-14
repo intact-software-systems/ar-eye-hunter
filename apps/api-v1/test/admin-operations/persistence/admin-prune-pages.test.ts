@@ -1,8 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import assert from 'node:assert/strict';
+
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
@@ -14,8 +13,12 @@ import {
     toAdminPruneAggregateKey
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import assert from 'node:assert/strict';
-import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+
+import {
+    createResourceEntry,
+    readPGliteDatabaseEpochMs,
+    withPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('admin prune PSQL repository reads and deletes one deterministic page', async () => {
     await withPGliteSql(async (sql) => {
@@ -71,7 +74,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
 Deno.test('admin prune PSQL repository excludes its executing resource row', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const inbox = createPSqlResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const expiryTs = Temporal.Instant.fromEpochMilliseconds(now - 1);
         await inbox.entries.write(createResourceEntry('executing', { expiryTs }));
         await inbox.entries.write(createResourceEntry('executing', {
@@ -139,7 +142,7 @@ Deno.test('admin prune successor outbox rejects an identical active identity', a
             'server-1'
         );
         const outboxWrite = computeAppOutboxInsert(entry);
-        await createPSqlResourceInboxRepository(sql).entries.write(entry);
+        await createPSqlResourceInboxRepository(sql, () => new Date()).entries.write(entry);
 
         await assert.rejects(
             () =>

@@ -267,6 +267,7 @@ describe('Rallar WS lifecycle', () => {
         });
         webSocketQueueBox.close.mockImplementation((code, reason) => {
             webSocketClient.close(code, reason);
+            return Promise.resolve();
         });
         webSocketClient.onWebsocketCallbacksDo.mockReturnValue(webSocketClient);
         webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);

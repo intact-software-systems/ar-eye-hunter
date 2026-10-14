@@ -27,7 +27,7 @@ import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
@@ -573,6 +573,16 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const remoteOrigin = options.origin === 'remote'
         ? await createRemoteOriginInstance(service, outbox, outboundStores)
         : undefined;
+    registerReceiptFixtureRouting(service, options);
+    onTestFinished(async () => {
+        await service.dispose();
+        await engine.stop();
+        vi.restoreAllMocks();
+    });
+    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
+}
+
+function registerReceiptFixtureRouting(service: WsQueueBoxServerService, options: ReceiptFixtureOptions): void {
     service.authorizeInboundMessagesWith({
         sendNacks: true,
         authorize: async (message) =>
@@ -590,12 +600,6 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
             }
         }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
-        vi.restoreAllMocks();
-    });
-    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
 }
 
 /** A second instance holding the origin's live socket; both instances share durable outbox and admission state. */
@@ -622,9 +626,9 @@ async function createRemoteOriginInstance(
         outboundStores,
         targetResolver: { resolvePeerRecipients: (peerId) => peerId === 'a' ? [{ peerId, connectionId: 'a' }] : [] }
     });
-    onTestFinished(() => {
-        remote.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        await remote.dispose();
+        await engine.stop();
     });
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     const bus: QueueBoxPubSubBridge = {

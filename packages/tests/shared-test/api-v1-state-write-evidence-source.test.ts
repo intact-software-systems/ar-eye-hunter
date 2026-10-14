@@ -15,9 +15,11 @@ import {
     describe,
     expect,
     expectTypeOf,
-    it
+    it,
+    vi
 } from 'vitest';
 
+import type { PSqlRows } from '@shared-server/postgres/p-sql-sql.ts';
 import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_APP_INBOX_TOPIC,
@@ -26,6 +28,7 @@ import {
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import type {
     ApiV1StateWriteEvidenceSql,
@@ -41,7 +44,7 @@ import {
     selectApiV1StateWriteEvidenceSource,
     toStateWriteEvidenceSql
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts';
-import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts';
+import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/collect-api-v1-state-write-evidence-from-sql.ts';
 
 interface SnapshotResponsePublication {
     readonly path: string;
@@ -155,15 +158,19 @@ describe('API-v1 PGlite state-write evidence source', () => {
     it('keeps raw JSON evidence inputs untrusted until the SQL validator runs', async () => {
         // SQL fixtures return authored rows; the generic query boundary is asserted explicitly below.
         const rawInput: unknown = JSON.parse('{"match":""}');
-        const sql = Object.assign(vi.fn(), { begin: vi.fn() });
+        const queries: string[] = [];
+        const sql = createEvidenceSql(async (parts) => {
+            queries.push(parts.join('?'));
+            return [];
+        });
 
         expectTypeOf<Parameters<typeof collectApiV1StateWriteEvidence>[0]>().toEqualTypeOf<typeof rawInput>();
         expectTypeOf<Parameters<typeof readPGliteStateWriteEvidenceSnapshot>[1]>().toEqualTypeOf<typeof rawInput>();
 
-        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
+        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql)).rejects.toThrow(
             'stateWriteEvidence.match must be a non-empty string.'
         );
-        expect(sql).not.toHaveBeenCalled();
+        expect(queries).toEqual([]);
     });
 
     it('links public admin request identity to its scoped page-work identity', async () => {
@@ -244,34 +251,31 @@ describe('API-v1 PGlite state-write evidence source', () => {
             pageIndex: 0,
             appData: command.appData
         }, 'server-1');
-        const sql = Object.assign(
-            vi.fn(async (parts: TemplateStringsArray, ...values: ApiV1StateWriteEvidenceSqlParameter[]) => {
-                const query = parts.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
-                if (query.includes('from resource_inbox i')) {
-                    return [inbox];
-                }
-                if (query.includes('ri_type_id in (\'app_outbox\', \'ws_outbox\')')) {
-                    return values[0] === jobId
-                        ? [{
-                            ri_resource_id: page.key.resourceId,
-                            ri_topic_id: page.key.topicId,
-                            fk_ext_bank_id: page.key.contextId,
-                            ri_type_id: page.typeId,
-                            ri_status: page.status,
-                            ri_resource: page.resource
-                        }]
-                        : [];
-                }
-                return [];
-            }),
-            { begin: vi.fn() }
-        );
+        const sql = createEvidenceSql(async (parts, ...values) => {
+            const query = parts.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+            if (query.includes('from resource_inbox i')) {
+                return [inbox];
+            }
+            if (query.includes('ri_type_id in (\'app_outbox\', \'ws_outbox\')')) {
+                return values[0] === jobId
+                    ? [{
+                        ri_resource_id: page.key.resourceId,
+                        ri_topic_id: page.key.topicId,
+                        fk_ext_bank_id: page.key.contextId,
+                        ri_type_id: page.typeId,
+                        ri_status: page.status,
+                        ri_resource: page.resource
+                    }]
+                    : [];
+            }
+            return [];
+        });
 
         const evidence = await collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED'],
             expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
-        }, sql as ApiV1StateWriteEvidenceSql);
+        }, sql);
 
         expect(evidence).toMatchObject({
             matchedAppInboxCount: 1,
@@ -292,7 +296,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             await expect(collectApiV1StateWriteEvidenceFromSql({
                 match: requestId,
                 commandTypes: ['ADMIN_PRUNE_EXPIRED']
-            }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
+            }, sql)).resolves.toMatchObject({
                 atomicCompletionFailures: 1,
                 statusResultFailures: 1,
                 appInbox: [{ durableResultValid: false }]
@@ -308,7 +312,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
         await expect(collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED']
-        }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
+        }, sql)).resolves.toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]
@@ -335,39 +339,104 @@ describe('API-v1 PGlite state-write evidence source', () => {
         await expect(collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED']
-        }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
+        }, sql)).resolves.toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]
         });
     });
 
-    it('retains numeric-string minimum and string commandTypes behavior', async () => {
-        const row = {
-            ri_row_id: 1,
-            ri_resource_id: 'command-1',
-            ri_topic_id: 'app-inbox',
-            fk_ext_bank_id: 'scope',
-            ri_resource: JSON.stringify({ payload: { typeId: 'GROUP_UPDATE' } }),
-            ri_status: 'COMPLETED',
-            ri_attempts: 1,
-            start_ts: null,
-            end_ts: null,
-            next_ts: null,
-            result_status: 'COMPLETED',
-            result_resource: '{}'
-        };
-        const sql = Object.assign(
-            vi.fn(async () => [row]),
-            { begin: vi.fn() }
-        );
-        const rawInput = JSON.parse(
-            '{"match":"scope","minimumMatchedRows":"2","commandTypes":"GROUP_UPDATE"}'
-        );
+    it.each([
+        ['numeric string minimum', { minimumMatchedRows: '2' }],
+        ['non-finite minimum', { minimumMatchedRows: Number.NaN }],
+        ['non-finite sample', { evidenceSampleLimit: Number.POSITIVE_INFINITY }],
+        ['string command types', { commandTypes: 'GROUP_UPDATE' }],
+        ['mixed command types', { commandTypes: ['GROUP_UPDATE', 1] }],
+        ['string command prefixes', { commandIdPrefixes: 'command-' }],
+        ['invalid effect inventory', { expectedEffectsByCommandType: { GROUP_UPDATE: 'effect' } }],
+        ['array fixture', { overdueRecoveryFixture: [] }],
+        ['numeric fixture prefix', { overdueRecoveryFixture: { commandIdPrefix: 1 } }],
+        ['string overdue interval', { overdueRecoveryFixture: { overdueByMs: '65000' } }],
+        ['non-finite fixture deadline', { overdueRecoveryFixture: { timeoutMs: Number.POSITIVE_INFINITY } }]
+    ])('refuses %s before SQL reads or writes', async (_caseName, invalidOptions) => {
+        const queries: string[] = [];
+        const sql = createEvidenceSql(async (parts) => {
+            queries.push(parts.join('?'));
+            return [];
+        });
 
-        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
-            'Expected at least 2 matching AppInbox rows; found 1.'
+        await expect(collectApiV1StateWriteEvidenceFromSql({ match: 'scope', ...invalidOptions }, sql))
+            .rejects.toThrow(/stateWriteEvidence/);
+        expect(queries).toEqual([]);
+    });
+
+    it.each([[0, 0], [-0, 0], [-0.5, 0], [0.5, 1]])('preserves finite minimum %s with %s observed rows', async (minimum, rowCount) => {
+        const sql = createEvidenceSql(async (parts) => parts.join('').includes('from resource_inbox i') ? evidenceInboxRows(rowCount) : []);
+        await expect(collectApiV1StateWriteEvidenceFromSql({ match: 'scope', minimumMatchedRows: minimum }, sql))
+            .resolves.toMatchObject({ matchedAppInboxCount: rowCount });
+    });
+
+    it.each([
+        [{ match: 'scope' }, 'Expected at least 1 matching AppInbox rows; found 0.'],
+        [{ match: 'scope', minimumMatchedRows: 0.5 }, 'Expected at least 0.5 matching AppInbox rows; found 0.']
+    ])('requires its default or fractional minimum when no row matches', async (input, failure) => {
+        await expect(collectApiV1StateWriteEvidenceFromSql(input, createEvidenceSql(async () => []))).rejects.toThrow(failure);
+    });
+
+    it.each([
+        [-2, 0],
+        [0, 0],
+        [0.9, 0],
+        [1.9, 1],
+        [30, 25],
+        [undefined, 25]
+    ])('preserves the sample limit %s as %s evidence rows', async (sampleLimit, expectedCount) => {
+        const sql = createEvidenceSql(async (parts) => parts.join('').includes('from resource_inbox i') ? evidenceInboxRows(30) : []);
+        const evidence = await collectApiV1StateWriteEvidenceFromSql({
+            match: 'scope',
+            ...(sampleLimit === undefined ? {} : { evidenceSampleLimit: sampleLimit })
+        }, sql);
+        expect(evidence).toMatchObject({ matchedAppInboxCount: 30, appInbox: expect.any(Array) });
+        if (!Array.isArray(evidence.appInbox)) {
+            throw new Error('Evidence omitted its inbox projection');
+        }
+        expect(evidence.appInbox).toHaveLength(expectedCount);
+    });
+
+    it.each(['fixture-scope', ''])('reports all malformed option fields before SQL work: %s', async (match) => {
+        const query = vi.fn(async (): Promise<PSqlRows> => []);
+        await expect(collectApiV1StateWriteEvidenceFromSql({
+            match,
+            minimumMatchedRows: '1',
+            commandTypes: 'GROUP_UPDATE',
+            overdueRecoveryFixture: { timeoutMs: '20000', commandType: 7 }
+        }, createEvidenceSql(query))).rejects.toThrow(
+            /minimumMatchedRows[\s\S]*commandTypes[\s\S]*timeoutMs[\s\S]*commandType/
         );
+        expect(query).not.toHaveBeenCalled();
+    });
+
+    it('snapshots known evidence fields before asynchronous SQL reads', async () => {
+        const firstRows = Promise.withResolvers<PSqlRows>();
+        const commandTypes: string[] = [];
+        const input = {
+            match: 'scope',
+            minimumMatchedRows: 0,
+            evidenceSampleLimit: 1.9,
+            commandTypes,
+            commandIdPrefixes: [],
+            expectedEffectsByCommandType: { GROUP_UPDATE: [] }
+        };
+        const sql = createEvidenceSql(async (parts) => parts.join('').includes('from resource_inbox i') ? await firstRows.promise : []);
+        const pending = collectApiV1StateWriteEvidenceFromSql(input, sql);
+        input.minimumMatchedRows = 1000;
+        input.evidenceSampleLimit = 0;
+        input.commandTypes.push('AUTH_USER_REGISTER');
+        firstRows.resolve(evidenceInboxRows(1));
+
+        await expect(pending).resolves.toMatchObject({ matchedAppInboxCount: 1, appInbox: [expect.any(Object)] });
+        expect(input.commandTypes).toEqual(['AUTH_USER_REGISTER']);
+        expect(input.evidenceSampleLimit).toBe(0);
     });
 
     it('acquires the PGlite snapshot before validating its raw evidence input', async () => {
@@ -543,8 +612,10 @@ describe('API-v1 PGlite state-write evidence source', () => {
             }
             catch (error) {
                 expect(error).toBeInstanceOf(AggregateError);
-                const aggregate = error as AggregateError;
-                expect(aggregate.errors.map((item) => (item as Error).message)).toEqual(
+                if (!(error instanceof AggregateError)) {
+                    throw error;
+                }
+                expect(error.errors.map((item) => toError(item).message)).toEqual(
                     scenario.expectedErrors
                 );
             }
@@ -599,3 +670,37 @@ describe('API-v1 PGlite state-write evidence source', () => {
         expect(events).toEqual(['close']);
     });
 });
+
+function createEvidenceSql(
+    query: (parts: TemplateStringsArray, ...values: readonly ApiV1StateWriteEvidenceSqlParameter[]) => Promise<PSqlRows>
+): ApiV1StateWriteEvidenceSql {
+    async function sql<Rows extends PSqlRows>(
+        parts: TemplateStringsArray,
+        ...values: readonly ApiV1StateWriteEvidenceSqlParameter[]
+    ): Promise<Rows> {
+        // This owned SQL response port returns authored projection rows, as a database driver does.
+        return await query(parts, ...values) as Rows;
+    }
+    return Object.assign(sql, {
+        begin: async (): Promise<void> => {
+            throw new Error('This evidence-read fixture does not run transactions');
+        }
+    });
+}
+
+function evidenceInboxRows(count: number): PSqlRows {
+    return Array.from({ length: count }, (_, index) => ({
+        ri_row_id: index + 1,
+        ri_resource_id: `command-${index}`,
+        ri_topic_id: 'app-inbox',
+        fk_ext_bank_id: 'scope',
+        ri_resource: JSON.stringify({ payload: { typeId: 'GROUP_UPDATE' } }),
+        ri_status: 'COMPLETED',
+        ri_attempts: 1,
+        start_ts: '2026-01-01 00:00:00.000000',
+        end_ts: '2026-01-01 00:00:01.000000',
+        next_ts: null,
+        result_status: 'COMPLETED',
+        result_resource: '{}'
+    }));
+}

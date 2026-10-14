@@ -1039,6 +1039,7 @@ function resetDirectorWsDoubles(): void {
     });
     mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
         mocks.webSocket.close(code, reason);
+        return Promise.resolve();
     });
     mocks.webSocket.onWebsocketCallbacksDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox.socket

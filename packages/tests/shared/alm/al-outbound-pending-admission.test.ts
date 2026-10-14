@@ -1,7 +1,9 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -10,21 +12,24 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
+import '../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    holdOutboundClaims
+    holdOutboundClaims,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
-afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-});
+beforeEach(() =>
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    })
+);
 
 it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict through %s restart with one payload and the captured plan', async (kind) => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -52,7 +57,12 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     };
     const store = createALOutboundAdmissionStore(options);
     const stores = { admissionStore: store, workQueue: backend.workQueue };
-    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-sender-version'));
+    const competitor = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('competing-sender-version'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() }
+    });
     const commit = store.commitBundle.bind(store);
     let first = true;
     // A competing sender wins the version fence inside the first commit, so the admission below is
@@ -84,8 +94,8 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
     expect((await initial.enqueueIfAbsent(original)).verdict).toEqual({ kind: 'pending' });
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
-    initial.dispose();
-    await claims.release();
+    await initial.dispose();
+    await claims.release(initial);
     vi.restoreAllMocks();
     const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
     expect(rows.filter((row) => row?.resource.includes('pending-unique-payload'))).toHaveLength(1);
@@ -103,6 +113,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         });
     const restartedStore = createALOutboundAdmissionStore({ ...options, backend: restartedBackend });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const sent: string[] = [];
     const restarted = createDefaultOutboundTestRuntime({
         stores: { admissionStore: restartedStore, workQueue: restartedBackend.workQueue },

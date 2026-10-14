@@ -115,6 +115,7 @@ export function resetRoomEventTestRuntime(): void {
     const { webSocketQueueBox, webRtcConnectionService } = roomEventMocks.context.middleware;
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
+        return Promise.resolve();
     });
     vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockImplementation((id, callback) => {
         roomEventMocks.wsInboxCallbacks.set(id, callback);

@@ -16,7 +16,8 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
+import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {
@@ -32,6 +33,7 @@ import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -43,11 +45,13 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundReceiptConfirmationDiagnostic } from './control/to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
     ALOutboundCanonicalHandoff
 } from './lane/al-outbound-canonical-handoff.ts';
+import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -251,15 +255,6 @@ export interface ALCongestionCounters {
     readonly handedOver: number;
 }
 
-/** The congestion decision behind a handling plan's `overloaded` or `congested` drop; `undefined` for every other plan. */
-export function toALOutboundCongestionDrop(
-    plan: Pick<ALMessageHandlingPlan, 'dropReasonCode' | 'congestion'>
-): ALOutboundCongestionDrop | undefined {
-    const { cause, priority } = plan.congestion;
-    const congestionDropped = plan.dropReasonCode === 'overloaded' || plan.dropReasonCode === 'congested';
-    return congestionDropped && cause !== undefined ? { cause, priority } : undefined;
-}
-
 export interface WriteALOutboundCongestionDeferralInput {
     readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     readonly carrier: ALDeliveryCarrier;
@@ -269,37 +264,29 @@ export interface WriteALOutboundCongestionDeferralInput {
     readonly qosProvider: ALQosInputProvider;
 }
 
-/**
- * A message its carrier holds back at submission because its channel or socket cannot take it now (D186): every held
- * message of the page, relay forwards and controls included, not only this session's own sends.
- */
-export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {
-    const { message } = input;
-    const policy = normalizeALQosPolicy(
-        message,
-        resolveALQosNormalizationInput(
-            message,
-            { direction: 'outbound', selfPeerId: input.selfPeerId },
-            input.qosProvider
-        )
-    );
-    writeALOutboundRuntimeDiagnostic(input.diagnostics, {
-        kind: 'congestion',
-        carrier: input.carrier,
-        cause: 'backpressured',
-        action: 'defer',
-        priority: policy.effective.congestion.opts.priority,
-        msgId: message.id.msgId
-    });
-}
-
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
 export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 
 /** What the write transaction returned, or that the admission settled before opening one. */
 export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
 
+/** The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. */
+export interface ALOutboundRtcAckSubmission {
+    readonly kind: 'rtc-ack-submission';
+    readonly controlMsgId: string;
+    readonly controlSenderId: string;
+    readonly fromPeerId: string;
+    readonly toPeerId: string;
+    readonly carrier: 'rtc';
+    readonly status: QRtcDataChannel.SendSettlement['status'];
+    readonly submissionAttempted: boolean;
+    /** Terminal observer time, after QR's settlement microtask; not the instant native send ran. */
+    readonly observedAtEpochMs: number;
+}
+
 export type ALOutboundRuntimeDiagnosticsEvent =
+    | ALOutboundReceiptConfirmationDiagnostic
+    | ALOutboundRtcAckSubmission
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;
@@ -384,24 +371,6 @@ export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
 
-/** A throwing sink changes nothing the runtime or its carrier decided: the diagnostic follows the decision. */
-export function writeALOutboundRuntimeDiagnostic(
-    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
-    event: ALOutboundRuntimeDiagnosticsEvent
-): void {
-    try {
-        diagnostics?.(event);
-    }
-    catch (error) {
-        console.error('AL outbound runtime diagnostics sink failed', error);
-    }
-}
-
-/** Every settlement variant without the three fields the runtime stamps for its owners. */
-type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
-    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
-    never;
-
 /** One delivery fact as the owner that observed it states it, before the runtime stamps it. */
 export type ALOutboundSettlementFact = ALOutboundUnstampedSettlement<ALDeliverySettlement>;
 
@@ -421,6 +390,17 @@ export interface ALOutboundEnqueueResult {
     readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
+/** Every settlement variant without the three fields the runtime stamps for its owners. */
+type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
+    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
+    never;
+
+/** The lane one admission goes to and the planner its admission reads the plan through. */
+interface ALOutboundPlannedAdmission<TPrepared> {
+    readonly lane: ALOutboundStoreLane<TPrepared>;
+    readonly planner: ALOutboundPlanner<TPrepared>;
+}
+
 export namespace ALOutboundMessageRuntime {
     /** An admitted message sent again with this plan, as one repair attempt of its own identity. */
     export interface Retransmission<TPrepared> {
@@ -434,6 +414,7 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
     export interface SendLifecycle {
+        readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
         /** This message's own signal: `cancel(msgId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
@@ -476,6 +457,8 @@ export namespace ALOutboundMessageRuntime {
     }
 
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
+        /** Absent outside explicitly enabled private server receipt capture. */
+        readonly receiptWorkCapture?: ALOutboundReceiptWorkEvidence.Capture<TPrepared>;
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
@@ -602,12 +585,20 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return durable;
     }
 
-    dispose(): void {
+    /** Aborts transports and every lane synchronously, then joins their owned work and releases. */
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.durable.dispose();
-        this.volatile?.dispose();
-        this.checkpoint?.dispose();
         this.sendControls.dispose();
+        const disposed = await Promise.allSettled([
+            this.durable.dispose(),
+            this.volatile?.dispose(),
+            this.checkpoint?.dispose()
+        ]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
     }
 
     /** Starts the checkpoint now, as a hidden or frozen page may run nothing later; never awaited. */
@@ -887,12 +878,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 }
 
-/** The lane one admission goes to and the planner its admission reads the plan through. */
-interface ALOutboundPlannedAdmission<TPrepared> {
-    readonly lane: ALOutboundStoreLane<TPrepared>;
-    readonly planner: ALOutboundPlanner<TPrepared>;
-}
-
 /** The plan the router already made for this message, so its admission does not plan it twice. */
 function toPlannedOnce<TPrepared>(
     planned: ALMessage,
@@ -903,4 +888,50 @@ function toPlannedOnce<TPrepared>(
         msg === planned && authority === undefined
             ? plan
             : planner(msg, authority);
+}
+
+/** The congestion decision behind a handling plan's `overloaded` or `congested` drop; `undefined` for every other plan. */
+export function toALOutboundCongestionDrop(
+    plan: Pick<ALMessageHandlingPlan, 'dropReasonCode' | 'congestion'>
+): ALOutboundCongestionDrop | undefined {
+    const { cause, priority } = plan.congestion;
+    const congestionDropped = plan.dropReasonCode === 'overloaded' || plan.dropReasonCode === 'congested';
+    return congestionDropped && cause !== undefined ? { cause, priority } : undefined;
+}
+
+/**
+ * A message its carrier holds back at submission because its channel or socket cannot take it now (D186): every held
+ * message of the page, relay forwards and controls included, not only this session's own sends.
+ */
+export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {
+    const { message } = input;
+    const policy = normalizeALQosPolicy(
+        message,
+        resolveALQosNormalizationInput(
+            message,
+            { direction: 'outbound', selfPeerId: input.selfPeerId },
+            input.qosProvider
+        )
+    );
+    writeALOutboundRuntimeDiagnostic(input.diagnostics, {
+        kind: 'congestion',
+        carrier: input.carrier,
+        cause: 'backpressured',
+        action: 'defer',
+        priority: policy.effective.congestion.opts.priority,
+        msgId: message.id.msgId
+    });
+}
+
+/** A throwing sink changes nothing the runtime or its carrier decided: the diagnostic follows the decision. */
+export function writeALOutboundRuntimeDiagnostic(
+    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
+    event: ALOutboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        diagnostics?.(event);
+    }
+    catch (error) {
+        console.error('AL outbound runtime diagnostics sink failed', error);
+    }
 }

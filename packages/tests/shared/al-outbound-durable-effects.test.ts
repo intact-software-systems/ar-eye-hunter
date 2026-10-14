@@ -1,14 +1,16 @@
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
@@ -24,7 +26,6 @@ import {
 } from '@shared/mod.ts';
 
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundMessage,
@@ -32,17 +33,25 @@ import {
     holdOutboundClaims,
     OUTBOUND_LEASE_RECOVERY_BOUND_MS,
     peekOutboundWorkReadyAt,
+    readOutboundTestAdmission,
     reserveOutbox,
     type OutboundTestStores
 } from './alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledOutboundWork } from './wait-for-al-outbound-work.ts';
 
+interface UndrainedOutboundRuntime {
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly claimedCounts: number[];
+}
+
 describe('AL outbound durable effect lifecycle', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-        vi.restoreAllMocks();
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            vi.restoreAllMocks();
+        });
     });
 
     it('does not send when the deadline passes during the receipt read', async () => {
@@ -62,9 +71,9 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
-        await settleOutboundWork(stores);
+        await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace);
         expect(send).not.toHaveBeenCalled();
-        expect(await peekOutboundTestWork(stores)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
     });
 
     it('recovers a retained send when its claim release fails after native settlement', async () => {
@@ -81,18 +90,19 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
+        onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage('retained-completion-failure');
         await runtime.enqueueIfAbsent(message);
         settlement.resolve({ status: 'sent', submissionAttempted: true });
         await vi.advanceTimersByTimeAsync(0);
-        const retryAt = await peekOutboundTestWork(stores);
+        const retryAt = await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
         if (retryAt === undefined) {
             throw new Error('Completion failure must retain retryable work');
         }
         expect(retryAt).toBeGreaterThan(Date.now());
         await vi.advanceTimersByTimeAsync(retryAt - Date.now() + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
         expect(sent).toEqual([message.id.msgId, message.id.msgId]);
-        expect(await peekOutboundTestWork(stores)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
     });
 
     it.each(['cancelled', 'expired', 'superseded'] as const)('does not retry a retained send after %s settlement', async (status) => {
@@ -108,12 +118,13 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
+        onTestFinished(() => settlement.resolve({ status: 'cancelled', submissionAttempted: false }));
         const message = createOutboundMessage(`retained-${status}`);
         await runtime.enqueueIfAbsent(message);
         settlement.resolve({ status, submissionAttempted: false });
         await vi.advanceTimersByTimeAsync(10_001);
         expect(attempts).toEqual([message.id.msgId]);
-        expect(await peekOutboundTestWork(stores)).toBeUndefined();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
     });
 
     it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {
@@ -132,11 +143,11 @@ describe('AL outbound durable effect lifecycle', () => {
 
         await enqueueOutboundOrThrow(runtime1, msg);
         await expect.poll(() => claimedCounts.length).toBeGreaterThanOrEqual(2);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         expect(sent).toEqual([]);
         expect(claimedCounts).toEqual([0, 0]);
-        await claims.release();
+        await claims.release(runtime1);
 
         const runtime2 = createDefaultOutboundTestRuntime({
             stores,
@@ -158,7 +169,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime2.dispose();
+        await runtime2.dispose();
     });
 
     it('drains a repair effect committed while the current batch is claiming', async () => {
@@ -193,6 +204,7 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.ready();
         const claimStarted = Promise.withResolvers<void>();
         const releaseClaim = Promise.withResolvers<void>();
+        onTestFinished(() => releaseClaim.resolve());
         const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
         let held = false;
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
@@ -228,7 +240,7 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'repair', msgId: msg.id.msgId, trigger: 'repair', phase: 'immediate' }
         ]);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('replays a sent effect when the claim release fails after transport send', async () => {
@@ -259,7 +271,7 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        const retryAt = await peekOutboundTestWork(stores);
+        const retryAt = await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
         if (retryAt === undefined) {
             throw new Error('Failed completion must leave a pending QueueBox retry');
         }
@@ -271,7 +283,7 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('lets only one runtime claim the same committed send effect', async () => {
@@ -290,9 +302,9 @@ describe('AL outbound durable effect lifecycle', () => {
 
         await enqueueOutboundOrThrow(runtime1, msg);
         await expect.poll(() => claimedCounts.length).toBeGreaterThanOrEqual(2);
-        runtime1.dispose();
+        await runtime1.dispose();
         expect(sent).toEqual([]);
-        await claims.release();
+        await claims.release(runtime1);
 
         const sendStarted = Promise.withResolvers<void>();
         const sendBarrier = Promise.withResolvers<void>();
@@ -327,6 +339,11 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
         const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
+        void drain.catch(() => {});
+        onTestFinished(async () => {
+            sendBarrier.resolve();
+            await drain;
+        });
 
         await sendStarted.promise;
         await Promise.resolve();
@@ -336,8 +353,8 @@ describe('AL outbound durable effect lifecycle', () => {
 
         sendBarrier.resolve();
         await drain;
-        runtime2.dispose();
-        runtime3.dispose();
+        await runtime2.dispose();
+        await runtime3.dispose();
     });
 
     it('does not repair when an acknowledgement is accepted while the timeout work is claimed', async () => {
@@ -425,7 +442,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('retains a conflicted admission and rereads receipts before worker delivery', async () => {
@@ -510,7 +527,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
         expect(rejectedFirstCommit).toBe(true);
         expect(sent).toEqual([]);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('skips outbound enqueue after dispose without storing or sending', async () => {
@@ -532,7 +549,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 return { status: 'sent' as const, submissionAttempted: true };
             }
         });
-        runtime.dispose();
+        await runtime.dispose();
         const msg = createOutboundMessage('msg-after-dispose');
         const result = await runtime.enqueueIfAbsent(msg);
 
@@ -550,7 +567,12 @@ describe('AL outbound durable effect lifecycle', () => {
         const stores = createDefaultOutboundTestStores();
         const sent: string[] = [];
         const msg = createOutboundMessage('pending-before-dispose');
-        const admission = await computeOutboundTestAdmission(stores.admissionStore, msg);
+        const admission = await readOutboundTestAdmission({
+            store: stores.admissionStore,
+            message: msg,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         const prepared = { kind: 'send', msgId: msg.id.msgId } as const;
         const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         const payload = {
@@ -587,7 +609,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
-        runtime.dispose();
+        await runtime.dispose();
 
         const handled = await runtime.acceptControlMessage(
             newALNackControlMessage(
@@ -623,7 +645,7 @@ describe('AL outbound durable effect lifecycle', () => {
         });
         const msg = createOutboundMessage('msg-control-conflict');
         await enqueueOutboundOrThrow(runtime, msg);
-        await settleOutboundWork(stores);
+        await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace);
         const write = vi.spyOn(stores.backend, 'write').mockImplementationOnce(() => {
             throw new ALAdmissionBackendConflictError('simulated outbound control conflict');
         });
@@ -647,7 +669,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(accepted).toEqual({ kind: 'pending-control' });
         expect(write).toHaveBeenCalledTimes(1);
         expect(await readRetainedWorkKinds(stores)).toEqual(['admit-control']);
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('reschedules an interrupted send so a new runtime can recover it', async () => {
@@ -672,18 +694,24 @@ describe('AL outbound durable effect lifecycle', () => {
         });
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
+        void enqueue.catch(() => {});
+        onTestFinished(async () => {
+            sendCompleted.resolve();
+            await enqueue;
+        });
         await sendStarted.promise;
-        const leaseExpiresAt = await peekOutboundTestWork(stores);
+        const leaseExpiresAt = await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
         if (leaseExpiresAt === undefined) {
             throw new Error('Expected the in-flight send to retain its durable lease');
         }
         expect(leaseExpiresAt).toBeGreaterThan(Date.now());
-        runtime.dispose();
+        const disposing = runtime.dispose();
         sendCompleted.resolve();
         await enqueue;
+        await disposing;
         await vi.advanceTimersByTimeAsync(0);
         // The failed attempt releases its own claim, so recovery waits on the retry, not the lease.
-        const retryAt = await peekOutboundTestWork(stores);
+        const retryAt = await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
         if (retryAt === undefined) {
             throw new Error('Expected the interrupted send to be rescheduled');
         }
@@ -702,18 +730,10 @@ describe('AL outbound durable effect lifecycle', () => {
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(Math.max(0, retryAt - Date.now()));
         expect(recovered).toEqual([msg.id.msgId]);
-        expect(await peekOutboundTestWork(stores)).toBeUndefined();
-        restarted.dispose();
+        expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
+        await restarted.dispose();
     });
 });
-
-async function peekOutboundTestWork(stores: OutboundTestStores): Promise<number | undefined> {
-    return await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace);
-}
-
-async function settleOutboundWork(stores: OutboundTestStores): Promise<void> {
-    await waitForSettledOutboundWork(stores.workQueue, stores.admissionStore.namespace);
-}
 
 /** The claim release that reports a completed attempt fails once: the process dies before it lands. */
 function failFirstCompletedRelease(stores: OutboundTestStores): void {
@@ -735,7 +755,7 @@ function failFirstCompletedRelease(stores: OutboundTestStores): void {
 function createUndrainedOutboundRuntime(
     stores: OutboundTestStores,
     sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage']
-): { runtime: ALOutboundMessageRuntime<OutboundTestPayload>; claimedCounts: number[]; } {
+): UndrainedOutboundRuntime {
     const claimedCounts: number[] = [];
     const runtime = createDefaultOutboundTestRuntime({
         stores,

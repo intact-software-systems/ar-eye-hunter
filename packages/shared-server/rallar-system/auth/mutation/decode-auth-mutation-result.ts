@@ -1,4 +1,8 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationResult } from './auth-mutation-contracts.ts';
 
 export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
@@ -17,7 +21,7 @@ export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
         validateDiscriminatedResult(result);
     }
     assertNoPlaintextAuthFields(result);
-    return structuredClone(result) as AuthMutationResult;
+    return structuredClone(result) as AuthMutationResult & JsonWireObject;
 }
 
 function validateAuthRegistrationResult(result: JsonWireObject): void {

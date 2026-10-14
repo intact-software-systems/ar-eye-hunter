@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
@@ -29,7 +30,7 @@ import {
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
-import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALInboundRuntimeDiagnosticsEvent, ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
@@ -42,7 +43,7 @@ import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ow
 import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 export const INBOUND_TEST_SELF_PEER_ID = 'receiver';
@@ -66,8 +67,14 @@ export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observati
 export const INBOUND_TEST_EFFECT_PREPARATION: ALInboundEffectPreparationDependencies = {
     newControlId: crypto.randomUUID.bind(crypto),
     selfPeerId: INBOUND_TEST_SELF_PEER_ID,
-    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
 };
+
+export interface InboundTestDecision {
+    readonly read: ALInboundAdmissionRead;
+    readonly plan: ALMessageHandlingPlan;
+    readonly bundle: ALInboundCommitBundle;
+}
 
 export type InboundTestStorage = 'memory' | 'indexeddb';
 
@@ -161,6 +168,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly durableWorkOwnership?: ALDurableWorkOwnership;
     /** Absent composes the runtime as the server does: no recovery owner is told of a resynchronization. */
     readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
+    /** Absent preserves uncaptured diagnostics; a measurement may observe the actual batch publication boundary. */
+    readonly acknowledgementCapture?: ALInboundRuntimeDiagnosticsSink['acknowledgementCapture'];
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -176,7 +185,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             stores: input.stores,
             volatileStores: input.volatileStores,
             queueEngine,
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         carrier: input.carrier,
@@ -200,7 +209,11 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             }
         },
         onResyncRequired: input.onResyncRequired,
-        diagnostics: (event) => diagnostics.push(event),
+        diagnostics: Object.assign((event: ALInboundRuntimeDiagnosticsEvent) => {
+            diagnostics.push(event);
+        }, {
+            acknowledgementCapture: input.acknowledgementCapture
+        }),
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());

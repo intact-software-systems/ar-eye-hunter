@@ -121,6 +121,7 @@ export function resetPeopleEventTestRuntime(): void {
     const { webSocketQueueBox, webRtcConnectionService } = peopleEventMocks.context.middleware;
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
+        return Promise.resolve();
     });
     vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockImplementation((id, callback) => {
         peopleEventMocks.wsInboxCallbacks.set(id, callback);

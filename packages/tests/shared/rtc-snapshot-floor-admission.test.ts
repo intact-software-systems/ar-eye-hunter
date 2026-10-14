@@ -14,16 +14,19 @@ import {
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { room, RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 
 const endpoints: RtcEndpointFixture[] = [];
 
-afterEach(() => {
-    for (const endpoint of endpoints.splice(0)) {
-        endpoint.close();
-    }
+afterEach(async () => {
+    const outcomes = await Promise.allSettled(endpoints.splice(0).map((endpoint) => endpoint.close()));
     vi.restoreAllMocks();
+    const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+    if (failure?.status === 'rejected') {
+        throw toError(failure.reason);
+    }
 });
 
 describe('RTC scoped snapshot-floor admission', () => {
@@ -40,16 +43,14 @@ describe('RTC scoped snapshot-floor admission', () => {
         const message = roomMessage(2);
         const result = await sender.multicast.enqueueIfAbsent(message);
         expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        await sender.waitForDeliveries();
-        await receiver.waitForDeliveries();
-        expect(sender.sent.find((sent) => sent.id.msgId === message.id.msgId)?.targets).toEqual(message.targets);
-        expect(receiver.delivered).toEqual([]);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({
             msgId: message.id.msgId,
             fromPeerId: 'receiver',
             toPeerId: 'sender',
             reason: 'not-yet-in-sync'
         })]);
+        expect(sender.sent.find((sent) => sent.id.msgId === message.id.msgId)?.targets).toEqual(message.targets);
+        expect(receiver.delivered).toEqual([]);
     });
 
     it.each(['missing-room', 'expired-session', 'removed-overlay'] as const)(
@@ -98,7 +99,7 @@ describe('RTC scoped snapshot-floor admission', () => {
 
         if (version === undefined || version < 2) {
             expect(receiver.delivered).toEqual([]);
-            expect(await sender.nacks(message)).toEqual([expect.objectContaining({
+            await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({
                 msgId: message.id.msgId,
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
@@ -126,7 +127,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered).toEqual([]);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
     });
 
     it('admits the same message after snapshot advancement without dedup poisoning', async () => {
@@ -145,7 +146,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
     });
 
     it('rejects a room broadcast below its floor and accepts it when the exact scope advances', async () => {
@@ -162,7 +163,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         receiver.observe(1);
         await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', msgId: message.id.msgId })]);
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', msgId: message.id.msgId })]);
         receiver.observe(2);
         await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
@@ -177,7 +178,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         const message = roomMessage(2);
         await forwarder.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
-        expect(await forwarder.nacks(message)).toEqual([expect.objectContaining({
+        await expect.poll(() => forwarder.nacks(message)).toEqual([expect.objectContaining({
             fromPeerId: 'receiver',
             toPeerId: 'forwarder',
             msgId: message.id.msgId,
@@ -216,10 +217,8 @@ describe('RTC scoped snapshot-floor admission', () => {
         const message = roomMessage(undefined);
         const accepted = await sender.multicast.enqueueIfAbsent(message);
         expect(accepted.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        await sender.waitForDeliveries();
-        await relay.waitForDeliveries();
+        await expect.poll(() => receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
         expect(relay.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
-        expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
         expect(receiver.delivered[0].id.senderId).toBe('sender');
         expect(relay.sent.find((entry) => entry.id.msgId === message.id.msgId)?.forwarding?.nextHopPeerIds).toEqual(['receiver']);
     });
@@ -261,7 +260,7 @@ describe('RTC scoped snapshot-floor admission', () => {
 
         await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', reason: 'not-yet-in-sync' })]);
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', reason: 'not-yet-in-sync' })]);
 
         observeRoster(receiver, 2, (snapshot) => snapshot);
         await sender.sendAndWaitForDelivery(message);
@@ -290,13 +289,13 @@ describe('RTC scoped snapshot-floor admission', () => {
         await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered).toEqual([]);
-        expect(receiver.sent).toHaveLength(1);
-        expect(await sender.nacks(message)).toEqual([expect.objectContaining({
+        await expect.poll(() => sender.nacks(message)).toEqual([expect.objectContaining({
             msgId: message.id.msgId,
             fromPeerId: 'receiver',
             toPeerId: 'sender',
             reason: 'membership-fenced'
         })]);
+        expect(receiver.sent).toHaveLength(1);
     });
 
     it('does not use forged visit diagnostics to authorize a relay', async () => {
@@ -316,7 +315,12 @@ describe('RTC scoped snapshot-floor admission', () => {
     });
 });
 
-function connectSenderAndReceiver(): { readonly sender: RtcEndpointFixture; readonly receiver: RtcEndpointFixture; } {
+interface ConnectedEndpoints {
+    readonly sender: RtcEndpointFixture;
+    readonly receiver: RtcEndpointFixture;
+}
+
+function connectSenderAndReceiver(): ConnectedEndpoints {
     const sender = new RtcEndpointFixture('sender', 'receiver');
     const receiver = new RtcEndpointFixture('receiver', 'sender');
     endpoints.push(sender, receiver);

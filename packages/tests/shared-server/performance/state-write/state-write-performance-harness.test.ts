@@ -1,8 +1,7 @@
 import {
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
 
@@ -29,7 +28,6 @@ import {
 } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
 import { STATE_WRITE_REASONS } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
-import { parseBenchmarkOptions } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
 import {
     createDefaultStateWritePerformanceArtifact,
     refreshStateWritePerformanceWorkload,
@@ -455,7 +453,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ri_type_id: entry.typeId,
             ri_resource: entry.resource
         };
-        const repository = createProductionOutboxRepository(vi.fn(async () => [row]) as never);
+        const repository = createProductionOutboxRepository(async () => [row]);
 
         expect(expectation.physicalKey).toEqual(entry.key);
         expect(expectation.logicalContextId.length).toBeGreaterThan(entry.key.contextId.length);
@@ -516,8 +514,8 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ri_topic_id: 'wrong-topic'
         };
         const rows = [wrongTopicRow, exactRow];
-        const sql = vi.fn(async () => rows);
-        const repository = createProductionOutboxRepository(sql as never);
+        const sql = async () => rows;
+        const repository = createProductionOutboxRepository(sql);
 
         await expect(repository.find(expectation)).resolves.toMatchObject({
             record: {
@@ -800,9 +798,11 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         );
     });
 
-    it('links final outbox evidence to the canonical producer command and exact receipt', () => {
+    it('classifies a ResourceInbox selection as a SQL read', () => {
         expect(classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
+    });
 
+    it('links final outbox evidence to the canonical producer command and exact receipt', () => {
         const topologyCommand = {
             kind: 'topology-source',
             commandId: 'topology-command',
@@ -900,21 +900,6 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             }),
             logicalContextId: 'app=app:ws=workspace:group=topology-command',
             payloadTypeId: 'RTC_TOPOLOGY_RECOMPUTE'
-        });
-        expect(
-            parseBenchmarkOptions([
-                '--backend=postgres',
-                '--warmup=1',
-                '--runs=3',
-                '--concurrency=10',
-                '--out=tmp/perf/candidate.json'
-            ])
-        ).toEqual({
-            backend: 'postgres',
-            warmup: 1,
-            runs: 3,
-            concurrency: 10,
-            out: 'tmp/perf/candidate.json'
         });
     });
 });

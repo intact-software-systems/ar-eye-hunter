@@ -24,6 +24,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
+import { closeBrowserTransportResources } from './close-browser-transport-resources.ts';
 import { createBrowserConnectionReservation } from './create-browser-connection-reservation.ts';
 import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
 
@@ -296,32 +297,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         return { middleware: { session, authFetch, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt };
     }
 
-    private shutdownMiddleware(
-        middleware: RallarBrowserMiddleware,
-        reason = 'rallar-disconnect'
-    ): void {
-        runShutdownStep(() => middleware.heartbeat?.stop());
-        runShutdownStep(() => middleware.rtcRxStreamer.dispose());
-        runShutdownStep(() => middleware.webRtcGroupManager.stopReconcileWakes());
-        runShutdownStep(() => {
-            for (const peerId of middleware.webRtcConnectionService.knownPeerIds()) {
-                middleware.webRtcConnectionService.disconnectPeer(peerId);
-            }
+    private shutdownMiddleware(middleware: RallarBrowserMiddleware, reason = 'rallar-disconnect'): void {
+        void closeBrowserTransportResources(middleware, reason).catch(() => {
+            // Immediate shutdown contains cleanup failures while allowing durable claim transfer.
         });
-        runShutdownStep(() => middleware.webRtcConnectionService.disposeNativeObservations());
-        runShutdownStep(() => middleware.rtcRxStreamer.stopLocalMedia('all'));
-        runShutdownStep(() => middleware.webRtcOverlayMulticastManager?.dispose?.());
-        runShutdownStep(() => middleware.qboxEngine.stop());
-        runShutdownStep(() => middleware.webSocketQueueBox.close(1000, reason));
-    }
-}
-
-function runShutdownStep(step: () => void): void {
-    try {
-        step();
-    }
-    catch {
-        // Transport cleanup must continue when a stale resource is already closed.
     }
 }
 

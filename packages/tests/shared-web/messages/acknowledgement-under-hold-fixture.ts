@@ -32,7 +32,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createScriptedTransportFaultPort,
@@ -299,9 +299,12 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
-    onTestFinished(() => {
-        streamer.dispose();
-        manager.dispose();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([streamer.dispose(), manager.dispose()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return manager;
 }
@@ -385,9 +388,12 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
     }
     native.open();
     const service = await connecting;
-    onTestFinished(() => {
-        service.close();
-        runtime.engine.stop();
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([service.close(), runtime.engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, native };
 }

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -16,11 +17,10 @@ import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALIn
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
@@ -306,7 +306,7 @@ it('replays a retained conflict in a batch the handler runs after the one alread
     });
     onTestFinished(() => {
         dispatching.resolve();
-        runtime.dispose();
+        return runtime.dispose();
     });
     await runtime.ready();
     // The first message's own commit starts a batch and holds it inside the delivery it claimed.
@@ -370,9 +370,10 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         return result;
     });
     const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+    let disposing: Promise<void> | undefined;
     const retained = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
         const stored = await enqueue(entry);
-        runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
+        disposing = runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
         return stored;
     });
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
@@ -380,6 +381,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         qos: { ack: { algo: 'hop' } }
     });
     const result = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+    await disposing;
     expect(result.right).toEqual({ kind: 'pending-admission' });
     expect(delivered).toEqual([]);
     expect(controls).toEqual([]);
@@ -398,7 +400,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
             selfPeerId: 'receiver',
             stores,
             queueEngine: new InboxOutboxEngine(),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         }),
         carrier: 'rtc',
         planIncomingMessage: (msg, source, observations) =>

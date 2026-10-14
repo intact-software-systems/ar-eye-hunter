@@ -1,4 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -15,6 +23,7 @@ import { validateALInboundCommitBundle } from '@shared/alm/inbound/admission/val
 import type {
     ALInboundAdmissionRead,
     ALInboundAdmissionStore,
+    ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
@@ -26,15 +35,8 @@ import {
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 describe('inbound admission preparation boundary', () => {
     afterEach(() => {
@@ -91,7 +93,7 @@ describe('inbound admission preparation boundary', () => {
             }
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -337,7 +339,7 @@ describe('inbound admission preparation boundary', () => {
             expect(await stores.workQueue.getAllKeys()).toEqual([]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -390,7 +392,7 @@ describe('inbound admission preparation boundary', () => {
                 .toBe(8 * 130_000);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -484,7 +486,7 @@ describe('inbound admission preparation boundary', () => {
             expect(controls).not.toEqual(candidates[0]!.durableEffects);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -518,7 +520,7 @@ describe('inbound admission preparation boundary', () => {
                 .toEqual([firstAck, firstAck]);
         }
         finally {
-            runtime.dispose();
+            await runtime.dispose();
         }
     });
 
@@ -582,7 +584,7 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
     return {
         newControlId: crypto.randomUUID.bind(crypto),
         selfPeerId: 'receiver',
-        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
     };
 }
 
@@ -638,7 +640,7 @@ function toBufferedReleaseRead(
     prepared: PreparedAdmission,
     message: ALMessage,
     durability: 'volatile' | 'durable'
-): Parameters<typeof computeALInboundBufferedRelease>[0]['read'] {
+): ALInboundBufferedReleaseReadDto {
     return {
         kind: 'buffered-release',
         orderingTrackTtlMs: prepared.read.orderingTrackTtlMs,

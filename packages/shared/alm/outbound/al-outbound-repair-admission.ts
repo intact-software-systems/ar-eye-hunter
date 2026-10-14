@@ -5,7 +5,7 @@ import {
     type ALPeerControlMessage
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
-import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import { RetryableConflictError } from '../../resilience/try-with-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {

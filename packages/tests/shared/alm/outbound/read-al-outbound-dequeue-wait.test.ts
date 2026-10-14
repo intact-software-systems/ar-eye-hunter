@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -29,7 +37,7 @@ const MESSAGE = newALMulticastMessage(
 /** A claimed dequeue row: its lease ends 10 s after the claim, its deadline 30 s after the send. */
 const HELD_EFFECT = {
     ...toALOutboundDequeueWork<ALOutboundTransportMessage>(
-        QueueBoxUtilities.toResourceEntryFromMsg(MESSAGE, EnqueuedType.RTC_OUTBOX),
+        QueueBoxUtilities.toResourceEntryFromMsg(MESSAGE, EnqueuedType.RTC_OUTBOX, Temporal.Now.instant()),
         (entry) => decodePersistedALMessage(entry.resource)
     ),
     leaseUntilMs: NOW_MS + 10_000,

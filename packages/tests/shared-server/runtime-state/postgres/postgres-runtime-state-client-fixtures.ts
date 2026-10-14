@@ -15,7 +15,7 @@ export type PostgresSql =
     }>;
 
 export interface WithPostgresClientsInput {
-    readonly namespace: string;
+    readonly namespace: string | null;
     readonly clientCount: number;
     readonly createClient: () => Promise<PostgresSql>;
 }
@@ -99,7 +99,7 @@ export function requirePostgresDatabaseUrl(): string {
 }
 
 interface CleanupRuntimeStateInput {
-    readonly namespace: string;
+    readonly namespace: string | null;
     readonly cleanupSql: PostgresSql | undefined;
     readonly clients: readonly PostgresSql[];
     readonly hasPrimaryFailure: boolean;
@@ -108,7 +108,7 @@ interface CleanupRuntimeStateInput {
 async function cleanupRuntimeState(input: CleanupRuntimeStateInput): Promise<void> {
     const { namespace, cleanupSql, clients, hasPrimaryFailure } = input;
     const failures: Error[] = [];
-    if (cleanupSql) {
+    if (cleanupSql && namespace !== null) {
         const [deleteResult] = await Promise.allSettled([
             Promise.resolve().then(
                 () =>
