@@ -46,7 +46,6 @@ export interface RtcB06ObservationDenoRuntimeInput {
     readonly adapters: DenoRtcBaselineAdapters;
     readonly envelope: RtcBaselineEnvelope;
     readonly producerOutput: RtcB06ProducerOutput;
-    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
 }
 
 export interface RtcB06ProducerOutput {
@@ -89,7 +88,6 @@ export function createRtcB06ObservationDenoRuntime(
     input: RtcB06ObservationDenoRuntimeInput
 ): RtcB06ObservationRunnerDependencies {
     const repositoryRoot = input.repositoryRoot;
-    const rtcCaptureMode = input.rtcCaptureMode ?? resolveRtcCaptureConfiguration({ sinkAvailable: true }).mode;
     const store = createRtcBaselineFileStore({
         rootPath: RTC_BASELINE_DENO_ROOT_PATH,
         filePort: input.adapters.filePort,
@@ -108,7 +106,6 @@ export function createRtcB06ObservationDenoRuntime(
             }
             return runRtcB06LiveProducer(input.runtime, input.producerOutput, {
                 ...producer,
-                rtcCaptureMode,
                 repositoryRoot,
                 ...selection.value
             });

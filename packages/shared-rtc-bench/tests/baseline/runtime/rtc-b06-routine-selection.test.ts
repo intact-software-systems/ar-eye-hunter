@@ -153,3 +153,38 @@ it.each(['missing-mode', 'missing-bound', 'duplicate', 'wrong-case', 'invalid-mo
         expect(resolveRtcB06DiagnosticSelection(entries, caseKey)).toMatchObject({ ok: false, issues: [{ code: 'invalid-event-history-selection' }] });
     }
 );
+
+it('returns the exact initialized RTC capture mode with its per-case diagnostics', async () => {
+    const { resolveRtcB06DiagnosticSelection } = await import('../../../baseline/observation/read-rtc-b06-diagnostic-selection.ts');
+    const initialized = createRtcBaselineRuntimeObservationInput(request, { ...workloadEnvironment, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native' });
+    if (!initialized.ok) {
+        throw new Error(JSON.stringify(initialized.issues));
+    }
+    expect(
+        resolveRtcB06DiagnosticSelection(initialized.value.observation.resolvedConfiguration, {
+            workloadId: 'RTC-B06',
+            caseId: 'retention-100',
+            inputKey: 'e3-memory-retention-100'
+        })
+    ).toMatchObject({ ok: true, value: { rtcCaptureMode: 'native' } });
+});
+
+it.each(['missing', 'duplicate', 'invalid'])('rejects %s initialized RTC capture without guessing a launch default', async (failure) => {
+    const { resolveRtcB06DiagnosticSelection } = await import('../../../baseline/observation/read-rtc-b06-diagnostic-selection.ts');
+    const initialized = createRtcBaselineRuntimeObservationInput(request, workloadEnvironment);
+    if (!initialized.ok) {
+        throw new Error(JSON.stringify(initialized.issues));
+    }
+    const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-memory-retention-100' } as const;
+    const configuration = initialized.value.observation.resolvedConfiguration;
+    const selected = configuration.find((entry) => entry.field === 'rtcCaptureMode' && entry.caseKey.caseId === 'retention-100')!;
+    const changed = failure === 'missing'
+        ? configuration.filter((entry) => entry !== selected)
+        : failure === 'duplicate'
+        ? [...configuration, selected]
+        : configuration.map((entry) => entry === selected ? { ...entry, value: 'invalid' } : entry);
+    expect(resolveRtcB06DiagnosticSelection(changed, caseKey)).toMatchObject({
+        ok: false,
+        issues: [{ code: failure === 'invalid' ? 'invalid-rtc-capture-mode' : 'missing-capture-admission' }]
+    });
+});

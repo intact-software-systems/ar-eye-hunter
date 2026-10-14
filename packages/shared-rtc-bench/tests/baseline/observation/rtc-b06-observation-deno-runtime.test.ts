@@ -26,6 +26,7 @@ import {
     runRtcB06LiveProducer,
     type RtcB06ObservationDenoRuntimeInput
 } from '../../../baseline/observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
 import { createDenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
 import type { RtcBaselineDenoPort } from '../../../baseline/runtime/rtc-baseline-deno-port.ts';
 import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
@@ -321,6 +322,74 @@ describe('governed RTC-B06 producer evidence', () => {
 });
 
 describe('RTC-B06 observation Deno runtime', () => {
+    it.each([undefined, 'off', 'signaling'])('executes initialized Native after ambient capture changes to %s', async (ambient) => {
+        const initialized = createRtcBaselineRuntimeObservationInput({
+            schema: 'rallar.rtc-baseline.capture-request.v1',
+            baselineId,
+            workloadIds: ['RTC-B06'],
+            environmentId: 'E3-memory',
+            retainedSampleMultiplier: 1,
+            repeatLink: null,
+            conditionalEnvironmentDecisions: []
+        }, {
+            RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'native',
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
+        });
+        if (!initialized.ok) {
+            throw new Error(JSON.stringify(initialized.issues));
+        }
+        const stored = initializedProducerEnvironment();
+        const environment = {
+            ...stored,
+            observation: {
+                ...stored.observation,
+                resolvedConfiguration: initialized.value.observation.resolvedConfiguration,
+                configurationInputs: initialized.value.observation.configurationInputs,
+                allowlistedEnvironment: initialized.value.observation.allowlistedEnvironment
+            }
+        };
+        const port = producerRuntime();
+        const adapters = createDenoRtcBaselineAdapters(port);
+        adapters.filePort.inspectPath = async (path) => ({ kind: path.endsWith('.json') ? 'file' : 'directory' });
+        adapters.filePort.readFile = async () => new TextEncoder().encode(JSON.stringify(environment));
+        const modes: string[] = [];
+        const failures: string[] = [];
+        const runtime = createRtcB06ObservationDenoRuntime({
+            repositoryRoot: '/repository',
+            adapters,
+            envelope: createRtcBaselineDenoRuntime(adapters),
+            producerOutput: {
+                writeStdout: async () => {},
+                writeStderr: async (bytes) => {
+                    failures.push(new TextDecoder().decode(bytes));
+                }
+            },
+            runtime: {
+                ...port,
+                envGet: (name) => name === 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE' ? ambient : undefined,
+                command: async (executable, arguments_) => {
+                    modes.push(
+                        execFileSync(executable, [
+                            ...arguments_.slice(0, arguments_.indexOf('npm')),
+                            process.execPath,
+                            '--eval',
+                            'process.stdout.write(process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE)'
+                        ], {
+                            encoding: 'utf8',
+                            env: { ...process.env, ...(ambient === undefined ? {} : { RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ambient }) }
+                        })
+                    );
+                    return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
+                }
+            }
+        });
+        expect(await runtime.runLiveRtcProducer({ baselineId, attempt: attempt('retention-100') })).toEqual({ exitStatus: 0 });
+        expect(failures).toEqual([]);
+        expect(modes).toEqual(['native']);
+    });
+
     it.each([true, false])('overrides conflicting inherited ALM recording with %s', (almDiagnostics) => {
         const command = createRtcB06LiveProducerCommand({ repositoryRoot: '/repository', baselineId, attempt: attempt('retention-100'), almDiagnostics });
         const child = execFileSync(command.executable, [
@@ -554,7 +623,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         expect(JSON.parse(JSON.stringify(result.value)).resolvedConfiguration).toEqual(result.value.resolvedConfiguration);
     });
 
-    it('keeps one admitted producer mode across cases, phases, ordinals and a repeat after caller mutation', async () => {
+    it('uses initialized mode across cases, phases, ordinals and a repeat despite ambient mutation', async () => {
         const observed: string[] = [];
         const port = producerRuntime();
         const adapters = createDenoRtcBaselineAdapters(port);
@@ -563,11 +632,12 @@ describe('RTC-B06 observation Deno runtime', () => {
             new TextEncoder().encode(
                 JSON.stringify({ ...initializedProducerEnvironment(), baselineId: path.includes('-repeat-01/') ? `${baselineId}-repeat-01` : baselineId })
             );
+        let ambient = 'off';
         const input: RtcB06ObservationDenoRuntimeInput = {
             repositoryRoot: '/repository',
-            rtcCaptureMode: 'off',
             runtime: {
                 ...port,
+                envGet: () => ambient,
                 command: async (_executable: string, arguments_: readonly string[]) => {
                     observed.push(arguments_.find((argument) => argument.startsWith('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=')) ?? '<unset>');
                     return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
@@ -579,7 +649,7 @@ describe('RTC-B06 observation Deno runtime', () => {
         };
         const runtime = createRtcB06ObservationDenoRuntime(input);
         await runtime.runLiveRtcProducer({ baselineId, attempt: attempt('default') });
-        Object.assign(input, { rtcCaptureMode: 'native' });
+        ambient = 'native';
         for (const caseId of ['default', 'all-scenarios', 'retention-100'] as const) {
             await runtime.runLiveRtcProducer({
                 baselineId: `${baselineId}-repeat-01`,
@@ -767,6 +837,11 @@ function initializedProducerEnvironment() {
             configurationInputs: [{ name: 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', value: 'false', secret: false }],
             controllerInputs: [],
             resolvedConfiguration: ['default', 'all-scenarios', 'retention-100'].flatMap((caseId) => [{
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'rtcCaptureMode',
+                value: 'off',
+                source: 'cli'
+            }, {
                 caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
                 field: 'eventHistoryMode',
                 value: caseId === 'retention-100' ? 'recent' : 'full',

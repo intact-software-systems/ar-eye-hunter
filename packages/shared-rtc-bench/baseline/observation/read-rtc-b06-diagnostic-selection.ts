@@ -1,3 +1,6 @@
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import {
     validateEventHistoryPolicy,
     type RallarBlackBoxEventHistoryPolicy
@@ -18,6 +21,7 @@ import type {
 import type { RtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 
 export interface RtcB06DiagnosticSelection {
+    readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode;
     readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly almDiagnostics: boolean;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
@@ -65,9 +69,14 @@ export function resolveRtcB06DiagnosticSelection(
         return history;
     }
 
+    const capture = resolveRtcB06CaptureMode(selected);
+    if (!capture.ok) {
+        return capture;
+    }
     return {
         ok: true,
         value: {
+            rtcCaptureMode: capture.value,
             eventHistory: history.value,
             almDiagnostics: alm[0].value,
             routineBrowserDiagnostics
@@ -123,4 +132,32 @@ function resolveRtcB06EventHistorySelection(
         };
     }
     return { ok: true, value: Object.freeze(eventHistory as RallarBlackBoxEventHistoryPolicy) };
+}
+
+function resolveRtcB06CaptureMode(
+    selected: readonly RtcBaselineResolvedConfigurationValueDto[]
+): RtcBaselineResult<RtcSignalingDiagnostics.CaptureMode> {
+    const capture = selected.filter((entry) => entry.field === 'rtcCaptureMode');
+    if (capture.length !== 1) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'missing-capture-admission',
+                message: 'RTC-B06 requires one initialized RTC capture mode for its exact case.'
+            }]
+        };
+    }
+    const mode = parseRtcCaptureMode(capture[0].value).right?.mode;
+    if (mode === undefined) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-rtc-capture-mode',
+                message: 'Initialized RTC capture mode must be off, signaling or native.'
+            }]
+        };
+    }
+    return { ok: true, value: mode };
 }
