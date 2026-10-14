@@ -1,5 +1,3 @@
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     afterEach,
     beforeEach,
@@ -10,14 +8,13 @@ import {
     vi
 } from 'vitest';
 
-import '../../setup-browser-indexeddb.ts';
-
-import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -28,9 +25,9 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
@@ -39,7 +36,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import {
     createDefaultWsQueueBoxClientService,
@@ -47,9 +44,12 @@ import {
 } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
@@ -66,8 +66,13 @@ describe('browser RTC runtime composition', () => {
         configureBrowserALRuntimeStores('self', { scope: defaultStateScope(), diagnosticsPorts });
     });
 
-    it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {
+    it.each(['off', 'signaling', 'native'] as const)('keeps inbound admission and native application with %s capture', async (mode) => {
         const nativeRuntime = installNativeRtcRuntime();
+        const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
+        const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const configuredDiagnostics = toRallarDiagnosticsPorts({
+            signalingDiagnostics: (event) => signalingEvents.push(event)
+        });
         const networkConnectStarted = Promise.withResolvers<void>();
         const networkConnect = Promise.withResolvers<void>();
         const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
@@ -79,27 +84,50 @@ describe('browser RTC runtime composition', () => {
             outbox: new InMemoryQueueBox(),
             socket,
             sessionId: 'self',
-            serverPeerId: 'server'
+            serverPeerId: 'server',
+            inboundDiagnostics: (event) => consumerEvents.push(event)
         });
-        const initializing = initialiseRtcConnectionService({
+        const connectionInput = {
             webSocketQueueBox: queueBox,
             qboxEngine: new InboxOutboxEngine(),
             clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
-            faultPort: diagnosticsPorts.transportFaultPort
-        });
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
+            rtcCaptureConfiguration: { mode, origin: 'step' } as const,
+            connectionId: { status: 'observed', value: 'connection-inbound' } as const
+        };
+        const initializing = initialiseRtcConnectionService(connectionInput);
 
         try {
             await networkConnectStarted.promise;
             await receiveOffer(queueBox, 'startup-peer');
             networkConnect.resolve();
-            const service = await initializing;
+            const initialized = await initializing;
+            expect(initialized.rtcCaptureReceipt).toMatchObject({
+                configuration: { mode, origin: 'step' },
+                application: { status: 'applied', mode },
+                connectionId: { status: 'observed', value: 'connection-inbound' }
+            });
+            const service = initialized.webRtcConnectionService;
 
             expect(service.knownPeerIds()).toEqual([]);
             expect(nativeRuntime.createdConnections).toHaveLength(0);
             expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+            await vi.waitFor(() =>
+                expect(consumerEvents).toContainEqual(expect.objectContaining({
+                    kind: 'consumer-invocation',
+                    outcome: 'retry'
+                }))
+            );
+            if (mode !== 'off') {
+                expect(signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
+            }
+            else {
+                expect(signalingEvents).toEqual([]);
+            }
             expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
                 kind: 'dial-denied',
                 reason: 'browser-runtime-initializing'
@@ -130,20 +158,44 @@ describe('browser RTC runtime composition', () => {
         finally {
             networkConnect.resolve();
             try {
-                const service = await initializing;
+                const { webRtcConnectionService: service } = await initializing;
                 for (const peerId of service.knownPeerIds()) {
                     service.disconnectPeer(peerId);
                 }
             }
             finally {
                 try {
-                    queueBox.close();
+                    await queueBox.close();
                 }
                 finally {
                     nativeRuntime.dispose();
                 }
             }
         }
+    });
+
+    it('disposes only diagnostic scope when the original signaling connection rejects', async () => {
+        const events: RtcSignalingDiagnostics.Event[] = [];
+        const failure = new Error('private-connect-failure');
+        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
+        vi.spyOn(socket, 'connect').mockRejectedValue(failure);
+        const queueBox = createDefaultWsQueueBoxClientService({ outbox: new InMemoryQueueBox(), socket, sessionId: 'self', serverPeerId: 'server' });
+        onTestFinished(() => queueBox.close());
+        await expect(initialiseRtcConnectionService({
+            webSocketQueueBox: queueBox,
+            qboxEngine: new InboxOutboxEngine(),
+            clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc',
+            faultPort: diagnosticsPorts.transportFaultPort,
+            signalingDiagnostics: (event) => events.push(event),
+            rtcCaptureConfiguration: { mode: 'native', origin: 'step' },
+            connectionId: { status: 'observed', value: 'connection-failure' }
+        })).rejects.toBe(failure);
+        expect(events).toContainEqual(
+            expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed', capture: expect.objectContaining({ scope: 'disposed' }) })
+        );
     });
 
     it('supersedes retained RTC work with the configured conformance policy before native submission', async () => {
@@ -189,9 +241,11 @@ describe('browser RTC runtime composition', () => {
         const drain = captureOutboundWorkRunnable(qboxEngine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -267,9 +321,11 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -342,14 +398,13 @@ describe('browser RTC runtime composition', () => {
         for (const channel of nativePeer.channels) {
             channel.open();
         }
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
+        const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: budget,
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine: new InboxOutboxEngine()
@@ -368,9 +423,78 @@ describe('browser RTC runtime composition', () => {
         );
 
         expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(1);
+    });
+
+    it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
+        const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlayFixture(group, 1, ['accepted-peer'])
+        );
+        const fixture = openConnectedPeer('accepted-peer');
+        const budget = createDefaultVolatileSessionBudget();
+        const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
+        const manager = initialiseRtcOverlayMulticastManager({
+            faultPort: createPassThroughTransportFaultPort(),
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            qosProvider: undefined,
+            volatileBudget: budget,
+            checkpointStores,
+            outboundSettlements: () => {},
+            webRtcConnectionService: fixture.service,
+            qboxEngine: new InboxOutboxEngine()
+        });
+        onTestFinished(() => manager.dispose());
+
+        const result = await manager.enqueueIfAbsent(
+            newALMulticastMessage(
+                'self',
+                { topicId: 'chat', resourceId: 'checkpointed', contextId: group.group.groupId },
+                group.group,
+                'chat.message.v1',
+                { text: 'checkpointed' },
+                { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+            )
+        );
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(await checkpointStores.admissionStore.hasSentMessageAdmission(result.message.id.msgId)).toBe(true);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(0);
     });
 });
+
+/** A native peer connection to `peerId` whose channels are open, torn down with the test. */
+function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcConnectionFixture> {
+    const nativeRuntime = installNativeRtcRuntime();
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        nativeRuntime,
+        createPassThroughTransportFaultPort()
+    );
+    onTestFinished(() => {
+        try {
+            fixture.dispose();
+        }
+        finally {
+            nativeRuntime.dispose();
+        }
+    });
+    fixture.service.ensurePeerConnectionStarted(peerId, true);
+    const nativePeer = fixture.nativePeer(peerId);
+    nativePeer.setConnected();
+    for (const channel of nativePeer.channels) {
+        channel.open();
+    }
+    return fixture;
+}
 
 async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
     const signal: QRtcSignalingMessage = {

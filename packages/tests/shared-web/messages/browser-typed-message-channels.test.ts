@@ -28,6 +28,8 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
     readonly workspaceId?: string;
@@ -44,7 +46,7 @@ const mocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => mocks.apiMiddleware.middleware
+    initialiseMiddleware: async () => ({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
@@ -325,7 +327,7 @@ describe('Rallar typed message channel', () => {
     it('uses WS only for typed channel send when strategy is ws', async () => {
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
-            topicId: 'room.chat',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             purpose: 'notification'
         });
@@ -336,7 +338,7 @@ describe('Rallar typed message channel', () => {
             },
             {
                 strategy: 'ws',
-                scope: 'all',
+                scope: 'world',
                 resourceId: 'ws-only-1'
             }
         );
@@ -345,9 +347,9 @@ describe('Rallar typed message channel', () => {
         expect(result.lifecycle()).toMatchObject({ state: 'queued', evidence: { admittedDurable: true } });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
             id: expect.objectContaining({ msgId: result.msgId }),
-            route: { topicId: 'room.chat', contextId: 'all', resourceId: 'ws-only-1' },
+            route: { topicId: 'app.chat', contextId: 'world', resourceId: 'ws-only-1' },
             payload: expect.objectContaining({ typeId: 'chat.message.v1', resource: '{"text":"ws only"}' }),
-            targets: expect.objectContaining({ mode: 'broadcast', scope: 'all' })
+            targets: expect.objectContaining({ mode: 'broadcast', scope: 'world' })
         }));
         expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
@@ -503,12 +505,12 @@ describe('Rallar typed message channel', () => {
 
     it('keeps no receipt on a world broadcast, whose audience A1 owns', async () => {
         const channel = createFacade().messages.channel<ChatMessage>({
-            topicId: 'room.chat',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             purpose: 'notification'
         });
 
-        await channel.sendWs({ text: 'everyone' }, { scope: 'all', resourceId: 'purpose-all-1' });
+        await channel.sendWs({ text: 'everyone' }, { scope: 'world', resourceId: 'purpose-all-1' });
 
         const message = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
         expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'none' });
@@ -536,10 +538,15 @@ describe('Rallar typed message channel', () => {
             .toThrow(
                 expect.objectContaining({
                     issues: [
-                        expect.objectContaining({ path: '$.durability', code: 'invalid-durability' })
+                        expect.objectContaining({
+                            path: '$.durability',
+                            code: 'invalid-durability',
+                            message: 'Durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
+                        })
                     ]
                 })
             );
+        expect(define({ typeId: 'chat.message.v1', purpose: 'command', durability: 'local-checkpoint' })).not.toThrow();
         expect(define({ typeId: 'chat.message.v1', purpose: 'command', onStorageUnavailable: 'drop' })).toThrow(
             expect.objectContaining({
                 issues: [
@@ -568,8 +575,8 @@ describe('Rallar typed message channel', () => {
         const refusing = facade.messages.channel<ChatMessage>(definition);
         const downgrading = facade.messages.channel<ChatMessage>({ ...definition, onStorageUnavailable: 'volatile' });
 
-        const refused = await refusing.sendWs({ text: 'refused' }, { scope: 'all', resourceId: 'storage-refused-1' });
-        const downgraded = await downgrading.sendWs({ text: 'sent' }, { scope: 'all', resourceId: 'storage-volatile-1' });
+        const refused = await refusing.sendWs({ text: 'refused' }, { scope: 'world', resourceId: 'storage-refused-1' });
+        const downgraded = await downgrading.sendWs({ text: 'sent' }, { scope: 'world', resourceId: 'storage-volatile-1' });
 
         await expect.poll(() => refused.lifecycle().state).toBe('failed');
         await expect.poll(() => downgraded.lifecycle().state).toBe('queued');

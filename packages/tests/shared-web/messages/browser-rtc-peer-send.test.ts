@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
@@ -12,6 +13,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
     newALUnicastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
@@ -112,7 +114,8 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
             }),
             sender: fixture.sender,
             rtc: { onMessage: () => () => {} },
-            ws: { onMessage: () => () => {} }
+            ws: { onMessage: () => () => {} },
+            recoveryOwners: new BrowserChannelRecoveryOwners()
         });
         const intents = channels.room<{ intent: string; }>({
             topicId: 'room.director.intent',
@@ -228,7 +231,6 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
 
     it.each([
         ['exclusions', { exceptPeerIds: ['peer-c'] }],
-        ['a membership fence', { membershipEpoch: 1 }],
         ['a next hop', { nextHopPeerIds: ['peer-c'] }],
         ['an overlay', { overlayId: 'overlay-1' }],
         ['a fan-out limit', { fanoutLimit: 2 }]
@@ -264,7 +266,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                 ...INTENT,
                 roomId: 'room',
                 peerId: DIRECTOR,
-                scope: 'all',
+                scope: 'world',
                 strategy: 'rtc'
             }, COMMAND_CHANNEL)
         )
@@ -422,15 +424,18 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
         deliverySettlements: feed,
-        readMiddleware: () => context
-    });
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries,
@@ -446,7 +451,7 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
         resolveCurrentRoomRef: () => ROOM_REF,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: () => ROOM_REF,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: undefined })
     });
     return {
         admissions,

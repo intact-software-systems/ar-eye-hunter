@@ -1,3 +1,4 @@
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from '../control/control-command-issue.ts';
 import {
     validateAllowedFields,
@@ -7,6 +8,7 @@ import {
     validateStringField
 } from '../control/validate-control-command-fields.ts';
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import { validateEventHistoryPolicy } from '../runtime/event-history.ts';
 import { RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS } from '../schema/rallar-black-box-command-fields.ts';
 
 const RECIPE_FIELDS_WITH_OWN_MESSAGE:
@@ -19,6 +21,12 @@ export function validateRecipeFields(recipe: RallarBlackBoxTestRecord, path: str
     const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe;
     return [
         ...validateAllowedFields(recipe, fields, path),
+        ...(recipe.eventHistory === undefined ? [] : validateEventHistoryPolicy(recipe.eventHistory)).map((issue) =>
+            toControlCommandIssue(`${path}.eventHistory: ${issue}`)
+        ),
+        ...(parseRtcCaptureMode(recipe.rtcCaptureMode).left ?? []).map((issue) =>
+            toControlCommandIssue(`${path}.rtcCaptureMode: ${issue.message}`)
+        ),
         ...(recipe.schemaVersion === 1 ? [] : [toControlCommandIssue(`${path}.schemaVersion must be 1.`)]),
         ...validateRequiredFields({ record: recipe, fields, path, ownMessageFields: RECIPE_FIELDS_WITH_OWN_MESSAGE }),
         ...validateStringField(recipe, 'recipeId', path),

@@ -1,4 +1,4 @@
-import type { RelicCommand, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import { decodeRelicSnapshotPayload, type RelicCommand, type RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 
@@ -21,7 +21,11 @@ export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSna
         throw new Error(`Failed to load expedition: ${response.status}`);
     }
 
-    return await response.json() as RelicPublicSnapshot;
+    const decoded = decodeRelicSnapshotPayload(await response.json());
+    if (decoded.left) {
+        throw new Error(`Failed to load expedition: ${decoded.left.message}`);
+    }
+    return decoded.right;
 }
 
 export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapshot | undefined> {

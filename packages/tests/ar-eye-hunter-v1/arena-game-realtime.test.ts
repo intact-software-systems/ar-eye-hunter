@@ -35,7 +35,20 @@ import {
     toArenaSnapshot,
     upsertPlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage, PlayerPose } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import type {
+    ArenaEvent,
+    ArenaPickupState,
+    ArenaSnapshot,
+    GameRealtimeMessage,
+    PickupIntent,
+    PlayerPose
+} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+
+interface PickupSnapshotFixture {
+    readonly snapshot: ArenaSnapshot;
+    readonly pickup: ArenaPickupState;
+    readonly intent: PickupIntent;
+}
 
 interface AcceptedIntentFixture {
     readonly nowEpochMs: number;
@@ -349,6 +362,150 @@ describe('arena game realtime acceptance and egress', () => {
                 ? arena.current?.remotePlayerHits[0]?.intent.shot.sessionId
                 : arena.current?.pickupAcceptances[0]?.player.sessionId
         ).toBe(session.sessionId);
+    });
+
+    it('sends a remote pickup intent claiming its pickup and shows a pickup another session claimed first as the activity headline', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
+
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+
+        expect(mockMatch.sendIntent).toHaveBeenCalledWith(
+            {
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'pickup-intent',
+                intent: { ...fixture.intent, sessionId: session.sessionId, sentAtEpochMs: expect.any(Number) }
+            },
+            { resourceId: fixture.pickup.id, ttlMs: 4_000 }
+        );
+        await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
+        expect(arena.current?.activeEvent).toMatchObject({
+            id: `pickup-taken:${fixture.pickup.id}`,
+            kind: 'pickup-taken',
+            position: fixture.pickup.position,
+            revision: fixture.snapshot.revision,
+            source: 'local',
+            headline: `${fixture.pickup.label} was taken first`
+        });
+    });
+
+    it.each(
+        [
+            { arrival: 'snapshot', afterMs: 1_000, kind: 'pickup-taken' },
+            { arrival: 'director event', afterMs: 1_000, kind: 'pickup-taken' },
+            { arrival: 'snapshot', afterMs: 2_800, kind: 'spawn-eye' },
+            { arrival: 'director event', afterMs: 2_800, kind: 'spawn-eye' }
+        ] as const
+    )('keeps the loss headline over a $arrival arriving $afterMs ms after the loss until it expires', async ({ arrival, afterMs, kind }) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        const lostAtEpochMs = Date.now();
+        const fixture = pickupSnapshotFixture(lostAtEpochMs);
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        mockMatch.sendIntent.mockResolvedValueOnce({ status: 'held-by-other', transport: 'director-relay' });
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+        await waitForState(() => arena.current?.activeEvent?.kind === 'pickup-taken');
+
+        vi.setSystemTime(lostAtEpochMs + afterMs);
+        const directorEvent = spawnEyeEvent(lostAtEpochMs + afterMs);
+        await act(async () => {
+            if (arrival === 'snapshot') {
+                await config?.onSnapshot?.(directorEnvelope('snapshot', {
+                    ...fixture.snapshot,
+                    activeEvent: directorEvent,
+                    events: [directorEvent]
+                }));
+            }
+            else {
+                await config?.onEvent?.(directorEnvelope('event', {
+                    protocol: 'ar-eye-hunter.v1',
+                    kind: 'arena-event',
+                    event: directorEvent
+                }));
+            }
+        });
+
+        expect(arena.current?.activeEvent?.kind).toBe(kind);
+    });
+
+    it.each(
+        [
+            { status: 'held-by-other', kind: 'pickup-taken' },
+            { status: 'sent', kind: undefined },
+            { status: 'no-director', kind: undefined },
+            { status: 'failed', kind: undefined }
+        ] as const
+    )('records a loss only for a pickup intent whose send reads held-by-other: $status shows $kind', async ({ status, kind }) => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        const sent = Promise.withResolvers<void>();
+        mockMatch.sendIntent.mockImplementationOnce(async () => {
+            sent.resolve();
+            return { status, transport: 'director-relay' };
+        });
+
+        await act(async () => {
+            arena.current?.sendPickupIntent(fixture.intent);
+            await sent.promise;
+        });
+
+        expect(mockMatch.sendIntent).toHaveBeenCalledWith(expect.anything(), { resourceId: fixture.pickup.id, ttlMs: 4_000 });
+        expect(arena.current?.activeEvent?.kind).toBe(kind);
+    });
+
+    it('records no loss for a pickup that left the snapshot before its held-by-other result', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        const result = Promise.withResolvers<{ status: 'held-by-other'; transport: 'director-relay'; }>();
+        mockMatch.sendIntent.mockReturnValueOnce(result.promise);
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+
+        await act(async () => arena.current?.publishArenaSnapshot({ ...fixture.snapshot, revision: fixture.snapshot.revision + 1, pickups: [] }));
+        await act(async () => {
+            result.resolve({ status: 'held-by-other', transport: 'director-relay' });
+            await result.promise;
+        });
+
+        expect(arena.current?.arenaSnapshot?.pickups).toEqual([]);
+        expect(arena.current?.activeEvent?.kind).toBeUndefined();
+    });
+
+    it('records no loss for a held-by-other result that arrives in a later network generation', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue(remoteDirectorMatchStatus());
+        const fixture = pickupSnapshotFixture(Date.now());
+        await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+        const result = Promise.withResolvers<{ status: 'held-by-other'; transport: 'director-relay'; }>();
+        mockMatch.sendIntent.mockReturnValueOnce(result.promise);
+        await act(async () => arena.current?.sendPickupIntent(fixture.intent));
+
+        mockRallar.auth.login.mockResolvedValueOnce(session);
+        await act(async () => arena.current?.login('hunter', 'test-only'));
+        await waitForState(() => arena.current?.connectionState === 'connected');
+        await act(async () => {
+            result.resolve({ status: 'held-by-other', transport: 'director-relay' });
+            await result.promise;
+        });
+
+        expect(arena.current?.arenaSnapshot?.pickups.map((pickup) => pickup.id)).toEqual([fixture.pickup.id]);
+        expect(arena.current?.activeEvent?.kind).toBeUndefined();
     });
 
     it('awaits local match-start acceptance through the canonical intent receiver', async () => {
@@ -781,5 +938,48 @@ function peerShotMessage(roomRef: GroupRef | undefined) {
             revision: 3,
             acceptedAtEpochMs: 1000
         }
+    };
+}
+
+/** A director event that would replace whatever headline the arena shows. */
+function spawnEyeEvent(nowEpochMs: number): ArenaEvent {
+    return {
+        id: `spawn-eye:${nowEpochMs}`,
+        kind: 'spawn-eye',
+        source: 'director',
+        startsAtEpochMs: nowEpochMs,
+        expiresAtEpochMs: nowEpochMs + 2_800,
+        revision: 2
+    };
+}
+
+function directorEnvelope<T>(kind: 'snapshot' | 'event', payload: T) {
+    return createRallarGameEnvelope({
+        protocol: 'ar-eye-hunter.v1',
+        kind,
+        roomId: 'arena-1',
+        senderId: 'director-session',
+        seq: 1,
+        directorEpoch: 1,
+        sentAtEpochMs: Date.now(),
+        payload
+    });
+}
+
+function remoteDirectorMatchStatus(): RallarGameMatchStatus {
+    return { ...localDirectorMatchStatus(), directorPeerId: 'director-session' };
+}
+
+function pickupSnapshotFixture(nowEpochMs: number): PickupSnapshotFixture {
+    const snapshot = toArenaSnapshot(
+        spawnWeaponPickup(createInitialArenaState(44, nowEpochMs), nowEpochMs, 'audit-pea-shooter'),
+        'arena-1',
+        nowEpochMs
+    );
+    const pickup = snapshot.pickups[0];
+    return {
+        snapshot,
+        pickup,
+        intent: { pickupId: pickup.id, sessionId: 'unset', position: pickup.position, seq: 1, sentAtEpochMs: 0 }
     };
 }

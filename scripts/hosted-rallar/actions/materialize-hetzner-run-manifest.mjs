@@ -1,11 +1,92 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    readFile,
+    rename,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { Either } from '../../../packages/shared/resilience/Either.ts';
+import { toError } from '../../../packages/shared/resilience/to-error.ts';
+import { parseRtcCaptureMode } from '../../../packages/shared/webrtc/rtc-capture-configuration.ts';
+
 import { toEffectiveHetznerRunManifestScope, validateHetznerRunManifestScope } from './hetzner-run-manifest-scope.mjs';
+
+/**
+ * @typedef {object} MaterializerInput
+ * @property {string} sourcePath
+ * @property {string} outputPath
+ * @property {string} recordOutputPath
+ * @property {string} agentSource
+ * @property {string} operatorPhase
+ * @property {string} controlRunId
+ * @property {string} distributedRunId
+ * @property {string} repository
+ * @property {string} workflowRunId
+ * @property {string} workflowRunAttempt
+ * @property {string} applicationId
+ * @property {string} workspaceId
+ * @property {string} roomId
+ * @property {string} [rtcCaptureMode] Absent when preserving authored capture.
+ */
+
+/**
+ * @typedef {object} MaterializerOutputDependencies
+ * @property {(directory: string) => Promise<void>} mkdir
+ * @property {(filePath: string, contents: string) => Promise<void>} writeFile
+ * @property {(source: string, destination: string) => Promise<void>} rename
+ * @property {(filePath: string) => Promise<void>} removeTemporary
+ * @property {() => string} temporaryIdentity
+ */
+
+/**
+ * @typedef {object} MaterializerDependencies
+ * @property {(filePath: string) => Promise<string>} readSourceText
+ * @property {MaterializerOutputDependencies} output
+ */
+
+/**
+ * @typedef {object} MaterializerExpectedFailure
+ * @property {'validation'} kind
+ * @property {string} message
+ */
+
+/**
+ * @typedef {object} MaterializerRuntimeFailure
+ * @property {'runtime'} kind
+ * @property {string} operation
+ * @property {Error} cause
+ */
+
+/** @typedef {MaterializerExpectedFailure | MaterializerRuntimeFailure} MaterializerFailure */
+
+/**
+ * @typedef {object} MaterializerRecord
+ * @property {number} schemaVersion
+ * @property {'explicit' | 'isolated' | 'preserved'} isolationMode
+ * @property {import('../../../packages/shared-test/rallar-bb-test/distributed-run.ts').RallarBlackBoxDistributedGroupRef} sourceGroupRef
+ * @property {import('../../../packages/shared-test/rallar-bb-test/distributed-run.ts').RallarBlackBoxDistributedGroupRef} effectiveGroupRef
+ * @property {string} sourceManifestSha256
+ * @property {string} materializedManifestSha256
+ */
+
+/**
+ * @typedef {object} MaterializerComputation
+ * @property {string} manifestText
+ * @property {MaterializerRecord} record
+ * @property {string} recordText
+ */
+
+/**
+ * @typedef {object} MaterializerSource
+ * @property {string} text
+ * @property {unknown} manifest
+ */
 
 const argumentNames = [
     'source',
@@ -23,44 +104,44 @@ const argumentNames = [
     'room-id'
 ];
 
-function readArguments(values) {
+function toMaterializerArguments(values) {
     const argumentsByName = new Map();
-
     for (let index = 0; index < values.length; index += 2) {
         const name = values[index]?.replace(/^--/, '');
         const value = values[index + 1];
         if (!name || value === undefined) {
-            throw new Error(`Expected --name value arguments; received ${values.join(' ')}`);
+            return Either.ofLeft({
+                kind: 'validation',
+                message: `Expected --name value arguments; received ${values.join(' ')}`
+            });
         }
         argumentsByName.set(name, value);
     }
-
-    for (const name of argumentNames) {
-        if (!argumentsByName.has(name)) {
-            throw new Error(`Missing required argument --${name}`);
-        }
-    }
-
-    return argumentsByName;
+    const missing = argumentNames.filter((name) => !argumentsByName.has(name));
+    return missing.length > 0
+        ? Either.ofLeft({
+            kind: 'validation',
+            message: missing.map((name) => `Missing required argument --${name}`).join('\n')
+        })
+        : Either.ofRight(argumentsByName);
 }
 
-function readRequiredString(value, label) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-        throw new Error(`${label} must be a non-empty string.`);
-    }
-    return value;
+function validateMaterializerText(value, label) {
+    return typeof value !== 'string' || value.trim().length === 0 ? [`${label} must be a non-empty string.`] : [];
 }
 
-function readGroupRef(value, label) {
+function toSourceGroupRef(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new Error(`${label} must be an object.`);
+        return Either.ofLeft({ kind: 'validation', message: 'manifest.group must be an object.' });
     }
-
-    return {
-        applicationId: readRequiredString(value.applicationId, `${label}.applicationId`),
-        workspaceId: readRequiredString(value.workspaceId, `${label}.workspaceId`),
-        groupId: readRequiredString(value.groupId, `${label}.groupId`)
-    };
+    const issues = ['applicationId', 'workspaceId', 'groupId'].flatMap((key) =>
+        validateMaterializerText(value[key], `manifest.group.${key}`)
+    );
+    return issues.length > 0 ? Either.ofLeft({ kind: 'validation', message: issues.join('\n') }) : Either.ofRight({
+        applicationId: value.applicationId,
+        workspaceId: value.workspaceId,
+        groupId: value.groupId
+    });
 }
 
 function sha256(value) {
@@ -82,15 +163,15 @@ function computeIsolatedGroupId(input) {
 }
 
 function validateAgentSource(value) {
-    if (!['hetzner', 'external', 'mixed'].includes(value)) {
-        throw new Error(`agent-source must be hetzner, external, or mixed; received ${value}`);
-    }
+    return ['hetzner', 'external', 'mixed'].includes(value)
+        ? []
+        : [`agent-source must be hetzner, external, or mixed; received ${value}`];
 }
 
 function validateOperatorPhase(value) {
-    if (!['full', 'prepare', 'run'].includes(value)) {
-        throw new Error(`operator-phase must be full, prepare, or run; received ${value}`);
-    }
+    return ['full', 'prepare', 'run'].includes(value)
+        ? []
+        : [`operator-phase must be full, prepare, or run; received ${value}`];
 }
 
 function resolveEffectiveGroup(input) {
@@ -122,35 +203,63 @@ function resolveEffectiveGroup(input) {
     };
 }
 
-async function writeAtomic(filePath, value) {
-    await mkdir(path.dirname(filePath), { recursive: true });
-    const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporaryPath, value);
-    await rename(temporaryPath, filePath);
+/**
+ * @param {MaterializerInput} input
+ * @param {MaterializerDependencies} dependencies
+ * @returns {Promise<Either<MaterializerFailure, MaterializerRecord>>}
+ */
+export async function materializeHetznerRunManifest(input, dependencies) {
+    const issues = [...validateAgentSource(input.agentSource), ...validateOperatorPhase(input.operatorPhase)];
+    if (issues.length > 0) {
+        return Either.ofLeft({ kind: 'validation', message: issues.join('\n') });
+    }
+    const capture = parseRtcCaptureMode(input.rtcCaptureMode?.trim() === '' ? undefined : input.rtcCaptureMode);
+    if (capture.right === undefined) {
+        return capture.mapLeft((issues) => ({
+            kind: 'validation',
+            message: issues.map((issue) => issue.message).join('\n')
+        }));
+    }
+    const source = await readMaterializerSource(input.sourcePath, dependencies.readSourceText);
+    if (source.right === undefined) {
+        return source;
+    }
+    const computed = computeMaterializedManifest(input, source.right, capture.right.mode);
+    if (computed.right === undefined) {
+        return computed;
+    }
+    const written = await writeAtomic(input.outputPath, computed.right.manifestText, dependencies.output);
+    if (written.right === undefined) {
+        return written;
+    }
+    const recorded = await writeAtomic(input.recordOutputPath, computed.right.recordText, dependencies.output);
+    return recorded.mapRight(() => computed.right.record);
 }
 
-export async function materializeHetznerRunManifest(input) {
-    const sourceText = await readFile(input.sourcePath, 'utf8');
-    const sourceManifest = JSON.parse(sourceText);
-    const sourceGroupRef = readGroupRef(sourceManifest.group, 'manifest.group');
-    const sourceIssues = validateHetznerRunManifestScope(sourceManifest, sourceGroupRef);
-    if (sourceIssues.length > 0) {
-        throw new Error(`Source manifest scope is inconsistent:\n- ${sourceIssues.join('\n- ')}`);
+/** @returns {Either<MaterializerFailure, MaterializerComputation>} */
+function computeMaterializedManifest(input, source, captureMode) {
+    const group = toSourceGroupRef(source.manifest?.group);
+    if (group.right === undefined) {
+        return group;
     }
-
-    const sourceManifestSha256 = sha256(sourceText);
-    const effective = resolveEffectiveGroup({
-        ...input,
-        sourceGroupRef,
-        sourceManifestSha256
-    });
+    const sourceGroupRef = group.right;
+    const sourceIssues = validateHetznerRunManifestScope(source.manifest, sourceGroupRef);
+    if (sourceIssues.length > 0) {
+        return Either.ofLeft({
+            kind: 'validation',
+            message: `Source manifest scope is inconsistent:\n- ${sourceIssues.join('\n- ')}`
+        });
+    }
+    const sourceManifestSha256 = sha256(source.text);
+    const effective = resolveEffectiveGroup({ ...input, sourceGroupRef, sourceManifestSha256 });
     const scopedManifest = toEffectiveHetznerRunManifestScope(
-        sourceManifest,
+        source.manifest,
         sourceGroupRef,
         effective.effectiveGroupRef
     );
     const manifest = {
         ...scopedManifest,
+        ...(captureMode === undefined ? {} : { rtcCaptureMode: captureMode }),
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         metadata: {
@@ -166,11 +275,11 @@ export async function materializeHetznerRunManifest(input) {
     };
     const effectiveIssues = validateHetznerRunManifestScope(manifest, effective.effectiveGroupRef);
     if (effectiveIssues.length > 0) {
-        throw new Error(
-            `Materialized manifest scope is inconsistent:\n- ${effectiveIssues.join('\n- ')}`
-        );
+        return Either.ofLeft({
+            kind: 'validation',
+            message: `Materialized manifest scope is inconsistent:\n- ${effectiveIssues.join('\n- ')}`
+        });
     }
-
     const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
     const record = {
         schemaVersion: 1,
@@ -180,47 +289,111 @@ export async function materializeHetznerRunManifest(input) {
         sourceManifestSha256,
         materializedManifestSha256: sha256(manifestText)
     };
-
-    await writeAtomic(input.outputPath, manifestText);
-    await writeAtomic(input.recordOutputPath, `${JSON.stringify(record, null, 2)}\n`);
-    return record;
+    return Either.ofRight({ manifestText, record, recordText: `${JSON.stringify(record, null, 2)}\n` });
 }
 
-async function main() {
-    const argumentsByName = readArguments(process.argv.slice(2));
-    const agentSource = argumentsByName.get('agent-source');
-    const operatorPhase = argumentsByName.get('operator-phase');
-    validateAgentSource(agentSource);
-    validateOperatorPhase(operatorPhase);
+/** @returns {Promise<Either<MaterializerFailure, MaterializerSource>>} */
+async function readMaterializerSource(sourcePath, readSourceText) {
+    try {
+        const text = await readSourceText(sourcePath);
+        return Either.ofRight({ text, manifest: JSON.parse(text) });
+    }
+    catch (cause) {
+        return Either.ofLeft({ kind: 'runtime', operation: `read source ${sourcePath}`, cause: toError(cause) });
+    }
+}
 
-    const record = await materializeHetznerRunManifest({
+/** @param {MaterializerOutputDependencies} dependencies */
+async function writeAtomic(filePath, contents, dependencies) {
+    let temporaryPath;
+    try {
+        await dependencies.mkdir(path.dirname(filePath));
+        temporaryPath = `${filePath}.${dependencies.temporaryIdentity()}.tmp`;
+        await dependencies.writeFile(temporaryPath, contents);
+        await dependencies.rename(temporaryPath, filePath);
+        return Either.ofRight(true);
+    }
+    catch (cause) {
+        const error = toError(cause);
+        if (temporaryPath !== undefined) {
+            try {
+                await dependencies.removeTemporary(temporaryPath);
+            }
+            catch (cleanupCause) {
+                return Either.ofLeft({
+                    kind: 'runtime',
+                    operation: `write ${filePath}`,
+                    cause: new AggregateError([error, toError(cleanupCause)], error.message)
+                });
+            }
+        }
+        return Either.ofLeft({ kind: 'runtime', operation: `write ${filePath}`, cause: error });
+    }
+}
+
+function toMaterializerInput(argumentsByName) {
+    const requiredTextNames = [
+        'control-run-id',
+        'distributed-run-id',
+        'repository',
+        'workflow-run-id',
+        'workflow-run-attempt'
+    ];
+    const issues = requiredTextNames.flatMap((name) => validateMaterializerText(argumentsByName.get(name), name));
+    if (issues.length > 0) {
+        return Either.ofLeft({ kind: 'validation', message: issues.join('\n') });
+    }
+    return Either.ofRight({
         sourcePath: argumentsByName.get('source'),
         outputPath: argumentsByName.get('output'),
         recordOutputPath: argumentsByName.get('record-output'),
-        agentSource,
-        operatorPhase,
-        controlRunId: readRequiredString(argumentsByName.get('control-run-id'), 'control-run-id'),
-        distributedRunId: readRequiredString(
-            argumentsByName.get('distributed-run-id'),
-            'distributed-run-id'
-        ),
-        repository: readRequiredString(argumentsByName.get('repository'), 'repository'),
-        workflowRunId: readRequiredString(argumentsByName.get('workflow-run-id'), 'workflow-run-id'),
-        workflowRunAttempt: readRequiredString(
-            argumentsByName.get('workflow-run-attempt'),
-            'workflow-run-attempt'
-        ),
+        agentSource: argumentsByName.get('agent-source'),
+        operatorPhase: argumentsByName.get('operator-phase'),
+        controlRunId: argumentsByName.get('control-run-id'),
+        distributedRunId: argumentsByName.get('distributed-run-id'),
+        repository: argumentsByName.get('repository'),
+        workflowRunId: argumentsByName.get('workflow-run-id'),
+        workflowRunAttempt: argumentsByName.get('workflow-run-attempt'),
         applicationId: argumentsByName.get('application-id'),
         workspaceId: argumentsByName.get('workspace-id'),
-        roomId: argumentsByName.get('room-id')
+        roomId: argumentsByName.get('room-id'),
+        rtcCaptureMode: argumentsByName.get('rtc-capture-mode')
     });
+}
 
-    process.stdout.write(`${JSON.stringify(record)}\n`);
+async function main() {
+    const input = toMaterializerArguments(process.argv.slice(2)).flatMap(Either.ofLeft, toMaterializerInput)
+        .fold((failure) => {
+            throw new Error(toMaterializerFailureText(failure));
+        }, (input) => input);
+    /** @type {MaterializerDependencies} */
+    const dependencies = {
+        readSourceText: (filePath) => readFile(filePath, 'utf8'),
+        output: {
+            mkdir: async (directory) => {
+                await mkdir(directory, { recursive: true });
+            },
+            writeFile: async (filePath, contents) => {
+                await writeFile(filePath, contents);
+            },
+            rename,
+            removeTemporary: (filePath) => rm(filePath, { force: true }),
+            temporaryIdentity: () => `${process.pid}.${randomUUID()}`
+        }
+    };
+    const outcome = await materializeHetznerRunManifest(input, dependencies);
+    outcome.fold((failure) => {
+        throw new Error(toMaterializerFailureText(failure));
+    }, (record) => process.stdout.write(`${JSON.stringify(record)}\n`));
+}
+
+function toMaterializerFailureText(failure) {
+    return failure.kind === 'runtime' ? failure.cause.message : failure.message;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
     main().catch((error) => {
-        console.error(error instanceof Error ? error.message : String(error));
+        console.error(toError(error).message);
         process.exitCode = 1;
     });
 }

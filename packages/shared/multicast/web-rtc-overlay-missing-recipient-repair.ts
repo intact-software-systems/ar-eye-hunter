@@ -4,6 +4,7 @@ import {
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -81,7 +82,8 @@ export function planRtcFailedPeerRepair(
             input.msg.id.senderId === input.selfPeerId
         ? input.planOutgoingMessage(input.msg)
         : undefined;
-    return outgoing?.ackTracking?.mode === 'receiver' && frozen !== undefined
+    return outgoing?.ackTracking !== undefined && isALLogicalReceiptMode(outgoing.ackTracking.mode) &&
+            frozen !== undefined
         ? toMissingRecipientRepairPlan({ outgoing, ackTracking: outgoing.ackTracking, request: input.request, frozen })
         : planRtcAlternateParentRepair(input);
 }
@@ -96,7 +98,7 @@ export function toRtcRetriedCopyRetransmission(
         ? {
             dropReason: `No RTC forwarding route for the retried copy of ${copy.msg.id.msgId}`,
             dropReasonCode: 'no-route',
-            persist: false,
+            lane: 'volatile',
             msg: copy.msg,
             preparedMessages: []
         }

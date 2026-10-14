@@ -1,7 +1,9 @@
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import { BrowserResyncRecovery } from '@shared-web/browser/messages/browser-resync-recovery.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
@@ -19,11 +21,18 @@ import {
     type RallarWsController
 } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
-import type { RallarBrowserFacadeRuntimeContext } from './browser-facade-runtime-state.ts';
+import type {
+    RallarBrowserFacadeRuntimeContext
+} from './browser-facade-runtime-state.ts';
 
 import type { BrowserStateComposition } from './browser-runtime-composition.ts';
 
@@ -33,6 +42,12 @@ const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 export interface BrowserMessagingComposition {
     readonly messagesController: BrowserRallarMessagesController;
     readonly messages: RallarMessagesOperations;
+}
+
+/** Built before the session: each connect's inbound runtimes hand `resyncRecovery` their resynchronizations. */
+export interface BrowserResyncRecoveryComposition {
+    readonly recoveryOwners: BrowserChannelRecoveryOwners;
+    readonly resyncRecovery: BrowserResyncRecovery;
 }
 
 export interface BrowserRealtimeCoreComposition {
@@ -50,11 +65,16 @@ export interface BrowserMediaComposition {
     readonly media: RallarMediaFacade;
 }
 
+export interface CreateBrowserResyncRecoveryCompositionInput {
+    readonly nowMs: () => number;
+}
+
 export interface CreateBrowserMessagingCompositionInput {
     readonly deliveries: BrowserRallarDeliveryRegistry;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly nowMs: () => number;
     readonly wsInbox: BrowserWebSocketInbox;
+    readonly recoveryOwners: BrowserChannelRecoveryOwners;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
 }
@@ -69,6 +89,17 @@ export interface CreateBrowserMediaCompositionInput {
     readonly session: RallarSessionController;
 }
 
+export function createBrowserResyncRecoveryComposition(
+    input: CreateBrowserResyncRecoveryCompositionInput
+): BrowserResyncRecoveryComposition {
+    const recoveryOwners = new BrowserChannelRecoveryOwners();
+    const resyncRecovery = new BrowserResyncRecovery({
+        owners: recoveryOwners,
+        nowMs: input.nowMs
+    });
+    return { recoveryOwners, resyncRecovery };
+}
+
 export function createBrowserMessagingComposition(
     input: CreateBrowserMessagingCompositionInput
 ): BrowserMessagingComposition {
@@ -77,21 +108,23 @@ export function createBrowserMessagingComposition(
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         wsInbox: input.wsInbox,
         deliveries: input.deliveries,
         sessionDeliveries: input.sessionDeliveries,
         nowMs: input.nowMs,
-        connect: async () => await input.session.connect(),
+        recoveryOwners: input.recoveryOwners,
+        connect: input.session.acquireConnection,
         readMiddleware: input.session.readMiddleware,
+        requireMiddleware: input.session.requireMiddleware,
         requireSession: input.session.requireSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom,
         resolveCurrentRoomRef: () => input.state.roomStateStore.resolveCurrentRoomRef(),
         toRoomId: (room) => input.state.roomStateStore.toRoomId(room),
         resolveRoomRef: (room) => input.state.roomStateStore.resolveRoomRef(room),
-        resolveRoomMinSnapshotVersion: (room, explicit) =>
-            input.state.roomStateStore.resolveRoomMinSnapshotVersion(room, explicit),
+        resolveRoomSendFence: (room, explicit) => input.state.roomStateStore.resolveRoomSendFence(room, explicit),
         readMessageMaxPayloadBytes: () =>
             input.state.readDefaults()?.messages?.maxPayloadBytes ??
                 RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
@@ -120,7 +153,7 @@ export function createBrowserMediaComposition(
     input: CreateBrowserMediaCompositionInput
 ): BrowserMediaComposition {
     const localMediaSources = new BrowserLocalMediaSourceRuntime({
-        connect: async () => await input.session.connect()
+        connect: async () => await input.session.acquireConnection()
     });
     const remoteMediaStreams = new BrowserRemoteMediaStreamRuntime({
         readMiddleware: input.session.readMiddleware
@@ -134,7 +167,7 @@ export function createBrowserMediaComposition(
         setVideoEnabled: async (enabled) => await localMediaSources.setVideoEnabled(enabled),
         stopLocal: async (kind) => await localMediaSources.stopLocal(kind),
         setPolicy: async (policy) => {
-            const context = await input.session.connect();
+            const context = await input.session.acquireConnection();
             context.middleware.rtcRxStreamer.setMediaPolicy(policy);
         },
         onRemoteStream: (listener) => remoteMediaStreams.onRemoteStream(listener)
@@ -188,7 +221,7 @@ function createBrowserRealtimeChannelComposition(
     input: CreateBrowserRealtimeChannelCompositionInput
 ): BrowserRealtimeChannelComposition {
     const ownerInput = {
-        connect: async () => await input.session.connect(),
+        connect: async () => await input.session.acquireConnection(),
         readMiddleware: input.session.readMiddleware,
         readSession,
         readDefaultRoom: input.state.resolveDefaultRoom,

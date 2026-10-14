@@ -92,6 +92,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly settlements: ALOutboundSettlementEmitter;
     /** The carrier controls reach this owner on; every acknowledgement it records is stamped with it. */
     readonly carrier: ALDeliveryCarrier;
+    /** The composition's fixed hops, whose repair controls are expected like a receipt's peers; undefined for none. */
+    readonly hopPeerIds: readonly string[] | undefined;
 }
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
@@ -106,6 +108,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly port: ALWorkQueuePort;
     private readonly settlements: ALOutboundSettlementEmitter;
     private readonly carrier: ALDeliveryCarrier;
+    private readonly hopPeerIds: readonly string[] | undefined;
 
     constructor(input: CreateALOutboundControlAdmissionInput<TPrepared>) {
         this.clock = input.clock;
@@ -118,6 +121,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.port = input.port;
         this.settlements = input.settlements;
         this.carrier = input.carrier;
+        this.hopPeerIds = input.hopPeerIds;
     }
 
     async admit(msg: ALMessage, source: ALOutboundControlSource): Promise<ALOutboundControlAdmissionResult> {
@@ -309,6 +313,7 @@ export class ALOutboundControlAdmission<TPrepared> {
                 parsed,
                 source,
                 carrier: this.carrier,
+                hopPeerIds: this.hopPeerIds,
                 targetMsgId,
                 nowMs,
                 owner,

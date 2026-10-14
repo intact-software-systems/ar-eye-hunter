@@ -1,10 +1,28 @@
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
+import { BlackBoxRallarRuntimeDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarEvent,
     BlackBoxRallarFormationSummary
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
 import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
-import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
+import { installSpaBrowserRallarEventBridge } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { toControlEventEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type {
+    RallarRoomTransportStatus,
+    RallarRtcRoomTransportStatus,
+    RallarRtcStatusListener
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarStateListener,
     RallarUnsubscribe
@@ -18,12 +36,19 @@ import type {
     RallarRoomLayoutListener,
     RallarRoomReconfigureOptions
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import { BrowserRtcRoomRuntime } from '@shared-web/browser/rtc/browser-rtc-room-runtime.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, expect, it } from 'vitest';
 
-import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { controlEventArtifactJsonl } from '../../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
+import { toLiveRtcLifecycleHistory } from '../../../../tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts';
+import {
+    requiredJsonArray,
+    requiredJsonRecord,
+    type LiveRtcJsonRecord
+} from '../../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
+import { createAcceptedOverlayFixture, createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import {
     facade,
     loadRuntime,
@@ -101,28 +126,128 @@ type FormationCommandOptions =
     | RallarRoomReconfigureOptions
     | undefined;
 
-interface HarnessInput {
-    readonly stage: GroupLifecycleState;
-    readonly formationEpoch: number;
-    readonly desiredPeerIds?: readonly string[];
-    readonly readyPeerIds?: readonly string[];
-    readonly state?: RallarRtcRoomTransportStatus['state'];
+namespace FormationHarness {
+    export interface Input {
+        readonly stage: GroupLifecycleState;
+        readonly formationEpoch: number;
+        readonly desiredPeerIds?: readonly string[];
+        readonly readyPeerIds?: readonly string[];
+        readonly state?: RallarRtcRoomTransportStatus['state'];
+    }
 }
 
-function createFormationHarness(input: HarnessInput) {
-    const snapshot: GroupSnapshot = createGroupSnapshotFixture({
-        applicationId: roomRef.applicationId,
-        workspaceId: roomRef.workspaceId,
-        groupId: roomRef.groupId,
-        sessionIds: ['session-a']
-    });
-    const calls: (readonly [string, FormationCommandOptions])[] = [];
-    const changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
-    const layoutListeners: RallarRoomLayoutListener[] = [];
-    const statusListeners: (() => void)[] = [];
-    const emitted: Omit<BlackBoxRallarEvent, 'atEpochMs'>[] = [];
+class FormationHarness {
+    readonly snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['session-a'] });
+    readonly calls: (readonly [string, FormationCommandOptions])[] = [];
+    readonly emitted: Omit<BlackBoxRallarEvent, 'atEpochMs'>[] = [];
+    readonly #changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
+    readonly #layoutListeners: RallarRoomLayoutListener[] = [];
+    readonly #statusListeners: RallarRtcStatusListener[] = [];
+    readonly formation: RallarRoomFormation;
+    readonly controller: BlackBoxRallarFormationController;
+    #status: RallarRoomFormationStatus | undefined;
+    #room: RallarRtcRoomTransportStatus;
 
-    let status: RallarRoomFormationStatus = {
+    constructor(input: FormationHarness.Input) {
+        this.#status = toFormationStatus(input, this.snapshot);
+        this.#room = toRoomStatus(input);
+        this.formation = this.#createFormation();
+        this.controller = new BlackBoxRallarFormationController({
+            formation: () => this.formation,
+            rtc: {
+                roomStatus: this.roomStatus,
+                waitForRoom: this.waitForRoom,
+                onStatus: (listener) => subscribe(this.#statusListeners, listener)
+            },
+            emit: this.emit,
+            now: () => 1_000
+        });
+    }
+
+    readonly emit = vi.fn((event: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void => {
+        this.emitted.push(event);
+    });
+
+    readonly roomStatus = (): RallarRoomTransportStatus => ({
+        roomRef,
+        ws: {
+            connectState: 'connected',
+            readyState: 'open',
+            isOpen: true,
+            reconnecting: false,
+            reconnectEnabled: true,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 5,
+            reconnectExhausted: false
+        },
+        rtc: this.#room
+    });
+
+    readonly waitForRoom = vi.fn(async () => this.roomStatus());
+
+    releaseRoom(): void {
+        this.#status = undefined;
+    }
+
+    emitChange(next: Partial<RallarRoomFormationStatus>): void {
+        if (!this.#status) {
+            throw new Error('Expected a held room.');
+        }
+        this.#status = { ...this.#status, ...next };
+        for (const listener of [...this.#changeListeners]) {
+            listener(this.#status);
+        }
+    }
+
+    emitLayout(event: RallarRoomLayoutEvent): void {
+        for (const listener of [...this.#layoutListeners]) {
+            listener(event);
+        }
+    }
+
+    updateRoomAndNotify(next: Partial<RallarRtcRoomTransportStatus>): void {
+        this.#room = { ...this.#room, ...next };
+        for (const listener of [...this.#statusListeners]) {
+            listener({
+                laneId: this.#room.laneId,
+                knownPeerIds: this.#room.knownPeerIds,
+                activePeerIds: this.#room.activePeerIds,
+                readyPeerIds: this.#room.readyPeerIds,
+                peerIdsWithNoReconnectableLanes: [],
+                peers: this.#room.peers
+            });
+        }
+    }
+
+    #record = (name: string) => (options?: FormationCommandOptions): Promise<GroupSnapshot> => {
+        this.calls.push([name, options]);
+        return Promise.resolve(this.snapshot);
+    };
+
+    #createFormation(): RallarRoomFormation {
+        return {
+            roomRef,
+            status: () => this.#status,
+            readView: () => Promise.reject(new Error('unused')),
+            plan: this.#record('plan'),
+            connect: this.#record('connect'),
+            activate: this.#record('activate'),
+            reconfigure: this.#record('reconfigure'),
+            pause: this.#record('pause'),
+            resume: this.#record('resume'),
+            reset: this.#record('reset'),
+            start: this.#record('start'),
+            waitForStage: () => Promise.reject(new Error('unused')),
+            waitForCondition: () => Promise.reject(new Error('unused')),
+            waitForLayout: () => Promise.reject(new Error('unused')),
+            onChange: (listener) => subscribe(this.#changeListeners, listener),
+            onLayout: (listener) => subscribe(this.#layoutListeners, listener)
+        };
+    }
+}
+
+function toFormationStatus(input: FormationHarness.Input, snapshot: GroupSnapshot): RallarRoomFormationStatus {
+    return {
         roomRef,
         stage: input.stage,
         formationEpoch: input.formationEpoch,
@@ -137,7 +262,10 @@ function createFormationHarness(input: HarnessInput) {
         coverageRate: undefined,
         snapshot
     };
-    let room: RallarRtcRoomTransportStatus = {
+}
+
+function toRoomStatus(input: FormationHarness.Input): RallarRtcRoomTransportStatus {
+    return {
         desired: true,
         mode: 'eager',
         state: input.state ?? 'idle',
@@ -149,93 +277,22 @@ function createFormationHarness(input: HarnessInput) {
         peers: [],
         laneId: 'lane-1',
         lastChangedAtEpochMs: 1,
-        reason: 'fixture'
+        reason: 'private-unknown-reason'
     };
-    const waitForRoom = vi.fn(async () => ({
-        roomRef,
-        ws: { connected: true } as never,
-        rtc: room
-    }));
+}
 
-    const record = (name: string) => (options?: FormationCommandOptions): Promise<GroupSnapshot> => {
-        calls.push([name, options]);
-        return Promise.resolve(snapshot);
-    };
-    const subscribe = <T>(listeners: T[], listener: T): RallarUnsubscribe => {
-        listeners.push(listener);
-        return () => {
-            const index = listeners.indexOf(listener);
-            if (index >= 0) {
-                listeners.splice(index, 1);
-            }
-        };
-    };
-
-    const formation: RallarRoomFormation = {
-        roomRef,
-        status: () => status,
-        readView: () => Promise.reject(new Error('unused')),
-        plan: record('plan'),
-        connect: record('connect'),
-        activate: record('activate'),
-        reconfigure: record('reconfigure'),
-        pause: record('pause'),
-        resume: record('resume'),
-        reset: record('reset'),
-        start: record('start'),
-        waitForStage: () => Promise.reject(new Error('unused')),
-        waitForCondition: () => Promise.reject(new Error('unused')),
-        waitForLayout: () => Promise.reject(new Error('unused')),
-        onChange: (listener: RallarStateListener<RallarRoomFormationStatus>) => subscribe(changeListeners, listener),
-        onLayout: (listener: RallarRoomLayoutListener) => subscribe(layoutListeners, listener)
-    };
-
-    const controller = new BlackBoxRallarFormationController({
-        formation: () => formation,
-        rtc: {
-            roomStatus: () => ({
-                roomRef,
-                ws: { connected: true } as never,
-                rtc: room
-            }),
-            waitForRoom,
-            onStatus: (listener: (status: never) => void) => subscribe(statusListeners, () => listener({} as never))
-        } as never,
-        emit: (event) => {
-            emitted.push(event);
-        },
-        emitError: () => {},
-        now: () => 1_000
-    });
-
-    return {
-        controller,
-        calls,
-        emitted,
-        formation,
-        waitForRoom,
-        emitChange(next: Partial<RallarRoomFormationStatus>) {
-            status = { ...status, ...next };
-            for (const listener of [...changeListeners]) {
-                listener(status);
-            }
-        },
-        emitLayout(event: RallarRoomLayoutEvent) {
-            for (const listener of [...layoutListeners]) {
-                listener(event);
-            }
-        },
-        setRoom(next: Partial<RallarRtcRoomTransportStatus>) {
-            room = { ...room, ...next };
-            for (const listener of [...statusListeners]) {
-                listener();
-            }
+function subscribe<T>(listeners: T[], listener: T): RallarUnsubscribe {
+    listeners.push(listener);
+    return () => {
+        const index = listeners.indexOf(listener);
+        if (index >= 0) {
+            listeners.splice(index, 1);
         }
     };
 }
 
 it('issues the command and reports the receipt beside the summary', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'planned',
         formationEpoch: 1
     });
@@ -258,7 +315,7 @@ it('issues the command and reports the receipt beside the summary', async () => 
 });
 
 it('omits the absent fields from the summary instead of carrying undefined keys', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'planned',
         formationEpoch: 1
     });
@@ -272,12 +329,12 @@ it('omits the absent fields from the summary instead of carrying undefined keys'
     expect(Object.keys(summary)).not.toContain('accepted');
     expect(Object.keys(summary)).not.toContain('coverageRate');
     expect(
-        JSON.parse(JSON.stringify(summary)) as BlackBoxRallarFormationSummary
+        JSON.parse(JSON.stringify(summary))
     ).toEqual(summary);
 });
 
 it('passes the named layout to connect and the landing to reconfigure', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'planned',
         formationEpoch: 1
     });
@@ -301,7 +358,7 @@ it('passes the named layout to connect and the landing to reconfigure', async ()
 });
 
 it('delegates observation-only readiness to the canonical room wait and emits the ready diagnostic', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'active',
         formationEpoch: 3,
         desiredPeerIds: ['b', 'c'],
@@ -318,13 +375,11 @@ it('delegates observation-only readiness to the canonical room wait and emits th
         connect: false,
         timeoutMs: 5_000
     });
-    expect(harness.emitted.map((event) => event.topic)).toContain(
-        'rallar.browser.formation.ready'
-    );
+    expect(harness.emitted.map((event) => event.topic)).toEqual(['rallar.browser.formation.ready']);
 });
 
 it('returns the room status captured by the canonical wait when the live view changes afterward', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'active',
         formationEpoch: 3,
         desiredPeerIds: ['b'],
@@ -336,14 +391,14 @@ it('returns the room status captured by the canonical wait when the live view ch
         throw new Error('Expected the fixture to expose its ready room.');
     }
     harness.waitForRoom.mockImplementationOnce(async () => {
-        harness.setRoom({
+        harness.updateRoomAndNotify({
             state: 'idle',
             desiredPeerIds: [],
             readyPeerIds: []
         });
         return {
             roomRef,
-            ws: { connected: true } as never,
+            ws: harness.roomStatus().ws,
             rtc: {
                 desired: true,
                 mode: 'eager',
@@ -371,7 +426,7 @@ it('returns the room status captured by the canonical wait when the live view ch
 });
 
 it('rejects an edgeless room returned by the canonical readiness owner', async () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'active',
         formationEpoch: 3,
         state: 'open'
@@ -389,8 +444,31 @@ it('rejects an edgeless room returned by the canonical readiness owner', async (
     );
 });
 
+it('retains the rejected captured room result when the later live view is open', async () => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 3, state: 'idle', desiredPeerIds: ['b'] });
+    const captured = await harness.waitForRoom();
+    harness.waitForRoom.mockImplementationOnce(async () => {
+        harness.updateRoomAndNotify({ state: 'open', desiredPeerIds: ['b'], readyPeerIds: ['b'] });
+        return captured;
+    });
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('state open');
+    expect(harness.emitted).toContainEqual(expect.objectContaining({
+        topic: 'rallar.browser.formation.not-ready',
+        data: expect.objectContaining({
+            kind: 'formation-readiness-rejected',
+            roomTransportState: 'idle',
+            summaryAvailable: true,
+            roomOpen: false,
+            hasDesiredPeers: true,
+            desiredPeerCount: 1,
+            readyPeerCount: 0,
+            waitTerminalCause: 'unknown'
+        })
+    }));
+});
+
 it('forwards changes, layout events and room status as diagnostics', () => {
-    const harness = createFormationHarness({
+    const harness = new FormationHarness({
         stage: 'planned',
         formationEpoch: 1
     });
@@ -400,10 +478,12 @@ it('forwards changes, layout events and room status as diagnostics', () => {
     harness.emitLayout({
         kind: 'layoutAccepted',
         roomRef,
-        layout: { role: 'accepted', identity: PLANNED, overlay: {} as never }
+        layout: { role: 'accepted', identity: PLANNED, overlay: createAcceptedOverlayFixture(harness.snapshot, 2, []) }
     });
-    harness.setRoom({ readyPeerIds: ['b'] });
+    harness.updateRoomAndNotify({ readyPeerIds: ['b'] });
     unsubscribe();
+    harness.emitChange({ stage: 'active' });
+    harness.updateRoomAndNotify({ readyPeerIds: [] });
 
     expect(harness.emitted.map((event) => event.topic)).toEqual([
         'rallar.browser.formation.changed',
@@ -412,19 +492,34 @@ it('forwards changes, layout events and room status as diagnostics', () => {
     ]);
 });
 
-// R6: the diagnostics install only when the connection resolves a room ref, so a connection that
-// names a bare room id installs nothing and the runtime's unsubscribe count does not move. Both
-// halves are pinned, because a silently uninstalled stream would leave every browser pin blind.
 beforeEach(() => {
     resetFacade();
 });
 
 afterEach(() => {
+    vi.unstubAllGlobals();
     resetFacade();
 });
 
 it('installs the formation diagnostics for a room-scoped connection and tears them down on close', async () => {
     const runtime = await loadRuntime();
+    const active = new Set<string>();
+    const held = facade.rallar.rooms.formation(roomRef);
+    facade.behavior.roomFormation.mockReturnValue({
+        ...held,
+        onChange: () => {
+            active.add('change');
+            return () => {
+                active.delete('change');
+            };
+        },
+        onLayout: () => {
+            active.add('layout');
+            return () => {
+                active.delete('layout');
+            };
+        }
+    });
     await runtime.connect({
         connection: 'aliceRtc',
         actor: 'alice',
@@ -438,11 +533,9 @@ it('installs the formation diagnostics for a room-scoped connection and tears th
         }
     });
 
-    const closed = await runtime.close();
-
-    // The count is the observable proof that the stream installed: it reaches four only when the
-    // room-scoped subscription was added to the three the runtime always holds.
-    expect(closed).toMatchObject({ unsubscribed: 4 });
+    expect(active).toEqual(new Set(['change', 'layout']));
+    await runtime.close();
+    expect([...active]).toEqual([]);
 });
 
 it('removes the formation diagnostics when the connection fails after installing them', async () => {
@@ -461,7 +554,10 @@ it('removes the formation diagnostics when the connection fails after installing
         onLayout: () => track('formation.layout')
     });
     facade.behavior.rtcOnStatus.mockImplementation(() => track('rtc.status'));
-    facade.behavior.roomJoin.mockRejectedValue(new Error('Room join failed.'));
+    facade.behavior.roomJoin.mockImplementation(async () => {
+        expect(activeSubscriptions).toEqual(new Set(['formation.change', 'formation.layout', 'rtc.status']));
+        throw new Error('Room join failed.');
+    });
 
     await expect(runtime.connect({
         connection: 'aliceRtc',
@@ -481,6 +577,16 @@ it('removes the formation diagnostics when the connection fails after installing
 
 it('installs no formation diagnostics when the connection resolves no room ref', async () => {
     const runtime = await loadRuntime();
+    const changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
+    const layoutListeners: RallarRoomLayoutListener[] = [];
+    const statusListeners: RallarRtcStatusListener[] = [];
+    const held = facade.rallar.rooms.formation(roomRef);
+    facade.behavior.roomFormation.mockReturnValue({
+        ...held,
+        onChange: (listener) => subscribe(changeListeners, listener),
+        onLayout: (listener) => subscribe(layoutListeners, listener)
+    });
+    facade.behavior.rtcOnStatus.mockImplementation((listener) => subscribe(statusListeners, listener));
     await runtime.connect({
         connection: 'aliceRtc',
         actor: 'alice',
@@ -492,7 +598,242 @@ it('installs no formation diagnostics when the connection resolves no room ref',
         }
     });
 
-    const closed = await runtime.close();
+    expect({ changeListeners, layoutListeners, statusListeners }).toEqual({
+        changeListeners: [],
+        layoutListeners: [],
+        statusListeners: []
+    });
+    await runtime.close();
+    expect({ changeListeners, layoutListeners, statusListeners }).toEqual({
+        changeListeners: [],
+        layoutListeners: [],
+        statusListeners: []
+    });
+});
 
-    expect(closed).toMatchObject({ unsubscribed: 3 });
+it.each(
+    [
+        { state: 'idle', peers: ['b'], held: true, open: false, desired: true },
+        { state: 'open', peers: [], held: true, open: true, desired: false },
+        { state: 'open', peers: ['b'], held: false, open: true, desired: true }
+    ] as const
+)('retains rejection predicates for $state, held=$held, desired=$desired', async ({ state, peers, held, open, desired }) => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, state, desiredPeerIds: peers });
+    if (!held) {
+        harness.releaseRoom();
+    }
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('RALLAR_BLACK_BOX_FORMATION_NOT_READY');
+    expect(harness.emitted).toMatchObject([{
+        data: {
+            roomTransportState: state,
+            summaryAvailable: held,
+            roomOpen: open,
+            hasDesiredPeers: desired,
+            desiredPeerCount: peers.length,
+            readyPeerCount: 0,
+            waitTerminalCause: 'unknown'
+        }
+    }]);
+    expect(JSON.stringify(harness.emitted)).not.toContain('private-unknown-reason');
+});
+
+it('keeps the formation rejection when the supplemental sink throws and does not observe a rejected wait promise as a returned result', async () => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1 });
+    harness.emit.mockImplementationOnce((event) => {
+        harness.emitted.push(event);
+        throw new Error('supplemental sink failed');
+    });
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow(
+        'RALLAR_BLACK_BOX_FORMATION_NOT_READY: the room did not open within 50 ms (state idle).'
+    );
+    expect(harness.emitted.map((event) => event.topic)).toEqual(['rallar.browser.formation.not-ready']);
+    harness.emitted.length = 0;
+    const waitFailure = new Error('wait rejected without a returned result');
+    harness.waitForRoom.mockRejectedValueOnce(waitFailure);
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toBe(waitFailure);
+    expect(harness.emitted).toEqual([]);
+});
+
+it('carries the actual formation observation through diagnostics, browser receipt, recorder serialization and bounded projection', async () => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: ['b'] });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            kind: 'formation-readiness-rejected',
+            runtimeAtEpochMs: 119,
+            controlAtEpochMs: 120,
+            roomTransportState: 'idle',
+            summaryAvailable: true,
+            roomOpen: false,
+            hasDesiredPeers: true,
+            desiredPeerCount: 1,
+            readyPeerCount: 0,
+            waitTerminalCause: 'unknown'
+        }]
+    });
+    expect(JSON.stringify(recorded.history)).not.toContain('private-unknown-reason');
+});
+
+function createCapturedRoomRuntime(harness: FormationHarness, accepted: boolean): BrowserRtcRoomRuntime {
+    return new BrowserRtcRoomRuntime({
+        isConnected: () => true,
+        readWsStatus: () => harness.roomStatus().ws,
+        readRtcStatus: () => ({
+            laneId: 'captured-lane',
+            knownPeerIds: ['b', 'c'],
+            activePeerIds: ['b'],
+            readyPeerIds: ['b'],
+            peerIdsWithNoReconnectableLanes: [],
+            peers: []
+        }),
+        subscribeRtcStatus: () => () => {},
+        subscribeRoomTransportTarget: () => () => {},
+        resolveRoomTransportTarget: () => ({ acceptedLayoutCoversCurrentPresence: accepted, peerIds: ['b', 'c'] }),
+        resolveRoomRef: () => roomRef,
+        toRoomId: () => roomRef.groupId,
+        resolveWaitTimeoutMs: (timeoutMs) => timeoutMs,
+        waitForRoomLane: () => Promise.reject(new Error('Unexpected connecting wait.'))
+    });
+}
+
+interface RecordedFormationRejection {
+    readonly jsonl: string;
+    readonly history: Readonly<LiveRtcJsonRecord>;
+}
+
+async function recordCapturedRejection(harness: FormationHarness): Promise<RecordedFormationRejection> {
+    const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({ now: () => 120 });
+    const target: BlackBoxRallarRuntimeInstallationTarget = {};
+    vi.stubGlobal('window', target);
+    const cleanup = installSpaBrowserRallarEventBridge(runtime);
+    onTestFinished(cleanup);
+    const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
+        now: () => 119,
+        publish: (event) => target.__blackBoxRallarEmit?.(event),
+        onPublishError: (error) => {
+            throw error;
+        },
+        transportOf: () => 'realtime',
+        laneIdOf: () => 'realtime',
+        scopeDiagnostics: () => ({})
+    });
+    harness.emit.mockImplementation(diagnostics.emit);
+    await expect(harness.controller.readiness({ roomRef, timeoutMs: 50 })).rejects.toThrow('RALLAR_BLACK_BOX_FORMATION_NOT_READY');
+    const event = runtime.state().events.find((event) => event.topic === 'rallar.browser.formation.not-ready');
+    if (!event) {
+        throw new Error('Expected recorded formation rejection.');
+    }
+    const jsonl = controlEventArtifactJsonl(toControlEventEnvelope(event, 'run', 'agent-a'));
+    const history = toLiveRtcLifecycleHistory({
+        jsonl,
+        bytesRead: Buffer.byteLength(jsonl),
+        retainedBytes: Buffer.byteLength(jsonl),
+        retainedPrefixDropped: false,
+        transportTruncated: false,
+        agentIds: ['agent-a'],
+        cycle: null,
+        failureInterval: { caseId: 'all-scenarios', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'attempt-phase-unspecified' }
+    });
+    cleanup();
+    expect(target.__blackBoxRallarEmit).toBeUndefined();
+    return { jsonl, history };
+}
+
+it.each(
+    [
+        { annotation: 'timeout', reason: 'Room RTC wait ended with timeout.' },
+        { annotation: 'aborted', reason: 'Room RTC wait ended with aborted.' },
+        { annotation: 'authority', reason: 'Room RTC has not started connecting yet.' }
+    ] as const
+)('records the returned $annotation room facts before a later open view', async ({ annotation, reason }) => {
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: ['later'] });
+    const rooms = createCapturedRoomRuntime(harness, annotation !== 'authority');
+    const abort = new AbortController();
+    abort.abort();
+    const captured = annotation === 'authority'
+        ? rooms.status(roomRef, { laneId: 'captured-lane' })
+        : await rooms.wait(roomRef, { connect: false, laneId: 'captured-lane', timeoutMs: 0, signal: annotation === 'aborted' ? abort.signal : undefined });
+    expect(captured.rtc).toMatchObject({ state: 'idle', reason, desiredPeerIds: ['b', 'c'], readyPeerIds: ['b'] });
+    harness.waitForRoom.mockImplementationOnce(async () => {
+        harness.updateRoomAndNotify({ state: 'open', desiredPeerIds: ['later'], readyPeerIds: ['later'], laneId: 'later-lane' });
+        return captured;
+    });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            returnedRoomReason: reason,
+            laneId: 'captured-lane',
+            desiredPeerIds: ['b', 'c'],
+            readyPeerIds: ['b'],
+            desiredPeerCount: 2,
+            readyPeerCount: 1,
+            peerIdentitiesTruncated: false,
+            waitTerminalCause: 'unknown'
+        }]
+    });
+    expect(recorded.jsonl).toContain(reason);
+    expect(recorded.jsonl).not.toContain('private-unknown-reason');
+    expect(recorded.jsonl).not.toContain('later-lane');
+});
+
+it('bounds escaped and UTF8 captured facts in the actual recorder row while preserving original counts', async () => {
+    const identities = Array.from({ length: 12 }, (_, index) => index % 2 === 0 ? '\u0000'.repeat(256) : '界'.repeat(256));
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: identities, readyPeerIds: identities });
+    const recorded = await recordCapturedRejection(harness);
+    const projected = requiredJsonRecord(recorded.history['agent-a'], 'history');
+    const capture = requiredJsonRecord(requiredJsonArray(projected.events, 'events')[0], 'capture');
+    const desired = requiredJsonArray(capture.desiredPeerIds, 'desired');
+    expect(capture).toMatchObject({ peerIdentitiesTruncated: true, desiredPeerCount: 12, readyPeerCount: 12 });
+    expect(desired).toEqual(['\u0000'.repeat(256), '界'.repeat(256), '\u0000'.repeat(256), '界'.repeat(256), '\u0000'.repeat(256), '界'.repeat(256)]);
+    expect(capture.readyPeerIds).toEqual([]);
+    const recorder = requiredJsonRecord(JSON.parse(recorded.jsonl), 'recorder');
+    const runtime = requiredJsonRecord(recorder.value, 'runtime');
+    const payload = requiredJsonRecord(runtime.payload, 'payload');
+    const captured = requiredJsonRecord(payload.data, 'captured');
+    expect(Buffer.byteLength(JSON.stringify({
+        returnedRoomReason: captured.returnedRoomReason,
+        laneId: captured.laneId,
+        desiredPeerIds: captured.desiredPeerIds,
+        readyPeerIds: captured.readyPeerIds,
+        peerIdentitiesTruncated: captured.peerIdentitiesTruncated
+    }))).toBeLessThanOrEqual(8_192);
+    expect(Buffer.byteLength(recorded.jsonl)).toBeLessThanOrEqual(16_384);
+    expect(recorded.history['agent-a']).toMatchObject({ observed: { oversizedRows: 0, retainedRows: 1 } });
+});
+
+it('keeps the short ready prefix after the long desired suffix reaches the encoded byte cap', async () => {
+    const desired = Array(10).fill('\u0000'.repeat(256));
+    const harness = new FormationHarness({ stage: 'active', formationEpoch: 1, desiredPeerIds: desired, readyPeerIds: ['b'] });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            returnedRoomReason: null,
+            laneId: 'lane-1',
+            desiredPeerIds: ['\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256), '\u0000'.repeat(256)],
+            readyPeerIds: ['b'],
+            desiredPeerCount: 10,
+            readyPeerCount: 1,
+            peerIdentitiesTruncated: true
+        }]
+    });
+    expect(Buffer.byteLength(recorded.jsonl)).toBeLessThanOrEqual(16_384);
+});
+
+it('retains exactly the first ten short desired and ready identities in original order', async () => {
+    const harness = new FormationHarness({
+        stage: 'active',
+        formationEpoch: 1,
+        desiredPeerIds: ['c', 'b', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'],
+        readyPeerIds: ['j', 'j', 'i', 'h', 'g', 'f', 'e', 'd', 'c', 'b', 'a', 'z']
+    });
+    const recorded = await recordCapturedRejection(harness);
+    expect(recorded.history['agent-a']).toMatchObject({
+        events: [{
+            desiredPeerIds: ['c', 'b', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
+            readyPeerIds: ['j', 'j', 'i', 'h', 'g', 'f', 'e', 'd', 'c', 'b'],
+            desiredPeerCount: 12,
+            readyPeerCount: 12,
+            peerIdentitiesTruncated: true
+        }]
+    });
 });

@@ -11,6 +11,7 @@ import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 const ticketMocks = vi.hoisted(() => ({
     consumeAgentSessionTicketAt: vi.fn()
@@ -44,6 +45,7 @@ function state(
     overrides: Partial<RallarBlackBoxTestState> = {}
 ): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture([]),
         status: 'idle',
         commandHistory: [],
         events: [],

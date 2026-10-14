@@ -1,5 +1,4 @@
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
@@ -9,6 +8,7 @@ import {
 } from 'vitest';
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -22,10 +22,11 @@ import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/cr
 import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import * as auth from '@shared/api/auth.ts';
 import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -43,12 +44,14 @@ describe('WS retained-work faults', () => {
         });
         vi.stubGlobal('WebSocket', TestWebSocket);
     });
-    afterEach(() => {
-        vi.clearAllTimers();
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        TestWebSocket.instances.length = 0;
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
     });
 
     it('supersedes held work through the real configured QoS normalizer and submits only its replacement', async () => {
@@ -80,9 +83,11 @@ describe('WS retained-work faults', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -92,9 +97,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
         // This fixture owns the auth-storage port; room authority is the real readable repository.
@@ -163,9 +171,11 @@ describe('WS retained-work faults', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -175,9 +185,12 @@ describe('WS retained-work faults', () => {
         }
         native.open();
         const service = await connecting;
-        onTestFinished(() => {
-            service.close();
-            engine.stop();
+        onTestFinished(async () => {
+            const outcomes = await Promise.allSettled([service.close(), engine.stop()]);
+            const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         });
         const callbackMessages: string[] = [];
         service.onOutboxMessageDo('observer', {

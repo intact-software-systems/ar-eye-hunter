@@ -126,7 +126,6 @@ function WebSocketScopeField({ model }: Pick<WebSocketCommandCenterViewProps, 'm
                 onChange={(event) => model.updateWsScope(event.target.value as WebSocketCommandCenterValues['wsScope'])}
             >
                 <option value="room">room</option>
-                <option value="all">all</option>
                 <option value="world">world</option>
             </select>
         </label>

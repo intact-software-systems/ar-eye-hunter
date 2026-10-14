@@ -53,6 +53,7 @@ export function createTestALOutboundControlAdmission<TPrepared>(
         port: createTestALOutboundWorkPort(input),
         clock: { nowMs: input.nowMs },
         settlements: input.settlements ?? (() => {}),
-        carrier: input.carrier
+        carrier: input.carrier,
+        hopPeerIds: undefined
     });
 }

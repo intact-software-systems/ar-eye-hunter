@@ -24,29 +24,60 @@ import type {
 import {
     toConnectCommand,
     toEnsureGroupCommand,
-    toEnsureMemberCommand,
     toOwnerLeaseLapseWait,
+    toSelfMembershipCommand,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
-import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
+import {
+    toCommandId,
+    toConnectionName,
+    toRoomRef,
+    toSendHandleId
+} from './alm-conformance-step-identities.ts';
+import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
+import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
+import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
+import { worldRouting } from './scenarios/audiences/world-routing.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
-import { capacity } from './scenarios/capacity.ts';
+import { claimExpiresReclaims } from './scenarios/claim/claim-expires-reclaims.ts';
+import { claimFirstWins } from './scenarios/claim/claim-first-wins.ts';
+import { claimRefusedOnRtc } from './scenarios/claim/claim-refused-on-rtc.ts';
+import { backpressureDeferred } from './scenarios/congestion/backpressure-deferred.ts';
+import { backpressureHandsOver } from './scenarios/congestion/backpressure-hands-over.ts';
+import { backpressureRefused } from './scenarios/congestion/backpressure-refused.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
-import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
+import { deliveryReload } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { durableTakeover } from './scenarios/durable-takeover.ts';
+import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.ts';
+import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
+import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { leaderConfirms } from './scenarios/leader-ack/leader-confirms.ts';
+import { leaderOutsideList } from './scenarios/leader-ack/leader-outside-list.ts';
+import { noLeaderRefused } from './scenarios/leader-ack/no-leader-refused.ts';
+import { checkpointLag } from './scenarios/local-checkpoint/checkpoint-lag.ts';
+import { checkpointRecovery } from './scenarios/local-checkpoint/checkpoint-recovery.ts';
+import { flushOnHide } from './scenarios/local-checkpoint/flush-on-hide.ts';
+import { fencedCatchUp } from './scenarios/membership-fence/fenced-catch-up.ts';
+import { fencedDelivery } from './scenarios/membership-fence/fenced-delivery.ts';
+import { fencedRejection } from './scenarios/membership-fence/fenced-rejection.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
+import { orderingGapRepair } from './scenarios/range-repair/ordering-gap-repair.ts';
+import { repairExhausted } from './scenarios/range-repair/repair-exhausted.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
 import { serverCommand } from './scenarios/server-command.ts';
 import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
+import { capacityAge } from './scenarios/volatile-bound/capacity-age.ts';
+import { capacityTracks } from './scenarios/volatile-bound/capacity-tracks.ts';
+import { capacity } from './scenarios/volatile-bound/capacity.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
 
@@ -62,14 +93,32 @@ export interface AlmConformanceScenario {
     readonly recipientB: RallarBlackBoxTestRecipe | undefined;
     /** The sender's second page's recipe; undefined exactly when `roles` does not declare `successor`. */
     readonly successor: RallarBlackBoxTestRecipe | undefined;
+    /** The second session of the sender's principal; undefined exactly when `roles` does not declare `sibling`. */
+    readonly sibling: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
+}
+
+interface AlmRecipeDiagnosticSelection {
+    readonly almDiagnostics: boolean;
+    readonly deliveryDiagnostics: boolean;
 }
 
 interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
+    readonly almDiagnostics: boolean;
+    readonly deliveryDiagnostics: boolean;
     /** Set only on the sender of a scenario that pins its receipt identity. */
     readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
+    /** Set on both roles of a scenario whose sender reloads its page. */
+    readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
 }
+
+const ALM_DIAGNOSTIC_TOPICS = [
+    'rallar.browser.alm.outbound_diagnostics',
+    'rallar.browser.alm.inbound_diagnostics',
+    'rallar.browser.alm.storage',
+    'rallar.browser.alm.storage_reset'
+];
 
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
@@ -92,9 +141,13 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     durableOptIn,
     deliveryReload,
     storageUnavailable,
+    checkpointRecovery,
+    checkpointLag,
     orderingResync,
+    orderingGapRepair,
+    repairExhausted,
     ...crossCarrierDuplicate,
-    ...notYetInSync,
+    notYetInSync,
     fallbackWithinDeadline,
     receiptExhaustedFallback,
     noFallbackAfterDeadline,
@@ -102,8 +155,29 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     unicastFallback,
     serverCommand,
     capacity,
+    capacityAge,
+    capacityTracks,
+    backpressureHandsOver,
+    backpressureRefused,
+    backpressureDeferred,
+    ownShareUnderInbound,
+    bufferedTrackDrains,
+    churnBoundedTracks,
     ...receiptedAudience,
-    durableTakeover
+    fencedDelivery,
+    fencedCatchUp,
+    fencedRejection,
+    principalDelivery,
+    fixedListDelivery,
+    worldRouting,
+    leaderConfirms,
+    noLeaderRefused,
+    leaderOutsideList,
+    claimFirstWins,
+    claimExpiresReclaims,
+    claimRefusedOnRtc,
+    durableTakeover,
+    flushOnHide
 ];
 
 export function createAlmConformanceRecipes(
@@ -117,7 +191,20 @@ export function createAlmConformanceRecipes(
 
     return ALM_CONFORMANCE_SCENARIOS
         .filter((definition) => definition.carriers.includes(input.carrier))
-        .map((definition) => toAlmConformanceScenario(input, definition));
+        .map((definition) =>
+            toAlmConformanceScenario(input, definition, { almDiagnostics: true, deliveryDiagnostics: false })
+        );
+}
+
+/** Independent pages own the entire diagnostic history of each specialised delivery run. */
+export function createAlmDeliveryDiagnosticsRecipes(
+    input: CreateAlmConformanceRecipesInput,
+    almDiagnostics: boolean
+): AlmConformanceScenario {
+    return toAlmConformanceScenario(input, {
+        ...deliveryBaseline,
+        scenarioKey: almDiagnostics ? 'delivery-diagnostics-on' : 'delivery-diagnostics-off'
+    }, { almDiagnostics, deliveryDiagnostics: true });
 }
 
 export function toAlmConformanceRoleRecipe(
@@ -129,7 +216,8 @@ export function toAlmConformanceRoleRecipe(
 
 function toAlmConformanceScenario(
     input: CreateAlmConformanceRecipesInput,
-    definition: AlmConformanceScenarioDefinition
+    definition: AlmConformanceScenarioDefinition,
+    diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
     const toRoleRecipe = (role: AlmConformanceRole): RallarBlackBoxTestRecipe => {
         const step: AlmConformanceStepInput = {
@@ -143,7 +231,8 @@ function toAlmConformanceScenario(
             ? definition.toSenderCommands(step)
             : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
-        return toAlmConformanceRecipe({ ...step, commands, receiptRoles });
+        const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
+        return toAlmConformanceRecipe({ ...step, ...diagnostics, commands, receiptRoles, reloadCheckpoint });
     };
     return {
         scenarioId: definition.scenarioId,
@@ -154,37 +243,48 @@ function toAlmConformanceScenario(
         sender: toRoleRecipe('sender'),
         receiver: toRoleRecipe('receiver'),
         recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
-        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined
+        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
+        sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined
     };
 }
 
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
+    const connect = toConnectCommand(recipe);
+    const profile = recipe.deliveryDiagnostics ? 'alm-delivery-diagnostics' : 'alm-conformance';
     return {
         schemaVersion: 1,
         recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
-        name: `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
+        name: recipe.deliveryDiagnostics
+            ? `ALM delivery diagnostics ${recipe.almDiagnostics ? 'On' : 'Off'} ${recipe.role} over ${carrier}`
+            : `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
         metadata: {
-            profile: 'alm-conformance',
+            profile,
+            ...(recipe.deliveryDiagnostics
+                ? { almDiagnostics: recipe.almDiagnostics, freshRuntimeRequired: true }
+                : {}),
             carrier,
             scenarioId: recipe.scenarioId,
             group: toRoomRef(recipe.input.group),
-            ...(recipe.scenarioId === 'delivery-reload'
-                ? { almReloadCheckpoints: [{ ...toReloadCheckpoint(recipe) }] }
-                : {}),
+            ...(recipe.reloadCheckpoint === undefined
+                ? {}
+                : { almReloadCheckpoints: [{ ...recipe.reloadCheckpoint }] }),
             ...(recipe.receiptRoles === undefined
                 ? {}
                 : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] })
         },
         commands: [
+            ...(recipe.deliveryDiagnostics ? toFreshDiagnosticHistoryCommands(recipe) : []),
             toEnsureGroupCommand(recipe),
-            toEnsureMemberCommand(recipe),
+            toSelfMembershipCommand(recipe, 'active'),
             ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
-            toConnectCommand(recipe),
+            { ...connect, rallar: { ...connect.rallar, almDiagnostics: recipe.almDiagnostics } },
+            ...(recipe.deliveryDiagnostics ? [toAppliedDiagnosticsWait(recipe)] : []),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
-            toStatsCommand(recipe)
+            toStatsCommand(recipe, 'stats'),
+            ...(recipe.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(recipe) : [])
         ]
     };
 }
@@ -210,4 +310,46 @@ function toReceiptRolesMetadata(
         confirmed: roles.confirmed,
         unconfirmed: roles.unconfirmed
     };
+}
+
+function toFreshDiagnosticHistoryCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [...ALM_DIAGNOSTIC_TOPICS, 'rallar.browser.connect.phase_completed'].map((topic) => ({
+        kind: 'wait',
+        commandId: toCommandId(step, `fresh-${topic.split('.').at(-1)}`),
+        match: { kind: 'diagnostic', topic },
+        absent: true,
+        timeoutMs: 0
+    }));
+}
+
+function toAppliedDiagnosticsWait(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(recipe, 'applied-diagnostics'),
+        match: {
+            kind: 'diagnostic',
+            connection: toConnectionName(recipe),
+            topic: 'rallar.browser.connect.phase_completed',
+            payloadFields: { 'data.phase': 'rallar-connect', 'data.almDiagnostics': recipe.almDiagnostics }
+        },
+        timeoutMs: 0
+    };
+}
+
+function toDeliveryDiagnosticEvidenceCommands(recipe: AlmConformanceRecipeInput): readonly RallarBlackBoxTestCommand[] {
+    const topics = recipe.almDiagnostics
+        ? [
+            recipe.role === 'sender'
+                ? 'rallar.browser.alm.outbound_diagnostics'
+                : 'rallar.browser.alm.inbound_diagnostics'
+        ]
+        : ALM_DIAGNOSTIC_TOPICS;
+    return topics.map((topic) => ({
+        kind: 'wait',
+        commandId: toCommandId(recipe, `diagnostic-${topic.split('.').at(-1)}`),
+        match: { kind: 'diagnostic', topic },
+        ...(recipe.almDiagnostics ? {} : { absent: true }),
+        // Delivery and the receiver's authored negative-control window bound this already retained interval.
+        timeoutMs: 0
+    }));
 }

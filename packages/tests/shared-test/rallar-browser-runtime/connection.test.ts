@@ -1,7 +1,6 @@
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import {
@@ -183,7 +182,7 @@ it('holds a connect\'s lowered volatile limits for the session the facade initia
 
     await runtime.connect({
         ...config,
-        rallar: { ...config.rallar, almVolatileLimits: { maxAdmissions: 2, maxBytes: 4_096 } }
+        rallar: { ...config.rallar, almVolatileLimits: { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 4_096 } }
     });
     await runtime.close();
     await runtime.connect(config);
@@ -191,10 +190,7 @@ it('holds a connect\'s lowered volatile limits for the session the facade initia
 
     // The facade initialises its session inside `connect`, so what it reads there is what the session keeps.
     expect(read).toEqual([
-        { maxAdmissions: 2, maxBytes: 4_096 },
-        {
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        }
+        { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 4_096 },
+        AL_VOLATILE_SESSION_LIMITS
     ]);
 });

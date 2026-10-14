@@ -10,6 +10,7 @@ export interface ToRemoteControlConfigInput {
 export function toRemoteControlConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestConfig {
     const { bootstrap } = input;
     return {
+        eventHistory: bootstrap.eventHistory,
         runId: bootstrap.runId,
         agentId: bootstrap.agentId,
         environment: bootstrap.environment,
@@ -56,6 +57,7 @@ export function toRallarBlackBoxRallarConfig(input: ToRemoteControlConfigInput):
         ...(bootstrap.rallarRegister ? { register: bootstrap.rallarRegister } : {}),
         ...(bootstrap.rallarRestoreSession || input.hasStoredAuthSession ? { restoreSession: true } : {}),
         ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
+        ...(bootstrap.rtcCaptureMode === undefined ? {} : { rtc: { captureMode: bootstrap.rtcCaptureMode } }),
         leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose
     };
 }

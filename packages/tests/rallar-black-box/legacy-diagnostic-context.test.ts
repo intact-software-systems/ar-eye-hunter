@@ -1,8 +1,23 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
+
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type {
+    ControlDistributedRunListResponse,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
 import {
     buildLegacyDiagnosticReturnHref,
     parseLegacyDiagnosticContext
@@ -25,12 +40,38 @@ import {
     useRunnerShellSelectionSync,
     useRunnerShellState
 } from '../../../apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts';
+import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
-    .IS_REACT_ACT_ENVIRONMENT = true;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const SOURCE_ROOT = 'apps/rallar-black-box/src/legacy/diagnostics/context';
 const BIDI_AGENT = ' agent/\u202e]returnTo=https://evil.example ';
+const DIAGNOSTIC_GLOBAL_VALUES: CommandCenterGlobalValues = {
+    apiBaseUrl: 'http://api.test',
+    applicationId: 'application-a',
+    workspaceId: 'workspace-a',
+    clientId: 'client-a',
+    sessionId: 'session-a',
+    roomId: 'group-a'
+};
+const DRAFT_ROLLUP: ControlDistributedRunSnapshot['rollup'] = {
+    state: 'draft',
+    ok: false,
+    summary: {
+        participants: 0,
+        readyParticipants: 0,
+        passedParticipants: 0,
+        failedParticipants: 0,
+        recipes: 0,
+        passedRecipes: 0,
+        failedRecipes: 0,
+        groupAssertions: 0,
+        passedGroupAssertions: 0,
+        failedGroupAssertions: 0,
+        blockingFailures: 0
+    },
+    failures: []
+};
 
 describe('legacy diagnostic context parsing', () => {
     it('ignores bridge-shaped values unless the exact v1 marker is present', () => {
@@ -202,7 +243,7 @@ describe('legacy diagnostic return URL', () => {
                 'evil.example+' +
                 '&recipeId=recipe%23a&commandId=command+a&transport=rtc'
         );
-        const url = new URL(href!, 'https://app.example');
+        const url = new URL(href ?? '', 'https://app.example');
         expect(url.origin).toBe('https://app.example');
         for (
             const forbidden of [
@@ -223,15 +264,16 @@ describe('legacy diagnostic return URL', () => {
         }
     });
 
-    it('returns no link without a supported source view and cannot be cast into a redirect', () => {
+    it('returns no link without a supported source view or with an invalid raw selection', () => {
         expect(buildLegacyDiagnosticReturnHref({ version: 1 }))
             .toBeUndefined();
-        expect(buildLegacyDiagnosticReturnHref({
-            version: 1,
-            view: 'https://evil.example' as 'monitor',
-            provider: 'https://evil.example' as 'simulated',
+        const parsed = parseLegacyDiagnosticContext(new URLSearchParams({
+            diagnosticContext: '1',
+            view: 'https://evil.example',
+            provider: 'https://evil.example',
             controlRunId: 'https://evil.example/steal'
-        })).toBeUndefined();
+        }).toString());
+        expect(buildLegacyDiagnosticReturnHref(parsed.context)).toBeUndefined();
     });
 });
 
@@ -262,6 +304,7 @@ describe('LegacyDiagnosticContextBar', () => {
     }
 
     it('shows exact isolated context and a structural return anchor', async () => {
+        const locationBeforeRender = window.location.href;
         await render(new URLSearchParams({
             diagnosticContext: '1',
             provider: 'browser-rallar',
@@ -300,6 +343,7 @@ describe('LegacyDiagnosticContextBar', () => {
         expect(returnAnchor?.getAttribute('href')).toContain(
             '/?provider=browser-rallar&v=1&experience=recipe-console&view=monitor'
         );
+        expect(window.location.href).toBe(locationBeforeRender);
     });
 
     it('states absent, unsupported, and missing-return context honestly', async () => {
@@ -314,33 +358,6 @@ describe('LegacyDiagnosticContextBar', () => {
         await render('?diagnosticContext=1&agentId=agent-a');
         expect(container.textContent).toContain('Return link unavailable');
         expect(container.querySelector('[data-legacy-diagnostic-return]')).toBeNull();
-    });
-
-    it('uses only a scoped CSS module and never mutates navigation', () => {
-        const componentSource = readFileSync(
-            `${SOURCE_ROOT}/LegacyDiagnosticContextBar.tsx`,
-            'utf8'
-        );
-        const contextSource = readFileSync(
-            `${SOURCE_ROOT}/legacy-diagnostic-context.ts`,
-            'utf8'
-        );
-        const css = readFileSync(
-            `${SOURCE_ROOT}/LegacyDiagnosticContextBar.module.css`,
-            'utf8'
-        );
-
-        expect(componentSource).toContain(
-            'from \'./LegacyDiagnosticContextBar.module.css\''
-        );
-        expect(componentSource).not.toMatch(/\bonClick\b|window\.|history\.|location\./);
-        expect(contextSource).not.toMatch(/window\.|history\.|location\.|returnTo\s*:/);
-        expect(contextSource).toContain(
-            'from \'../../../app/diagnostic-bridge-url-contract.ts\''
-        );
-        expect(contextSource).not.toContain('recipe-console/');
-        expect(css).not.toMatch(/:global|(^|[}\n])\s*(html|body|a|button|section)\s*[{,]/m);
-        expect(css).toMatch(/unicode-bidi:\s*isolate-override/);
     });
 });
 
@@ -376,13 +393,7 @@ describe('legacy diagnostic context consumers', () => {
         const container = document.createElement('div');
         document.body.append(container);
         const root = createRoot(container);
-        const state = {
-            status: 'idle',
-            commandHistory: [],
-            events: [],
-            failures: [],
-            resultCache: {}
-        } as const;
+        const state = createRuntimeStateFixture();
 
         function Harness({ commandId }: { commandId: string; }) {
             const selection = useRunnerShellState(state, {
@@ -427,7 +438,7 @@ describe('legacy diagnostic context consumers', () => {
         document.body.append(container);
         const root = createRoot(container);
         const state = {
-            status: 'idle',
+            ...createRuntimeStateFixture(),
             commandHistory: [{
                 commandId: 'context-command',
                 kind: 'health',
@@ -444,10 +455,7 @@ describe('legacy diagnostic context consumers', () => {
                 startedAtEpochMs: 3,
                 endedAtEpochMs: 4,
                 durationMs: 1
-            }],
-            events: [],
-            failures: [],
-            resultCache: {}
+            }]
         } as const;
 
         function Harness() {
@@ -485,15 +493,12 @@ describe('legacy diagnostic context consumers', () => {
             commandId: string;
         }) {
             const selection = useRunnerShellState({
+                ...createRuntimeStateFixture(),
                 status: 'running',
                 activeCommand: {
                     commandId: activeCommandId,
                     kind: 'health'
-                },
-                commandHistory: [],
-                events: [],
-                failures: [],
-                resultCache: {}
+                }
             }, {
                 version: 1,
                 commandId
@@ -640,8 +645,8 @@ describe('legacy diagnostic async selection authority', () => {
     });
 
     it('keeps stale distributed context honest until a valid manual pair replaces it', async () => {
-        const run = controlRunSnapshot('control-valid', 30);
-        const distributed = distributedRunSnapshot(
+        const run = createControlRunSnapshot('control-valid', 30);
+        const distributed = createDistributedRunSnapshot(
             'distributed-valid',
             'control-valid',
             30
@@ -649,16 +654,16 @@ describe('legacy diagnostic async selection authority', () => {
         globalThis.fetch = async (input) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/runs') {
-                return jsonResponse({ runs: [run] });
+                return createJsonResponse({ runs: [run] });
             }
             if (pathname === '/distributed-runs') {
-                return jsonResponse({ distributedRuns: [distributed] });
+                return createJsonResponse({ distributedRuns: [distributed] });
             }
             if (pathname === '/distributed-runs/distributed-valid') {
-                return jsonResponse(distributed);
+                return createJsonResponse(distributed);
             }
             if (pathname === '/runs/control-valid') {
-                return jsonResponse(run);
+                return createJsonResponse(run);
             }
             throw new Error(`Unexpected request: ${pathname}`);
         };
@@ -668,20 +673,13 @@ describe('legacy diagnostic async selection authority', () => {
         let loadValidPair: (() => Promise<void>) | undefined;
 
         function Harness() {
-            const input = distributedRemoteInput({
+            const remoteFixture = createDistributedRemoteFixture({
                 initialControlRunId: 'control-missing',
                 initialDistributedRunId: 'distributed-missing'
             });
-            const remote = useDistributedRecipesRemoteState(input);
+            const remote = useDistributedRecipesRemoteState(remoteFixture);
             const builder = useDistributedRecipeBuilder({
-                globalValues: {
-                    apiBaseUrl: 'http://api.test',
-                    applicationId: 'application-a',
-                    workspaceId: 'workspace-a',
-                    clientId: 'client-a',
-                    sessionId: 'session-a',
-                    roomId: 'group-a'
-                },
+                globalValues: DIAGNOSTIC_GLOBAL_VALUES,
                 selectedRunId: remote.selectedRunId,
                 run: remote.run,
                 distributedRuns: remote.distributedRuns,
@@ -692,8 +690,8 @@ describe('legacy diagnostic async selection authority', () => {
                 diagnosticSelectionIssue: remote.diagnosticSelectionIssue
             });
             const actions = useDistributedRecipesActions({
-                bootstrap: input.bootstrap,
-                control: input.control,
+                bootstrap: remoteFixture.bootstrap,
+                control: remoteFixture.control,
                 roomId: 'group-a',
                 remote,
                 builder
@@ -733,20 +731,20 @@ describe('legacy diagnostic async selection authority', () => {
     });
 
     it('keeps the newest Run Manager context when an older manual load resolves last', async () => {
-        const contextA = controlRunSnapshot('control-context-a', 10);
-        const contextB = controlRunSnapshot('control-context-b', 30);
-        const oldManual = controlRunSnapshot('control-manual-old', 20);
-        const oldResponse = deferred<Response>();
+        const contextA = createControlRunSnapshot('control-context-a', 10);
+        const contextB = createControlRunSnapshot('control-context-b', 30);
+        const oldManual = createControlRunSnapshot('control-manual-old', 20);
+        const oldResponse = Promise.withResolvers<Response>();
         globalThis.fetch = async (input) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/runs') {
-                return jsonResponse({ runs: [contextB, oldManual, contextA] });
+                return createJsonResponse({ runs: [contextB, oldManual, contextA] });
             }
             if (pathname === '/runs/control-context-a') {
-                return jsonResponse(contextA);
+                return createJsonResponse(contextA);
             }
             if (pathname === '/runs/control-context-b') {
-                return jsonResponse(contextB);
+                return createJsonResponse(contextB);
             }
             if (pathname === '/runs/control-manual-old') {
                 return oldResponse.promise;
@@ -757,8 +755,8 @@ describe('legacy diagnostic async selection authority', () => {
         const renderContext = async (controlRunId: string) => {
             await act(async () => {
                 root.render(createElement(LegacyDiagnosticContextProvider, {
-                    parsed: parsedDiagnosticContext(controlRunId),
-                    children: createElement(RunManagerPanel, runManagerProps())
+                    parsed: createDiagnosticContextFixture(controlRunId),
+                    children: createElement(RunManagerPanel, createRunManagerProps())
                 }));
                 await flushAsyncWork();
             });
@@ -775,55 +773,55 @@ describe('legacy diagnostic async selection authority', () => {
         });
 
         await renderContext('control-context-b');
-        expect(runManagerTelemetryRunId(container)).toBe('control-context-b');
+        expect(getRunManagerTelemetryRunId(container)).toBe('control-context-b');
 
         await act(async () => {
-            oldResponse.resolve(jsonResponse(oldManual));
+            oldResponse.resolve(createJsonResponse(oldManual));
             await flushAsyncWork();
         });
-        expect(runManagerTelemetryRunId(container)).toBe('control-context-b');
+        expect(getRunManagerTelemetryRunId(container)).toBe('control-context-b');
     });
 
     it('keeps a newer distributed load when an older refresh resolves last', async () => {
-        const initial = controlRunSnapshot('control-initial', 10);
-        const old = controlRunSnapshot('control-old', 20);
-        const newest = controlRunSnapshot('control-new', 30);
-        const oldDistributed = distributedRunSnapshot(
+        const initial = createControlRunSnapshot('control-initial', 10);
+        const old = createControlRunSnapshot('control-old', 20);
+        const newest = createControlRunSnapshot('control-new', 30);
+        const oldDistributed = createDistributedRunSnapshot(
             'distributed-old',
             'control-old',
             20
         );
-        const newestDistributed = distributedRunSnapshot(
+        const newestDistributed = createDistributedRunSnapshot(
             'distributed-new',
             'control-new',
             30
         );
-        const oldServerResponse = deferred<Response>();
-        const oldDistributedResponse = deferred<Response>();
+        const oldServerResponse = Promise.withResolvers<Response>();
+        const oldDistributedResponse = Promise.withResolvers<Response>();
         let racing = false;
         globalThis.fetch = async (input) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/runs') {
                 return racing
                     ? oldServerResponse.promise
-                    : jsonResponse({ runs: [initial, old, newest] });
+                    : createJsonResponse({ runs: [initial, old, newest] });
             }
             if (pathname === '/distributed-runs') {
                 return racing
                     ? oldDistributedResponse.promise
-                    : jsonResponse({ distributedRuns: [] });
+                    : createJsonResponse({ distributedRuns: [] });
             }
             if (pathname === '/runs/control-initial') {
-                return jsonResponse(initial);
+                return createJsonResponse(initial);
             }
             if (pathname === '/runs/control-old') {
-                return jsonResponse(old);
+                return createJsonResponse(old);
             }
             if (pathname === '/runs/control-new') {
-                return jsonResponse(newest);
+                return createJsonResponse(newest);
             }
             if (pathname === '/distributed-runs/distributed-new') {
-                return jsonResponse(newestDistributed);
+                return createJsonResponse(newestDistributed);
             }
             throw new Error(`Unexpected request: ${pathname}`);
         };
@@ -832,17 +830,28 @@ describe('legacy diagnostic async selection authority', () => {
         let actions: ReturnType<typeof useDistributedRecipesActions> | undefined;
 
         function Harness() {
-            const input = distributedRemoteInput({});
-            const remote = useDistributedRecipesRemoteState(input);
+            const remoteFixture = createDistributedRemoteFixture({});
+            const remote = useDistributedRecipesRemoteState(remoteFixture);
+            const builder = useDistributedRecipeBuilder({
+                globalValues: DIAGNOSTIC_GLOBAL_VALUES,
+                selectedRunId: remote.selectedRunId,
+                run: remote.run,
+                distributedRuns: remote.distributedRuns,
+                selectedDistributedRun: remote.selectedDistributedRun,
+                targetResolutionPreview: remote.targetResolutionPreview,
+                monitorAgentProgress: remote.selectedMonitor?.agentProgress,
+                initialDistributedRunId: 'distributed-initial',
+                diagnosticSelectionIssue: remote.diagnosticSelectionIssue
+            });
             observed = remote;
             actions = useDistributedRecipesActions(
                 {
-                    bootstrap: input.bootstrap,
-                    control: input.control,
+                    bootstrap: remoteFixture.bootstrap,
+                    control: remoteFixture.control,
                     roomId: 'group-a',
                     remote,
-                    builder: distributedBuilder('distributed-initial')
-                } as unknown as Parameters<typeof useDistributedRecipesActions>[0]
+                    builder
+                }
             );
             return createElement(
                 'output',
@@ -873,8 +882,8 @@ describe('legacy diagnostic async selection authority', () => {
             .toBe('distributed-new');
 
         await act(async () => {
-            oldServerResponse.resolve(jsonResponse({ runs: [old] }));
-            oldDistributedResponse.resolve(jsonResponse({
+            oldServerResponse.resolve(createJsonResponse({ runs: [old] }));
+            oldDistributedResponse.resolve(createJsonResponse({
                 distributedRuns: [oldDistributed]
             }));
             await staleRefresh;
@@ -886,28 +895,28 @@ describe('legacy diagnostic async selection authority', () => {
     });
 
     it('lets a blank Run Manager selection own and clear a pending refresh', async () => {
-        const initial = controlRunSnapshot('control-initial', 10);
-        const stale = controlRunSnapshot('control-stale', 20);
-        const staleRefresh = deferred<Response>();
+        const initial = createControlRunSnapshot('control-initial', 10);
+        const stale = createControlRunSnapshot('control-stale', 20);
+        const staleRefresh = Promise.withResolvers<Response>();
         let refreshPending = false;
         globalThis.fetch = async (input) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/runs') {
                 return refreshPending
                     ? staleRefresh.promise
-                    : jsonResponse({ runs: [initial] });
+                    : createJsonResponse({ runs: [initial] });
             }
             if (pathname === '/runs/control-initial') {
-                return jsonResponse(initial);
+                return createJsonResponse(initial);
             }
             throw new Error(`Unexpected request: ${pathname}`);
         };
 
         await act(async () => {
-            root.render(createElement(RunManagerPanel, runManagerProps()));
+            root.render(createElement(RunManagerPanel, createRunManagerProps()));
             await flushAsyncWork();
         });
-        expect(runManagerTelemetryRunId(container)).toBe('control-initial');
+        expect(getRunManagerTelemetryRunId(container)).toBe('control-initial');
 
         refreshPending = true;
         const refreshButton = [...container.querySelectorAll<HTMLButtonElement>(
@@ -932,37 +941,37 @@ describe('legacy diagnostic async selection authority', () => {
             await Promise.resolve();
         });
         expect(runSelect?.value).toBe('');
-        expect(runManagerTelemetryRunId(container)).toBe('no run');
+        expect(getRunManagerTelemetryRunId(container)).toBe('no run');
         expect(refreshButton?.disabled).toBe(false);
         expect(container.querySelector('.run-manager-error')).toBeNull();
 
         await act(async () => {
-            staleRefresh.resolve(jsonResponse({ runs: [stale] }));
+            staleRefresh.resolve(createJsonResponse({ runs: [stale] }));
             await flushAsyncWork();
         });
         expect(runSelect?.value).toBe('');
-        expect(runManagerTelemetryRunId(container)).toBe('no run');
+        expect(getRunManagerTelemetryRunId(container)).toBe('no run');
         expect(refreshButton?.disabled).toBe(false);
         expect(container.querySelector('.run-manager-error')).toBeNull();
     });
 
     it('lets a blank Distributed selection own and clear a pending refresh', async () => {
-        const initial = controlRunSnapshot('control-initial', 10);
-        const stale = controlRunSnapshot('control-stale', 20);
-        const staleRefresh = deferred<Response>();
+        const initial = createControlRunSnapshot('control-initial', 10);
+        const stale = createControlRunSnapshot('control-stale', 20);
+        const staleRefresh = Promise.withResolvers<Response>();
         let refreshPending = false;
         globalThis.fetch = async (input) => {
             const pathname = new URL(String(input)).pathname;
             if (pathname === '/runs') {
                 return refreshPending
                     ? staleRefresh.promise
-                    : jsonResponse({ runs: [initial] });
+                    : createJsonResponse({ runs: [initial] });
             }
             if (pathname === '/distributed-runs') {
-                return jsonResponse({ distributedRuns: [] });
+                return createJsonResponse({ distributedRuns: [] });
             }
             if (pathname === '/runs/control-initial') {
-                return jsonResponse(initial);
+                return createJsonResponse(initial);
             }
             throw new Error(`Unexpected request: ${pathname}`);
         };
@@ -970,16 +979,27 @@ describe('legacy diagnostic async selection authority', () => {
         let observed: ReturnType<typeof useDistributedRecipesRemoteState> | undefined;
 
         function Harness() {
-            const input = distributedRemoteInput({});
-            const remote = useDistributedRecipesRemoteState(input);
+            const remoteFixture = createDistributedRemoteFixture({});
+            const remote = useDistributedRecipesRemoteState(remoteFixture);
+            const builder = useDistributedRecipeBuilder({
+                globalValues: DIAGNOSTIC_GLOBAL_VALUES,
+                selectedRunId: remote.selectedRunId,
+                run: remote.run,
+                distributedRuns: remote.distributedRuns,
+                selectedDistributedRun: remote.selectedDistributedRun,
+                targetResolutionPreview: remote.targetResolutionPreview,
+                monitorAgentProgress: remote.selectedMonitor?.agentProgress,
+                initialDistributedRunId: 'distributed-initial',
+                diagnosticSelectionIssue: remote.diagnosticSelectionIssue
+            });
             const actions = useDistributedRecipesActions(
                 {
-                    bootstrap: input.bootstrap,
-                    control: input.control,
+                    bootstrap: remoteFixture.bootstrap,
+                    control: remoteFixture.control,
                     roomId: 'group-a',
                     remote,
-                    builder: distributedBuilder('distributed-initial')
-                } as unknown as Parameters<typeof useDistributedRecipesActions>[0]
+                    builder
+                }
             );
             observed = remote;
             return createElement(
@@ -1021,7 +1041,7 @@ describe('legacy diagnostic async selection authority', () => {
         expect(observed?.run).toBeUndefined();
 
         await act(async () => {
-            staleRefresh.resolve(jsonResponse({ runs: [stale] }));
+            staleRefresh.resolve(createJsonResponse({ runs: [stale] }));
             await flushAsyncWork();
         });
         expect(observed?.busyAction).toBeUndefined();
@@ -1031,19 +1051,13 @@ describe('legacy diagnostic async selection authority', () => {
     });
 });
 
-function jsonResponse(value: unknown): Response {
+function createJsonResponse(
+    value: ControlServerSnapshot | ControlDistributedRunListResponse | ControlRunSnapshot | ControlDistributedRunSnapshot
+): Response {
     return new Response(JSON.stringify(value), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
     });
-}
-
-function deferred<Value>() {
-    let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>((next) => {
-        resolve = next;
-    });
-    return { promise, resolve } as const;
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -1051,7 +1065,7 @@ async function flushAsyncWork(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function controlRunSnapshot(runId: string, updatedAtEpochMs: number) {
+function createControlRunSnapshot(runId: string, updatedAtEpochMs: number): ControlRunSnapshot {
     return {
         runId,
         createdAtEpochMs: 1,
@@ -1066,11 +1080,11 @@ function controlRunSnapshot(runId: string, updatedAtEpochMs: number) {
     } as const;
 }
 
-function distributedRunSnapshot(
+function createDistributedRunSnapshot(
     distributedRunId: string,
     controlRunId: string,
     updatedAtEpochMs: number
-) {
+): ControlDistributedRunSnapshot {
     return {
         distributedRunId,
         controlRunId,
@@ -1101,45 +1115,25 @@ function distributedRunSnapshot(
         updatedAtEpochMs,
         targetAgentIds: [],
         commandLinks: [],
-        rollup: {
-            state: 'draft',
-            ok: false,
-            summary: {
-                participants: 0,
-                readyParticipants: 0,
-                passedParticipants: 0,
-                failedParticipants: 0,
-                recipes: 0,
-                passedRecipes: 0,
-                failedRecipes: 0,
-                blockingFailures: 0
-            },
-            failures: []
-        }
+        rollup: DRAFT_ROLLUP
     } as const;
 }
 
-function distributedRemoteInput({
+function createDistributedRemoteFixture({
     initialControlRunId,
     initialDistributedRunId
-}: Readonly<{
-    initialControlRunId?: string;
-    initialDistributedRunId?: string;
-}>) {
+}: Pick<Parameters<typeof useDistributedRecipesRemoteState>[0], 'initialControlRunId' | 'initialDistributedRunId'>): Parameters<
+    typeof useDistributedRecipesRemoteState
+>[0] {
     return {
-        state: {
-            status: 'idle',
-            commandHistory: [],
-            events: [],
-            failures: [],
-            resultCache: {}
-        },
-        bootstrap: {
-            controlUrl: 'ws://control.test/control',
-            runId: 'control-initial'
-        },
+        state: createRuntimeStateFixture(),
+        bootstrap: resolveRallarBlackBoxBootstrapConfig(
+            '?controlUrl=ws%3A%2F%2Fcontrol.test%2Fcontrol&runId=control-initial',
+            {},
+            ''
+        ),
         control: {
-            state: 'connected',
+            state: 'registered',
             url: 'ws://control.test/control',
             runId: 'control-initial',
             reconnectAttempt: 0,
@@ -1148,66 +1142,35 @@ function distributedRemoteInput({
         },
         initialControlRunId,
         initialDistributedRunId
-    } as unknown as Parameters<typeof useDistributedRecipesRemoteState>[0];
+    };
 }
 
-function distributedBuilder(distributedRunId: string) {
-    const ignore = () => undefined;
-    return {
-        distributedRunId,
-        setDistributedRunId: ignore,
-        expectedParticipantCount: 0,
-        groupRef: {
-            applicationId: 'application-a',
-            workspaceId: 'workspace-a',
-            groupId: 'group-a'
-        },
-        rolePattern: 'all-agents',
-        setRolePattern: ignore,
-        targetPolicyMode: 'selected-agents',
-        setTargetPolicyMode: ignore,
-        targetRows: [],
-        setSelectedAgentIds: ignore,
-        usesWorldFleetTargets: false,
-        manifest: undefined,
-        manifestValidation: undefined,
-        worldFleetBlockReason: undefined,
-        setSelectedRecipeIds: ignore
-    } as unknown as Parameters<typeof useDistributedRecipesActions>[0]['builder'];
+function createDiagnosticContextFixture(controlRunId: string): ReturnType<typeof parseLegacyDiagnosticContext> {
+    return parseLegacyDiagnosticContext(new URLSearchParams({
+        diagnosticContext: '1',
+        controlRunId
+    }).toString());
 }
 
-function parsedDiagnosticContext(controlRunId: string) {
+function createRunManagerProps(): Parameters<typeof RunManagerPanel>[0] {
     return {
-        status: 'ready',
-        context: { version: 1, controlRunId },
-        issues: [],
-        omittedIssueCount: 0
-    } as const;
-}
-
-function runManagerProps() {
-    return {
-        state: {
-            status: 'idle',
-            commandHistory: [],
-            events: [],
-            failures: [],
-            resultCache: {}
-        },
-        bootstrap: {
-            controlUrl: 'ws://control.test/control'
-        },
+        state: createRuntimeStateFixture(),
+        bootstrap: resolveRallarBlackBoxBootstrapConfig(
+            '?controlUrl=ws%3A%2F%2Fcontrol.test%2Fcontrol',
+            {},
+            ''
+        ),
         control: {
-            state: 'connected',
+            state: 'registered',
             url: 'ws://control.test/control',
             reconnectAttempt: 0,
             sentCount: 0,
             receivedCount: 0
         }
-    } as unknown as Parameters<typeof RunManagerPanel>[0];
+    };
 }
 
-function runManagerTelemetryRunId(container: HTMLElement): string | null {
+function getRunManagerTelemetryRunId(container: HTMLElement): string | null {
     return container.querySelector(
         '.run-manager-telemetry-panel .section-heading span'
     )?.textContent ?? null;

@@ -76,6 +76,8 @@ function matchesOriginalObservation(
             return mutation.msgId === observed.msgId;
         case 'set-dedup':
             return mutation.dedupKey === observed.dedup?.key;
+        case 'set-claim':
+            return mutation.claimKey === observed.claim?.key;
         case 'set-ordering':
             return mutation.trackKey === observed.ordering?.trackKey;
         case 'set-supersedence-latest':

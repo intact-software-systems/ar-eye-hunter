@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -13,15 +14,21 @@ import {
     WsOutboxProvenanceReader,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { newALBroadcastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
@@ -50,7 +57,7 @@ describe('producer provenance through WS dequeue', () => {
                     qos: { durability: { algo: 'local-outbox' } }
                 }
             );
-            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
             const facts: Omit<WsOutboxProvenance, 'digest'> = {
                 version: 1,
                 producerKind: 'crdt',
@@ -107,7 +114,7 @@ describe('producer provenance through WS dequeue', () => {
                     qos: { durability: { algo: 'local-outbox' } }
                 }
             );
-            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
             const facts: Omit<WsOutboxProvenance, 'digest'> = {
                 version: 1,
                 producerKind: 'crdt',
@@ -217,12 +224,27 @@ describe('producer provenance through WS dequeue', () => {
     );
 });
 
-async function createFixture() {
+interface ProvenanceDequeueFixture {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly proof: WsOutboxProvenance;
+    readonly repository: FakeRuntimeStateRepository;
+    readonly key: string;
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly authentication: ProvenanceAuthentication;
+    readonly engine: InboxOutboxEngine;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly settled: string[];
+    readonly service: WsQueueBoxServerService;
+}
+
+async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const message = newALUnicastMessage('server', { topicId: 'snapshot', resourceId: 'page', contextId: 'request' }, 'peer', 'snapshot.v1', {}, {
         ttlMs: 30_000,
         qos: { durability: { algo: 'local-outbox' } }
     });
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
     const proof = await createProof(message.id.msgId, entry);
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
@@ -254,10 +276,13 @@ async function createFixture() {
             }
         }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { message, entry, proof, repository, key, socket, native, authentication, engine, stores, settled, service };
 }
@@ -274,4 +299,10 @@ async function createProof(messageId: string, entry: ResourceEntry): Promise<WsO
         target: { kind: 'scoped-unicast', peerId: 'peer', scope: SCOPE, admittedAudience: ['peer'] }
     };
     return { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+}
+
+interface ProvenanceAuthentication {
+    scope: typeof SCOPE;
+    principalId: string;
+    readonly expiresAtEpochMs: number;
 }

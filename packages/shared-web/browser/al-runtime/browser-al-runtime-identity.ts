@@ -6,6 +6,11 @@ import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outboun
 import type { StateScope } from '@shared/api/state-types.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
+import {
+    toBrowserRtcOverlayALCheckpointRuntimeStoreId,
+    toBrowserWsClientALCheckpointRuntimeStoreId
+} from './browser-al-checkpoint-store-ids.ts';
+
 export const BROWSER_AL_RUNTIME_DB_NAME_PREFIX = 'rallar-al-runtime:';
 export const BROWSER_AL_RUNTIME_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 export const BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX = 'browser:';
@@ -43,11 +48,7 @@ export function toBrowserALRuntimeEntryKeyPrefix(name: string): string {
 export function toBrowserSessionALRuntimeStoreIds(
     sessionId: string
 ): readonly ALRuntimeStoreId<ALOutboundTransportMessage>[] {
-    return [
-        toBrowserSessionALInboundRuntimeStoreId(sessionId),
-        toBrowserWsClientALRuntimeStoreId(sessionId),
-        toBrowserRtcOverlayALRuntimeStoreId(sessionId)
-    ];
+    return [toBrowserSessionALInboundRuntimeStoreId(sessionId), ...toBrowserSessionALOutboundStoreIds(sessionId)];
 }
 
 export function toBrowserSessionALRuntimeEntryKeyPrefixes(
@@ -61,13 +62,26 @@ function toBrowserALRuntimeNamespace(name: string): string {
     return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}`;
 }
 
-/** Every AL_INBOUND/AL_OUTBOUND work namespace one browser session owns: one inbound, two outbound. */
+/** Every AL_INBOUND/AL_OUTBOUND work namespace one browser session owns: one inbound, four outbound. */
 export function toBrowserSessionALRuntimeWorkNamespaces(
     sessionId: string
 ): readonly string[] {
     return [
         `${toBrowserALRuntimeNamespace(toBrowserSessionALInboundRuntimeStoreId(sessionId))}:inbound:admission`,
-        `${toBrowserALRuntimeNamespace(toBrowserWsClientALRuntimeStoreId(sessionId))}:outbound:admission`,
-        `${toBrowserALRuntimeNamespace(toBrowserRtcOverlayALRuntimeStoreId(sessionId))}:outbound:admission`
+        ...toBrowserSessionALOutboundStoreIds(sessionId).map((storeId) =>
+            `${toBrowserALRuntimeNamespace(storeId)}:outbound:admission`
+        )
+    ];
+}
+
+/** Both carriers' durable and checkpoint stores. */
+function toBrowserSessionALOutboundStoreIds(
+    sessionId: string
+): readonly ALRuntimeStoreId<ALOutboundTransportMessage>[] {
+    return [
+        toBrowserWsClientALRuntimeStoreId(sessionId),
+        toBrowserRtcOverlayALRuntimeStoreId(sessionId),
+        toBrowserWsClientALCheckpointRuntimeStoreId(sessionId),
+        toBrowserRtcOverlayALCheckpointRuntimeStoreId(sessionId)
     ];
 }

@@ -190,6 +190,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -1757,6 +1758,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -1843,6 +1845,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.ws.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -1946,6 +1952,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -2086,6 +2096,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -2254,6 +2268,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.aggregated-receipt",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2352,6 +2367,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.ws.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -2438,6 +2457,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.ws.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2541,6 +2561,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -2686,6 +2710,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {
@@ -2789,6 +2814,10 @@
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadFields": {
+                "data.kind": "admission-outcome",
+                "data.typeId": "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry"
+              },
               "payloadPath": "data",
               "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
             },
@@ -2934,6 +2963,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
+              "almDiagnostics": true,
               "typeId": "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
               "topicId": "room.alm-conformance",
               "messageSelector": {

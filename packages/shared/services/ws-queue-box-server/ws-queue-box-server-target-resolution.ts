@@ -59,9 +59,11 @@ export class WsQueueBoxServerTargetResolution {
                     targets.scope,
                     message
                 ) ?? this.toDefaultBroadcastRecipients(targets.exceptPeerIds);
+                const senderId = targets.scope === 'world' ? message.id.senderId : undefined;
                 return deduplicateRecipients(
                     recipients.filter(
-                        (recipient) => !targets.exceptPeerIds?.includes(recipient.peerId)
+                        (recipient) =>
+                            !targets.exceptPeerIds?.includes(recipient.peerId) && recipient.peerId !== senderId
                     )
                 );
             }

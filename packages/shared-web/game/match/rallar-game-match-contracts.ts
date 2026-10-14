@@ -1,5 +1,6 @@
 import type {
     RallarDirectorOutputOptions,
+    RallarDirectorRelayClaim,
     RallarFacade,
     RallarRoomState,
     RallarUnsubscribe
@@ -96,7 +97,7 @@ export interface RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPres
         presence: TPresence,
         options?: RallarGamePresenceSendOptions
     ): Promise<RallarGameSendResult>;
-    sendIntent(intent: TIntent): Promise<RallarGameSendResult>;
+    sendIntent(intent: TIntent, claim?: RallarDirectorRelayClaim): Promise<RallarGameSendResult>;
     publishSnapshot(
         snapshot: TSnapshot,
         options?: Readonly<{ reliable?: boolean; }>

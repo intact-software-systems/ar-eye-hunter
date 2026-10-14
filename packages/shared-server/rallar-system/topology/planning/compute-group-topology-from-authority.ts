@@ -7,6 +7,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPlanningIntent } from '../runtime/rallar-rtc-topology-service.ts';
 import type { GroupTopologyPlanningAuthority } from './group-topology-planning-authority.ts';
 import type { ReconcileGroupTopologyResult } from './group-topology-planning-contracts.ts';
@@ -132,6 +133,7 @@ function computeRemovedTopology(
             updatedAtEpochMs: group.group.updated.atEpochMs
         },
         previous: previous ?? null,
-        changed: previous?.state !== 'removed'
+        changed: previous?.state !== 'removed' ||
+            !rtcTopologySemanticEqual(previous.activeSessionIds, activeSessionIds)
     };
 }

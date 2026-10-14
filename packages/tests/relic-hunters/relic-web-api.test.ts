@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { RELIC_PROTOCOL_VERSION, type RelicCommand } from '@relic-hunters/mod.ts';
+import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot, type RelicCommand } from '@relic-hunters/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,6 +47,20 @@ describe('Relic Hunters web API client', () => {
             'x-client-id': 'client-1'
         });
         expect(JSON.parse(String(init.body))).toEqual(command);
+    });
+
+    it('reads a Relic snapshot body and rejects one that names no game incarnation', async () => {
+        writeSession(session());
+        const snapshot = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+        const { createdAtEpochMs: _createdAtEpochMs, ...withoutCreatedAt } = snapshot;
+        const bodies = [snapshot, withoutCreatedAt];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => new Response(JSON.stringify(bodies.shift()), { status: 200 }))
+        );
+
+        await expect(fetchRelicSnapshot('room-1')).resolves.toEqual(snapshot);
+        await expect(fetchRelicSnapshot('room-1')).rejects.toThrow('Failed to load expedition: not a Relic snapshot');
     });
 
     it('surfaces response text when command submission fails', async () => {

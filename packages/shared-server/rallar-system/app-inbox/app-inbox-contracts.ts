@@ -119,7 +119,7 @@ export class AppInboxReservationConflictError extends Error {
     readonly key: Key;
 
     constructor(key: Key) {
-        super(`App inbox reservation changed before completion: ${JSON.stringify(key)}`);
+        super('App inbox reservation changed before completion');
         this.key = key;
         this.name = 'AppInboxReservationConflictError';
     }

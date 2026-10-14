@@ -1,9 +1,12 @@
 import type {
+    RallarBlackBoxTestEvent,
     RallarBlackBoxTestReportFragment,
+    RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState
 } from '../rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
+import type { RallarBlackBoxEventHistory } from '../runtime/event-history.ts';
 import { toRuntimeStats } from '../runtime/to-runtime-stats.ts';
 
 export interface ToControlAgentReportInput {
@@ -33,7 +36,7 @@ export function toControlAgentReport(input: ToControlAgentReportInput): RallarBl
     const summary: ControlAgentReportSummary = {
         status: state.status,
         commands: state.commandHistory.length,
-        events: state.events.length,
+        events: state.eventHistory.totalEvents,
         failures: state.failures.length,
         latestCommandId: state.commandHistory.at(-1)?.commandId,
         latestEventAtEpochMs: state.events.at(-1)?.atEpochMs,
@@ -50,4 +53,52 @@ export function toControlAgentReport(input: ToControlAgentReportInput): RallarBl
         },
         state.currentConfig?.redaction
     );
+}
+
+export interface ControlOwnedReportFacts {
+    readonly state: RallarBlackBoxTestState;
+    readonly admittedCommandIds: ReadonlySet<string>;
+    readonly completedResults: WeakSet<RallarBlackBoxTestResult>;
+    readonly publishedEvents: WeakSet<RallarBlackBoxTestEvent>;
+    readonly publishedHistory: RallarBlackBoxEventHistory | undefined;
+}
+
+/** Project only actually admitted/completed/published facts; cumulative runtime diagnostics remain local. */
+export function toControlOwnedReportState(facts: ControlOwnedReportFacts): RallarBlackBoxTestState {
+    const { state } = facts;
+    const commandHistory = Object.values(state.resultCache).filter((result) => facts.completedResults.has(result));
+    const activeCommand = facts.admittedCommandIds.has(state.activeCommand?.commandId ?? '')
+        ? state.activeCommand
+        : undefined;
+    const latest = commandHistory.at(-1);
+    const events = state.events.filter((event) => facts.publishedEvents.has(event));
+    return {
+        ...state,
+        status: activeCommand ? 'running' : latest ? (latest.ok ? 'completed' : 'failed') : 'idle',
+        activeCommand,
+        activeCommandStartedAtEpochMs: activeCommand ? state.activeCommandStartedAtEpochMs : undefined,
+        commandHistory,
+        failures: commandHistory.filter((result) => !result.ok),
+        events,
+        eventHistory: toPublishedReportHistory(state.eventHistory, facts.publishedHistory, events.length),
+        latestStats: undefined
+    };
+}
+
+function toPublishedReportHistory(
+    runtimeHistory: RallarBlackBoxEventHistory,
+    publishedHistory: RallarBlackBoxEventHistory | undefined,
+    retainedEvents: number
+): RallarBlackBoxEventHistory {
+    if (publishedHistory === undefined) {
+        return runtimeHistory;
+    }
+    return {
+        ...runtimeHistory,
+        totalEvents: publishedHistory.totalEvents,
+        countsByKind: publishedHistory.countsByKind,
+        reconnects: publishedHistory.reconnects,
+        retainedEvents,
+        evictedEvents: publishedHistory.totalEvents - retainedEvents
+    };
 }

@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -22,6 +23,7 @@ import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/r
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const FLOW_BUILDER_STATE: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
     status: 'idle',
     commandHistory: [],
     events: [],

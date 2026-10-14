@@ -13,7 +13,7 @@ import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-mess
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import {
     createDefaultWsQueueBoxServerService,
@@ -278,9 +278,14 @@ function createSharedInboundStores(): ALInboundRuntimeStores {
     });
 }
 
+interface AckRelayCluster {
+    readonly owner: ServerInstance;
+    readonly other: ServerInstance;
+}
+
 async function createCluster(
     roomAudience: readonly string[] = ['a', 'b', 'c']
-): Promise<{ readonly owner: ServerInstance; readonly other: ServerInstance; }> {
+): Promise<AckRelayCluster> {
     const instances: ServerInstance[] = [];
     const inboundStores = createSharedInboundStores();
     const owner = await createServerInstance({
@@ -338,10 +343,13 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
                 }
                 : { authorized: true }
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
         vi.restoreAllMocks();
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { service, engine, sockets, relayed };
 }
@@ -373,7 +381,7 @@ function toRelayPort(
 
 async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number): Promise<void> {
     const message: ALMessage = {
-        id: { v: 2, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs },
@@ -391,7 +399,7 @@ function receiverAck(
     address: Partial<Pick<ALAckPayload, 'fromPeerId' | 'logicalRecipientPeerId' | 'toPeerId' | 'originPeerId'>> = {}
 ): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: address.fromPeerId ?? recipient,
@@ -407,7 +415,7 @@ function receiverAck(
 
 function repeatedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: 'room-message-1',
             fromPeerId: recipient,
@@ -423,7 +431,7 @@ function repeatedAck(recipient: string, index: number): ALMessage {
 
 function forgedAck(recipient: string, index: number): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId: `forged-message-${index}`,
             fromPeerId: recipient,
@@ -437,11 +445,13 @@ function forgedAck(recipient: string, index: number): ALMessage {
     );
 }
 
-function readReceipts(socket: SimulatedWebSocket): readonly Readonly<{
-    phase: ALReceiptPayload['phase'];
-    expected: readonly string[];
-    confirmed: readonly string[];
-}>[] {
+interface ReceiptObservation {
+    readonly phase: ALReceiptPayload['phase'];
+    readonly expected: ALReceiptPayload['expectedRecipientPeerIds'];
+    readonly confirmed: ALReceiptPayload['confirmedRecipientPeerIds'];
+}
+
+function readReceipts(socket: SimulatedWebSocket): readonly ReceiptObservation[] {
     return socket.sent
         .map((frame) => decodePersistedALMessage(frame))
         .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)

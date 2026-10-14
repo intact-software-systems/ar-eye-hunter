@@ -14,7 +14,9 @@ import {
     type StoredResourceEntry
 } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import {
-    computeIndexedDbQueuePut
+    computeIndexedDbQueuePut,
+    computeIndexedDbQueueUnconditionalPut,
+    validateComputedIndexedDbQueueMutations
 } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { ResourceInboxLostReservationError } from '@shared/queuebox/queue-box-types.ts';
@@ -145,6 +147,30 @@ describe('IndexedDbQueueBox computed writes', () => {
         const stored = await readStoredQueueEntry(db, storeName, keyString);
         expect(stored?.revision).toBe(1);
         expect([first.resource, second.resource]).toContain(stored?.resource);
+    });
+
+    it('overwrites a row it never read and inserts a missing one in one transaction', async () => {
+        const storeName = 'entries';
+        const db = await openIndexedDbWithStores(
+            `indexeddb-unconditional-put-${crypto.randomUUID()}`,
+            [{ name: storeName, keyPath: 'keyString' }]
+        );
+        onTestFinished(() => db.close());
+        const initial = computeIndexedDbQueuePut(undefined, createEntry('initial'));
+        await writeComputedIndexedDbQueueMutations({ db, storeName, mutations: [initial] });
+        const inserted = computeIndexedDbQueueUnconditionalPut(createEntry('inserted', 'other-resource'));
+
+        const committed = await writeComputedIndexedDbQueueMutations({
+            db,
+            storeName,
+            mutations: [computeIndexedDbQueueUnconditionalPut(createEntry('replaced')), inserted]
+        });
+
+        expect(committed).toBe(true);
+        expect((await readStoredQueueEntry(db, storeName, initial.keyString))?.resource).toBe('replaced');
+        expect((await readStoredQueueEntry(db, storeName, inserted.keyString))?.resource).toBe('inserted');
+        expect(validateComputedIndexedDbQueueMutations([{ ...inserted, keyString: initial.keyString }]).left?.message)
+            .toContain('mutation key differs');
     });
 
     it('rolls back every computed mutation when one comparison conflicts', async () => {

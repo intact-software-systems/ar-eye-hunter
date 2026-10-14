@@ -8,6 +8,11 @@ export function toALOutboundVersionKey(namespace: string, senderId: string): str
     return `${namespace}:version:${senderId}`;
 }
 
+/** The last sequence the outbound minted on one track; written beside the sender version that fences it. */
+export function toALOutboundOrderingHeadKey(namespace: string, trackKey: string): string {
+    return `${namespace}:ordering-head:${trackKey}`;
+}
+
 export function toALOutboundSentMessageKey(namespace: string, msgId: string): string {
     return `${namespace}:sent:${msgId}`;
 }

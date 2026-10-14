@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -16,16 +17,20 @@ import {
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import type WsQueueBoxClientService from '@shared/services/ws-queue-box-client-service.ts';
+import * as wsClientFactory from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -53,6 +58,62 @@ describe('createBrowserWebSocketQueueBox', () => {
         configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
     });
 
+    it.each(['records', 'throws'])('disposes its acquired real service when initial connection rejects and cleanup reporting %s', async (reporting) => {
+        const failure = new Error('initial socket connection failed');
+        const reported = vi.spyOn(console, 'error').mockImplementation(() => {
+            if (reporting === 'throws') {
+                throw new Error('reporting failed');
+            }
+        });
+        const cleanupFailure = new Error('secondary close failure');
+        onTestFinished(() => reported.mockRestore());
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        vi.spyOn(socket, 'connect').mockRejectedValue(failure);
+        vi.spyOn(socket, 'close').mockImplementation(() => {
+            throw cleanupFailure;
+        });
+        const engine = new InboxOutboxEngine();
+        const original = wsClientFactory.createDefaultWsQueueBoxClientService;
+        let acquired: WsQueueBoxClientService | undefined;
+        const factory = vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
+            acquired = original(input);
+            return acquired;
+        });
+        onTestFinished(async () => {
+            if (acquired) {
+                await acquired.close().catch(() => {});
+            }
+            await engine.stop();
+            factory.mockRestore();
+        });
+        await expect(createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
+            qboxEngine: engine,
+            socket,
+            clientData,
+            serverPeerId: 'server',
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveWsClientCheckpointStores(),
+            connectTimeoutMs: 0
+        })).rejects.toBe(failure);
+        expect(reported).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ errors: [cleanupFailure] }));
+        if (!acquired) {
+            throw new Error('Initial socket acquisition must construct the service');
+        }
+        const sent = await acquired.enqueueOutboxIfAbsent(createChatSend('failed-connect'));
+        expect(sent.verdict).toMatchObject({ kind: 'skipped', reason: 'disposed' });
+    });
+
     it('returns an open service for the session after the initial socket opens', async () => {
         const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
@@ -74,9 +135,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -130,9 +193,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -174,9 +239,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -232,9 +299,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                createDefaultVolatileSessionBudget()
+                createDefaultVolatileSessionBudget(),
+                createPassThroughALStorageEventSink()
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -270,67 +339,114 @@ describe('the session volatile bound on the WS client (C3)', () => {
     });
 
     it('counts a received and a sent volatile message against the one budget both of its memory pairs carry', async () => {
-        const budget = new ALVolatileSessionBudget({
-            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-        });
-        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
-        onTestFinished(() => socket.close(1000, 'test-finished'));
-        const qboxEngine = new InboxOutboxEngine();
-        onTestFinished(() => qboxEngine.stop());
-        const initialized = createBrowserWebSocketQueueBox({
-            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
-            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
-            outboundSettlements: () => {},
-            newConnectionRequestId: undefined,
-            qboxEngine,
-            socket,
-            clientData,
-            serverPeerId: 'server',
-            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
-                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                budget
-            ),
-            volatileBudget: budget,
-            connectTimeoutMs: 0
-        });
-        await vi.advanceTimersByTimeAsync(0);
-        const native = readCreatedSocket();
-        native.open();
-        const service = await initialized;
-        onTestFinished(() => service.close(1000, 'test-finished'));
-        const received: string[] = [];
-        service.onInboxMessageDo('chat.message.v1', {
-            onMessage: async (message) => {
-                received.push(message.id.msgId);
-            }
-        });
-        const arrival = newALUnicastMessage(
-            'server',
-            { topicId: 'chat', resourceId: 'received', contextId: 'conversation' },
-            'session-1',
-            'chat.message.v1',
-            { text: 'received' },
-            { ttlMs: 30_000 }
-        );
+        const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
+        const service = await openWsClient({ budget, checkpointStores: resolveWsClientCheckpointStores() });
+        const received = collectChatArrivals(service);
+        const arrival = createChatArrival('received');
 
-        native.receive(JSON.stringify(arrival));
+        readCreatedSocket().receive(JSON.stringify(arrival));
         await vi.waitFor(() => expect(received).toEqual([arrival.id.msgId]));
-        const sent = await service.enqueueOutboxIfAbsent(newALUnicastMessage(
-            'session-1',
-            { topicId: 'chat', resourceId: 'sent', contextId: 'conversation' },
-            'peer',
-            'chat.message.v1',
-            { text: 'sent' },
-            { ttlMs: 30_000 }
-        ));
+        const sent = await service.enqueueOutboxIfAbsent(createChatSend('sent'));
 
         expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: false });
-        expect(budget.readUsage(Date.now()).admissions).toBe(2);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(2);
+    });
+
+    it('admits own sends while arrivals hold the total at its limit, and refuses capacity once the own share is held too (D189)', async () => {
+        const budget = new ALVolatileSessionBudget({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 4 });
+        const service = await openWsClient({ budget, checkpointStores: resolveWsClientCheckpointStores() });
+        const received = collectChatArrivals(service);
+        const arrivals = ['received-1', 'received-2', 'received-3', 'received-4'].map(createChatArrival);
+
+        arrivals.forEach((arrival) => readCreatedSocket().receive(JSON.stringify(arrival)));
+        await vi.waitFor(() => expect(received).toHaveLength(arrivals.length));
+        const first = await service.enqueueOutboxIfAbsent(createChatSend('sent-1'));
+        const second = await service.enqueueOutboxIfAbsent(createChatSend('sent-2'));
+        const third = await service.enqueueOutboxIfAbsent(createChatSend('sent-3'));
+
+        expect([first.verdict, second.verdict, third.verdict]).toMatchObject([
+            { kind: 'admitted', durable: false },
+            { kind: 'admitted', durable: false },
+            { kind: 'refused', reason: 'capacity', limit: 'admissions' }
+        ]);
+        expect(budget.readReport(Date.now())).toMatchObject({
+            usage: { admissions: 6 },
+            own: { admissions: 2 },
+            inbound: { admissions: 4 },
+            overloaded: true
+        });
     });
 });
+
+describe('the checkpoint lane on the WS client', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
+        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
+    });
+
+    it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
+        const budget = createDefaultVolatileSessionBudget();
+        const checkpointStores = resolveWsClientCheckpointStores();
+        const service = await openWsClient({ budget, checkpointStores });
+
+        const sent = await service.enqueueOutboxIfAbsent(newALUnicastMessage(
+            'session-1',
+            { topicId: 'chat', resourceId: 'checkpointed', contextId: 'conversation' },
+            'peer',
+            'chat.message.v1',
+            { text: 'checkpointed' },
+            { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+        ));
+
+        expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(await checkpointStores.admissionStore.hasSentMessageAdmission(sent.message.id.msgId)).toBe(true);
+        expect(budget.readReport(Date.now()).usage.admissions).toBe(0);
+    });
+});
+
+interface OpenWsClientInput {
+    readonly budget: ALVolatileSessionBudget;
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
+}
+
+async function openWsClient(input: OpenWsClientInput): Promise<WsQueueBoxClientService> {
+    const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+    onTestFinished(() => socket.close(1000, 'test-finished'));
+    const qboxEngine = new InboxOutboxEngine();
+    onTestFinished(() => qboxEngine.stop());
+    const initialized = createBrowserWebSocketQueueBox({
+        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+        qosProvider: undefined,
+        submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
+        outboundSettlements: () => {},
+        newConnectionRequestId: undefined,
+        qboxEngine,
+        socket,
+        clientData,
+        serverPeerId: 'server',
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+            input.budget,
+            createPassThroughALStorageEventSink()
+        ),
+        volatileBudget: input.budget,
+        checkpointStores: input.checkpointStores,
+        connectTimeoutMs: 0
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    readCreatedSocket().open();
+    const service = await initialized;
+    onTestFinished(() => service.close(1000, 'test-finished'));
+    return service;
+}
 
 function readCreatedSocket(): TestWebSocket {
     const socket = TestWebSocket.instances.at(-1);
@@ -338,4 +454,40 @@ function readCreatedSocket(): TestWebSocket {
         throw new Error('Connecting the client must create a WebSocket');
     }
     return socket;
+}
+
+function resolveWsClientCheckpointStores(): ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage> {
+    return resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient;
+}
+
+function collectChatArrivals(service: WsQueueBoxClientService): readonly string[] {
+    const received: string[] = [];
+    service.onInboxMessageDo('chat.message.v1', {
+        onMessage: async (message) => {
+            received.push(message.id.msgId);
+        }
+    });
+    return received;
+}
+
+function createChatArrival(resourceId: string): ALMessage {
+    return newALUnicastMessage(
+        'server',
+        { topicId: 'chat', resourceId, contextId: 'conversation' },
+        clientData.sessionId,
+        'chat.message.v1',
+        { text: resourceId },
+        { ttlMs: 30_000 }
+    );
+}
+
+function createChatSend(resourceId: string): ALMessage {
+    return newALUnicastMessage(
+        clientData.sessionId,
+        { topicId: 'chat', resourceId, contextId: 'conversation' },
+        'peer',
+        'chat.message.v1',
+        { text: resourceId },
+        { ttlMs: 30_000 }
+    );
 }

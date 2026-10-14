@@ -4,7 +4,7 @@ import {
     holdsPlannedCandidateAt
 } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toStageTriggerTimerDelayMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
@@ -301,7 +301,7 @@ interface FormationTimerMessageInput {
 function toFormationTimerMessage({ input, work, key, createdBy }: FormationTimerMessageInput): ALMessage {
     return {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: key.resourceId,
             ts: input.createdAtEpochMs,
             senderId: createdBy

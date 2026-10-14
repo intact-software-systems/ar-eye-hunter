@@ -8,6 +8,7 @@ import {
     type ArenaSnapshot,
     type GameRealtimeMessage
 } from '../../types.ts';
+import { resolveArenaActiveEvent } from '../state/resolve-arena-active-event.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 import { acceptArenaDirectorPeerMessage, type ArenaDirectorPeerMessageInput } from './arena-director-peer-message.ts';
 
@@ -69,7 +70,10 @@ function acceptArenaDirectorOutput(
                 ]
                 : previous
         );
-        input.setActiveEvent((previous) => isCurrent() ? message.event : previous);
+        const nowEpochMs = input.nowMs();
+        input.setActiveEvent((previous) =>
+            isCurrent() ? resolveArenaActiveEvent(previous, message.event, nowEpochMs) : previous
+        );
         return;
     }
 }

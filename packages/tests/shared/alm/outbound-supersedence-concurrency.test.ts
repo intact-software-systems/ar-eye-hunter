@@ -1,10 +1,4 @@
-import '../../setup-browser-indexeddb.ts';
-import {
-    claimOutboundTestWork,
-    createOutboundCanonicalEntry,
-    releaseOutboundTestWork
-} from './outbound-runtime-test-fixture.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -17,11 +11,27 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
-
+import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { computeALOutboundDispatch, type ALOutboundComputedDto } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+import '../../setup-browser-indexeddb.ts';
+import {
+    claimOutboundTestWork,
+    createOutboundCanonicalEntry,
+    createOutboundMessage,
+    releaseOutboundTestWork
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+
+interface ReadSupersedenceDecisionInput {
+    readonly store: ALOutboundAdmissionStore<OutboundTestPayload>;
+    readonly message: ALMessage;
+    readonly creationNow: QueueBoxUtilities.CreationClock;
+    readonly clock: ALOutboundMessageRuntime.Clock;
+    readonly supersedenceKey?: string;
+}
 
 describe('outbound shared supersedence decisions', () => {
     it.each(
@@ -35,7 +45,12 @@ describe('outbound shared supersedence decisions', () => {
         const stores = createStore(storage);
         const store = stores.admissionStore;
         if (populated) {
-            const seed = await readDecision(store, createMessage('seed', 0));
+            const seed = await readDecision({
+                store: store,
+                message: createMessage('seed', 0),
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() }
+            });
             expect(await store.commitBundle(seed.bundle!)).toBe('committed');
             for (const work of await claimOutboundTestWork(stores, 10)) {
                 await releaseOutboundTestWork(stores, work.entry, { status: 'completed' });
@@ -43,8 +58,8 @@ describe('outbound shared supersedence decisions', () => {
         }
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
-        const oldDecision = await readDecision(store, older);
-        const newDecision = await readDecision(store, newer);
+        const oldDecision = await readDecision({ store: store, message: older, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
+        const newDecision = await readDecision({ store: store, message: newer, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
         expect(oldDecision.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(newDecision.verdict).toMatchObject({ kind: 'admitted', durable: false });
 
@@ -54,7 +69,7 @@ describe('outbound shared supersedence decisions', () => {
         const effects = await claimOutboundTestWork(stores, 10);
         expect(effects.map((effect) => effect.payload.kind === 'send-prepared' ? effect.payload.message.msgId : '')).toEqual([newer.id.msgId]);
 
-        const refreshed = await readDecision(store, older);
+        const refreshed = await readDecision({ store: store, message: older, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
         expect(refreshed.verdict.kind).toBe('superseded');
         expect(refreshed.bundle).toBeUndefined();
         expect(JSON.stringify((await store.readSentMessage(newer.id.msgId))?.msg)).toBe(JSON.stringify(newer));
@@ -66,21 +81,27 @@ describe('outbound shared supersedence decisions', () => {
         const older = createMessage('sender-a', 1);
         const newer = createMessage('sender-b', 2);
         const other = createMessage('sender-c', 3);
-        const oldDecision = await readDecision(store, older);
-        const newDecision = await readDecision(store, newer);
-        const otherDecision = await readDecision(store, other, 'other-topic');
+        const oldDecision = await readDecision({ store: store, message: older, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
+        const newDecision = await readDecision({ store: store, message: newer, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
+        const otherDecision = await readDecision({
+            store: store,
+            message: other,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            supersedenceKey: 'other-topic'
+        });
 
         expect(await store.commitBundle(oldDecision.bundle!)).toBe('committed');
         expect(await store.commitBundle(otherDecision.bundle!)).toBe('committed');
         expect(await store.commitBundle(newDecision.bundle!)).toBe('conflict');
-        const retry = await readDecision(store, newer);
+        const retry = await readDecision({ store: store, message: newer, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } });
         expect(await store.commitBundle(retry.bundle!)).toBe('committed');
         const latest = await store.readOutgoingMessage({
             msg: createMessage('observer', 4),
             planner: (message) => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
             }),
@@ -92,7 +113,7 @@ describe('outbound shared supersedence decisions', () => {
     });
 });
 
-function createStore(storage: 'memory' | 'indexeddb') {
+function createStore(storage: 'memory' | 'indexeddb'): ALOutboundRuntimeStores<OutboundTestPayload> {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
@@ -123,27 +144,23 @@ function createMessage(senderId: string, sequence: number): ALMessage {
     return { ...message, id: { ...message.id, senderId }, ordering: { orderingKey: 'shared-topic', seq: sequence } };
 }
 
-async function readDecision(
-    store: ALOutboundAdmissionStore<OutboundTestPayload>,
-    message: ALMessage,
-    supersedenceKey = 'shared-topic'
-) {
-    const read = await store.readOutgoingMessage({
-        msg: message,
+async function readDecision(input: ReadSupersedenceDecisionInput): Promise<ALOutboundComputedDto<OutboundTestPayload>> {
+    const read = await input.store.readOutgoingMessage({
+        msg: input.message,
         planner: () => ({
-            msg: message,
+            msg: input.message,
             dropReasonCode: undefined,
-            persist: false,
-            preparedMessages: [{ text: message.id.msgId }],
-            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }
+            lane: 'volatile',
+            preparedMessages: [{ text: input.message.id.msgId }],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: input.supersedenceKey ?? 'shared-topic' }
         }),
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
     });
     return computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
-        dispatchAtMs: Date.now(),
+        outboxEntry: createOutboundCanonicalEntry(input.store, read.msg, input.creationNow()),
+        dispatchAtMs: input.clock.nowMs(),
         intent: 'enqueue',
         phase: 'immediate',
         options: {}

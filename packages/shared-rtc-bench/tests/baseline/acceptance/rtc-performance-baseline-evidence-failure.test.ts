@@ -5,7 +5,11 @@ import {
     createRtcBaselineAcceptedWorkerSampleIdentity,
     runRtcBaselineAcceptedWorkerSamples
 } from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
-import type { RtcBaselineRuntimeObservationDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
+import type {
+    RtcBaselineAcceptedArtifact,
+    RtcBaselineRuntimeObservationDto,
+    RtcBaselineSampleDto
+} from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 
 const firstIdentity = {
     sampleId: 'rtc-b01-case-input-retained-001-001',
@@ -133,7 +137,7 @@ const invalidWorkerIssue = {
     code: 'invalid-worker-outcome',
     message: 'Worker outcome does not match the expected inner identity.'
 };
-function workerSample(identity: (typeof identities)[number], evidenceClass = 'synthetic-path') {
+function workerSample(identity: (typeof identities)[number], evidenceClass: RtcBaselineSampleDto['evidenceClass'] = 'synthetic-path'): RtcBaselineSampleDto {
     return {
         schema: 'rallar.rtc-baseline.sample.v1',
         identity,
@@ -146,10 +150,11 @@ function workerSample(identity: (typeof identities)[number], evidenceClass = 'sy
         runtimeObservation: null
     };
 }
-function acceptance(overrides: Record<string, unknown>) {
+function acceptance(overrides: Partial<Parameters<typeof createRtcBaselineEvidenceAcceptance>[0]>) {
     return createRtcBaselineEvidenceAcceptance({
         initializeStore: async () => ({ ok: true as const, value: undefined }),
         readManifest: async () => ({ ok: true as const, value: manifest }),
+        readInitializedConfiguration: async () => ({ ok: true as const, value: [] }),
         writeAcceptedArtifact: async () => ({ ok: true as const, value: undefined }),
         readStagedJson: async () => ({ ok: true as const, value: {} }),
         runFreshWorker: async () => ({ outcomes: [] }),
@@ -157,11 +162,11 @@ function acceptance(overrides: Record<string, unknown>) {
         ...overrides
     });
 }
-function recordingAcceptance(overrides: Record<string, unknown>) {
-    const writes: unknown[] = [];
+function recordingAcceptance(overrides: Partial<Parameters<typeof createRtcBaselineEvidenceAcceptance>[0]>) {
+    const writes: RtcBaselineAcceptedArtifact[] = [];
     const service = acceptance({
         ...overrides,
-        writeAcceptedArtifact: async (_baselineId: string, artifact: unknown) => {
+        writeAcceptedArtifact: async (_baselineId: string, artifact: RtcBaselineAcceptedArtifact) => {
             writes.push(artifact);
             return { ok: true, value: undefined };
         }
@@ -211,17 +216,17 @@ async function invokeOwnedOperation(
     }
     return service.recordExternalCohortAssertion(cohortInput);
 }
-function persistedRows(writes: readonly unknown[]) {
+function persistedRows(writes: readonly RtcBaselineAcceptedArtifact[]) {
     return writes.map((value) => {
-        const artifact = value as Record<string, unknown>;
+        const artifact = value;
         return [
-            artifact.artifactKind,
-            artifact.failureId,
-            artifact.identity,
-            artifact.outcome,
-            artifact.causalFailureId,
+            'artifactKind' in artifact ? artifact.artifactKind : undefined,
+            'failureId' in artifact ? artifact.failureId : undefined,
+            'identity' in artifact ? artifact.identity : undefined,
+            'outcome' in artifact ? artifact.outcome : undefined,
+            'causalFailureId' in artifact ? artifact.causalFailureId : undefined,
             artifact.issues,
-            artifact.rawEvidence
+            'rawEvidence' in artifact ? artifact.rawEvidence : undefined
         ];
     });
 }
@@ -300,8 +305,8 @@ describe('RTC baseline failure accounting', () => {
         const { service, writes } = recordingAcceptance({
             runFreshWorker: async () => ({
                 outcomes: [
-                    { identity: identities[0], outcome: 'passed', issues: [], rawEvidence: {} },
-                    { identity: identities[1], outcome: 'passed', issues: [], rawEvidence: {} }
+                    workerSample(identities[0]),
+                    workerSample(identities[1])
                 ]
             })
         });

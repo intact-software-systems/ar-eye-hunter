@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle, type BrowserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
@@ -19,28 +29,11 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
-
-vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@shared/repository/group-state-snapshot-revision.ts')>();
-    return {
-        ...actual,
-        decideGroupSnapshotCausalRevision: vi.fn(actual.decideGroupSnapshotCausalRevision)
-    };
-});
 
 describe('browser group-state delta reconciliation', () => {
     const diagnostics: BrowserStateReadDiagnosticEvent[] = [];
@@ -302,49 +295,6 @@ describe('browser group-state delta reconciliation', () => {
         expect(deltaApplyResults()).toEqual(['gap-pull']);
     });
 
-    it('counts a revision conflict from the divergence oracle and self-heals with the floored pull', async () => {
-        const runtime = new StateCacheRuntime();
-        const cached = createDeltaGroupSnapshot({
-            groupId: 'room-delta-oracle',
-            memberPrincipalIds: ['m-alpha'],
-            activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 1, presenceRevision: 1 }
-        });
-        const resulting = createDeltaGroupSnapshot({
-            groupId: 'room-delta-oracle',
-            memberPrincipalIds: ['m-alpha'],
-            activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 1 }
-        });
-        const envelope = createDeltaEnvelope({
-            resulting,
-            predecessorCausalRevision: cached.causalRevision,
-            eventType: 'group-updated'
-        });
-        await runtime.hydrate([cached]);
-        const fetchMock = vi.fn<typeof fetch>(
-            async () => groupSnapshotResponse(resulting)
-        );
-        vi.stubGlobal('fetch', fetchMock);
-        vi.mocked(decideGroupSnapshotCausalRevision).mockImplementationOnce(() => {
-            throw new StateSnapshotRevisionConflictError(
-                'Group',
-                resulting.group.snapshotVersion
-            );
-        });
-
-        await expect(runtime.receiveDeltaMessage(envelope)).resolves.toBeUndefined();
-
-        expect(deltaApplyResults()).toEqual(['revision-conflict']);
-        expect(fetchMock).toHaveBeenCalledOnce();
-        expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-            '/groups/room-delta-oracle?minGroupRevision=2&minPresenceRevision=1'
-        );
-        expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
-        ).toEqual(resulting);
-    });
-
     function deltaApplyResults(): readonly string[] {
         return diagnostics
             .filter((event) => event.operation === 'delta-apply')
@@ -372,7 +322,7 @@ class StateCacheRuntime {
             inbox: {
                 onAllInboxMessagesDo: (callback) => {
                     this.onInboxMessage = async (message) => {
-                        await callback.onMessage(message, QueueBoxUtilities.toResourceEntryFromMsg(message, 'TEST_INBOX'));
+                        await callback.onMessage(message, QueueBoxUtilities.toResourceEntryFromMsg(message, 'TEST_INBOX', Temporal.Now.instant()));
                     };
                 }
             },

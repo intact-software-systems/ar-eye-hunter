@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -14,7 +24,7 @@ import { createDefaultWebRtcRxStreamerService } from '@shared/services/web-rtc-r
 import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -44,10 +54,30 @@ describe('browser carrier cancellation ports', () => {
             { kind: 'cancelled', msgId: 'pending-message', carrier: 'ws' }
         ]);
     });
+
+    it('joins a pending RTC disposal before final test cleanup', () => {
+        const gate = Promise.withResolvers<void>();
+        let disposed = false;
+        onTestFinished(() => {
+            expect(disposed).toBe(true);
+        });
+        const rtc = createRtcOwner([]);
+        const dispose = rtc.dispose.bind(rtc);
+        vi.spyOn(rtc, 'dispose').mockImplementationOnce(async () => {
+            await gate.promise;
+            await dispose();
+            disposed = true;
+        });
+        onTestFinished(() => {
+            setTimeout(() => gate.resolve(), 0);
+        });
+    });
 });
 
 function createRtcOwner(settlements: ALDeliverySettlement[]) {
     const multicast = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: { input: { sessionId: 'self' }, readyPeerIdsForLane: () => [], readPeer: () => undefined },
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
@@ -62,12 +92,11 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    onTestFinished(() => multicast.dispose());
     const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
-    onTestFinished(() => {
-        service.dispose();
-        multicast.dispose();
-    });
+    onTestFinished(() => service.dispose());
     return service;
 }

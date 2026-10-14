@@ -1,24 +1,13 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import type { RallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-
-type HttpResultValue = Readonly<{
-    status: number;
-    headers: Readonly<Record<string, string>>;
-    body: Readonly<Record<string, unknown>>;
-}>;
-
-function httpResultValue(result: RallarBlackBoxTestResult | undefined): HttpResultValue {
-    expect(result?.ok).toBe(true);
-    return result?.value as HttpResultValue;
-}
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 
 describe('http.request result redaction', () => {
     it('redacts sensitive response headers and body fields in the recorded result and mirrored event', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            fetch: async () =>
                 new Response(
                     JSON.stringify({
                         profile: { username: 'alice' },
@@ -32,7 +21,7 @@ describe('http.request result redaction', () => {
                             'x-rallar-ticket': 'live-ticket-value'
                         }
                     }
-                )) as typeof fetch
+                )
         });
 
         const result = await runtime.execute({
@@ -47,17 +36,14 @@ describe('http.request result redaction', () => {
             }
         });
 
-        const value = httpResultValue(result);
-        expect(value.status).toBe(200);
-        expect(value.headers['x-session-cookie']).toBe('<redacted>');
-        expect(value.headers['x-rallar-ticket']).toBe('<redacted>');
-        expect(value.headers['content-type']).toBe('application/json');
-        expect(value.body.accessToken).toBe('<redacted>');
-        expect(value.body.profile).toEqual({ username: 'alice' });
-
-        const cachedValue = httpResultValue(runtime.state().resultCache['http-sensitive-response']);
-        expect(cachedValue.headers['x-session-cookie']).toBe('<redacted>');
-        expect(cachedValue.body.accessToken).toBe('<redacted>');
+        expect(result.ok).toBe(true);
+        const redacted = {
+            status: 200,
+            headers: { 'x-session-cookie': '<redacted>', 'x-rallar-ticket': '<redacted>', 'content-type': 'application/json' },
+            body: { accessToken: '<redacted>', profile: { username: 'alice' } }
+        };
+        expect(result.value).toMatchObject(redacted);
+        expect(runtime.state().resultCache['http-sensitive-response']?.value).toMatchObject(redacted);
 
         const mirroredEvent = runtime.state().events
             .find((event) => event.topic === 'rallar.bb.http.response');
@@ -74,8 +60,9 @@ describe('http.request result redaction', () => {
     });
 
     it('redacts the http result recorded for a rejected status code', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            fetch: async () =>
                 new Response(
                     JSON.stringify({ error: 'denied', refreshToken: 'live-refresh-token' }),
                     {
@@ -85,7 +72,7 @@ describe('http.request result redaction', () => {
                             authorization: 'Bearer leaked-server-echo'
                         }
                     }
-                )) as typeof fetch
+                )
         });
 
         const result = await runtime.execute({
@@ -103,11 +90,8 @@ describe('http.request result redaction', () => {
 
         expect(result.ok).toBe(false);
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_HTTP_STATUS_NOT_ACCEPTED');
-        const failedValue = result.value as HttpResultValue;
-        expect(failedValue.headers.authorization).toBe('<redacted>');
-        expect(failedValue.body.refreshToken).toBe('<redacted>');
-        const errorDetails = result.error?.details as HttpResultValue;
-        expect(errorDetails.headers.authorization).toBe('<redacted>');
-        expect(errorDetails.body.refreshToken).toBe('<redacted>');
+        const redacted = { headers: { authorization: '<redacted>' }, body: { refreshToken: '<redacted>' } };
+        expect(result.value).toMatchObject(redacted);
+        expect(result.error?.details).toMatchObject(redacted);
     });
 });

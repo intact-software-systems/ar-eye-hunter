@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -34,7 +35,8 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 backend,
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             });
             const planner: ALInboundMessageRuntime.Dependencies['planIncomingMessage'] = (msg, source, observations) =>
                 planALMessageHandling(msg, {
@@ -54,7 +56,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 effectPreparation: {
                     newControlId: crypto.randomUUID.bind(crypto),
                     selfPeerId: 'receiver',
-                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX')
+                    createInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'INBOX', Temporal.Now.instant())
                 },
                 planIncomingMessage: planner,
                 forwardMessage: undefined,

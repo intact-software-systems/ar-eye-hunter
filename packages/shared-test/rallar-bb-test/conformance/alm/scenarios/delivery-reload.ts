@@ -40,10 +40,11 @@ export const deliveryReload: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toDeliveryReloadSenderCommands,
-    toRecipientCommands: toDeliveryReloadReceiverCommands
+    toRecipientCommands: toDeliveryReloadReceiverCommands,
+    toReloadCheckpoint
 };
 
-export function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint {
+function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint {
     const sender = { ...step, role: 'sender' as const };
     const receiver = { ...step, role: 'receiver' as const };
     return {

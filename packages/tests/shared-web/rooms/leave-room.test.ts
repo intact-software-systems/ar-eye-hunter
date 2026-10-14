@@ -1,16 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
-    readRoomWorkflowMocks,
+    getRoomWorkflowMocks,
+    mockRoomCreateSuccess,
+    mockRoomLeaveSuccess,
     resetRoomWorkflowTestRuntime,
-    resolveCreateWith,
-    resolveLeaveWith,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 
 installFakeBroadcastChannelPerTest();
 
@@ -29,7 +34,7 @@ describe('room leave operations', () => {
         };
         const signal = new AbortController().signal;
         seedRoomSnapshots([currentRoom]);
-        resolveLeaveWith(leftRoom);
+        mockRoomLeaveSuccess(leftRoom);
         const facade = createRallarFacade();
 
         await expect(
@@ -60,8 +65,8 @@ describe('room leave operations', () => {
         const oldRoom = createRoomSnapshot('old-room', ['session-1']);
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         seedRoomSnapshots([oldRoom]);
-        resolveCreateWith(newRoom);
-        resolveLeaveWith({
+        mockRoomCreateSuccess(newRoom);
+        mockRoomLeaveSuccess({
             ...oldRoom,
             causalRevision: { ...oldRoom.causalRevision, presenceRevision: 2 },
             group: { ...oldRoom.group, presenceVersion: 2 },

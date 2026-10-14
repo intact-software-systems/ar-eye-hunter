@@ -1,5 +1,9 @@
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from './runtime/event-history.ts';
+
 import type { RallarBlackBoxDistributedGroupAssertion } from './distributed/group-assertions.ts';
 import type {
+    RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestError,
@@ -130,6 +134,8 @@ export interface RallarBlackBoxControlAgentIdentity {
 }
 
 export interface RallarBlackBoxControlAgentCapabilities {
+    /** Absent when the installed command runtime owns no verified capture implementation. */
+    readonly rtcCapture?: RallarBlackBoxRtcCaptureSupport;
     readonly crdt: RallarBlackBoxControlAgentCrdtCapability;
     readonly assertions: RallarBlackBoxControlAgentAssertionsCapability;
     readonly messaging: RallarBlackBoxControlAgentMessagingCapability;
@@ -231,9 +237,12 @@ export type RallarBlackBoxDistributedRunManifest =
     | RallarBlackBoxDistributedScheduledRunManifest;
 
 export interface RallarBlackBoxDistributedRunManifestFields {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly schemaVersion: 1;
     readonly distributedRunId: string;
     readonly controlRunId: string;
+    /** Absent when each invocation inherits its authored capture selection. */
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     /** Absent when the author gives the run no display name. */
     readonly displayName?: string;
     /** Absent when the author gives the run no description. */
@@ -272,14 +281,19 @@ export type RallarBlackBoxDistributedTargetBlocker =
 
 export interface RallarBlackBoxDistributedIdentifiedTargetBlocker {
     readonly agentId: string;
-    readonly status: 'offline-agent' | 'stale-agent' | 'different-group' | 'missing-assertion-capability';
+    readonly status:
+        | 'offline-agent'
+        | 'stale-agent'
+        | 'different-group'
+        | 'missing-assertion-capability'
+        | 'missing-rtc-capture-capability';
     readonly reason: string;
     readonly identity: RallarBlackBoxControlAgentIdentity;
 }
 
 export interface RallarBlackBoxDistributedUnidentifiedTargetBlocker {
     readonly agentId: string;
-    readonly status: 'agent-without-identity';
+    readonly status: 'agent-without-identity' | 'missing-rtc-capture-capability';
     readonly reason: string;
 }
 

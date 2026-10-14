@@ -1,5 +1,9 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+
 import type { ManualWorkbenchTransport, ManualWorkbenchValues } from '../manual-workbench.ts';
 import { toManualCommandId } from './manual-command-fields.ts';
 import {
@@ -13,6 +17,7 @@ import {
 
 export interface ManualRtcDeliveryMatrixInput {
     readonly values: ManualWorkbenchValues;
+    readonly rtcConnect: RallarBlackBoxTestRtcConnectCommand;
     readonly payload: RallarMessagePayload;
     readonly sequence: number;
     readonly transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>;
@@ -49,7 +54,7 @@ const NEGATIVE_RTC_SEND_CASES = {
 } as const;
 
 export function toManualRtcDeliveryMatrixCommands(
-    { values, payload, sequence, transport, requestId }: ManualRtcDeliveryMatrixInput
+    { values, payload, sequence, transport, requestId, rtcConnect }: ManualRtcDeliveryMatrixInput
 ): readonly RallarBlackBoxTestCommand[] {
     const baseValues: ManualWorkbenchValues = {
         ...values,
@@ -64,7 +69,7 @@ export function toManualRtcDeliveryMatrixCommands(
         nextSequence += 1;
     }
 
-    commands.push(toManualConnectCommand(baseValues, nextSequence));
+    commands.push(toManualConnectCommand(baseValues, nextSequence, rtcConnect.readiness));
     nextSequence += 1;
 
     for (const deliveryMode of ['direct', 'multicast', 'broadcast'] as const) {
@@ -109,9 +114,10 @@ export function toManualRtcNackProbeCommands(
 
 export function toManualRtcNegativeRecipeText(
     values: ManualWorkbenchValues,
-    payload: RallarMessagePayload
+    payload: RallarMessagePayload,
+    rtcConnect: RallarBlackBoxTestRtcConnectCommand
 ): string {
-    const commands = toNegativeRtcCommands(values, payload);
+    const commands = toNegativeRtcCommands(values, payload, rtcConnect);
     return JSON.stringify(
         {
             schemaVersion: 1,
@@ -144,7 +150,8 @@ function toNegativeRtcSend(
 
 function toNegativeRtcCommands(
     values: ManualWorkbenchValues,
-    payload: RallarMessagePayload
+    payload: RallarMessagePayload,
+    rtcConnect: RallarBlackBoxTestRtcConnectCommand
 ): readonly RallarBlackBoxTestCommand[] {
     const baseValues: ManualWorkbenchValues = {
         ...values,
@@ -153,11 +160,11 @@ function toNegativeRtcCommands(
     };
     return [
         toManualConfigureCommand(baseValues, 1),
-        toManualConnectCommand(baseValues, 2),
+        toManualConnectCommand(baseValues, 2, rtcConnect.readiness),
         toNegativeRtcSend(baseValues, payload, 'missingPeer'),
         toNegativeRtcSend(baseValues, payload, 'staleAgent'),
         {
-            ...toManualConnectCommand(baseValues, 5),
+            ...toManualConnectCommand(baseValues, 5, rtcConnect.readiness),
             commandId: 'manual-rtc-negative-duplicate-session',
             label: 'RTC duplicate session negative',
             metadata: { negativeCase: 'duplicate-session', expectedOutcome: 'permission-failure' }

@@ -1,6 +1,15 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import {
+    existsSync,
+    readdirSync,
+    readFileSync,
+    statSync
+} from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const expectedTypeScriptVersion = '7.0.2';
@@ -9,6 +18,7 @@ const ignoredDirectoryNames = new Set([
     '.deno',
     '.git',
     '.pnpm-store',
+    '.superpowers',
     'coverage',
     'dist',
     'node_modules',
@@ -39,7 +49,7 @@ interface TypeScriptConfig {
 
 describe('native TypeScript 7 repository boundaries', () => {
     it('pins every declared TypeScript compiler to 7.0.2 without compatibility packages', () => {
-        const declarations = findFiles(repositoryRoot, 'package.json').flatMap(
+        const declarations = findFilesMatching(repositoryRoot, (entry) => entry === 'package.json').flatMap(
             (manifestPath) => {
                 const manifest = readJson<PackageManifest>(manifestPath);
 
@@ -115,7 +125,7 @@ describe('native TypeScript 7 repository boundaries', () => {
             denoOnlyConfigs.filter((configPath) => existsSync(path.join(repositoryRoot, configPath)))
         ).toEqual([]);
 
-        const configProblems = findTypeScriptConfigs().flatMap((configPath) => {
+        const configProblems = findFilesMatching(repositoryRoot, (entry) => /^tsconfig(?:\..+)?\.json$/.test(entry)).flatMap((configPath) => {
             const config = readJson<TypeScriptConfig>(configPath);
             const compilerOptions = config.compilerOptions ?? {};
             const problems: string[] = [];
@@ -173,7 +183,7 @@ describe('native TypeScript 7 repository boundaries', () => {
             '.ts',
             '.tsx'
         ]);
-        const importedBy = findSourceFiles(repositoryRoot, sourceExtensions)
+        const importedBy = findFilesMatching(repositoryRoot, (entry) => sourceExtensions.has(path.extname(entry)))
             .filter((sourcePath) => compilerApiImport.test(readFileSync(sourcePath, 'utf8')))
             .map(relativePath);
 
@@ -207,10 +217,6 @@ function dependencySections(
     ];
 }
 
-function findFiles(directory: string, fileName: string): string[] {
-    return findFilesMatching(directory, (entry) => entry === fileName);
-}
-
 function findFilesMatching(
     directory: string,
     matches: (entry: string) => boolean
@@ -232,33 +238,6 @@ function findFilesMatching(
 
             return matches(entry) ? [entryPath] : [];
         });
-}
-
-function findSourceFiles(
-    directory: string,
-    extensions: ReadonlySet<string>
-): string[] {
-    if (!existsSync(directory)) {
-        return [];
-    }
-
-    return readdirSync(directory)
-        .sort()
-        .flatMap((entry) => {
-            const entryPath = path.join(directory, entry);
-
-            if (statSync(entryPath).isDirectory()) {
-                return ignoredDirectoryNames.has(entry)
-                    ? []
-                    : findSourceFiles(entryPath, extensions);
-            }
-
-            return extensions.has(path.extname(entryPath)) ? [entryPath] : [];
-        });
-}
-
-function findTypeScriptConfigs(): string[] {
-    return findFilesMatching(repositoryRoot, (entry) => /^tsconfig(?:\..+)?\.json$/.test(entry));
 }
 
 function readJson<T>(filePath: string): T {

@@ -50,7 +50,7 @@ describe('room publication identity at WS planning', () => {
             recipientScope: SCOPE,
             referenceKey
         });
-        expect(plan).toMatchObject({ persist: false, preparedMessages: [], dropReasonCode: 'unauthorized' });
+        expect(plan).toMatchObject({ lane: 'volatile', preparedMessages: [], dropReasonCode: 'unauthorized' });
     });
 
     it.each([CANONICAL_KEY, DIRECT_KEY])('repairs only the retained audience for $topicId', (referenceKey) => {
@@ -60,7 +60,7 @@ describe('room publication identity at WS planning', () => {
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 2 },
             failedPeerIds: ['frozen', 'late'],
             completedHopPeerIds: [],
-            missingSeqs: [],
+            missingRanges: [],
             admittedAudience: ['frozen'],
             referenceKey
         });

@@ -100,7 +100,7 @@ const SERVER_REFUSAL: ALDeliverySettlement = {
     carrier: 'ws',
     atMs: AT_MS,
     relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-    detail: 'The server refused the message: unauthorized.'
+    detail: 'The server relay refused the message: unauthorized.'
 };
 
 interface FailureCase {
@@ -136,6 +136,20 @@ const FAILURE_CASES: readonly FailureCase[] = [
         reason: 'The session is over its volatile bound.'
     },
     {
+        meaning: 'a refusal past the age bound of the session volatile ledger',
+        settlements: [
+            toAdmission({
+                kind: 'refused',
+                reason: 'capacity',
+                limit: 'age',
+                detail: 'The session\'s volatile bound refused the send (age).'
+            })
+        ],
+        state: 'rejected',
+        failure: { kind: 'refused', reason: 'capacity', limit: 'age' },
+        reason: 'The session\'s volatile bound refused the send (age).'
+    },
+    {
         meaning: 'a refusal by the trusted server',
         settlements: [ADMITTED, SERVER_REFUSAL],
         state: 'rejected',
@@ -143,7 +157,7 @@ const FAILURE_CASES: readonly FailureCase[] = [
             kind: 'relay-rejected',
             rejection: { relay: 'trusted-server', reason: 'unauthorized' }
         },
-        reason: 'The server refused the message: unauthorized.'
+        reason: 'The server relay refused the message: unauthorized.'
     },
     {
         meaning: 'an admission that threw',
@@ -276,7 +290,7 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
             const ended = toEnded(settlements);
 
             expect(ended.state).toBe(state);
-            expect(ended.evidence.failure).toEqual(failure);
+            expect(ended.evidence.failure).toStrictEqual(failure);
             expect(ended.evidence.reason).toBe(reason);
         }
     );

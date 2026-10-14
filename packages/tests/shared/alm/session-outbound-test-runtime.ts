@@ -1,10 +1,14 @@
-import '../../setup-browser-indexeddb.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import {
+    createCheckpointALOutboundRuntimeStores,
+    createDefaultIndexedDbALOutboundRuntimeStores,
+    type ALStoreDurability
+} from '@shared/alm/al-runtime-stores.ts';
 import type {
+    ALCheckpointOutboundRuntimeStores,
     ALOutboundMessageRuntime,
     ALOutboundRuntimeDiagnosticsEvent
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -12,11 +16,17 @@ import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/crea
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type CountingIndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createVolatileOutboundTestStores } from './outbound-runtime-test-fixture.ts';
+import '../../setup-browser-indexeddb.ts';
+import { GLOBAL_CHECKPOINT_TIMERS, TEST_CHECKPOINT_SETTINGS } from './checkpoint/al-checkpoint-test-support.ts';
+import { createOutboundRuntimeWithWorkTask, createVolatileOutboundTestStores } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /** One browser session's IndexedDB outbound store, which every runtime of the session opens, as tabs do. */
@@ -25,12 +35,17 @@ export interface OutboundTestSession {
     readonly namespace: string;
     /** The storage events every runtime's store stated, in the order they were stated. */
     readonly storage: ALStorageEvent[];
+    /** The storage events of every runtime's checkpoint store, kept apart from the durable store's. */
+    readonly checkpointStorage: ALStorageEvent[];
+    /** Counts the checkpoint stores' IndexedDB operations, every runtime's together. */
+    readonly checkpointObserver: CountingIndexedDbOperationObserver;
 }
 
 export interface SessionOutboundTestRuntime<TOwnership extends ALDurableWorkOwnership> {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
     readonly engine: InboxOutboxEngine;
     readonly ownership: TOwnership;
+    readonly checkpointStores: ALCheckpointOutboundRuntimeStores<OutboundTestPayload>;
     /** The resource id of every message this runtime's carrier sent, in send order. */
     readonly sent: readonly string[];
     /** The admission namespace whose work type the session's runtimes share. */
@@ -39,12 +54,19 @@ export interface SessionOutboundTestRuntime<TOwnership extends ALDurableWorkOwne
 }
 
 export function createOutboundTestSession(): OutboundTestSession {
-    return { dbName: `session-outbound-${crypto.randomUUID()}`, namespace: 'session-outbound', storage: [] };
+    return {
+        dbName: `session-outbound-${crypto.randomUUID()}`,
+        namespace: 'session-outbound',
+        storage: [],
+        checkpointStorage: [],
+        checkpointObserver: createCountingIndexedDbOperationObserver()
+    };
 }
 
 /**
  * One runtime of the session on an engine of its own: a message whose resource id starts with
- * `durable` goes to the IndexedDB lane, any other to the runtime's memory lane.
+ * `durable` goes to the IndexedDB lane, one starting with `checkpoint` to the checkpoint lane, any
+ * other to the runtime's memory lane.
  */
 export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWorkOwnership>(
     session: OutboundTestSession,
@@ -59,35 +81,70 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
         decodePrepared: decodeOutboundTestPayload,
         storageHealth: new ALStorageHealth({ storeId: session.namespace, storage: (event) => session.storage.push(event) })
     });
-    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
-        decodePreparedMessage: decodeOutboundTestPayload,
-        queueEngine: engine,
-        outbox: new InMemoryQueueBox(new Map()),
-        stores,
-        volatileStores: createVolatileOutboundTestStores(),
-        durableWorkOwnership: ownership,
-        carrier: 'ws',
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({
-            msg,
-            dropReasonCode: undefined,
-            persist: msg.route.resourceId.startsWith('durable'),
-            preparedMessages: [{ peer: 'receiver' }]
-        }),
-        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-            sent.push(lifecycle.canonicalMessage.route.resourceId);
-            return { status: 'sent', submissionAttempted: true };
-        },
-        diagnostics: (event) => diagnostics.push(event)
+    const checkpointStores = createSessionCheckpointTestStores(session, ownership);
+    const runtime = createOutboundRuntimeWithWorkTask(() =>
+        createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
+            decodePreparedMessage: decodeOutboundTestPayload,
+            queueEngine: engine,
+            outbox: new InMemoryQueueBox(new Map()),
+            stores,
+            volatileStores: createVolatileOutboundTestStores(),
+            checkpointStores,
+            durableWorkOwnership: ownership,
+            carrier: 'ws',
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
+            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: toSessionTestLane(msg.route.resourceId),
+                preparedMessages: [{ peer: 'receiver' }]
+            }),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                sent.push(lifecycle.canonicalMessage.route.resourceId);
+                return { status: 'sent', submissionAttempted: true };
+            },
+            diagnostics: (event) => diagnostics.push(event)
+        })
+    );
+    onTestFinished(async () => {
+        const outcomes = await Promise.allSettled([runtime.dispose(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
-    onTestFinished(() => runtime.dispose());
     return {
         runtime,
         engine,
         ownership,
+        checkpointStores,
         sent,
         namespace: stores.admissionStore.namespace,
         readDurableProbes: () => diagnostics.filter((event) => event.kind === 'readiness-probe' && event.lane === 'durable')
     };
+}
+
+function createSessionCheckpointTestStores(
+    session: OutboundTestSession,
+    ownership: ALDurableWorkOwnership
+): ALCheckpointOutboundRuntimeStores<OutboundTestPayload> {
+    const storeId = `${session.namespace}-checkpoint`;
+    return createCheckpointALOutboundRuntimeStores({
+        dbName: session.dbName,
+        namespace: storeId,
+        decodePrepared: decodeOutboundTestPayload,
+        observer: session.checkpointObserver,
+        storageHealth: new ALStorageHealth({ storeId, storage: (event) => session.checkpointStorage.push(event) }),
+        ownership,
+        ...TEST_CHECKPOINT_SETTINGS,
+        timers: GLOBAL_CHECKPOINT_TIMERS
+    });
+}
+
+function toSessionTestLane(resourceId: string): ALStoreDurability {
+    if (resourceId.startsWith('durable')) {
+        return 'durable';
+    }
+    return resourceId.startsWith('checkpoint') ? 'checkpoint' : 'volatile';
 }

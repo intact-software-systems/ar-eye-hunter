@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { computeStateSnapshotPages, type StateSnapshotEnvelope } from '@shared/api/state-snapshot-page.ts';
@@ -20,7 +20,7 @@ export function materializeRtcTopologyHydrationMessages(
     const revision = topology.sourceGroupStateCausalRevision;
     const envelope: StateSnapshotEnvelope = {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: JSON.stringify([
                 'rtc-topology-hydration',
                 topology.groupRef.applicationId,

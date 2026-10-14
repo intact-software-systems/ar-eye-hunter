@@ -1,5 +1,10 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
-import type { ALMessage } from './al-contract.ts';
+import type {
+    ALBroadcastMessageBuilderOptions,
+    ALMessage,
+    ALPrincipalBroadcastTarget,
+    ALTargets
+} from './al-contract.ts';
 
 /**
  * Reads the server-resolved principal audience from a broadcast target with
@@ -25,5 +30,30 @@ export function readALPrincipalBroadcastTarget(
         applicationId: targets.principalRef.applicationId,
         workspaceId: targets.principalRef.workspaceId,
         principalId: targets.principalRef.principalId
+    };
+}
+
+export function toALPrincipalBroadcastTargets(
+    target: ALPrincipalBroadcastTarget,
+    options:
+        | Pick<ALBroadcastMessageBuilderOptions, 'exceptPeerIds' | 'minSnapshotVersion' | 'rosterVersion'>
+        | undefined
+): ALTargets {
+    return {
+        mode: 'broadcast',
+        scope: 'principal',
+        groupRef: {
+            applicationId: target.groupRef.applicationId,
+            workspaceId: target.groupRef.workspaceId,
+            groupId: target.groupRef.groupId
+        },
+        principalRef: {
+            applicationId: target.principalRef.applicationId,
+            workspaceId: target.principalRef.workspaceId,
+            principalId: target.principalRef.principalId
+        },
+        exceptPeerIds: options?.exceptPeerIds,
+        minSnapshotVersion: options?.minSnapshotVersion,
+        rosterVersion: options?.rosterVersion
     };
 }

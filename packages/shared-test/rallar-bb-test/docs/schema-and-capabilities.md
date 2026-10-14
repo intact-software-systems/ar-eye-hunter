@@ -151,10 +151,13 @@ browser-only: the in-process runner adapter refuses them with the
 that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
-and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
-`durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
+and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`, `principalId`, `recipientPeer`,
+`reliability`, `ack`, `ownership`, `resourceId`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`,
+`seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`ownership` (`shared`, `exclusive`) and `resourceId` pass unchanged to the product's typed send options of the same
+names; absent, the send is `shared` on a fresh resource id, as a product send is. A recipe that names a
+`resourceId` lets two agents' sends meet on one resource key, which an exclusive claim needs.
+`durability` (`volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile. `onStorageUnavailable`
 (`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
 durable send: `refuse` fails the send with `failure.kind: 'storage-unavailable'`,
@@ -206,8 +209,9 @@ logical algorithm.
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
-`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion`, `qos` and `toPeer` are each refused beside it, by the control validator and by
+`scope`, `principalId`, `recipientPeer`, `reliability`, `ack`, `ownership`, `resourceId`, `durability`,
+`onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`, `minSnapshotVersion`, `qos` and `toPeer`
+are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -302,6 +306,106 @@ connect, and there the hold lands seconds before the send. A lost race on Hetzne
 reddens the scenario (an ACK that should have been held confirms `recipient-b`); it
 never makes one green.
 
+The `membership-fence` conformance scenarios (`scenarios/membership-fence/`) run on the
+same three agents, over `ws` and `rtc`, in the full scope. Every room send carries the
+roster of its sender's cached room snapshot as `targets.rosterVersion`, beside
+`minSnapshotVersion`; a received message event's `data` states it as `rosterVersion`
+right after `typeId` (absent for a unicast, or for a room send whose sender cached no
+snapshot). The roster moves by the self-service membership route the ensure step
+already uses: `leave-roster` writes `{ status: 'left' }` for the page's own principal,
+which advances the group's roster and snapshot versions, and the next scenario's
+`ensure-member` joins it again. The three-agent run starts `recipient-b` only once the
+receiver has connected, so the receiver's prologue creates the run's group and owns it:
+the roles that leave (`recipient-b`, the sender) are never its only owner, whose own
+leave the server refuses `last-owner`. A removed member could not rejoin itself, and
+only the owner removes one, so no cell removes.
+
+- `fenced-delivery`: the sender's room send reaches both recipients. Nothing moves the
+  roster inside the cell, so each recipient reads the group snapshot over HTTP after
+  the arrival (`read-roster`, `GET .../groups/<groupId>`) and waits for the arrival of
+  the cell's type whose `rosterVersion` equals that read's `body.group.rosterVersion`
+  (`roster-stamp`, a `{resultCache...}` token in `contains`).
+- `fenced-catch-up`: the sender floors its first send `{ aboveCurrentBy: 1 }` and waits
+  for the `al.control.nack.v2` that refuses it `not-yet-in-sync`; only then does it send
+  the cue, an unfloored second send. Over `rtc` a recipient refuses the copy and the
+  sender commits its NACK. Over `ws` the server retains the send as a pending admission
+  and answers an advisory NACK, which the sender leaves not handled, so the wait matches
+  the NACK's arrival with no outcome. `recipient-b` leaves the group once the cue reaches
+  it, which moves the snapshot to the floor: over `rtc` the sender's next copy is
+  admitted, over `ws` the server's replay finds the floor met and delivers the retained
+  send. The receiver receives the floored send once (`received-floored`) and nothing
+  beyond the two sends. Over `rtc` the receiver first waits for its own
+  `admission-outcome` refusing the floored send `rejected` with a reason starting
+  `not-yet-in-sync`.
+- `fenced-rejection` (`ws` only): the sender leaves the group and then sends. The WS
+  server, at or beyond the send's roster, finds the sender no longer an active member,
+  refuses the send and NACKs it `membership-fenced`. The sender waits for the committed
+  NACK, observes the handle `rejected` and asserts `failure.kind: 'relay-rejected'`,
+  `relayRejection.relay: 'trusted-server'` and `relayRejection.reason:
+  'membership-fenced'`; neither recipient receives the send. Over `rtc` a sender's own
+  room authority refuses its send once its cache holds the leave, before any frame
+  leaves the page, and the harness holds no page's inbound group-state stream, so the
+  receiver's fenced NACK over RTC stays a unit pin.
+
+The hosted manifest 22 withholds the three cells, so it stays as recorded: its combined
+recipe keeps one prologue for every scenario, so a member that left would miss every
+later cell.
+
+The `leader-ack` conformance scenarios (`scenarios/leader-ack/`) run on the same three
+agents, in the full scope, and prove a room send that asks `ack: 'group-leader'`. The
+receiver owns the run's group, so its own page may appoint itself the room's director
+with `director.appoint`, and it ends an appointment of its own with `director.resign`.
+The RTC origin resolves the leader from the room snapshot its own page holds, so before
+it sends the sender polls `director.status` with `refresh: true` until
+`directorStatus.active` reads what the cell needs.
+
+- `leader-confirms` (`ws`, `rtc`, `rtc-with-ws-fallback`): the receiver appoints itself;
+  once the sender reads the director active, its room send asks for the leader. The
+  receiver receives it once and confirms it, `recipient-b` never receives it, and the
+  receipt reads `acknowledged` in the `leader` mode with the receiver alone expected.
+  The receiver resigns after its window.
+- `no-leader-refused` (`ws`, `rtc`): the receiver resigns any appointment of its own;
+  once the sender reads no active director, the send ends `rejected`. Over `rtc` the
+  origin refuses it from its own snapshot: `failure.kind: 'refused'`,
+  `failure.reason: 'no-leader'`, no carrier attempt. Over `ws` the server NACKs the one
+  attempt: `failure.kind: 'relay-rejected'`, `failure.rejection.relay:
+  'trusted-server'`, `failure.rejection.reason: 'no-leader'`. Neither recipient
+  receives it.
+- `leader-outside-list` (`ws` only): the receiver appoints itself and the sender lists
+  `recipientPeer: 'recipient-b'` alone, a list that leaves the leader out; the server
+  NACKs the send `no-leader` as above, and neither recipient receives it. The page
+  resolves `recipient-b` to the one other live session of another principal that is
+  not the room's leader.
+
+The hosted manifest 22 withholds the leader cells too, so it stays as recorded.
+
+The `claim` conformance scenarios (`scenarios/claim/`) run on the same three agents, in
+the full scope, and prove an exclusive send's claim on its resource key. Each cell
+names the resource `claim-<carrier>-<scenarioKey>`, so every send of the cell meets on one
+key and no cell meets a key another carrier's cell may still hold. A recipient role may
+send: `recipient-b` sends on its own connection, and its handle id names the role.
+
+- `claim-first-wins` (`ws`, `rtc-with-ws-fallback`): the sender's exclusive room
+  broadcast with `ack: 'all-logical-recipients'` is confirmed by `receiver` and
+  `recipient-b` in the receipt window, and its `attemptCarriers` reads `['ws']` on both
+  carriers, since an exclusive send takes WS under every strategy but `rtc`. Once
+  `recipient-b` has received that message, it sends its own exclusive broadcast on the
+  same resource and reads the verdict `rejected`: `failure.kind: 'relay-rejected'`,
+  `failure.rejection.relay: 'trusted-server'`, `failure.rejection.reason:
+  'held-by-other'`, one attempt. `recipient-b` then reads that no second copy arrives for
+  the rest of its window, so its page stays until its ACK of the exclusive claim has left.
+- `claim-expires-reclaims` (`ws` only): the sender holds an exclusive claim with `ttlMs: 3000` and pins
+  no receipt, since its short exclusive claim may end `acknowledged` or `expired`; its evidence is
+  its admission and receiving the reclaim. `recipient-b` receives that send, holds
+  3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
+  exclusive send on the resource is admitted and delivered to the sender and the receiver;
+  it reads its receipt `acknowledged` after its own absence window.
+- `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
+  send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
+  'unsupported'` and no carrier attempt.
+
+The hosted manifests 18 and 22 withhold the claim cells, so they stay as recorded.
+
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
@@ -317,26 +421,62 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 `admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
-`control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
+`control-admission` of that `al.control.nack.v2`, pinned on the gapped send's msgId through a wait
 result reference. The sender admits that NACK as the word of its trusted server and states the
 relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
-handle is already `transport-accepted` and keeps that state.
+handle is already `transport-accepted` and keeps that state. When the lane's catalog input names
+`recoveryOwner: 'record'`, the receiver's connect carries `rallar.recoveryOwner: 'record'` (below) and the
+RTC receivers add two waits on `rallar.browser.alm.storage` for the one `recovery-owner-invoked` event:
+`recovery-owner-invoked` matches the event's kind and the cell's ordering key, `recovery-owner-cursor`
+the cursor it handed the owner (`lastContiguousSeq: 1`, `expectedSeq: 2`, `observedSeq: 300`, carrier
+`rtc`); the sender's peer id sits between them in the emitted order, so one `contains` cannot span both.
+Over `ws` the relay refuses the gapped send before the receiver sees it, so no owner is invoked there.
+The hosted combined recipe shares one connect across its cells and names no owner, so manifest 18 carries
+neither the field nor the waits.
 
-The `not-yet-in-sync` conformance scenario runs over `rtc` and
-`rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
-RTC `admission-outcome` refusing the send as `rejected` with a reason starting
+The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
+(`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
+proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
+sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
+`fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
+the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
+NACKs the range `2-2`: over `ws` the relay, over the RTC carriers the receiver. The sender waits for its
+`control-admission` of that `al.control.nack.v2` as `committed`, pinned on seq 3's msgId (`gap-nack`), then for
+the `commit-phases` of the retransmission the hint dispatched (`repair-dispatch-2`: seq 2's msgId, the cell's
+typeId, `"origin":"repair"`), and only then releases the message hold: under the hold the original is
+resubmitted as well, so a release right after the NACK would deliver seq 2 even if the hint were never served.
+The receiver receives the first send once, all three within the send budget, and never a fourth. Over `rtc` the
+receiver is the hop that buffers seq 3 behind the gap, and it proves the order with two waits on
+`rallar.browser.alm.inbound_diagnostics` for the one `claim-settled` event of the `release-buffered` claim that
+handed seq 3 to its channel: `release-buffered-track` matches the effect id's head `release:<ordering key>%3A`
+(the cell's track), `release-buffered-3` its tail `%3A0:3` followed by the `null` identities and
+`"payloadKind":"release-buffered"` (seq 3 of epoch 0); the sender's peer id sits between them inside the
+URI-encoded track key, so one `contains` cannot span both. Three arrivals and a released seq 3 together say seq
+3 waited in the ordered-delivery buffer until seq 2 arrived. Over `ws` the relay is that hop: it buffers seq 3
+and releases it after the repaired seq 2, out of the receiver page's sight, so the `ws` receiver sees the three
+arrive in order and carries no release wait (had it reordered them itself, it would have had a release of its
+own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
+one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
+receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
+
+The `repair-exhausted` conformance scenario runs over every carrier. It is the gap repair whose message hold
+is never released: after the admitted NACK the sender sends seq 4, whose arrival reports the gap a second
+time. One arrival raises one hint, whatever controls it sends, so seq 3's report spent the budget of one
+retransmit (`maxRepairs`) and seq 4's finds it spent. The sender
+then observes seq 2's handle `failed` and asserts `failure.kind: 'skipped'` with `failure.reason:
+'repair-exhausted'`; the receiver receives the first send once and proves the absence of a second, since
+seq 3 and seq 4 wait for a seq 2 that never arrives. The hold stays until the page ends: a release would let
+the second frame reach the receiver inside its absence window. Both cells are withheld from the hosted
+manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
+
+The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
+`rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC
+`admission-outcome` refusing the send as `rejected` with a reason starting
 `not-yet-in-sync`; that refusal writes no rows, sends the sender a NACK and
-refreshes the receiver's room once. `delivered-after-refresh` states
-`{ aboveCurrentBy: 1 }` and its receiver waits to receive the message once, so
-it proves NACK → retry → delivery once the group version advances; the sender
-proves only its own `transport-accepted`. Today no plain-member write advances
-that version (the active-member PUT is a no-op for an active member, and a
-presence write moves only the presence revision), so the variant carries no
-advance step and is a named red at the receiver's `received-1`. The Hetzner
-two-agent manifest withholds it for that reason. `expires` states
-`{ absolute: 999999 }` with the 7.5 s expiry lifetime; the receiver proves
-absence for the rest of that lifetime and past it, and the sender observes
-`expired`.
+refreshes the receiver's room once. The send states `{ absolute: 999999 }` with
+the 7.5 s expiry lifetime; the receiver proves absence for the rest of that
+lifetime and past it, and the sender observes `expired`. Delivery once the
+version advances is `fenced-catch-up`'s.
 
 The fallback family runs over `rtc-with-ws-fallback` only (D56, D63–D66), two agents each.
 `fallback-within-deadline` (smoke) arms an RTC `drop` fault on the sender's own frames of the send until
@@ -355,28 +495,93 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
+The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
+sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
+`typeId`, `remaining: 'until-cleared'`, sends one room send with `ack: 'receiver'`, and releases the hold with
+`remaining: 0`; it reads the page's counter of its decision from `stats` (`rallar.congestion.<counter>` above 0),
+which no earlier cell of the family raises. `backpressure-hands-over` (`rtc-with-ws-fallback`) holds the RTC leg and
+sends `reliability: 'best-effort'` (priority 0; the harness's channel purposes default to at-least-once): the RTC
+leg is refused `congested` and the send handed to WS at admission, so it ends `acknowledged` with `attemptOutcomes`
+`[refused, sent]`, `attemptCarriers` `[rtc, ws]` and `attemptRefusalReasons` `[congested]`, and `handedOver` above
+0; the same send also counts in `dropped`, since the RTC admission drops it first. The receiver delivers it once and
+reads its `admission-outcome` `committed`/`admitted` on carrier `ws`. `backpressure-refused` (`rtc`) sends the same
+best-effort send, which ends `rejected` with `failure: { kind: 'refused', reason: 'congested' }` and `attempts` 0,
+with `dropped` above 0, and the receiver proves for the whole window that nothing reaches it.
+`backpressure-deferred` (`ws`, `rtc`) sends `reliability: 'at-least-once'` (priority 5, which `drop-low` keeps),
+waits on the outbound diagnostics topic for the page's `congestion` `defer` of that send (`cause` `backpressured`,
+`priority` 5, the `msgId` the send returned), reads the send's receipt while it is held and asserts `submitted` is
+`false`, releases the hold, and observes `acknowledged` with `attemptOutcomes.0` `sent` and every row `sent`
+(`matches` `^sent$` on `attemptOutcomes`), and `deferred` above 0. There is one attempt row per next hop of the
+carrier (an RTC sender keeps the peers of earlier cells as ready hops), each overwritten on its retry, so the
+counter, not `attemptOutcomes`, shows the `not-ready` submissions. Under `rtc-with-ws-fallback` three of them would
+hand the send to WS, so the cell runs on single carriers. Hosted manifest 18 withholds all three, so it stays as
+recorded. The cells live in `conformance/alm/scenarios/congestion/`.
+
+The fairness cells run last in the two-agent family, in the full scope, after the congestion cells (D192).
+`own-share-under-inbound` (`ws`, `rtc`; its ledger is carrier-independent, and the lowered-limit reconnect is not stable
+under `rtc-with-ws-fallback`'s readiness) closes the receiver and reconnects it with `rallar.almVolatileLimits` `{
+maxAdmissions: 20, maxBytes: 4194304 }`, so its own share is 10 (D189). The receiver then sends a ready message, which
+the sender waits for with one readiness budget in its window. The receiver repeats it in a `loop` with `until:
+'first-success'` (up to five, each followed by an 8 s `messages.received` of one flood arrival, so the five outlast the
+sender's 30 s connect readiness and its 10 s send), since a message that arrives before the sender's connect has
+subscribed its channel is acknowledged unseen (over `ws` the receiver's reconnect can finish first); the repeats and its
+own send stay under the share. The sender then sends 20 at-least-once room sends with `ack: 'none'` and a 30 s `ttlMs`
+in a `loop` with `intervalMs: 75` (about 13 a second, under the RTC lane's 20 a second limiter, which the receiver's own
+ACKs share), each naming its own handle by `{loop.index}`; they ask for no receipt, so all 20 arrive within the
+arrivals' own 30 s counted lifetime instead of each waiting out an ACK. Arrivals alone then hold the receiver's total at
+the bound, so its own room send, which asks for a receiver receipt, is admitted only under the share: it is
+`acknowledged`, and its `stats`, read once the receiver has counted all 20 arrivals, reads
+`rallar.alm.inbound.admissions` `gte` 20, `rallar.alm.own.admissions` `lt` 10 and `rallar.alm.overloaded` false; it then
+reconnects without the field. `buffered-track-drains` (`ws`, `rtc`) sends seq 2 to 65 on one ordering key as 64 literal
+bare send commands (a loop index counts from 0 and a sequence is not substituted), each followed by a 75 ms absence wait
+as the pause, and then seq 1, which alone is observed admitted; all carry `ack: 'none'`, since the receiver cannot
+acknowledge a buffered sequence before seq 1 arrives, and a 90 s `ttlMs`, and the receiver receives all 65 in a 90 s
+window (that a 64-message buffer drains within the default 30 s lifetime is proven on the real runtime). Over `rtc` the
+receiver buffered the track, so it also waits for an inbound `effect-drain` whose `promoted` count is above zero (D190):
+a `loop` with `until: 'first-success'` tries `"promoted":1` to `"promoted":9`, one leading digit per iteration, against
+the page's event history. Over `ws` the relay buffers and releases the track out of the page's sight, as in
+`ordering-gap-repair`. `churn-bounded-tracks` (`rtc`, where the receiver is the one hop that orders a track) closes the
+sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
+in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
+256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
+receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
+the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
+memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
+withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
+
 The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
-R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
-addressing: on two agents a room send yields the same receipt, so the addressing is pinned by unit tests.
-`ws-unicast-receipt` (a historical id: it runs over every carrier: the sender sends a `command` to
-`toPeer: 'receiver'`) and observes `acknowledged` under the `receiver` mode with one expected and one
-confirmed recipient; its recipe metadata `almReceiptRoles` pins the receipt to the `receiver` role, which the
-identity assessment joins to the receiver's session after the run. `unicast-fallback`
-(`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the third `not-ready` attempt
-hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and `carrierFallback`
-`{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
-`admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to
-`toPeer: 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole
-window that nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with
-`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s, sends two ≈13.4 KB messages (a
-12 000-byte filler) that are admitted and acknowledged, and a third that ends `rejected` with
-`failure: { kind: 'refused', reason: 'capacity' }` and `attempts` 0, so no fallback; then it closes and reconnects
-without the field, restoring the constants. The close keeps the membership, and the reconnect joins the room again,
-so the lowered session counts the platform's own state sync it admits inbound (about 26 KB in 6 entries in the local
-lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets it leave the budget before the first
-send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone refuse the third, and the second keeps
-at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
-reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
+R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the addressing:
+on two agents a room send yields the same receipt, so the addressing is pinned by unit tests. `ws-unicast-receipt` (a
+historical id: it runs over every carrier: the sender sends a `command` to `toPeer: 'receiver'`) and observes
+`acknowledged` under the `receiver` mode with one expected and one confirmed recipient; its recipe metadata
+`almReceiptRoles` pins the receipt to the `receiver` role, which the identity assessment joins to the receiver's session
+after the run. `unicast-fallback` (`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the
+third `not-ready` attempt hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and
+`carrierFallback` `{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
+`admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to `toPeer:
+'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole window that
+nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with `rallar.almVolatileLimits` `{
+maxAdmissions: 1000, maxBytes: 36000 }`, waits 31 s, sends two ≈13.4 KB messages (a 12 000-byte filler) that are
+admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }` and
+`attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. The close keeps
+the membership, and the reconnect joins the room again, so the lowered session counts the platform's own state sync it
+admits inbound (about 26 KB in 6 entries in the local lane, larger in a long-lived hosted room) for at most 30 s; the 31
+s wait lets it leave the budget before the first send (R-S3c-ii-9). The limit is three fillers, so the two counted sends
+alone refuse the third, and the second keeps at least 9 180 bytes of headroom. Its receiver's window adds one readiness
+budget and the 31 s wait, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
+blocks run after every other block. Two more cells of the family prove the age and track limits over every carrier, and
+manifest 18 withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and
+sends one message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with `failure: {
+kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the whole window that
+nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits` naming the four production
+limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key
+of its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+`limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads `stats`
+and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false (a ledger
+reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects
+without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and
+its receiver's window adds only the readiness budget. The three cells live in
+`conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
 scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
@@ -387,7 +592,9 @@ peer, as the sender's and the receiver's do, since both pages are one session an
 server keeps one WebSocket per auth session and a second upgrade closes the first with `connection-replaced`, after
 which the first page reconnects and replaces the second. The lane therefore starts the receiver, runs the sender's
 recipe, closes the sender's page from Playwright, and only then runs the successor's recipe, whose prologue waits out
-the owner page's last work lease before its connect; no control command closes a page. No `reset` runs on a successor
+the owner page's last work lease before its connect; no control command closes a page. For `flush-on-hide` the lane
+ends the sender's page instead by firing its `freeze` event, waiting 250 ms and crashing it over CDP (`Page.crash`), so
+no `pagehide` listener and no later timer of that page runs. No `reset` runs on a successor
 page, since it would clear the storage both pages share. Each scenario opens its own successor, which owns the session
 for the next one. The Hetzner entries select their scenarios by lane family (`two-agent` and `addressed` for manifest
 18, `three-agent` for manifest 22), so neither carries this family: a hosted agent has no second page in its context.
@@ -400,12 +607,13 @@ Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
-`backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present only on a send its
-channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt row,
-including a carrier admission that never reached the transport: an `unroutable`
+`attemptRefusalReasons`, `backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present
+only on a send its channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt
+row, including a carrier admission that never reached the transport: an `unroutable`
 leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
 the outcome of every settled row in attempt order. `attemptCarriers` names the carrier of each of
-those settled rows, index for index, so a hand-over reads `rtc` rows then a `ws` row. `receiptMode` is the latest
+those settled rows, index for index, so a hand-over reads `rtc` rows then a `ws` row. `attemptRefusalReasons` lists
+the reason of every `refused` row in attempt order, so a leg refused `congested` and handed to WS names its cause. `receiptMode` is the latest
 receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
 settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
 Under `receiver` the recipient lists count the frozen logical audience:
@@ -427,7 +635,7 @@ only, in `relayRejection`.
 
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
-the send over), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
+the send over; `congested`, a carrier at its high watermark with no fallback carrier left), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
 its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
 `transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
@@ -437,11 +645,15 @@ with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`),
 `carrierFallback` is present once the strategy handed an admitted message to its second carrier (D56):
 `{ from, to, reason, atMs, detail }`, with `reason` one of `not-ready`, `not-yet-in-sync-exhausted` and
 `receipt-exhausted`. A refusal at admission, such as the volatile bound's `capacity`, is no hand-over, so it
-leaves `carrierFallback` absent and `attempts` at 0.
+leaves `carrierFallback` absent and `attempts` at 0. A `congested` refusal under `rtc-with-ws-fallback` is a
+hand-over at admission, not of an admitted message: it leaves `carrierFallback` absent and a `refused` RTC row before
+the WS row.
 
 `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
-had no peer; `enqueued` is true once a durable admission put the message in a
+had no peer: it counts admission refusals (`rate-limited`, `circuit-open`), not
+channel backpressure, which reads as a `congested` refusal or deferral and the
+`stats.rallar.congestion` counters; `enqueued` is true once a durable admission put the message in a
 carrier queue.
 A terminal state ends a wait even when it was not requested; a true timeout
 reports the last state. A send waits for admission until the earlier of the
@@ -469,8 +681,13 @@ a distinct `typeId` to say which occurrence it means. A presence claim settles
 as soon as `count` is reached; `absent: true` holds the full `windowMs` and then
 passes only when fewer than `max(count, 1)` messages arrived.
 
-`fault.inject` schedules a scripted `drop` or `{ delayMs }` for the next
-`remaining` matching frames on the `ws` or `rtc` carrier. The matcher reads the
+`fault.inject` schedules a scripted `drop` for the next `remaining` matching
+frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
+(the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a
+matching submission not ready. `backpressure` (either transport carrier)
+makes the carrier read its channel at its high watermark when it plans a
+matching origination and when it submits a matching frame; each such read
+consumes one of `remaining`. The matcher reads the
 **AL envelope**, not the recipe's own fields: `match.typeId` compares against
 `payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
 repair, against the original message id parsed out of the control payload's own
@@ -548,6 +765,23 @@ stands, recovered by a later batch at the lease end plus at most 19.1 s, is not 
 batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
 the owner's page is gone.
 
+`checkpoint-recovery` runs over every carrier as a paired reload, like `delivery-reload`. The sender holds its carrier,
+resets the storage counters, sends one `local-checkpoint` original with `ack: 'receiver'` and the same lifetime as the
+takeover's, proves it admitted, enqueued, retained and unsubmitted, waits out the checkpoint interval (1 s) and a
+margin, and asserts the counters' `byKind.write` above 0: the send path writes nothing, so that write is the
+interval's checkpoint. It then reloads; the reload's own `pagehide` flush is best effort and not what the cell proves.
+The reloaded page waits out one lease (the checkpoint holds the row reserved), reconnects with the restored session,
+reads the old handle `unobservable` and the checkpoint store of the held original `restored` with `claimed` above 0.
+The receiver proves the original absent before the reload, receives it once after, and proves no second copy.
+`checkpoint-lag` is described with the storage diagnostics. `flush-on-hide` runs over `ws` and `rtc` in the
+same-context family: the owner page holds its carrier, sends one `local-checkpoint` original and ends its recipe at
+once, inside the interval; the lane fires the page's `freeze` event and crashes it, and the successor restores the
+checkpoint store with `claimed` above 0. A headless page is never hidden and CDP `Page.setWebLifecycleState` freezes no
+visible page, so the cell drives the event the flush listens for, not a frozen page; that the write is the flush's and
+not the interval's rests on the lane ending the page inside the interval. Over `rtc-with-ws-fallback` a held original
+moves to the WS lane at no known moment, so the cell does not run there. All three are `full` only and withheld from
+the hosted manifests, so manifests 18 and 22 are unchanged.
+
 `agent.reload` asks the control agent to reload its page and resume the run. The
 agent records the run id, its agent id and the command ids it already completed
 in `localStorage` under `rallar-bb-agent-resume`, replays that record on
@@ -563,14 +797,38 @@ a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
 
 ### The lane-only `rallar.almVolatileLimits` connect field
 
-`rtc.connect.rallar.almVolatileLimits` is `{ maxAdmissions, maxBytes }`, each a positive integer, and nothing else;
-any other shape fails the connect. It is validated in the page only: the recipe schema and the control validator treat
-`rallar` as a free record, so a malformed value fails its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
-page holds it and hands the browser session a read port that the session reads once, when it initialises. It is a
-harness capability, never a `rallar.connect` option. A facade that is already connected keeps the bound its session
-read, and a connect that names the field on a live facade has no effect until its next session, so a recipe closes
-the connection before a connect that names the field, and closes and reconnects without it
-to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
+`rtc.connect.rallar.almVolatileLimits` names `maxAdmissions` and `maxBytes` and may name `maxAgeMs` and `maxTracks`,
+each a positive integer, and nothing else; any other shape fails the connect with
+`rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a positive integer.`
+An age or track limit the field leaves out reads its constant (`AL_VOLATILE_SESSION_MAX_AGE_MS`,
+`AL_VOLATILE_SESSION_MAX_TRACKS`), so a two-field value lowers the count or byte limit alone. It is validated in
+the page only: the recipe schema and the control validator treat `rallar` as a free record, so a malformed value fails
+its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect
+initialises: the page holds it and hands the browser session a read port that the session reads once, when it
+initialises. It is a harness capability, never a `rallar.connect` option. A facade that is already connected keeps the
+bound its session read, and a connect that names the field on a live facade has no effect until its next session, so a
+recipe closes the connection before a connect that names the field, and closes and reconnects without it to restore
+the constants (`AL_VOLATILE_SESSION_LIMITS`).
+
+### The lane-only `rallar.recoveryOwner` connect field
+
+`rtc.connect.rallar.recoveryOwner` is `'record'` or absent; any other value fails the connect. Like
+`almVolatileLimits` it is validated in the page only, since the schema and the control validator treat
+`rallar` as a free record. `record` declares a recovery owner on the typed channel the connect subscribes
+for its `typeId` and `topicId`: the harness's recording owner, which states each invocation as a
+`rallar.browser.messages.recovery_owner_invoked` diagnostic carrying the cursor it was handed. The browser
+states the same invocation as `recovery-owner-invoked` on `rallar.browser.alm.storage`, which is what the
+`ordering-resync` receiver waits for. A connect with a `messageSelector` subscribes the lanes directly and
+opens no channel, so it declares no owner; absent, the channel declares none and a message the receiver can
+no longer order is dropped, as a product channel does by default.
+
+### A `fault.inject` that holds one message
+
+A transport `fault.inject` whose `match.msgId` names `{resultCache.<commandId>.<path>}` resolves the token
+against an earlier command's result before the fault is armed, as `messages.control` resolves its
+identities; the usual case is the `msgId` a `messages.send` returned, which holds that one message across
+its retransmissions while every other frame of the type passes. A token no earlier command returned fails
+the `fault.inject`.
 
 ## RTC Connect Readiness
 
@@ -682,9 +940,9 @@ Operators:
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.
 - `length` — exact length of an array or string; anything else fails.
-- `matches` — regular-expression source tested against a string value; a
-  non-string value or an invalid pattern fails the assert instead of
-  throwing.
+- `matches` — regular-expression source tested against a string value, or
+  against every member of a non-empty array of strings; any other value or an
+  invalid pattern fails the assert instead of throwing.
 - `matchesShape` — `json-compare` `compatible` mode: the expected shape is a
   subset the actual value must satisfy with equal values; extra object keys
   and extra array elements in the actual value are allowed.
@@ -869,6 +1127,34 @@ configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
 
+A browser agent's `stats` result also carries its page's session ledger under
+`stats.rallar.alm`: `{ usage: { admissions, bytes, oldestAgeMs, tracks },
+own: { admissions, bytes }, inbound: { admissions, bytes },
+limits: { maxAdmissions, maxBytes, maxAgeMs, maxTracks }, overloaded,
+orderingTracks }`. All but the last are read at the command from
+`rallar.messages.readUsage()` (D180): `usage` holds the totals of the ledger's
+two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
+smallest next own send would be refused at the count or byte limit.
+`orderingTracks` is the page's own, not the facade's: the sum of the latest
+`ordering-tracks` count each inbound store stated on the `storage` diagnostics
+port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches
+`health`'s `stats`, the `rallar.bb.stats` event and `latestStats`, so an
+`assert` reads it as `latestStats.rallar.alm.usage.admissions`. The block is
+absent before the page's connect completes, on a runtime that drives no Rallar
+page, and in the control client's periodic stats envelopes and final report,
+which read no page. A page answer that is not a whole report fails the `stats`
+command, naming each bad field. No command kind is added: a manifest's
+existing stats loops record the ledger over time.
+
+Beside it, `stats.rallar.congestion` carries the page's congestion counters,
+`{ dropped, deferred, handedOver }` (D186): one count per `congestion` outbound
+diagnostic of the page, `drop`, `defer` or `hand-over`, on either carrier and for
+either cause. `deferred` counts every message the page held at submission, relay
+forwards and controls included, not only its own sends. The counters belong to
+the connection: a `close` resets them, and the block is absent while the page is
+not connected, in the same places `rallar.alm` is absent. An `assert` reads it as
+`latestStats.rallar.congestion.deferred`.
+
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns
@@ -881,7 +1167,8 @@ frame observations. Typed RTC sends and frames wait for admission within the ear
 command timeout or absolute deadline; an otherwise unbounded send uses a 5,000 ms
 admission budget. Message TTL remains independent. Frame observations report
 `queued` from lifecycle state, `enqueued` from durable admission, and
-`backpressured` for rate-limited or circuit-open admission, never for no-route.
+`backpressured` for rate-limited or circuit-open admission, never for no-route: the
+stream's backpressure count counts those admission refusals, not channel backpressure.
 `queued` and `enqueued` are absent when a frame has no decoded typed-message send result.
 
 `rtc.stream` differs from `loop` plus `rtc.send`: `loop` intentionally awaits

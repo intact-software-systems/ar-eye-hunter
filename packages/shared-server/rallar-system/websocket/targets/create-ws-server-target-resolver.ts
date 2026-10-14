@@ -60,9 +60,10 @@ function resolveBroadcastRecipients(input: ResolveBroadcastRecipientsInput): rea
     if (fixedRecipients !== undefined) {
         return fixedRecipients;
     }
-    if (scope === 'room') {
+    const groupRef = readALTargetGroupRef(message);
+    if (scope === 'room' || groupRef !== undefined) {
         return resolveWsGroupTargetRecipients({
-            groupId: readALTargetGroupRef(message)?.groupId ?? message.route.contextId,
+            groupId: groupRef?.groupId ?? message.route.contextId,
             message,
             webSocketServer,
             options

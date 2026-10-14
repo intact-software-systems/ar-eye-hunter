@@ -1,15 +1,14 @@
 import type {
     RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestEvent,
     RallarBlackBoxTestRuntimeEventInput
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT } from '../recipe/run-recipe-commands.ts';
+import { RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE } from '../runtime/event-history.ts';
 import { decodePayloadPathValue } from '../wait/wait-event-match.ts';
 import { waitForEvent, type WaitForEventInput } from '../wait/wait-for-event.ts';
 import {
     decodeBarrierResolution,
-    RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC,
     RALLAR_BLACK_BOX_BARRIER_RESOLVED_TOPIC,
     toBarrierArrivedEvent
 } from './control-barrier-protocol.ts';
@@ -28,22 +27,30 @@ type BarrierCommandWithId = RallarBlackBoxTestBarrierCommand & Readonly<{ comman
 
 export interface WaitForBarrierInput extends Omit<WaitForEventInput, 'command'> {
     readonly command: BarrierCommandWithId;
+    readonly reserveBarrier: (barrierId: string) => boolean;
     readonly recordEvent: (event: RallarBlackBoxTestRuntimeEventInput) => void;
 }
 
 export async function waitForBarrier(input: WaitForBarrierInput): Promise<RallarBlackBoxTestCommandOutcome> {
     const { command } = input;
-    if (input.currentEvents().some((event) => isArrivalAt(event, command.barrierId))) {
+    if (!input.reserveBarrier(command.barrierId)) {
         return toBarrierFailure(command, {
             code: RALLAR_BLACK_BOX_BARRIER_REUSED,
             message: 'A barrier id is single-use: this agent already arrived at it.',
             details: { barrierId: command.barrierId }
         });
     }
-    input.recordEvent(toBarrierArrivedEvent(command));
+    const history = input.currentEventHistory();
+    const historyStart = {
+        runtimeId: history.runtimeId,
+        generation: history.generation,
+        ordinal: history.totalEvents + 1
+    };
     const graceEndsAtEpochMs = input.now() + command.timeoutMs + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS;
     const waited = await waitForEvent({
         ...input,
+        historyStart,
+        publishAfterSubscription: () => input.recordEvent(toBarrierArrivedEvent(command)),
         command: {
             kind: 'wait',
             commandId: command.commandId,
@@ -60,17 +67,15 @@ export async function waitForBarrier(input: WaitForBarrierInput): Promise<Rallar
     return toBarrierOutcome(input, waited, graceEndsAtEpochMs);
 }
 
-function isArrivalAt(event: RallarBlackBoxTestEvent, barrierId: string): boolean {
-    const arrivedAt = decodePayloadPathValue(event.payload, 'barrierId');
-    return event.topic === RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC && arrivedAt.exists && arrivedAt.value === barrierId;
-}
-
 function toBarrierOutcome(
     input: WaitForBarrierInput,
     waited: RallarBlackBoxTestCommandOutcome,
     graceEndsAtEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     const { command } = input;
+    if (waited.error?.code === RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE) {
+        return toBarrierFailure(command, waited.error);
+    }
     if (waited.status === 'cancelled') {
         return {
             status: 'cancelled',

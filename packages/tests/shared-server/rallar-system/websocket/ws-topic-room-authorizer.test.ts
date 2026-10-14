@@ -13,6 +13,7 @@ import { createCachedGroupStateService } from '@shared-server/rallar-system/grou
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import type {
     RallarServerWsRoomAuthorizationAllowed,
+    RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
@@ -24,6 +25,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AuditStamp,
@@ -106,6 +108,156 @@ describe('createGroupRoomWsAuthorizer', () => {
         }));
 
         expect(decision).toEqual(authorizedDecision(workspaceB, message));
+    });
+
+    it('narrows the audience of a principal broadcast to the live sessions of that principal in the room', async () => {
+        const base = createGroupSnapshot({
+            groupId: 'principal-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b', 'session-c'],
+            snapshotVersion: 2
+        });
+        const secondSession = { ...base.activeSessions[0]!, sessionId: 'session-a-2', generationId: 'generation-session-a-2' };
+        const snapshot = { ...base, activeSessions: [...base.activeSessions, secondSession] };
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message: ALMessage = {
+            ...newALBroadcastMessage('session-b', newALEventRoute('room.chat', 'principal-room', 'msg-principal'), 'room', 'chat.message.v1', {}, {
+                groupRef: snapshot.group
+            }),
+            targets: {
+                mode: 'broadcast',
+                scope: 'principal',
+                groupRef: snapshot.group,
+                principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-a' }
+            }
+        };
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: 'principal-room',
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1'
+        }));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: message.targets, sessions: [snapshot.activeSessions[0], secondSession], snapshotVersion: 2 }
+        });
+    });
+
+    it('narrows the audience of a room broadcast with a fixed list to the listed live sessions in the room', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'listed-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b', 'session-c'],
+            snapshotVersion: 2
+        });
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = newALBroadcastMessage('session-a', newALEventRoute('room.chat', 'listed-room', 'msg-listed'), 'room', 'chat.message.v1', {}, {
+            groupRef: snapshot.group
+        });
+        const listed: ALMessage = {
+            ...message,
+            targets: { mode: 'broadcast', scope: 'room', groupRef: snapshot.group, recipientPeerIds: ['session-c', 'outsider'] }
+        };
+
+        const decision = await Promise.resolve(authorizer({
+            message: listed,
+            roomId: 'listed-room',
+            senderId: 'session-a',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1'
+        }));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: listed.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+        });
+    });
+
+    it('narrows the audience of a group-leader room send to the appointed director session in the room', async () => {
+        const snapshot = withDirector(createLeaderRoomSnapshot(), 'session-c');
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = leaderRoomMessage(snapshot, 'session-a');
+
+        const decision = await Promise.resolve(authorizer(leaderAuthorizationInput(message)));
+
+        expect(decision).toEqual({
+            authorized: true,
+            audience: { targets: message.targets, sessions: [snapshot.activeSessions[2]], snapshotVersion: 2 }
+        });
+    });
+
+    it.each(
+        [
+            { situation: 'no director is appointed', director: undefined, sender: 'session-a', targets: { mode: 'broadcast', scope: 'room' } },
+            {
+                situation: 'the director has no live session in the room',
+                director: 'session-gone',
+                sender: 'session-a',
+                targets: { mode: 'broadcast', scope: 'room' }
+            },
+            { situation: 'the director sent it', director: 'session-c', sender: 'session-c', targets: { mode: 'broadcast', scope: 'room' } },
+            {
+                situation: 'its fixed list omits the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { mode: 'broadcast', scope: 'room', recipientPeerIds: ['session-b'] }
+            },
+            {
+                situation: 'it excepts the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { mode: 'broadcast', scope: 'room', exceptPeerIds: ['session-c'] }
+            },
+            {
+                situation: 'the principal it names is not the director\'s',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'principal',
+                    principalRef: { applicationId: 'app-1', workspaceId: 'workspace-b', principalId: 'session-b' }
+                }
+            },
+            {
+                situation: 'its frozen multicast audience omits the director',
+                director: 'session-c',
+                sender: 'session-a',
+                targets: { mode: 'multicast', recipientPeerIds: ['session-a', 'session-b'], snapshotVersion: 2 }
+            }
+        ] as const
+    )('refuses a group-leader room send no-leader when $situation', async ({ director, sender, targets }) => {
+        const room = createLeaderRoomSnapshot();
+        const snapshot = director === undefined ? room : withDirector(room, director);
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const base = leaderRoomMessage(snapshot, sender);
+        const message: ALMessage = { ...base, targets: { ...targets, groupRef: snapshot.group } };
+
+        const decision = await Promise.resolve(authorizer({ ...leaderAuthorizationInput(message), senderId: sender }));
+
+        expect(decision).toEqual({
+            authorized: false,
+            reason: 'no-leader',
+            logMessage: 'Rejected room message for leader-room: no-leader: the room has no active leader inside the audience the send names.',
+            serverSnapshotVersion: 2
+        });
+    });
+
+    it('refuses a group-leader room send no-leader when the director\'s presence lease has expired', async () => {
+        const room = withDirector(createLeaderRoomSnapshot(), 'session-c');
+        const snapshot = {
+            ...room,
+            activeSessions: room.activeSessions.map((session) => session.sessionId === 'session-c' ? { ...session, expiresAtEpochMs: 1 } : session)
+        };
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+
+        const decision = await Promise.resolve(authorizer(leaderAuthorizationInput(leaderRoomMessage(snapshot, 'session-a'))));
+
+        expect(decision).toMatchObject({ authorized: false, reason: 'no-leader' });
     });
 
     it('hydrates a cold group snapshot cache from durable state before authorizing', async () => {
@@ -224,7 +376,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         ).toBe(4);
     });
 
-    it('refreshes and rejects a warm snapshot when its embedded session has expired', async () => {
+    it('refreshes a warm snapshot and fences a sender whose embedded session has expired', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(0);
         configureTestCacheRepositories();
@@ -275,13 +427,13 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }))).resolves.toMatchObject({
             authorized: false,
-            reason: 'unauthorized',
+            reason: 'membership-fenced',
             logMessage: expect.stringContaining('member-not-active')
         });
         expect(findGroupStateSnapshotByRef(group.group)?.activeSessions).toEqual([]);
     });
 
-    it('rejects room sends when a summary session is stale behind an authoritative disconnect', async () => {
+    it('fences room sends when a summary session is stale behind an authoritative disconnect', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         configureTestCacheRepositories();
@@ -351,7 +503,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }))).resolves.toMatchObject({
             authorized: false,
-            reason: 'unauthorized',
+            reason: 'membership-fenced',
             logMessage: expect.stringContaining('member-not-active')
         });
         expect(readThroughCache.peek(group.group)?.activeSessions).toHaveLength(1);
@@ -483,7 +635,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         }
     });
 
-    it('returns stable policy details for missing live sessions and blocked members', async () => {
+    it('fences missing live sessions and blocked members with stable policy details', async () => {
         const cases = [
             {
                 name: 'missing-session',
@@ -552,13 +704,13 @@ describe('createGroupRoomWsAuthorizer', () => {
 
             expect(decision).toMatchObject({
                 authorized: false,
-                reason: 'unauthorized',
+                reason: 'membership-fenced',
                 logMessage: expect.stringContaining(expectedCode)
             });
         }
     });
 
-    it('refreshes stale snapshots and rejects banned members without a live session', async () => {
+    it('refreshes stale snapshots and fences banned members without a live session', async () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -620,7 +772,7 @@ describe('createGroupRoomWsAuthorizer', () => {
 
         expect(decision).toMatchObject({
             authorized: false,
-            reason: 'unauthorized',
+            reason: 'membership-fenced',
             logMessage: expect.stringContaining('member-not-active'),
             serverSnapshotVersion: 4
         });
@@ -672,6 +824,189 @@ describe('createGroupRoomWsAuthorizer', () => {
             logMessage: expect.stringContaining('scope')
         });
     });
+
+    it('holds a send stamped beyond the cached roster as not-yet-in-sync with the server snapshot version', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'roster-behind-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-b'],
+            snapshotVersion: 3
+        });
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-behind'),
+            'room',
+            'chat.message.v1',
+            { text: 'roster behind' },
+            { groupRef: snapshot.group, minSnapshotVersion: 3, rosterVersion: 2 }
+        );
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: snapshot.group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            minSnapshotVersion: 3,
+            rosterVersion: 2
+        }));
+
+        expect(decision).toEqual({
+            authorized: false,
+            reason: 'not-yet-in-sync',
+            logMessage: 'Room roster-behind-room cache roster version 1 is older than required roster version 2',
+            serverSnapshotVersion: 3
+        });
+    });
+
+    it('holds a roster-stamped send as not-yet-in-sync while the room cache is missing', async () => {
+        const group = createGroupSnapshot({
+            groupId: 'roster-missing-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-b'],
+            snapshotVersion: 3
+        }).group;
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => undefined });
+        const message = newALMulticastMessage(
+            'session-b',
+            newALEventRoute('room.chat', group.groupId, 'msg-roster-missing'),
+            group,
+            'chat.message.v1',
+            { text: 'roster missing' },
+            { rosterVersion: 2 }
+        );
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            rosterVersion: 2
+        }));
+
+        expect(decision).toEqual({
+            authorized: false,
+            reason: 'not-yet-in-sync',
+            logMessage: 'Room roster-missing-room cache is missing; requires roster version 2'
+        });
+    });
+
+    it('fences a sender removed from the roster it was stamped with', async () => {
+        const snapshot = withRosterVersion(
+            withMemberStatus(
+                createGroupSnapshot({
+                    groupId: 'roster-removed-room',
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                    sessionIds: ['session-b'],
+                    snapshotVersion: 4
+                }),
+                'removed'
+            ),
+            2
+        );
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        const message = newALMulticastMessage(
+            'session-b',
+            newALEventRoute('room.chat', snapshot.group.groupId, 'msg-roster-removed'),
+            snapshot.group,
+            'chat.message.v1',
+            { text: 'removed at the stamp' },
+            { minSnapshotVersion: 4, rosterVersion: 2 }
+        );
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: snapshot.group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            minSnapshotVersion: 4,
+            rosterVersion: 2
+        }));
+
+        expect(decision).toEqual({
+            authorized: false,
+            reason: 'membership-fenced',
+            logMessage: 'Rejected room message for roster-removed-room: membership-fenced: member-removed: Group member has been removed.',
+            serverSnapshotVersion: 4
+        });
+    });
+
+    it('authorizes an active member whose cached roster is at or beyond the stamp', async () => {
+        const snapshot = withRosterVersion(
+            createGroupSnapshot({
+                groupId: 'roster-current-room',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-b',
+                sessionIds: ['session-b'],
+                snapshotVersion: 5
+            }),
+            3
+        );
+        const authorizer = createTestGroupRoomWsAuthorizer({ readGroupSnapshot: () => snapshot });
+        for (const rosterVersion of [2, 3]) {
+            const message = newALBroadcastMessage(
+                'session-b',
+                newALEventRoute('room.chat', snapshot.group.groupId, `msg-roster-${rosterVersion}`),
+                'room',
+                'chat.message.v1',
+                { text: 'current roster' },
+                { groupRef: snapshot.group, minSnapshotVersion: 5, rosterVersion }
+            );
+
+            const decision = await Promise.resolve(authorizer({
+                message,
+                roomId: snapshot.group.groupId,
+                senderId: 'session-b',
+                topicId: 'room.chat',
+                typeId: 'chat.message.v1',
+                minSnapshotVersion: 5,
+                rosterVersion
+            }));
+
+            expect(decision).toEqual(authorizedDecision(snapshot, message));
+        }
+    });
+
+    it('keeps a pre-activation data denial unauthorized', async () => {
+        const snapshot = createGroupSnapshot({
+            groupId: 'forming-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-b'],
+            snapshotVersion: 3
+        });
+        const formingSnapshot: GroupSnapshot = { ...snapshot, group: { ...snapshot.group, lifecycleState: 'forming' } };
+        const authorizer = createTestGroupRoomWsAuthorizer({
+            readGroupSnapshot: () => formingSnapshot,
+            readPreActivationAppData: () => 'blocked-until-active'
+        });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', formingSnapshot.group.groupId, 'msg-forming'),
+            'room',
+            'chat.message.v1',
+            { text: 'before activation' },
+            { groupRef: formingSnapshot.group }
+        );
+
+        await expect(Promise.resolve(authorizer({
+            message,
+            roomId: formingSnapshot.group.groupId,
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1'
+        }))).resolves.toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: expect.stringContaining('group-data-blocked-until-active')
+        });
+    });
 });
 
 interface TestGroupRoomWsAuthorizerDependencies {
@@ -696,6 +1031,10 @@ function withoutActiveSessions(snapshot: GroupSnapshot): GroupSnapshot {
         activeSessions: [],
         onlineMemberCount: 0
     };
+}
+
+function withRosterVersion(snapshot: GroupSnapshot, rosterVersion: number): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, rosterVersion } };
 }
 
 function withMemberStatus(
@@ -905,4 +1244,32 @@ function authorizedDecision(
             snapshotVersion: readGroupVersion(snapshot)
         }
     };
+}
+
+function createLeaderRoomSnapshot(): GroupSnapshot {
+    return createGroupSnapshot({
+        groupId: 'leader-room',
+        applicationId: 'app-1',
+        workspaceId: 'workspace-b',
+        sessionIds: ['session-a', 'session-b', 'session-c'],
+        snapshotVersion: 2
+    });
+}
+
+/** The room with `sessionId`, of the principal of the same name, appointed its director. */
+function withDirector(snapshot: GroupSnapshot, sessionId: string): GroupSnapshot {
+    const appointment = createRallarGroupDirectorAppointment({ session: { clientId: sessionId, sessionId }, now: 1 });
+    return { ...snapshot, group: { ...snapshot.group, metadata: mergeRallarGroupDirectorMetadata(snapshot.group.metadata, appointment) } };
+}
+
+function leaderRoomMessage(snapshot: GroupSnapshot, senderId: string): ALMessage {
+    return newALBroadcastMessage(senderId, newALEventRoute('room.command', 'leader-room', 'msg-leader'), 'room', 'command.v1', {}, {
+        groupRef: snapshot.group,
+        reliability: 'at-least-once',
+        ack: 'group-leader'
+    });
+}
+
+function leaderAuthorizationInput(message: ALMessage): RallarServerWsRoomAuthorizationInput {
+    return { message, roomId: 'leader-room', senderId: message.id.senderId, topicId: 'room.command', typeId: 'command.v1' };
 }

@@ -1,14 +1,29 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
-import { act, createElement, StrictMode } from 'react';
+import {
+    act,
+    createElement,
+    StrictMode
+} from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { TopologyGraphPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx';
 import { DistributedRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
 import { RunnerFleetPanel } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/RunnerFleetPanel.tsx';
 import { RunnerRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx';
 import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
-import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx';
+import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/runner-runs-panel.tsx';
 import { resolveRallarBlackBoxBootstrapConfig, type RallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -19,7 +34,7 @@ const sigmaLifecycle = vi.hoisted(() => ({
 
 vi.mock('sigma', () => ({
     default: class SigmaMock {
-        constructor(..._args: unknown[]) {
+        constructor() {
             sigmaLifecycle.constructed += 1;
         }
 
@@ -55,7 +70,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Run Manager initial refresh chaining after unmount', async () => {
-        const firstResponse = deferred<Response>();
+        const firstResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -91,8 +106,8 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Distributed Recipes initial refresh chaining after unmount', async () => {
-        const runsResponse = deferred<Response>();
-        const distributedResponse = deferred<Response>();
+        const runsResponse = Promise.withResolvers<Response>();
+        const distributedResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -140,7 +155,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Recipes initial readiness refresh chaining after unmount', async () => {
-        const runsResponse = deferred<Response>();
+        const runsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -184,7 +199,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Runs initial distributed refresh chaining after unmount', async () => {
-        const distributedRunsResponse = deferred<Response>();
+        const distributedRunsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -359,7 +374,7 @@ describe('legacy safe-surface effect lifetime', () => {
     );
 
     it('does not let a Runs poll supersede an in-flight operator refresh', async () => {
-        const operatorResponse = deferred<Response>();
+        const operatorResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         let operatorRefreshPending = false;
         let poll: (() => void) | undefined;
@@ -429,7 +444,7 @@ describe('legacy safe-surface effect lifetime', () => {
     });
 
     it('stops Fleet initial refresh chaining after unmount', async () => {
-        const reportsResponse = deferred<Response>();
+        const reportsResponse = Promise.withResolvers<Response>();
         const paths: string[] = [];
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -483,6 +498,7 @@ describe('legacy safe-surface effect lifetime', () => {
 
 function baseState(): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture([]),
         status: 'idle',
         commandHistory: [],
         events: [],
@@ -608,19 +624,11 @@ function emptyFleetReportsResponse() {
     } as const;
 }
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: ApiJsonValue): Response {
     return new Response(JSON.stringify(value), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
     });
-}
-
-function deferred<Value>() {
-    let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>((next) => {
-        resolve = next;
-    });
-    return { promise, resolve } as const;
 }
 
 async function flushAsyncWork(): Promise<void> {

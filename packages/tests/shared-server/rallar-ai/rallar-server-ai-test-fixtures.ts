@@ -158,7 +158,8 @@ function defaultContext(): RallarServerAiWebSocketMessageContext {
     return {
         senderId: 'peer-1',
         roomId: 'room-1',
-        roomRef: RALLAR_SERVER_AI_TEST_ROOM_REF
+        roomRef: RALLAR_SERVER_AI_TEST_ROOM_REF,
+        authenticatedScope: undefined
     };
 }
 

@@ -170,7 +170,7 @@ describe('a WS send addressed to one peer (Q11)', () => {
         );
 
         const handle = await fixture.sender.sendWs({
-            scope: 'all',
+            scope: 'world',
             peerId: 'callee',
             topicId: 'app.rallar.calls',
             typeId: 'app.rallar.calls.invite.v1',

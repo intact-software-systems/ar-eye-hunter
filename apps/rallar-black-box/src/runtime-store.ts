@@ -1,4 +1,9 @@
-import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
+import { useSyncExternalStore } from 'react';
+
+import {
+    takeAgentResumeRecord,
+    type AgentResumeRecord
+} from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     readRallarBlackBoxBootstrapConfig,
     toRallarBlackBoxBootstrapRefusal,
@@ -25,7 +30,7 @@ import {
     type RallarBlackBoxControlClient,
     type RallarBlackBoxControlSnapshot
 } from '@shared-test/rallar-bb-test/control-client.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
@@ -39,30 +44,29 @@ import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+} from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { useSyncExternalStore } from 'react';
-import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
-type RuntimeStoreSnapshot = Readonly<{
-    state: RallarBlackBoxTestState;
-    control: RallarBlackBoxControlSnapshot;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    bootstrapping: boolean;
-    busy: boolean;
-    runState: 'waiting' | 'running' | 'passed' | 'failed' | 'cancelled' | 'reset';
-    /** Absent before the operator has run anything in this session. */
-    lastAction?: string;
-    /** Absent while the last action carried no failure. */
-    lastError?: string;
-    /** Absent when no fixture is loaded — a hand-written recipe, or a workbench that was reset. */
-    loadedFixtureId?: string;
-}>;
+import { PacedEmit } from './app/paced-emit.ts';
+import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type StoreListener = () => void;
 
-function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
+/** Runtime and control changes reach React at most this often: an agent run makes one every few milliseconds. */
+const RUNTIME_CHANGE_EMIT_INTERVAL_MS = 100;
+
+function initializeBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     const bootstrap = readRallarBlackBoxBootstrapConfig();
     configureAuthSessionStorage(bootstrap.rallarAuthStorage);
     return bootstrap;
@@ -102,35 +106,52 @@ function recordValidatedProviderConfig(
     return Either.ofLeft(configError.message);
 }
 
-function canInstallSpaBrowserRallarRuntime(): boolean {
-    return typeof window !== 'undefined';
+namespace RallarBlackBoxRuntimeStore {
+    export interface Snapshot {
+        readonly state: RallarBlackBoxTestState;
+        readonly control: RallarBlackBoxControlSnapshot;
+        readonly bootstrap: RallarBlackBoxBootstrapConfig;
+        readonly bootstrapping: boolean;
+        readonly busy: boolean;
+        readonly runState: 'waiting' | 'running' | 'passed' | 'failed' | 'cancelled' | 'reset';
+        /** Absent before the operator has run anything in this session. */
+        readonly lastAction?: string;
+        /** Absent while the last action carried no failure. */
+        readonly lastError?: string;
+        /** Absent when no fixture is loaded — a hand-written recipe, or a workbench that was reset. */
+        readonly loadedFixtureId?: string;
+    }
 }
 
 class RallarBlackBoxRuntimeStore {
     private readonly runtime: RallarBlackBoxTestRuntime;
     private readonly controlClient: RallarBlackBoxControlClient;
     private readonly listeners = new Set<StoreListener>();
-    private snapshot: RuntimeStoreSnapshot;
+    private snapshot: RallarBlackBoxRuntimeStore.Snapshot;
+    private readonly runtimeChangeEmit = new PacedEmit(RUNTIME_CHANGE_EMIT_INTERVAL_MS, () => this.emit());
     private bootstrapStarted = false;
     private runSequence = 1;
-    private resumedCommandIds: readonly string[] = [];
-    private bootstrapConfig = resolveInitialBootstrapConfig();
+    private resumedRecord: AgentResumeRecord | undefined;
+    private bootstrapConfig = initializeBootstrapConfig();
 
     constructor() {
         if (
             this.bootstrapConfig.providerMode === 'browser-rallar' &&
-            canInstallSpaBrowserRallarRuntime()
+            typeof window !== 'undefined'
         ) {
-            const browserRuntime = createRallarBlackBoxBrowserTestRuntime({
+            const browserRuntime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics,
+                eventHistory: this.bootstrapConfig.eventHistory,
                 rallarRuntime: createSpaBrowserRallarRuntime(),
-                fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
+                fetch: globalThis.fetch?.bind(globalThis),
                 webSocketFactory: createBrowserWebSocketFactory()
             });
             this.runtime = browserRuntime;
             installSpaBrowserRallarEventBridge(browserRuntime);
         }
         else {
-            this.runtime = createRallarBlackBoxTestRuntime({
+            this.runtime = createDefaultRallarBlackBoxTestRuntime({
+                eventHistory: this.bootstrapConfig.eventHistory,
                 commandExecutor: runSimulatedProviderCommand
             });
         }
@@ -152,18 +173,18 @@ class RallarBlackBoxRuntimeStore {
                 ...this.snapshot,
                 control
             };
-            this.emit();
+            this.runtimeChangeEmit.request();
         });
         this.runtime.subscribe((state) => {
             this.snapshot = {
                 ...this.snapshot,
                 state
             };
-            this.emit();
+            this.runtimeChangeEmit.request();
         });
     }
 
-    getSnapshot = (): RuntimeStoreSnapshot => this.snapshot;
+    getSnapshot = (): RallarBlackBoxRuntimeStore.Snapshot => this.snapshot;
 
     subscribe = (listener: StoreListener): () => void => {
         this.listeners.add(listener);
@@ -173,11 +194,12 @@ class RallarBlackBoxRuntimeStore {
     };
 
     updateBootstrapConfig(
-        patch: Partial<RallarBlackBoxBootstrapConfig>
+        patch: Partial<Omit<RallarBlackBoxBootstrapConfig, 'routineBrowserDiagnostics'>>
     ): void {
         this.bootstrapConfig = {
             ...this.bootstrapConfig,
-            ...patch
+            ...patch,
+            routineBrowserDiagnostics: this.bootstrapConfig.routineBrowserDiagnostics
         };
         this.snapshot = {
             ...this.snapshot,
@@ -209,6 +231,10 @@ class RallarBlackBoxRuntimeStore {
         const config = this.runtime.state().currentConfig;
         const effectiveRunId = runId || config?.runId || `local-control-run-${this.runSequence++}`;
         const effectiveAgentId = agentId || config?.agentId || 'visible-agent-local';
+        const resumed = this.resumedRecord?.runId === effectiveRunId && this.resumedRecord.agentId === effectiveAgentId
+            ? this.resumedRecord
+            : undefined;
+        this.resumedRecord = undefined;
         this.snapshot = {
             ...this.snapshot,
             lastAction: 'Connecting control WebSocket',
@@ -221,7 +247,8 @@ class RallarBlackBoxRuntimeStore {
             agentId: effectiveAgentId,
             token: this.bootstrapConfig.controlToken,
             finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
-            completedCommandIds: this.resumedCommandIds
+            completedCommandIds: resumed?.completedCommandIds ?? [],
+            recipeExecutions: resumed?.recipeExecutions
         });
     }
 
@@ -268,6 +295,12 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async configureLocalWorkbenchOnly(): Promise<void> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            this.setLocalWorkbenchConfigurationFailure(refusal);
+            return;
+        }
+
         try {
             const runNumber = this.runSequence++;
             this.snapshot = {
@@ -306,15 +339,7 @@ class RallarBlackBoxRuntimeStore {
     async bootstrapControlAgent(): Promise<void> {
         const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
         if (refusal !== undefined) {
-            this.snapshot = {
-                ...this.snapshot,
-                bootstrapping: false,
-                busy: false,
-                runState: 'failed',
-                lastAction: 'Remote control bootstrap failed',
-                lastError: refusal
-            };
-            this.emit();
+            this.setFailedRunState('Remote control bootstrap failed', refusal);
             return;
         }
         const runNumber = this.runSequence++;
@@ -323,7 +348,7 @@ class RallarBlackBoxRuntimeStore {
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
         const resumed = takeAgentResumeRecord(this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
-        this.resumedCommandIds = resumed?.completedCommandIds ?? [];
+        this.resumedRecord = resumed;
         this.snapshot = {
             ...this.snapshot,
             bootstrapping: true,
@@ -335,43 +360,49 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
 
         try {
-            await this.runtime.execute({
-                kind: 'reset',
-                commandId: `reset-control-${runNumber}`
-            });
-            await this.runtime.execute({
-                kind: 'configure',
-                commandId: `configure-control-${runNumber}`,
-                config
-            });
-            const configured = recordValidatedProviderConfig(this.runtime, config);
+            const configured = await this.configureControlRuntime(config, runNumber);
             if (configured.left !== undefined) {
                 this.setFailedRunState('Remote control bootstrap failed', configured.left);
                 return;
             }
 
-            this.snapshot = {
-                ...this.snapshot,
-                bootstrapping: false,
-                busy: false,
-                runState: 'waiting',
-                lastAction: this.bootstrapConfig.autoConnect
-                    ? 'Remote control agent configured; connecting'
-                    : 'Remote control agent configured',
-                lastError: undefined
-            };
-            this.emit();
-
-            if (this.bootstrapConfig.autoConnect) {
-                this.connectControl(
-                    this.bootstrapConfig.controlUrl,
-                    config.runId,
-                    this.bootstrapConfig.agentId
-                );
-            }
+            this.publishConfiguredControlAgent(config);
         }
         catch (error) {
             this.setFailedRunState('Remote control bootstrap failed', decodeErrorMessage(error));
+        }
+    }
+
+    /** Reset, execute Configure, then publish only the configuration validated by that same runtime. */
+    private async configureControlRuntime(
+        config: RallarBlackBoxTestConfig,
+        runNumber: number
+    ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        await this.runtime.execute({ kind: 'reset', commandId: `reset-control-${runNumber}` });
+        await this.runtime.execute({ kind: 'configure', commandId: `configure-control-${runNumber}`, config });
+        return recordValidatedProviderConfig(this.runtime, config);
+    }
+
+    /** Accepted configuration is visible before the optional control connection is requested. */
+    private publishConfiguredControlAgent(config: RallarBlackBoxTestConfig): void {
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrapping: false,
+            busy: false,
+            runState: 'waiting',
+            lastAction: this.bootstrapConfig.autoConnect
+                ? 'Remote control agent configured; connecting'
+                : 'Remote control agent configured',
+            lastError: undefined
+        };
+        this.emit();
+
+        if (this.bootstrapConfig.autoConnect) {
+            this.connectControl(
+                this.bootstrapConfig.controlUrl,
+                config.runId,
+                this.bootstrapConfig.agentId
+            );
         }
     }
 
@@ -382,7 +413,8 @@ class RallarBlackBoxRuntimeStore {
     ): Promise<Either<string, RallarBlackBoxTestRecipe>> {
         const decoded = this.decodeJsonText<RallarBlackBoxTestRecipe>(
             recipeJson,
-            'Recipe JSON is invalid'
+            'Recipe JSON is invalid',
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
         );
         const recipe = decoded.right;
         if (recipe === undefined) {
@@ -392,7 +424,7 @@ class RallarBlackBoxRuntimeStore {
         return Either.ofRight(recipe);
     }
 
-    async runLoadedRecipe(): Promise<void> {
+    async runLoadedRecipe(rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode): Promise<void> {
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,
@@ -406,7 +438,8 @@ class RallarBlackBoxRuntimeStore {
         try {
             const result = await this.runtime.execute({
                 kind: 'recipe.run',
-                commandId: `recipe-run-local-${runNumber}`
+                commandId: `recipe-run-local-${runNumber}`,
+                ...(rtcCaptureMode === undefined ? {} : { rtcCaptureMode })
             });
             this.snapshot = {
                 ...this.snapshot,
@@ -442,7 +475,8 @@ class RallarBlackBoxRuntimeStore {
     ): Promise<Either<string, RallarBlackBoxTestCommand>> {
         const decoded = this.decodeJsonText<RallarBlackBoxTestCommand>(
             commandJson,
-            'Command JSON is invalid'
+            'Command JSON is invalid',
+            RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA
         );
         const command = decoded.right;
         if (command === undefined) {
@@ -553,6 +587,11 @@ class RallarBlackBoxRuntimeStore {
     private async resetForRun(
         lastAction: string
     ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            return Either.ofLeft(refusal);
+        }
+
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,
@@ -579,6 +618,7 @@ class RallarBlackBoxRuntimeStore {
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
         const config: RallarBlackBoxTestConfig = {
+            eventHistory: this.bootstrapConfig.eventHistory,
             runId: this.bootstrapConfig.runId,
             agentId: this.bootstrapConfig.agentId,
             environment: this.bootstrapConfig.environment,
@@ -653,21 +693,28 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
-    private decodeJsonText<T>(input: string, failedAction: string): Either<string, T> {
+    private decodeJsonText<T extends RallarBlackBoxTestRecipe | RallarBlackBoxTestCommand>(
+        input: string,
+        failedAction: string,
+        schema: JsonSchema
+    ): Either<string, T> {
+        let value: unknown;
         try {
-            return Either.ofRight(JSON.parse(input) as T);
+            value = JSON.parse(input);
         }
         catch (error) {
-            const message = decodeErrorMessage(error);
-            this.snapshot = {
-                ...this.snapshot,
-                runState: 'failed',
-                lastAction: failedAction,
-                lastError: message
-            };
-            this.emit();
-            return Either.ofLeft(message);
+            return this.recordInvalidJsonInput(failedAction, decodeErrorMessage(error));
         }
+        const validation = validateJsonSchema(schema, value);
+        return validation.ok
+            ? Either.ofRight(value as T)
+            : this.recordInvalidJsonInput(failedAction, formatJsonSchemaValidationErrors(validation.errors));
+    }
+
+    private recordInvalidJsonInput(failedAction: string, message: string): Either<string, never> {
+        this.snapshot = { ...this.snapshot, runState: 'failed', lastAction: failedAction, lastError: message };
+        this.emit();
+        return Either.ofLeft(message);
     }
 
     private setFailedRunState(lastAction: string, lastError: string): void {
@@ -703,7 +750,7 @@ class RallarBlackBoxRuntimeStore {
 
 export const rallarBlackBoxRuntimeStore = new RallarBlackBoxRuntimeStore();
 
-export function useRallarBlackBoxRuntimeStore(): RuntimeStoreSnapshot {
+export function useRallarBlackBoxRuntimeStore(): RallarBlackBoxRuntimeStore.Snapshot {
     return useSyncExternalStore(
         rallarBlackBoxRuntimeStore.subscribe,
         rallarBlackBoxRuntimeStore.getSnapshot,

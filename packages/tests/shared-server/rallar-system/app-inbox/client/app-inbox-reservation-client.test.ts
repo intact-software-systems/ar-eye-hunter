@@ -1,5 +1,4 @@
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -11,13 +10,18 @@ import {
     type AppInboxEnqueueInput,
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
+import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
+import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const ENQUEUE: AppInboxEnqueueInput = {
     type: AppInboxType.GROUP_CREATE,
@@ -29,6 +33,33 @@ const ENQUEUE: AppInboxEnqueueInput = {
 };
 
 describe('AppInboxReservationClient authority persistence', () => {
+    it('retains the precise placeholder creation instant when materializing and replaying the winning data', async () => {
+        const queue = new TestResourceInbox(new Map());
+        let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const client = new AppInboxReservationClient({
+            repository: queue,
+            creationNow: () => createdAt,
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server-1' });
+        const first = await client.reserveMaterializedEntry(ENQUEUE, async () => {
+            createdAt = Temporal.Instant.from('2026-10-14T00:00:00.987654321Z');
+            return { ...ENQUEUE, data: { requestId: 'authority-command', materialized: true } };
+        });
+        const persisted = await queue.getItem(first.key);
+        createdAt = Temporal.Instant.from('2026-10-15T00:00:00Z');
+        const replay = await client.reserveMaterializedEntry(ENQUEUE, async () => {
+            throw new Error('Replay must not run the winning materializer');
+        });
+
+        expect(first.winner).toBe(true);
+        expect(replay.winner).toBe(false);
+        expect(replay.enqueue.data).toEqual({ requestId: 'authority-command', materialized: true });
+        expect(persisted?.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+        expect(persisted?.audit.date.toString()).toBe('23:59:59.123456789');
+        expect(persisted?.dequeueAudit).toEqual({ attempts: 0 });
+        expect(await queue.getItem(first.key)).toEqual(persisted);
+    });
+
     it('persists a precomputed authority replacement only for the exact reservation', async () => {
         const queue = new AuthorityPersistenceQueue();
         const context = createReservedContext();
@@ -79,7 +110,11 @@ describe('AppInboxReservationClient authority persistence', () => {
 
 function createClient(queue: AuthorityPersistenceQueue): AppInboxReservationClient {
     return new AppInboxReservationClient(
-        { repository: queue },
+        {
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture,
+            repository: queue
+        },
         { serviceId: 'server-1' }
     );
 }
@@ -91,7 +126,7 @@ class AuthorityPersistenceQueue extends InMemoryQueueBox {
 }
 
 function createReservedContext(): AppInboxMessageContext<JsonWireValue> {
-    const queued = toAppInboxResourceEntry(ENQUEUE, 'server-1');
+    const queued = createAppInboxResourceEntry(ENQUEUE, 'server-1', { creationNow: Temporal.Now.instant, createMessage: createAppInboxQueueMessageFixture });
     const entry = {
         ...queued,
         status: EntityStatus.RESERVED,

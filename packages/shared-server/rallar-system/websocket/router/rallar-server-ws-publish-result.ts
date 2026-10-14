@@ -27,14 +27,13 @@ export function toRallarServerWsLivePublishResult(
 }
 
 export function toRallarServerWsOutboxPublishResult(
-    message: ALMessage,
     fanout: RallarServerWsFanout,
     result: ALOutboundEnqueueResult
 ): RallarServerWsPublishResult {
     return {
         fanout,
         status: toOutboxPublishStatus(result.verdict),
-        message,
+        message: result.message,
         entry: result.entry,
         entries: result.entries,
         verdict: result.verdict,

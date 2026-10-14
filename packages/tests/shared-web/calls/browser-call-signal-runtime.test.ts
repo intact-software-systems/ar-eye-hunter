@@ -121,7 +121,7 @@ describe('BrowserCallSignalRuntime', () => {
         const result = await runtime.invite({ peerIds: ['session-1', 'peer'], media: { audio: false, video: true } });
         expect(result.callId).toBe('generated-call');
         expect(sent).toMatchObject([{
-            scope: 'all',
+            scope: 'world',
             peerId: 'peer',
             topicId: 'app.rallar.calls',
             typeId: 'app.rallar.calls.invite.v1',
@@ -214,7 +214,8 @@ function createMessages(input: CallSignalTestInput): RallarMessagesOperations {
         },
         rtc: { send: unsupportedCallOperation, onMessage: unsupportedCallOperation },
         channel: unsupportedCallOperation,
-        room: unsupportedCallOperation
+        room: unsupportedCallOperation,
+        readUsage: unsupportedCallOperation
     };
 }
 
@@ -229,7 +230,7 @@ function toMessage<T>(payload: T): RallarMessage<T> {
         senderId: 'peer-caller',
         receivedAtEpochMs: 1,
         raw: {
-            id: { v: 2, msgId: 'signal-1', senderId: 'peer-caller', ts: 1 },
+            id: { v: 3, msgId: 'signal-1', senderId: 'peer-caller', ts: 1 },
             route: { topicId: 'app.rallar.calls', contextId: 'call-1', resourceId: '' },
             payload: { typeId: 'app.rallar.calls.invite.v1', contentType: 'application/json', resource: JSON.stringify(payload) }
         }

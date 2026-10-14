@@ -1,3 +1,13 @@
+import { vi } from 'vitest';
+
+import {
+    createBlackBoxRallarCongestionCounters,
+    type BlackBoxRallarCongestionCounters
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-congestion-counters.ts';
+import {
+    createBlackBoxRallarOrderingTracks,
+    type BlackBoxRallarOrderingTracks
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-ordering-tracks.ts';
 import {
     type BlackBoxBrowserAuthDependency,
     type BlackBoxBrowserCrdtDependency,
@@ -13,6 +23,10 @@ import {
     type BlackBoxBrowserWsDependency
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
+import {
+    toRallarDiagnosticsPorts,
+    type RallarDiagnosticsPorts
+} from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type {
     RallarMessageHandle,
@@ -33,6 +47,10 @@ import type { RallarRealtimeHandler } from '@shared-web/browser/rallar-realtime-
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    type ALVolatileSessionReport
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
@@ -48,7 +66,6 @@ import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
-import { vi } from 'vitest';
 
 export interface BrowserRuntimeFacadeRecords {
     readonly configurationWrites: Array<Parameters<BlackBoxBrowserRallarRuntimeDependency['configure']>[0]>;
@@ -136,6 +153,15 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
 
 const QUEUED_ADMISSION: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 
+/** The ledger of a connected session that holds nothing, at the production limits. */
+const IDLE_SESSION_REPORT: ALVolatileSessionReport = {
+    usage: { admissions: 0, bytes: 0, oldestAgeMs: 0, tracks: 0 },
+    own: { admissions: 0, bytes: 0 },
+    inbound: { admissions: 0, bytes: 0 },
+    limits: AL_VOLATILE_SESSION_LIMITS,
+    overloaded: false
+};
+
 export const facadeSession: AuthSession = {
     clientId: 'client-1',
     accessToken: 'access-token-1',
@@ -151,8 +177,10 @@ export const facadeBehavior = {
     registerAndLogin: vi.fn<BlackBoxBrowserAuthDependency['registerAndLogin']>(),
     logout: vi.fn<BlackBoxBrowserAuthDependency['logout']>(),
     restore: vi.fn<BlackBoxBrowserAuthDependency['restore']>(),
-    connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
+    connect: vi.fn<(options?: RallarScopedOperationOptions) => Promise<void>>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
+    isConnected: vi.fn<BlackBoxBrowserRallarRuntimeDependency['isConnected']>(),
+    readUsage: vi.fn<BlackBoxBrowserMessagesDependency['readUsage']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
@@ -200,10 +228,14 @@ export const facadeBehavior = {
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
     replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
-    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>(),
+    resolveRoomSendFence: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomSendFence']>(),
     serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
-    getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>()
+    getRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['getRoomSessions']>(),
+    getRoomLeaderSessionId: vi.fn<BlackBoxBrowserPeersDependency['getRoomLeaderSessionId']>()
 };
+
+let connectState: ReturnType<BlackBoxBrowserRallarRuntimeDependency['status']> = 'idle';
+let connectedDiagnosticsPorts: RallarDiagnosticsPorts | undefined;
 
 const auth: BlackBoxBrowserAuthDependency = {
     login: async (request, options) => {
@@ -216,7 +248,13 @@ const auth: BlackBoxBrowserAuthDependency = {
     },
     logout: async (options) => {
         facadeRecords.logoutAttempts.push([options]);
-        await facadeBehavior.logout(options);
+        try {
+            await facadeBehavior.logout(options);
+        }
+        finally {
+            connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
+        }
     },
     restore: () => {
         facadeRecords.restoreCount += 1;
@@ -246,9 +284,8 @@ const realtime: BlackBoxBrowserRealtimeDependency = {
         return await facadeBehavior.realtimeSend(input);
     },
     onJson: (laneId, handler) => {
-        const recordedHandler = toRecordedRealtimeHandler(handler);
-        facadeRecords.realtimeSubscriptions.push([laneId, recordedHandler]);
-        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, recordedHandler);
+        facadeRecords.realtimeSubscriptions.push([laneId, handler]);
+        const unsubscribe = facadeBehavior.realtimeOnJson(laneId, handler);
         return () => {
             facadeRecords.realtimeUnsubscribeCount += 1;
             unsubscribe();
@@ -303,7 +340,8 @@ const messages: BlackBoxBrowserMessagesDependency = {
                 unsubscribe();
             };
         }
-    }
+    },
+    readUsage: () => facadeBehavior.readUsage()
 };
 
 const rtc: BlackBoxBrowserRtcDependency = {
@@ -352,6 +390,8 @@ const director: BlackBoxBrowserDirectorDependency = {
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
 let scriptedStorageFaults = createScriptedStorageFaultPort();
+let congestionCounters = createBlackBoxRallarCongestionCounters();
+let orderingTracks = createBlackBoxRallarOrderingTracks();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -359,13 +399,14 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
     getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
     replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
     submitRawControl: async (control) => await facadeBehavior.submitRawControl(control),
-    resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
+    resolveRoomSendFence: (roomRef) => facadeBehavior.resolveRoomSendFence(roomRef)
 };
 
 const peers: BlackBoxBrowserPeersDependency = {
     serverPeerId: () => facadeBehavior.serverPeerId(),
     session: () => facadeSession,
-    getRoomSessions: (roomRef) => facadeBehavior.getRoomSessions(roomRef)
+    getRoomSessions: (roomRef) => facadeBehavior.getRoomSessions(roomRef),
+    getRoomLeaderSessionId: (roomRef) => facadeBehavior.getRoomLeaderSessionId(roomRef)
 };
 
 /** The one session registry the facade's senders open handles in and the harness reads them back from. */
@@ -382,10 +423,17 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get storageFaults(): ScriptedStorageFaultPort {
         return scriptedStorageFaults;
+    },
+    get congestion(): BlackBoxRallarCongestionCounters {
+        return congestionCounters;
+    },
+    get orderingTracks(): BlackBoxRallarOrderingTracks {
+        return orderingTracks;
     }
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    rtcCapture: () => undefined,
     readRtcMessageNacks: async () => [],
     configure: (config) => {
         facadeRecords.configurationWrites.push(config);
@@ -397,18 +445,40 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     },
     connect: async (options) => {
         facadeRecords.connectionAttempts.push([options]);
-        return await facadeBehavior.connect(options);
+        const diagnosticsPorts = connectedDiagnosticsPorts ??
+            toRallarDiagnosticsPorts(facadeRecords.defaultWrites.at(-1)?.diagnosticsPorts);
+        connectState = 'connecting';
+        try {
+            await facadeBehavior.connect(options);
+            connectState = 'connected';
+            connectedDiagnosticsPorts = diagnosticsPorts;
+        }
+        catch (error) {
+            connectState = 'idle';
+            throw error;
+        }
+        return Object.freeze<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>({
+            rtcCapture: { status: 'unavailable', reason: 'absent' },
+            diagnosticsPorts,
+            captureOwnershipFailure: () => undefined
+        });
     },
     disconnect: async () => {
         facadeRecords.disconnectCount += 1;
-        await facadeBehavior.disconnect();
+        try {
+            await facadeBehavior.disconnect();
+        }
+        finally {
+            connectState = 'idle';
+            connectedDiagnosticsPorts = undefined;
+        }
     },
     refreshRoomState: async (roomRef, options) => {
         facadeRecords.roomStateRefreshes.push([roomRef, options]);
         await facadeBehavior.roomStateRefresh(roomRef, options);
     },
-    status: () => 'connected',
-    isConnected: () => true,
+    status: () => connectState,
+    isConnected: () => facadeBehavior.isConnected(),
     session: () => facadeSession,
     auth,
     rooms,
@@ -425,10 +495,14 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
     vi.resetAllMocks();
+    connectState = 'idle';
+    connectedDiagnosticsPorts = undefined;
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
     scriptedStorageFaults = createScriptedStorageFaultPort();
+    congestionCounters = createBlackBoxRallarCongestionCounters();
+    orderingTracks = createBlackBoxRallarOrderingTracks();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);
@@ -436,6 +510,8 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.restore.mockReturnValue(undefined);
     facadeBehavior.connect.mockResolvedValue(undefined);
     facadeBehavior.disconnect.mockResolvedValue(undefined);
+    facadeBehavior.isConnected.mockReturnValue(true);
+    facadeBehavior.readUsage.mockReturnValue(IDLE_SESSION_REPORT);
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);
@@ -480,7 +556,7 @@ export function openFacadeDelivery(
 ): RallarMessageHandle {
     deliverySequence += 1;
     const handle = deliveryRegistry.open({
-        id: { v: 2, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1' },
+        id: { v: 3, msgId: `facade-message-${deliverySequence}`, ts: Date.now(), senderId: 'client-1' },
         route: { topicId: 'alm.conformance', contextId: 'room-1', resourceId: 'room-1' },
         payload: { typeId: 'alm.conformance', contentType: 'application/json', resource: '{}' },
         delivery: { ack: 'receiver', reliability: 'at-least-once' }
@@ -501,7 +577,7 @@ export function openFacadeDelivery(
 /** A presence entry of room-1 whose lease runs a minute past now, unless the case states its own. */
 export function toRoomRosterSession(
     sessionId: string,
-    lease: Readonly<{ status?: 'active' | 'disconnected'; expiresAtEpochMs?: number; }> = {}
+    lease: Readonly<{ status?: 'active' | 'disconnected'; expiresAtEpochMs?: number; principalId?: string; }> = {}
 ): GroupPresenceSession {
     const nowMs = Date.now();
     const entry = {
@@ -509,8 +585,8 @@ export function toRoomRosterSession(
         workspaceId: 'workspace-1',
         groupId: 'room-1',
         sessionId,
-        // Hosted agents may all log in as one user, so the principal never tells two sessions apart.
-        principalId: 'client-1',
+        // Hosted agents may all log in as one user, so by default the principal never tells two sessions apart.
+        principalId: lease.principalId ?? 'client-1',
         generationId: `${sessionId}-generation`,
         generationVersion: 1,
         connectedAtEpochMs: nowMs - 5_000,
@@ -588,12 +664,9 @@ function createTypedChannelTestDouble<T>(): RallarTypedMessageChannel<T> {
     };
     return {
         send: async (payload, options) => {
-            const sendOptions = options as RallarTypedMessageSendOptions<RallarMessagePayload> | undefined;
-            facadeRecords.typedSends.push([payload as RallarMessagePayload, sendOptions]);
-            return await facadeBehavior.typedSend(
-                payload as RallarMessagePayload,
-                sendOptions
-            );
+            const recordedPayload = toRecordedPayload(payload);
+            facadeRecords.typedSends.push([recordedPayload, options]);
+            return await facadeBehavior.typedSend(recordedPayload, options);
         },
         sendRtc: unsupported,
         sendWs: unsupported,
@@ -621,14 +694,21 @@ async function openCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatc
     options?: RallarCrdtOpenOptions<TValue, TPayload>
 ): Promise<RallarCrdtDocument<TValue, TPayload>> {
     facadeRecords.crdtOpens.push([name, options]);
-    const document = await facadeBehavior.crdtOpen(name, options);
-    return document as RallarCrdtDocument<TValue, TPayload>;
+    // Vitest's mock erases the SDK method's generic result; the fixture supplies this document's matching schema.
+    return await facadeBehavior.crdtOpen(name, options) as RallarCrdtDocument<TValue, TPayload>;
 }
 
-function toRecordedRealtimeHandler<T>(
-    handler: RallarRealtimeHandler<T>
-): RallarRealtimeHandler<never> {
-    return handler as RallarRealtimeHandler<never>;
+function toRecordedPayload<T>(payload: T): RallarMessagePayload {
+    if (payload === null) {
+        return null;
+    }
+    if (
+        typeof payload === 'object' || typeof payload === 'string' ||
+        typeof payload === 'number' || typeof payload === 'boolean'
+    ) {
+        return payload;
+    }
+    throw new Error('The facade test double records JSON-compatible message payloads only.');
 }
 
 function toRecordedMessageHandler<T>(

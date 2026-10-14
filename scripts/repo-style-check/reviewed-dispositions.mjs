@@ -5,6 +5,504 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner review: JavaScript construction/Configure input
+    // is untrusted until mode, legal keys and the positive safe-integer limit
+    // are checked; only issue strings leave this boundary, never raw policy.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateEventHistoryPolicy'
+    }),
+    // One engine lifecycle owns registration fences, scheduling and bounded
+    // raw-completion observation. Keeping settlement beside shutdown makes the
+    // exact failure owner visible; this warning-tier cap approves no growth.
+    Object.freeze({
+        path: 'packages/shared/services/inbox-outbox-engine.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // The exact promise rejection boundary immediately normalizes through
+    // toError before calling the synchronous failure port. No raw value escapes.
+    Object.freeze({
+        path: 'packages/shared/services/inbox-outbox-engine.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // These three process rejection listeners normalize directly to Error for
+    // independent absence assertions; they supply no production input or policy.
+    Object.freeze({
+        path: 'packages/tests/shared/engine.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'onUnhandled',
+        maximumMagnitude: 3
+    }),
+    // The anonymous stop-result callback immediately normalizes its rejection
+    // to Error before the test checks the exact AggregateError membership.
+    Object.freeze({
+        path: 'packages/tests/shared/engine.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Babel parser fields remain raw until object/array/type and consumed scalar
+    // checks normalize them. These are the five exact reviewed traversal owners;
+    // undefined identifies the current AST index field, not named-owner immunity.
+    // Every future touched use still needs validation and propagation review.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'findAstNode'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visitAll'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode'
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-call-graph.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes'
+    }),
+    // Canonical filesystem JSON must be a record with a record imports member;
+    // every target is checked as a string before the import mapping leaves.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readNativeReceiptDenoImports'
+    }),
+    // The caught boundary preserves an original Error's identity and otherwise
+    // normalizes through String into Error; no raw exception feeds domain policy.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeReceiptFailure'
+    }),
+    // This caught/framework boundary immediately normalizes Error.message or
+    // String into response text and derives status only from RequestAuthFailure.
+    // No raw exception reaches domain logic; only this exact owner is reviewed.
+    Object.freeze({
+        path: 'packages/shared-server/http/request-auth-service.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toAuthErrorResponse'
+    }),
+    // The native scenarios now share this ticket HTTP owner. JSON is untrusted
+    // until object, non-null, property and string checks admit the ticket;
+    // only that checked string leaves the manually reviewed network boundary.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-session-test-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'issueNativeWebSocketTicket'
+    }),
+    // Caught cleanup rejections are immediately narrowed to Error or normalized
+    // through String. Only a stage-labelled Error with that cause leaves this owner.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/native-admission-test-cleanup.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeAdmissionCleanupFailure'
+    }),
+    // Agent review: malformed JSON fixtures feed only the guarded readiness
+    // admission above; the callback never interprets or trusts the raw value.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'reachable'
+    }),
+    // Admission, target preflight, run phases and artifact export form one
+    // no-spawn operation with direct named effect adapters and visible failures.
+    // The cap records this reviewed warning-tier magnitude, not future growth.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 69
+    }),
+    // File JSON is raw until decodeDistributedRunManifest admits the complete
+    // manifest; no field is consumed or request emitted before that admission.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorldFleetManifest'
+    }),
+    // Successful HTTP JSON passes directly to the canonical target, snapshot
+    // or artifact-envelope decoder before DTO consumption or the next effect.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorldFleetHttpJson'
+    }),
+    // The anonymous CLI rejection is immediately normalized through toError
+    // for printing and exit status only; it never supplies domain state.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Module-owned bodies observe outgoing HTTP JSON for independent equality;
+    // adversarial responses feed the real decoders. Child rejection reasons are
+    // checked as Errors only. No fixture unknown becomes trusted domain state.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // This owned network serializer sends both valid and malformed response
+    // fixtures through production HTTP admission without interpreting their DTOs.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse'
+    }),
+    // The loopback fixture captures outbound request JSON solely for literal
+    // body assertions; protocol state comes from the independently authored DTO.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/world-fleet-runner.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createWorldFleetCliFixture'
+    }),
+    // Raw defaults JSON includes malformed topology input to the actual workflow
+    // Bash boundary. Anonymous child refusals are asserted as Errors and checked
+    // for absent outputs/source preservation, never used as trusted DTOs.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Actual attempted/replacement snapshot envelopes are record-guarded before
+    // their snapshot values are emitted only as opaque assertion evidence. The
+    // caller independently checks complete DTOs; no raw value feeds domain logic.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runControlSnapshotAtomicReplacementFixture'
+    }),
+    // The native execFile rejection is immediately narrowed for captured stdout;
+    // every other rejection is normalized through canonical toError, preserving
+    // Error identity. No rejected value becomes trusted state or process input.
+    Object.freeze({
+        path: 'packages/tests/hetzner/owned-test-process.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runDeadlineFixture'
+    }),
+    // Real-child observation JSON supplies only guarded PID cleanup and opaque
+    // independent lifecycle assertions. No raw observation escapes to a domain.
+    Object.freeze({
+        path: 'packages/tests/hetzner/owned-test-process.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Readiness JSON is guarded before exact independent assertions and the
+    // deliberately invalid variant is sent only to the real refusal boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/controller-deployment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Loaded Actions YAML is raw until its complete consumed shape validates;
+    // the selected step must have an executable body and a string env map.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readHeadlessEnvironmentStep'
+    }),
+    // Owned process recorder JSON validates every consumed argument/env field
+    // before typed assertion evidence leaves the read boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readNpmRecord'
+    }),
+    // Rename-port JSON validates paths, contents and finite temporary mode
+    // before typed filesystem assertions consume the record.
+    Object.freeze({
+        path: 'packages/tests/hetzner/headless-worker-environment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRenameRecord'
+    }),
+    // The complete consumed workflow schema admits YAML before any typed
+    // source-authority, planning or credential-protection assertions.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow'
+    }),
+    // Planner stdout JSON remains raw inside the anonymous owned-process test
+    // until its required IDs and every numeric matrix field validate.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The emitted GroupRef is guarded before isolation assertions; the capture
+    // caller independently validates the complete canonical output manifest.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-manifest-materialization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectCaptureManifestIsolation'
+    }),
+    // Parsed outputs remain opaque assertion evidence for exact capture/data
+    // preservation and hashes; executable manifests use the canonical decoder.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-manifest-materialization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Incoming reports pass their complete canonical schema before the typed
+    // consumed-field projection; malformed reports fail at this same boundary.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-operation-artifacts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readOperationReport'
+    }),
+    // Checked child JSON is compared only with independent persistence oracles;
+    // inline commands are accessed only after canonical manifest admission.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-operation-artifacts.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Each package path segment is record-guarded and only the checked final
+    // string escapes; no raw package object becomes trusted domain metadata.
+    Object.freeze({
+        path: 'packages/tests/hetzner/playwright-browser-installation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPackageString'
+    }),
+    // Parsed package/lock data reaches the checked string reader before exact
+    // independent version assertions; no opaque value supplies runtime state.
+    Object.freeze({
+        path: 'packages/tests/hetzner/playwright-browser-installation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Loaded YAML remains raw until the complete consumed-document schema
+    // validates it; sparse workflow fields preserve meaningful omission.
+    Object.freeze({
+        path: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readWorkflow'
+    }),
+    // Authored readiness JSON stays raw inside this decoder until the canonical
+    // rtc.connect command schema validates it; only the typed result escapes.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeManualRtcReadinessText'
+    }),
+    // The anonymous Reset test compares parsed stored JSON directly with its
+    // independent persistence oracle; it never supplies trusted runtime state.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/manual-workbench-actions.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The anonymous negative-recipe test validates parsed JSON against the
+    // canonical recipe schema before its cast and exact command assertions.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/manual-workbench.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Console Execute's outgoing HTTP fixture serializer keeps its body opaque:
+    // JSON.stringify feeds route.fulfill without domain interpretation, and no
+    // unknown result escapes. Typed responses stay with their fixture owners.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/recipe-console-execute-control-fixture.ts',
+        rule: 'boundary.unknown',
+        symbol: 'fulfillExecuteJsonResponse'
+    }),
+    // Exact reviewed RTC evidence/control owners (Task62/63 and Task64 round1).
+    // Each numeric cap bounds the observed coherent capability/shell magnitude;
+    // no function-size, other-path or future-growth exception is implied.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-evidence-compaction.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 79
+    }),
+    // One local runtime lifecycle owns bootstrap, command submission and visible
+    // state; the optional run intent keeps omission explicit in that same shell.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/runtime-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/composite-results.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 73
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-client.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 62
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
+    // Acknowledged recipe selection and returned capture attribution form one
+    // stateless admission decision; returned identity cannot choose requirements.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 91
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/recipe-capture-requirements.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 76
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 71
+    }),
+    // One admitted assignment owns capture, recipe bodies, cached results,
+    // events and cleanup. Ledger and congestion reads choose admitted/current
+    // state and fence successor publication after both awaits in that same shell.
+    // Synchronous clocks, IDs, listeners and external fallback also recheck that
+    // same assignment before effects. This cap authorizes no other rule or growth.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 117
+    }),
+    // Workbench JSON.parse remains raw until its selected schema validates it.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/runtime-store.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Only the two changed CRDT transport ingress owners: raw selection fields
+    // and parseCrdtTransport normalize to one finite transport before execution.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseCrdtTransport'
+    }),
+    // Snapshot traversal owns structured decision operands only; unknown stays
+    // local before validation, and outgoing application payloads remain opaque.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Opaque wire payload and three actual finite decoding ingress owners.
+    // Raw messages are narrowed before result/command domain admission.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseControlServerMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseControlClientMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-protocol.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeControlEnvelopeRecord'
+    }),
+    // Accepted malformed-fixture owners construct raw trees or join decoder
+    // issues/limitations only for assertions; neither is trusted execution input.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/distributed-recipe-tuning-hardening.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'nested'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/distributed-recipe-tuning-hardening.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Independent Task61 review: these anonymous native-test JSON boundaries
+    // are exact module owners (symbol undefined), not named-function waivers.
+    // HTTP records/files/strings are guarded before local assertions; snapshots
+    // use public decoders/collection validation before restore. Serialized body
+    // and manifest observations go directly to independent literal equality.
+    // No unknown becomes trusted execution input. Every future touched use in
+    // these owners needs full validation/equality and propagation review; this
+    // inventory neither counts nor certifies future occurrences.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/control-distributed-api.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/control-distributed-service.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/distributed-run-request-codec.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The existing browser facade entry exports the single intentional public
+    // surface; concrete capabilities remain owned in their feature modules.
+    // Its typed capture refusal adds the thirteenth value; further exports
+    // remain outside this exact reviewed inventory.
+    Object.freeze({
+        path: 'packages/shared-web/browser/rallar.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 13
+    }),
+    // This anonymous room-update test captures decoded HTTP request bodies only
+    // for independent assertions. Its response uses a hand-derived fixture;
+    // no captured unknown value supplies domain state or response construction.
+    Object.freeze({
+        path: 'packages/tests/shared-web/rooms/update-room.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // These SDK ingress boundaries validate untrusted selections or narrow
+    // arbitrary framework rejection reasons through instanceof before policy.
+    // Retry classification deliberately preserves its public no-coercion rule.
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-capture-configuration.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseRtcCaptureMode'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/rallar-operation-options.ts',
+        rule: 'boundary.unknown',
+        symbol: 'shouldRetryRallarOperation'
+    }),
     Object.freeze({
         path: 'packages/tests/shared-test/remote-browser-command-preparation.test.ts',
         rule: 'control.nested-callback-depth',
@@ -54,6 +552,12 @@ export const reviewedDispositions = Object.freeze([
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/execution/execute-local-ws-interaction.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Pre-existing JSON-shaped harness contract; the typed closure is a separate slice.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
@@ -147,6 +651,48 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
+    // The inbound ALM directory is one feature: admission, ordered and admitted
+    // delivery, the durable effect store, the work entries and the resynchronization
+    // cursor, each a direct owner the README maps. Its files share the al-inbound
+    // prefix because they are that feature's vocabulary, not a role split.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.directory-density',
+        symbol: 'inbound',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:al',
+        maximumMagnitude: 19
+    }),
+    // The ALM conformance catalog is one feature: the scenario definitions, the
+    // command builders by concern (message, receipt, receiver, session, fault,
+    // ordering, diagnostic waits), the four identity assessments and the
+    // observation regimes, each a direct owner the harness docs map. Its
+    // scenarios sit beside it.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.directory-density',
+        symbol: 'alm',
+        maximumMagnitude: 22
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:assess',
+        maximumMagnitude: 4
+    }),
+    // The outbound ALM directory is one feature: dispatch, repair admission and
+    // retransmission, control admission, effect identities and the own-hop
+    // predicate both repair owners share, each a direct owner the README maps.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound',
+        rule: 'layout.directory-density',
+        symbol: 'outbound',
+        maximumMagnitude: 22
+    }),
     // These tests own deliberate malformed signaling/graph inputs and raw
     // decoded WebSocket captures. Values go straight to the production
     // boundary or an assertion; they do not supply unvalidated domain state.
@@ -165,6 +711,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // This predicate checks typeof, null and property presence before comparing
+    // kind. Only a boolean leaves the boundary; its unknown values stay local.
+    // The checker reports the boolean signature as a manual-review signal.
+    Object.freeze({
+        path: 'tests/playwright/relic-hunters/web.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isCommandKind'
+    }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
     // propagates to callers; the textual checker cannot distinguish that case.
@@ -173,10 +727,36 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
-    // These exact JSON readers reject malformed input at the external boundary.
-    // The live reader recursively produces only RtcBaselineJson; the typecheck
-    // fixture reader returns only a validated string array. No unknown values
-    // propagate into their callers or domain decisions.
+    // These exact generic JSON boundaries guard arrays, objects and primitives
+    // before recursive projection. Only comparison, serialization or its opaque
+    // representation leaves; no unknown input becomes trusted domain state.
+    // Persisted ordering preserves ALM fingerprint bytes and non-JSON conversion.
+    // The overflow cap covers its current magnitude; detailed findings have no
+    // numeric magnitude. Every future touched use still needs whole-owner review.
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonEquals'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stableJsonStringify'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toStableJson'
+    }),
+    Object.freeze({
+        path: 'packages/shared/repository/state-utils.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toOrderedJson',
+        maximumMagnitude: 3
+    }),
+    // These exact JSON readers reject malformed input at the external boundary
+    // and recursively produce only RtcBaselineJson. No unknown values propagate
+    // into their callers or domain decisions.
     Object.freeze({
         path: 'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
         rule: 'boundary.unknown',
@@ -187,10 +767,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'normalizeJsonValue'
     }),
+    // Raw filesystem compiler options stay local to rejection checks: baseUrl
+    // and ignoreDeprecations use key presence, skipLibCheck compares true, and
+    // types uses Array.isArray. Only problem strings leave these four fields;
+    // no raw value supplies execution config or trusted domain state.
     Object.freeze({
-        path: 'packages/tests/repo/tests-typecheck-external-unit.test.ts',
+        path: 'packages/tests/repo/typescript-7-boundaries.test.ts',
         rule: 'boundary.unknown',
-        symbol: 'readTestProjectIncludes'
+        symbol: undefined
     }),
     // erasableSyntaxOnly migration: converting parameter properties to explicit
     // fields duplicates each `unknown`-typed parameter annotation into a field
@@ -218,18 +802,43 @@ export const reviewedDispositions = Object.freeze([
         rule: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand'
     }),
-    // These runtime capability modules intentionally use noun-based filenames:
-    // each contains the cohesive helpers needed to construct that capability,
+    // This runtime capability module intentionally uses a noun-based filename:
+    // it contains the cohesive helpers needed to construct that capability,
     // while the checker sees only the exported factory as the primary symbol.
-    Object.freeze({
-        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
-        rule: 'layout.primary-export-name',
-        symbol: 'createRtcBaselineDenoAcceptance'
-    }),
     Object.freeze({
         path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
         rule: 'layout.primary-export-name',
         symbol: 'createRtcBaselineRepeatInitializer'
+    }),
+    // HTTP JSON remains opaque evidence compared with the real persisted result;
+    // no response body becomes command input or authoritative group/member state.
+    // Undefined is the checker's exact contract owner, not a named-function waiver.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/pglite-concurrent-group-setup.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Caught values are narrowed through typed errors and guarded code extraction
+    // before producing the finite AppInbox failure classification. Raw exceptions
+    // never become mutation facts, authorization input or durable domain state.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'classifyAppInboxError'
+    }),
+    // Property presence/type and instanceof Error guard this caught-value read;
+    // only a string code/name leaves the boundary for the owned failure policy.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toAppInboxErrorCode'
+    }),
+    // Error.message or String converts the caught value into failure text only;
+    // code/status come from the classifier's policy, never from raw domain input.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toExplicitStatusFailure'
     }),
     // AppInbox accepts raw JSON only at this exact decoder. It immediately
     // validates the complete persisted command as JsonWireValue before any
@@ -417,6 +1026,115 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'validateExpectedLayout'
     }),
+    // Raw state-write options stay inside this one validation/snapshot boundary.
+    // Every consumed scalar, array, effect map and nested fixture field validates
+    // before the named spec handoff; optional collections are then copied. The
+    // warning-tier cap records this cohesive grammar, not future growth.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toApiV1StateWriteEvidenceSpec',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateStateWriteEvidenceSpecShape',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateOverdueRecoveryFixtureShape',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/to-api-v1-state-write-evidence-spec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord',
+        maximumMagnitude: 1
+    }),
+    // These raw SQL options go directly to the complete spec boundary above,
+    // before the first query. No unvalidated input feeds SQL or fixture policy.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/state-write-evidence/collect-api-v1-state-write-evidence-from-sql.ts',
+        rule: 'boundary.unknown',
+        symbol: 'collectApiV1StateWriteEvidenceFromSql',
+        maximumMagnitude: 1
+    }),
+    // Raw options cross source selection and the PGlite process wire without
+    // field consumption. PostgreSQL forwards directly to the SQL spec validator;
+    // PGlite serializes to its reader, which invokes that same validator before
+    // evidence queries or fixture policy. Preserve snapshot acquisition order.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'collectApiV1StateWriteEvidence',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPGliteStateWriteEvidenceSnapshot',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runPGliteSnapshotReader',
+        maximumMagnitude: 1
+    }),
+    // The parsed message envelope is narrowed by object, presence and string
+    // checks; only the two checked identity strings leave this pure boundary.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toEvidenceMessageIdentity',
+        maximumMagnitude: 1
+    }),
+    // Both input and result contracts retain opaque intermediate SQL rows;
+    // only their count and unchanged artifact retention inform evidence. The
+    // gate aggregates both annotations for this exact module owner.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    // JavaScript handlers may reject with any value. Six annotations retain
+    // that identity in context, retry predicates/observers, exhausted causes
+    // and periodic abort/failure rejection; no trusted domain fields are read.
+    // The scanner assigns these class/callable facts to this module owner.
+    Object.freeze({
+        path: 'packages/shared/resilience/try-with-policy.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 6
+    }),
+    // Candidate event and snapshot are deliberately malformed test inputs.
+    // Both serialize directly into durable result JSON for production derive
+    // validation; authoritative receipt fields use the authored typed event.
+    Object.freeze({
+        path: 'packages/tests/shared-test/group-state-write-evidence-fixtures.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
+    }),
+    // Deliberately malformed JSON enters the real SQL option validator. The
+    // test asserts refusal before any query; raw input never becomes authority.
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts',
         rule: 'boundary.unknown',
@@ -432,6 +1150,58 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/api-v1/scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
         rule: 'boundary.unknown',
         symbol: undefined
+    }),
+    // The presence-summary work decoder and the activation-status clock decoder
+    // narrow their persisted JSON before any group or clock decision reads it.
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toGroupPresenceSummaryWork'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireExactKeys'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNullableNonEmptyString'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireNonNegativeSafeInteger'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requirePlainTime'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requirePlainDateTime'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireInstant'
+    }),
+    Object.freeze({
+        path: 'packages/shared/queuebox/GroupPresenceSummaryEntryContract.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireOptionalInstant'
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeActivationStatusClockWork'
     }),
     // These reviewed AL/control/snapshot/queue decoders keep raw values inside
     // their validation boundary. Generic JSON sockets deliberately preserve
@@ -464,6 +1234,31 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'decodeRepairReason'
     }),
     Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeReceiptPhase'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-control-value-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeALDeliveryCarrier'
+    }),
+    // The inbound runtime admits a raw carrier value: a WS frame or an RTC datum
+    // whose only shape is what decodeALMessageValue proves before any planning.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // One heterogeneous admission row or checkpoint value stays raw in memory.
+    // read/list and write-buffer reads decode it with the caller's canonical
+    // decoder; the volatile sweep decodes it before any domain decision.
+    Object.freeze({
+        path: 'packages/shared/alm/al-admission-backend.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
         path: 'packages/shared/al-contracts/al-control.ts',
         rule: 'boundary.unknown',
         symbol: 'parseControlPayload'
@@ -487,6 +1282,11 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
         rule: 'boundary.unknown',
         symbol: 'validateALMessageResourceLimits'
+    }),
+    Object.freeze({
+        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
+        rule: 'boundary.unknown',
+        symbol: 'computeALMessageEnvelopeBytes'
     }),
     Object.freeze({
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
@@ -610,13 +1410,14 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 56
     }),
     // One native channel lifecycle binds receive callbacks, pressure, queued
-    // settlement, cancellation and reset. Pure queue policy has its own owner.
+    // settlement, cancellation, exact-parent capture and reset. Pure queue
+    // policy and finite native reads have their own stateless boundaries.
     // Raw and decoded test captures observe that native boundary for assertions.
     Object.freeze({
         path: 'packages/shared/webrtc/qrtc-data-channel.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 118
+        maximumMagnitude: 177
     }),
     Object.freeze({
         path: 'packages/tests/shared/qrtc-data-channel.test.ts',
@@ -666,11 +1467,13 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'assembleStateSnapshotMessages'
     }),
+    // Original entry/setup/watchdog/deletion and capture share one service
+    // lifecycle; finite row translation already has its adjacent owner.
     Object.freeze({
         path: 'packages/shared/services/web-rtc-connection-service.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 105
+        maximumMagnitude: 142
     }),
     // Admission decoding keeps the stored identity and the captured dispatch
     // policy together. Retry, repair, supersedence and acknowledgement fields
@@ -702,6 +1505,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 59
     }),
+    // The decision reads of one dispatch stay together: the one read that also asks
+    // whether a repair attempt's sends are already committed keeps the budget charge
+    // under the same sender fence as the plan it charges for.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-reads.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
         rule: 'file.cognitive-load',
@@ -715,6 +1527,580 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
+    }),
+    // Origin, scope, protocol, application authority and connection currentness
+    // are gates of one socket admission. Delivery remains with its own owner;
+    // separating these gates would obscure the candidate-to-refusal path.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-inbound-authority.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 53
+    }),
+    // One receipt sanitizer owns nine closed record kinds, including terminal
+    // ACK identity, owner/stage and guard/deadline relations. Adjacent schema
+    // decisions produce safe JSON without a transport or authority lifecycle;
+    // this reviewed warning-tier cap does not authorize future growth.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 87
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceiptReturn'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeClosedReceiptFields'
+    }),
+    // Ordinary socket JSON is raw until closed identity/result fields and its
+    // complete optional scope validate. Only safe JSON leaves these exact owners.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeBusinessSocketDecision'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAuthenticatedScope'
+    }),
+    // The decoded claim's receipt projection narrows JSON bytes to a frozen,
+    // closed fact contract. Raw identities become compact locators; no unknown
+    // or application payload escapes into work policy or the observation DTO.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toALOutboundReceiptFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/lane/al-outbound-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isReceiptFacts'
+    }),
+    // Selection, execution, release and readiness are one batch lifecycle. Its
+    // private capture-enabled buffer drains only after that mandatory lifecycle;
+    // the outbound README traces each real owner without a generic event layer.
+    Object.freeze({
+        path: 'packages/shared/alm/work/al-work-handler.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    // Private receipt capture decodes raw stdout JSON into a closed safe JSON
+    // projection. These exact decoder/field-retention symbols validate each raw
+    // value before retaining it; no unknown reaches authority or count policy.
+    // The socket ACK projection likewise checks only the private closed shape,
+    // never authorization or receipt-count policy. Re-review touched symbols.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeApiTimingRecord'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTimingContext'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-timing-record.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeTimingDetails'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeApiWsReceiptObservation'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeSocketDecision'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckCount'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckRelay'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceiptOutbox'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAck'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAckIdentity'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeAggregate'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeReceipt'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSafeOutboxVerdict'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeIdentity'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeNumber'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'retainSafeRejection'
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/to-safe-api-ws-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isApiTimingRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toWsQueueBoxServerReceiptAckFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isClosedAck'
+    }),
+    // Receipt aggregation is one bounded frozen-audience/count/deadline
+    // lifecycle, including terminal ACK facts from its existing validator.
+    // Count and immutable enqueue projections remain beside their effects;
+    // the README exposes both callback timelines.
+    // This exact warning-tier cap is a cohesion review, not a hard-tier exception.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 66
+    }),
+    // This one WS feature has direct authority, delivery, relay, receipt and
+    // scope owners. Its README maps construction and five runtime probes; no
+    // pass-through folder improves the owner-to-result route at this density.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server',
+        rule: 'layout.directory-density',
+        symbol: 'ws-queue-box-server',
+        maximumMagnitude: 21
+    }),
+    // Native wire input stays within this positive finite grammar: discriminants,
+    // allowed keys, complete nested readouts and scalar bounds are validated before
+    // JSON output. These are exact checker owners, including overflow owners; no
+    // module-wide unknown disposition applies to this projection.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRtcNativeObservationProjection'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeBody'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeControlBody'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toRtcNativeIdentity'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeSnapshot'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeState'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeError'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toNativeErrorFacts'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorCoverage'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCaptureStatus'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCandidate'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toService'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toServiceStage'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toCompactChannel'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toPeerSetup'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toTimeoutReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toReadout'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toJsonObject'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'hasOnlyKeys'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isOneOf'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isIdentityText'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNonnegative'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isInteger'
+    }),
+    // The queue error-read port and guarded reader translate an untrusted caught
+    // value into canonical finite facts. A failed reader yields unavailable facts;
+    // original FIFO, accounting and rejected-value identity remain business owned.
+    Object.freeze({
+        path: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/flush-rtc-ice-candidate-queue.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readCandidateError'
+    }),
+    // The checker reports no symbol for class methods, generic finite readers
+    // and anonymous test callbacks below. Undefined is an exact checker owner,
+    // not per-method immunity: newly touched uses still require manual review.
+    // The peer brackets synchronous original-binding reads and retains no raw error.
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Guarded native enum/integer/error/candidate/transport reads immediately
+    // become finite readouts or bounded fragment comparison. No native value
+    // escapes into wire output or a second lifecycle owner.
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcInteger'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcNativeErrorFacts'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcCandidateFragments'
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcDataIceFragmentComparison'
+    }),
+    // The anonymous test warning capture verifies the exact original caught Error
+    // reference reaches the existing warning effect; normalization would erase
+    // that assertion. The raw value never becomes production or wire state.
+    Object.freeze({
+        path: 'packages/tests/shared/webrtc/rtc-native-candidate-observation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Reviewed cohesion: one complete positive wire grammar, the original native
+    // peer lifecycle, and one stateless native-to-finite translation policy. The
+    // 13 translator exports do not own unrelated state, storage or lifecycle.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 150
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 270
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 78
+    }),
+    Object.freeze({
+        path: 'packages/shared/webrtc/rtc-native-observation-values.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 13
+    }),
+    // Peer separation review retains one PC lifetime for negotiation, ICE, native
+    // observations and retirement; the diagnostic callback fence adds no owner.
+    // Human-approved length-only exceptions: docs/repo-code-style-exceptions.md.
+    // Exact effective lengths preserve original peer/service lifecycle ownership;
+    // no cognitive, function, other-path or future-growth exception is implied.
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-peer-connection.ts',
+        rule: 'file.length',
+        symbol: undefined,
+        maximumMagnitude: 1624
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-connection-service.ts',
+        rule: 'file.length',
+        symbol: undefined,
+        maximumMagnitude: 1360
+    }),
+    // Direct service owners and their adjacent finite translator remain easier
+    // to locate here than behind forwarding folders. Only the existing web and
+    // webrtc clusters were reviewed; other prefixes and larger counts still fail.
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.directory-density',
+        symbol: 'services',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:web',
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:webrtc',
+        maximumMagnitude: 5
+    }),
+    // The selected profile resource is checked as an object before mutation;
+    // other valid JSON resources pass through to the canonical configuration decoder.
+    Object.freeze({
+        path: 'apps/api-v1/test/configuration/read-api-v1-configuration.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readIceOverrideConfigurationResource'
+    }),
+    // Config/command port observations terminate in independent literal assertions.
+    // Exact named callbacks retain their scenario ownership and raw warning output.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertSelectedFullStackApiCapture'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertIndependentCaptureConsumer'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertOrdinaryExhaustiveApiCommand'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertSelectedFullStackSpaCommand'
+    }),
+    // Recorder JSON must be a non-null object before its canonical typed handoff.
+    // Checked artifact fields and independent lifecycle/receipt assertions follow.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-timing-capture.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toTimingCaptureObject'
+    }),
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-api-receipt-capture.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toReceiptCaptureObject'
+    }),
+    // The recursive JSON Schema validator keeps raw schema values and candidate
+    // instance values opaque until its type/record checks make each decision.
+    // Six module-level declarations are schema literals or the node input type.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 6
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateJsonSchema',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toDiscriminatedSchema',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isExpectedType',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSameJsonValue',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isJsonRecordValue',
+        maximumMagnitude: 1
+    }),
+    // Filesystem and guide JSON enter the schema tests as raw values. The
+    // corpus, manifest, example and OpenAPI traversals validate before typing;
+    // anonymous unknowns describe only deliberately malformed corpus values.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readJsonFile',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectValid',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readGoldenCompatibilityCorpus',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'inlineRecipesInManifest',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-schema.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonCodeBlocks',
+        maximumMagnitude: 1
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions

@@ -255,6 +255,25 @@ describe('Rallar browser AI facade', () => {
         );
     });
 
+    it('broadcasts a principal-scoped result to the principal over a message transport, and never over realtime', async () => {
+        const rallar = createFakeRallar();
+        const ai = createRallarBrowserAi({
+            rallar,
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
+        });
+        const result = await ai.generateJson({ schemaId: 'game-event', schemaVersion: '1', schema, prompt: 'generate' });
+
+        await ai.broadcastJson({ result, transport: 'messages.ws', roomId: 'room-1', scope: 'principal', principalId: 'principal-1' });
+        await ai.broadcastJson({ result, transport: 'messages.rtc', roomId: 'room-1', scope: 'principal', principalId: 'principal-1' });
+
+        for (const send of [rallar.messages.ws.send, rallar.messages.rtc.send]) {
+            expect(send).toHaveBeenCalledWith(expect.objectContaining({ scope: 'principal', principalId: 'principal-1', roomId: 'room-1' }));
+        }
+        await expect(ai.broadcastJson({ result, transport: 'realtime', roomId: 'room-1', scope: 'principal', principalId: 'principal-1' }))
+            .rejects.toMatchObject({ issues: [expect.objectContaining({ path: '$.transport', code: 'unsupported' })] });
+        expect(rallar.realtime.sendJson).not.toHaveBeenCalled();
+    });
+
     it('supports an app-level proposal approval flow that applies accepted results once', async () => {
         const rallar = createFakeRallar();
         const ai = createRallarBrowserAi({

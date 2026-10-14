@@ -6,6 +6,14 @@ import type { TransportFaultPort } from '../transport-faults/transport-fault-por
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from './qrtc-client-callbacks.ts';
 import { QRtcPeerConnection } from './qrtc-peer-connection.ts';
 import { isRtcQueuedSendExpired, RtcDataChannelSendQueue } from './rtc-data-channel-send-queue.ts';
+import { toRtcRetiredNativeSnapshot } from './rtc-native-observation-boundary.ts';
+import {
+    readRtcNativeEventError,
+    readRtcTypedErrorUnavailableReason,
+    toRtcNativeErrorIsTyped,
+    toRtcUnavailable
+} from './rtc-native-observation-values.ts';
+import type { RtcSignalingDiagnostics } from './rtc-signaling-diagnostics.ts';
 
 export type RtcDataChannelPayload =
     | string
@@ -148,6 +156,21 @@ const createInitialCounters = (): Record<keyof RtcDataChannelCounters, number> =
 });
 
 export namespace QRtcDataChannel {
+    export interface NativeCapture {
+        readonly binding: QRtcPeerConnection.ChannelObservationBinding;
+        readonly row: RtcSignalingDiagnostics.NativeObservation;
+    }
+    export interface NativeObservation {
+        readonly binding: QRtcPeerConnection.ChannelObservationBinding;
+        readonly channel: RTCDataChannel;
+        firstError: RtcSignalingDiagnostics.NativeError | undefined;
+        firstTypedError: RtcSignalingDiagnostics.NativeError | undefined;
+        typedReadUnavailableReason: 'read-failed' | 'unsupported' | undefined;
+        retired: boolean;
+        capturing: boolean;
+        errorCapturing: boolean;
+    }
+
     /** Local ownership outcome. `sent` establishes native submission, not receiver acknowledgement. */
     export interface SendDisposition {
         readonly submissionAttempted: boolean;
@@ -177,6 +200,8 @@ export namespace QRtcDataChannel {
 }
 
 export class QRtcDataChannel {
+    private nativeObservation: QRtcDataChannel.NativeObservation | undefined;
+
     public readonly status: QRtcDataChannel.Status;
 
     private readonly clientCallbacks = new Map<string, QRtcClientCallbacks>();
@@ -215,9 +240,15 @@ export class QRtcDataChannel {
     reset(): void {
         this.peerConnection.removeDataChannelCallbackById(this.dataChannelCallbackId());
         this.resolveOpenWaiters(false);
+        const original = this.status.dc;
+        const final = this.captureNativeRetirement('reset');
+        if (this.status.dc !== original) {
+            return;
+        }
         this.closeDataChannelIfPresent();
         this.clearQueuedSends('closed', 'Data channel reset');
         this.status.state = RtcSessionState.Idle;
+        this.publishNativeCapture(final);
     }
 
     clearCallbacks() {
@@ -481,7 +512,13 @@ export class QRtcDataChannel {
             return Promise.resolve();
         }
         if (this.status.dc && this.status.dc !== event.channel) {
+            const original = this.status.dc;
+            const final = this.captureNativeRetirement('replacement');
+            if (this.status.dc !== original) {
+                return Promise.resolve();
+            }
             this.closeDataChannelIfPresent();
+            this.publishNativeCapture(final);
         }
         this.status.dc = event.channel;
         this.setupDataChannelCallbacks(event.channel);
@@ -493,10 +530,137 @@ export class QRtcDataChannel {
         dataChannel.onopen = () => this.openDataChannel(dataChannel);
         dataChannel.onmessage = (event) => this.dispatchDataChannelMessage(dataChannel, event);
         dataChannel.onclose = () => this.closeDataChannel(dataChannel);
-        dataChannel.onerror = () => this.failDataChannel(dataChannel);
+        dataChannel.onerror = (event) => this.failDataChannel(dataChannel, event);
+        const binding = this.peerConnection.createChannelObservationBinding();
+        if (this.status.dc !== dataChannel) {
+            return;
+        }
+        this.nativeObservation = binding
+            ? {
+                binding,
+                channel: dataChannel,
+                firstError: undefined,
+                firstTypedError: undefined,
+                typedReadUnavailableReason: undefined,
+                retired: false,
+                capturing: false,
+                errorCapturing: false
+            }
+            : undefined;
+        const created = this.captureNativeOrdinary('created');
+        this.publishNativeCapture(created);
+    }
+
+    disposeNativeObservations(): void {
+        if (this.nativeObservation) {
+            this.nativeObservation.retired = true;
+        }
+    }
+
+    readNativeChannel(
+        pc: RTCPeerConnection | undefined,
+        dc: RTCDataChannel | undefined
+    ): RtcSignalingDiagnostics.CompactChannel | undefined {
+        const observation = this.nativeObservation;
+        if (!observation || observation.retired || observation.binding.parent.pc !== pc || observation.channel !== dc) {
+            return undefined;
+        }
+        const native = this.captureNativeSnapshot(observation);
+        return observation.retired || observation.binding.parent.retired ? undefined : Object.freeze({
+            identity: observation.binding.identity,
+            channelState: native.state.channelState
+        });
+    }
+
+    private captureNativeSnapshot(
+        observation: QRtcDataChannel.NativeObservation
+    ): RtcSignalingDiagnostics.NativeSnapshot {
+        const scope = this.peerConnection.getNativeObservationScope();
+        const input = {
+            observation,
+            nativeSequence: scope?.nextSequence() ?? 0,
+            capture: scope?.getCaptureStatus() ?? parentSnapshotUnavailable(),
+            readFailed: observation.capturing
+        };
+        if (observation.capturing) {
+            return this.peerConnection.readNativeChannelSnapshot(input);
+        }
+        observation.capturing = true;
+        try {
+            return this.peerConnection.readNativeChannelSnapshot(input);
+        }
+        finally {
+            observation.capturing = false;
+        }
+    }
+
+    private captureNativeOrdinary(action: 'created' | 'channel-open'): QRtcDataChannel.NativeCapture | undefined {
+        const observation = this.nativeObservation;
+        if (
+            !observation || observation.retired || !this.peerConnection.getNativeObservationScope()?.consumeOrdinary()
+        ) {
+            return undefined;
+        }
+        const identity = {
+            localSessionId: this.peerConnection.input.sessionId,
+            peerSessionId: this.input.peerId,
+            signalType: undefined,
+            offerId: undefined
+        };
+        const native = this.captureNativeSnapshot(observation);
+        if (observation.retired || observation.binding.parent.retired) {
+            return undefined;
+        }
+        return {
+            binding: observation.binding,
+            row: action === 'created'
+                ? Object.freeze({ ...identity, kind: 'native-lifetime', action, native })
+                : Object.freeze({ ...identity, kind: 'native-state', trigger: action, native })
+        };
+    }
+
+    private captureNativeRetirement(
+        retirement: RtcSignalingDiagnostics.Retirement
+    ): QRtcDataChannel.NativeCapture | undefined {
+        const observation = this.nativeObservation;
+        if (!observation || observation.retired) {
+            return undefined;
+        }
+        const captured = this.captureNativeSnapshot(observation);
+        if (observation.retired) {
+            return undefined;
+        }
+        observation.retired = true;
+        const native = toRtcRetiredNativeSnapshot(captured);
+        if (!this.peerConnection.getNativeObservationScope()?.consumeTerminal(observation.binding.admission, 'final')) {
+            return undefined;
+        }
+        return {
+            binding: observation.binding,
+            row: Object.freeze({
+                localSessionId: this.peerConnection.input.sessionId,
+                peerSessionId: this.input.peerId,
+                signalType: undefined,
+                offerId: undefined,
+                kind: 'native-lifetime',
+                action: 'retiring',
+                retirement,
+                native
+            })
+        };
+    }
+
+    private publishNativeCapture(capture: QRtcDataChannel.NativeCapture | undefined): void {
+        if (capture) {
+            this.peerConnection.recordChannelObservation(capture.binding, capture.row);
+        }
     }
 
     private async openDataChannel(dataChannel: RTCDataChannel): Promise<void> {
+        if (this.status.dc !== dataChannel) {
+            return;
+        }
+        const capture = this.captureNativeOrdinary('channel-open');
         if (this.status.dc !== dataChannel) {
             return;
         }
@@ -510,6 +674,7 @@ export class QRtcDataChannel {
                 console.error('Callback onOpen failed', toError(error));
             }
         }
+        this.publishNativeCapture(capture);
     }
 
     private async dispatchDataChannelMessage(
@@ -594,14 +759,79 @@ export class QRtcDataChannel {
         if (this.status.dc !== dataChannel) {
             return;
         }
+        const capture = this.captureNativeRetirement('channel-close');
+        if (this.status.dc !== dataChannel) {
+            return;
+        }
         this.status.state = RtcSessionState.Closed;
         this.resolveOpenWaiters(false);
         this.clearQueuedSends('closed', 'Data channel closed');
         this.clearDataChannelReference(dataChannel);
         await this.notifyCloseCallbacks();
+        this.publishNativeCapture(capture);
     }
 
-    private async failDataChannel(dataChannel: RTCDataChannel): Promise<void> {
+    private captureNativeError(event: Event): QRtcDataChannel.NativeCapture | undefined {
+        let firstErrorCapture: QRtcDataChannel.NativeCapture | undefined;
+        const observation = this.nativeObservation;
+        const scope = this.peerConnection.getNativeObservationScope();
+        if (observation && !observation.retired && scope?.getActive()) {
+            const previousErrorCapture = observation.errorCapturing;
+            observation.errorCapturing = true;
+            let facts: RtcSignalingDiagnostics.NativeErrorFacts;
+            try {
+                facts = readRtcNativeEventError(event);
+            }
+            finally {
+                observation.errorCapturing = previousErrorCapture;
+            }
+            const error = Object.freeze({
+                ...facts,
+                source: 'channel-error' as const,
+                identity: observation.binding.identity,
+                nativeSequence: scope.nextSequence()
+            });
+            if (!observation.retired) {
+                const first = !observation.firstError;
+                const typed = !observation.firstTypedError && toRtcNativeErrorIsTyped(error);
+                observation.firstError ??= error;
+                observation.typedReadUnavailableReason = readRtcTypedErrorUnavailableReason(
+                    error,
+                    observation.typedReadUnavailableReason
+                );
+                this.peerConnection.retainChannelNativeError(observation.binding, error);
+                if (typed) {
+                    observation.firstTypedError ??= error;
+                }
+                if ((first || typed) && scope.consumeOrdinary()) {
+                    const native = this.captureNativeSnapshot(observation);
+                    if (!observation.retired && !observation.binding.parent.retired) {
+                        firstErrorCapture = {
+                            binding: observation.binding,
+                            row: Object.freeze({
+                                localSessionId: this.peerConnection.input.sessionId,
+                                peerSessionId: this.input.peerId,
+                                signalType: undefined,
+                                offerId: undefined,
+                                kind: 'native-first-error',
+                                first: first && typed ? 'both' : first ? 'observed' : 'typed',
+                                error,
+                                native
+                            })
+                        };
+                    }
+                }
+            }
+        }
+        return firstErrorCapture;
+    }
+
+    private async failDataChannel(dataChannel: RTCDataChannel, event: Event): Promise<void> {
+        if (this.status.dc !== dataChannel) {
+            return;
+        }
+        const firstErrorCapture = this.captureNativeError(event);
+        const capture = this.captureNativeRetirement('channel-error');
         if (this.status.dc !== dataChannel) {
             return;
         }
@@ -611,6 +841,8 @@ export class QRtcDataChannel {
         this.clearDataChannelReference(dataChannel);
         await this.notifyErrorCallbacks();
         await this.notifyCloseCallbacks();
+        this.publishNativeCapture(firstErrorCapture);
+        this.publishNativeCapture(capture);
     }
 
     isOpen() {
@@ -974,4 +1206,14 @@ function computeRtcSendRejection(
     return expiresAtEpochMs !== undefined && expiresAtEpochMs <= nowMs
         ? { status: 'expired', reason: 'Send deadline elapsed before native submission' }
         : undefined;
+}
+
+function parentSnapshotUnavailable(): RtcSignalingDiagnostics.CaptureStatus {
+    return Object.freeze({
+        scopeId: toRtcUnavailable('disabled'),
+        scope: 'unavailable',
+        ordinaryRowsSuppressed: false,
+        admissionLimited: false,
+        payloadLimited: false
+    });
 }

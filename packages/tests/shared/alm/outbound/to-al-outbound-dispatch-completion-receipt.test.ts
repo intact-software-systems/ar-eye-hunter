@@ -48,7 +48,7 @@ function toRead(
         plan: {
             msg: MESSAGE,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [],
             ackTracking
         },

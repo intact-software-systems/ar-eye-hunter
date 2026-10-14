@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -15,11 +16,11 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
@@ -67,6 +68,55 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(delivered).toHaveLength(1);
     }
 );
+
+it('retains a message its ingress authority is behind on to its deadline and admits it once that authority catches up', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const delivered: ALMessage[] = [];
+    const controls: ALMessage[] = [];
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const dependencies = runtimeDependencies(stores, delivered, controls);
+    let behind = true;
+    const runtime = new ALInboundMessageRuntime({
+        ...dependencies,
+        readPendingAdmissionAuthority: async (_msg, source) => behind ? { kind: 'retry', retryAfterMs: 50 } : { kind: 'authorized', source },
+        diagnostics: (event) => diagnostics.push(event)
+    });
+    onTestFinished(() => runtime.dispose());
+    const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
+        ttlMs: 60_000
+    });
+
+    expect(await runtime.retainIncomingMessage(message, PENDING_SOURCE)).toEqual({ kind: 'pending-admission' });
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+        kind: 'admission-outcome',
+        msgId: message.id.msgId,
+        outcome: 'pending',
+        reason: 'pending-admission'
+    }));
+    const keys = await stores.workQueue.getAllKeys();
+    expect(keys).toHaveLength(1);
+    const work = decodeALInboundWorkEntry((await stores.workQueue.getItem(keys[0]))!, stores.admissionStore.namespace);
+    expect(work.payload).toMatchObject({ kind: 'admit-message', source: PENDING_SOURCE });
+    expect(work.expireAtTimestamp).toBe(message.constraints?.expiresAtMs);
+    for (let pass = 0; pass < 4; pass++) {
+        await dependencies.queueEngine.executeOnce();
+    }
+    expect(delivered).toEqual([]);
+
+    behind = false;
+    vi.setSystemTime(Date.now() + 50);
+    await expect.poll(async () => {
+        await dependencies.queueEngine.executeOnce();
+        return delivered.length;
+    }).toBe(1);
+    expect(delivered[0].id).toEqual(message.id);
+    for (let pass = 0; pass < 4; pass++) {
+        await dependencies.queueEngine.executeOnce();
+    }
+    expect(delivered).toHaveLength(1);
+});
 
 it.each(['authority', 'deadline'] as const)('checks current %s before admitting retained pending work', async (boundary) => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -187,7 +237,7 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     });
     onTestFinished(() => runtime.dispose());
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
-    const untrackedAck = newALAckControlMessage({ v: 2, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
+    const untrackedAck = newALAckControlMessage({ v: 3, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
         ackedMsgId: 'unknown',
         originPeerId: 'receiver',
         logicalRecipientPeerId: 'sender',
@@ -256,7 +306,7 @@ it('replays a retained conflict in a batch the handler runs after the one alread
     });
     onTestFinished(() => {
         dispatching.resolve();
-        runtime.dispose();
+        return runtime.dispose();
     });
     await runtime.ready();
     // The first message's own commit starts a batch and holds it inside the delivery it claimed.
@@ -320,9 +370,10 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         return result;
     });
     const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+    let disposing: Promise<void> | undefined;
     const retained = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
         const stored = await enqueue(entry);
-        runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
+        disposing = runtime.dispose(); // Simulate disposal after durable retention, before the first claim.
         return stored;
     });
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {}, {
@@ -330,6 +381,7 @@ async function retainConflictedAdmission(stores: ALInboundRuntimeStores): Promis
         qos: { ack: { algo: 'hop' } }
     });
     const result = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+    await disposing;
     expect(result.right).toEqual({ kind: 'pending-admission' });
     expect(delivered).toEqual([]);
     expect(controls).toEqual([]);
@@ -348,7 +400,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
             selfPeerId: 'receiver',
             stores,
             queueEngine: new InboxOutboxEngine(),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant())
         }),
         carrier: 'rtc',
         planIncomingMessage: (msg, source, observations) =>

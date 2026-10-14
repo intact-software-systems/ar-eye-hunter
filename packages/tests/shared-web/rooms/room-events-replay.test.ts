@@ -1,15 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { StateEventCursor } from '@shared/api/state-event-types.ts';
+
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomEvent,
     createRoomEventPage,
     dispatchRoomWsMessage,
-    readRoomEventMocks,
+    getRoomEventMocks,
     resetRoomEventTestRuntime,
     toRoomEventEnvelopeMessage
 } from './room-event-test-runtime.ts';
@@ -29,7 +36,7 @@ describe('room event replay', () => {
 
     it('replays explicitly and deduplicates overlap with live room events', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
         const liveEvents: GroupEvent[] = [];
         const replayEvents: GroupEvent[] = [];
@@ -106,7 +113,7 @@ describe('room event replay', () => {
 
     it('continues room replay across pages until completion', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
         const observedEvents: GroupEvent[] = [];
         const pageRequests: ReplayPageRequest[] = [];
@@ -187,7 +194,7 @@ describe('room event replay', () => {
 
     it('stops room replay at maxPages while preserving the continuation cursor', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const mocks = readRoomEventMocks();
+        const mocks = getRoomEventMocks();
         const facade = createRallarFacade();
         const event = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
         facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlSql, PSqlTransactionWrite } from '@shared-server/postgres/p-sql-sql.ts';
+
 import type { ApiV1DatabaseConfiguration, ApiV1PGliteEvidenceConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import {
-    constructApiV1DatabaseLifecycle,
+    createApiV1DatabaseLifecycle,
     toApiV1PostgresClient,
     toPostgresJsConnectionUrl,
     type ApiV1DatabaseLifecycleOperations,
     type ApiV1PGliteResource,
-    type ApiV1PostgresClient
+    type ApiV1PostgresClient,
+    type ApiV1PostgresClientInput,
+    type CreateApiV1DatabaseLifecycleInput
 } from '../../src/db/api-v1-database-lifecycle.ts';
 
 Deno.test('PostgreSQL client adapter preserves a complete current client', () => {
@@ -27,10 +30,10 @@ Deno.test('PostgreSQL client adapter preserves a complete current client', () =>
 Deno.test('database lifecycle constructs PostgreSQL application and listener pools explicitly', async () => {
     const events: string[] = [];
     const clients: ApiV1PostgresClient[] = [];
-    const poolInputs: Array<Readonly<{ connectionUrl: string; max: number; idleTimeoutSeconds: number; }>> = [];
+    const poolInputs: ApiV1PostgresClientInput[] = [];
     const operations = fakeOperations({ events, clients, poolInputs });
-    const lifecycle = await constructApiV1DatabaseLifecycle(
-        lifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
+    const lifecycle = await createApiV1DatabaseLifecycle(
+        toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 }),
         operations
     );
 
@@ -80,8 +83,8 @@ for (const mode of ['pglite-memory', 'pglite-file'] as const) {
             ? { mode: 'directory', directory: '/private/evidence', pollIntervalMs: 31 }
             : { mode: 'disabled', pollIntervalMs: 31 };
         const dataDirectory = mode === 'pglite-memory' ? 'memory://' : '/private/rallar';
-        const lifecycle = await constructApiV1DatabaseLifecycle(
-            lifecycleInput(pgliteConfiguration(mode), evidence),
+        const lifecycle = await createApiV1DatabaseLifecycle(
+            toApiV1DatabaseLifecycleInput(pgliteConfiguration(mode), evidence),
             operations
         );
 
@@ -128,14 +131,14 @@ for (const failure of ['listener', 'readiness', 'bootstrap', 'evidence'] as cons
             fail: failure
         });
         const input = failure === 'listener' || failure === 'readiness'
-            ? lifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 })
-            : lifecycleInput(
+            ? toApiV1DatabaseLifecycleInput(postgresConfiguration(), { mode: 'disabled', pollIntervalMs: 25 })
+            : toApiV1DatabaseLifecycleInput(
                 pgliteConfiguration('pglite-memory'),
                 { mode: 'directory', directory: '/private/evidence', pollIntervalMs: 25 }
             );
 
         await assert.rejects(
-            () => constructApiV1DatabaseLifecycle(input, operations),
+            () => createApiV1DatabaseLifecycle(input, operations),
             new RegExp(`${failure} setup failed`, 'u')
         );
         assert.equal(
@@ -167,13 +170,7 @@ Deno.test('PostgreSQL URL translation moves only the Prisma schema query to sear
 interface FakeOperationsInput {
     readonly events: string[];
     readonly clients?: ApiV1PostgresClient[];
-    readonly poolInputs?: Array<
-        Readonly<{
-            connectionUrl: string;
-            max: number;
-            idleTimeoutSeconds: number;
-        }>
-    >;
+    readonly poolInputs?: ApiV1PostgresClientInput[];
     readonly resource?: ApiV1PGliteResource;
     readonly database?: PSqlSql;
     readonly fail?: 'listener' | 'readiness' | 'bootstrap' | 'evidence';
@@ -266,20 +263,17 @@ function fakeDatabase(): PSqlSql {
             return Promise.resolve([]);
         },
         {
-            begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
+            begin<T>(_operation: PSqlTransactionWrite<T>): Promise<T> {
                 return Promise.reject(new Error('transaction not used'));
             }
         }
     ) as PSqlSql;
 }
 
-function lifecycleInput(
+function toApiV1DatabaseLifecycleInput(
     database: ApiV1DatabaseConfiguration,
     pgliteEvidence: ApiV1PGliteEvidenceConfiguration
-): Readonly<{
-    database: ApiV1DatabaseConfiguration;
-    pgliteEvidence: ApiV1PGliteEvidenceConfiguration;
-}> {
+): CreateApiV1DatabaseLifecycleInput {
     return { database, pgliteEvidence };
 }
 

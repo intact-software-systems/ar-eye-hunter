@@ -1,11 +1,14 @@
+import { DEFAULT_AL_REPOSITORY_TTL_MS } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 import {
@@ -18,9 +21,17 @@ import {
     runOutboundWorkTask,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
+import type { OutboundTestPayload } from '../outbound-test-payload.ts';
+
+interface HandOverFixture {
+    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    readonly settlements: ALDeliverySettlement[];
+    readonly sent: string[];
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+}
 
 /** `persist` routes the message to the durable pair or to the volatile memory pair, whose `endReceipt` is its own. */
-function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000) {
+function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000): HandOverFixture {
     const durableStores = createDefaultOutboundTestStores();
     const volatileStores = createVolatileOutboundTestStores();
     const settlements: ALDeliverySettlement[] = [];
@@ -35,7 +46,7 @@ function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000) {
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist,
+            lane: persist ? 'durable' : 'volatile',
             preparedMessages: [{ message: msg.id.msgId }],
             ackTracking: { ...trackOutboundTestAcks(['peer-1']), timeoutMs: receiptTimeoutMs }
         }),
@@ -48,10 +59,12 @@ function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000) {
 }
 
 describe('the settlement-free hand-over (D56, Q3)', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+        })
+    );
 
     it.each([true, false])('ends the receipt row and every later effect of the message, and states no cancellation (persist: %s)', async (persist) => {
         const fixture = createHandOverFixture(persist);
@@ -62,7 +75,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeDefined();
 
         await fixture.runtime.handOver(message.id.msgId);
-        await claims.release();
+        await claims.release(fixture.runtime);
         await runOutboundWorkTask(fixture.runtime);
 
         expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toBeUndefined();
@@ -83,7 +96,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
 
         await fixture.runtime.handOver(message.id.msgId);
-        await claims.release();
+        await claims.release(fixture.runtime);
         await runOutboundWorkTask(fixture.runtime);
         // Past the receipt's first window and inside the message deadline: a live receipt would charge an attempt.
         vi.setSystemTime(Date.now() + 2_000);
@@ -104,7 +117,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
 
         await fixture.runtime.handOver(message.id.msgId);
         await fixture.runtime.handOver(message.id.msgId);
-        await claims.release();
+        await claims.release(fixture.runtime);
 
         expect(fixture.runtime.cancel(message.id.msgId)).toBe('cancelled');
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'cancelled'))
@@ -114,7 +127,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
 
 describe('ALOutboundSendControls.handOver', () => {
     it('aborts the live attempt and ends the message without cancelling it', () => {
-        const controls = new ALOutboundSendControls();
+        const controls = new ALOutboundSendControls({ nowMs: Date.now });
         const signal = controls.acquire('msg-1');
 
         expect(controls.handOver('msg-1')).toBe('handed-over');
@@ -125,9 +138,39 @@ describe('ALOutboundSendControls.handOver', () => {
     });
 
     it('leaves a cancelled message as it is', () => {
-        const controls = new ALOutboundSendControls();
+        const controls = new ALOutboundSendControls({ nowMs: Date.now });
         controls.cancel('msg-1');
 
         expect(controls.handOver('msg-1')).toBe('already-ended');
+    });
+});
+
+describe('how long the send controls remember an ended message', () => {
+    it('remembers a handed-over message for the durable row retention and forgets it after', () => {
+        let nowMs = 1_000;
+        const controls = new ALOutboundSendControls({ nowMs: () => nowMs });
+        controls.handOver('msg-1');
+
+        nowMs += DEFAULT_AL_REPOSITORY_TTL_MS;
+        expect(controls.isEnded('msg-1')).toBe(true);
+        expect(controls.handOver('msg-1')).toBe('already-ended');
+
+        nowMs += 1;
+        expect(controls.isEnded('msg-1')).toBe(false);
+        expect(controls.handOver('msg-1')).toBe('handed-over');
+    });
+
+    it('remembers a cancelled message for the durable row retention and forgets it after', () => {
+        let nowMs = 1_000;
+        const controls = new ALOutboundSendControls({ nowMs: () => nowMs });
+        controls.cancel('msg-1');
+
+        nowMs += DEFAULT_AL_REPOSITORY_TTL_MS;
+        expect(controls.isEnded('msg-1')).toBe(true);
+        expect(controls.cancel('msg-1')).toBe('already-cancelled');
+
+        nowMs += 1;
+        expect(controls.isEnded('msg-1')).toBe(false);
+        expect(controls.cancel('msg-1')).toBe('cancelled');
     });
 });

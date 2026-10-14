@@ -24,7 +24,7 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     createDefaultWsQueueBoxServerService,
@@ -364,7 +364,7 @@ function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' =
 
 function sessionAck(ackedMsgId: string, recipient: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
+        { v: 3, msgId: `ack-${ackedMsgId}-${recipient}`, senderId: recipient, ts: Date.now() },
         {
             ackedMsgId,
             fromPeerId: recipient,

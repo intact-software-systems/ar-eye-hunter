@@ -13,6 +13,7 @@ import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-st
 it('answers the audience a WS client message was frozen to over PostgreSQL, and nothing else', async () => {
     const { repository } = await createPSqlAdmissionTestStorage();
     const stores = createPSqlALInboundRuntimeStores({
+        nowMs: Date.now,
         repository,
         namespace: 'psql-ingress-audience',
         orderingTrackTtlMs: 60_000,

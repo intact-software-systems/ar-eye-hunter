@@ -1,6 +1,6 @@
 ---
 name: rallar-platform
-description: Use when working across Rallar package boundaries, public API surfaces, shared browser/server code, app-data, CRDT, package exports, new app or greenfield React/Vite/Three.js work, or general monorepo architecture under packages/** and apps/**.
+description: Selects package boundaries and public surfaces under packages and apps. Use when changing shared browser or server code, app-data, CRDT, or package exports. A new browser app belongs to building-rallar-apps.
 ---
 
 # Rallar Platform

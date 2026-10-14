@@ -1,15 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
 import { waitForSettledOutboundWork } from '../wait-for-al-outbound-work.ts';
 import {
     createDefaultOutboundTestRuntime,
@@ -29,19 +31,19 @@ describe('outbound planner validation boundary', () => {
             stores,
             outbox,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
         expect(result).toMatchObject({ verdict: { kind: 'failed' }, message: original, entries: [] });
         expect(await stores.admissionStore.readSentMessage(original.id.msgId)).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
-        expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it.each(malformedMessages)('rejects owned work with malformed planner message %j without retry', async (planned) => {
         const outbox = new InMemoryQueueBox();
         const original = createOutboundMessage('invalid-owned-planner');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox');
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox', Temporal.Now.instant());
         await outbox.enqueue(entry);
         const stores = createDefaultOutboundTestStores(outbox);
         const dequeue = {
@@ -64,7 +66,7 @@ describe('outbound planner validation boundary', () => {
             stores,
             dequeue,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
 
         await runtime.ready();
@@ -86,7 +88,7 @@ describe('outbound planner validation boundary', () => {
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
             planOutgoingMessage: () => ({
                 msg: planned,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
                 dropReasonCode: 'no-route'

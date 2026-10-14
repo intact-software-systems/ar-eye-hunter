@@ -1,7 +1,10 @@
+import type { RallarBlackBoxTestAlmUsage } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import type {
@@ -36,9 +39,10 @@ export interface BlackBoxRallarRoomWaitOptions {
 }
 
 /** The payload is resolved while decoding: the named payload or data, otherwise the whole send. */
-export interface BlackBoxRallarWsSendInput {
+export interface BlackBoxRallarWsSendInput
+    extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly payload: RallarMessagePayload;
-    readonly scope?: 'room' | 'world' | 'all';
+    readonly scope?: 'room' | 'world';
     readonly roomId?: string;
     readonly groupId?: string;
     readonly roomRef?: BlackBoxRallarSendInput['roomRef'];
@@ -68,7 +72,10 @@ export interface BlackBoxRallarRuntime {
     ): Promise<BlackBoxRallarConnectDiagnostics>;
     /** An absent deadline gives typed-message admission its default wait budget; realtime sends ignore it. */
     send(input: unknown, deadlineEpochMs?: number): Promise<BlackBoxRallarSendDiagnostics>;
-    sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
+    sendWs(
+        input: unknown,
+        capture?: Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'>
+    ): Promise<BlackBoxRallarWsSendDiagnostics>;
     sendMessage(
         input: unknown
     ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics>;
@@ -78,6 +85,13 @@ export interface BlackBoxRallarRuntime {
     submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
+    /**
+     * The facade's `rallar.messages.readUsage()` beside the ordering snapshots the page's inbound stores state they
+     * hold; `undefined` until the facade's connect completes.
+     */
+    readAlmUsage(): Promise<RallarBlackBoxTestAlmUsage | undefined>;
+    /** The congestion decisions the page counted since its last `close`; `undefined` until the facade's connect completes. */
+    readCongestionCounters(): Promise<ALCongestionCounters | undefined>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;
     waitForRoom(
         options: BlackBoxRallarRoomWaitOptions

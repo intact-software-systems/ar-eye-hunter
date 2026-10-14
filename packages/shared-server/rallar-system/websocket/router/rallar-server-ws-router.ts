@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -204,7 +204,7 @@ export class RallarServerWsRouter {
             await this.publishToFanout({
                 message,
                 fanout: ingress.definition?.fanout ?? this.defaultFanout,
-                audience: { current: audience, admittedPeerIds },
+                audience: { current: audience, admittedPeerIds: toClientDeliveryPeerIds(message, admittedPeerIds) },
                 inboundScope,
                 origin: 'admitted',
                 inbound: source?.kind === 'ws-client'
@@ -478,7 +478,12 @@ export class RallarServerWsRouter {
         try {
             const observedAtEpochMs = this.nowEpochMs();
             const nack = newALNackControlMessage(
-                { v: 2, msgId: crypto.randomUUID(), senderId: this.service.name, ts: observedAtEpochMs },
+                {
+                    v: AL_MESSAGE_ENVELOPE_VERSION,
+                    msgId: crypto.randomUUID(),
+                    senderId: this.service.name,
+                    ts: observedAtEpochMs
+                },
                 {
                     fromPeerId: this.service.name,
                     toPeerId: message.id.senderId,
@@ -501,4 +506,12 @@ export class RallarServerWsRouter {
             );
         }
     }
+}
+
+/** A client's room send reaches the audience it was admitted to, never its own origin session. */
+function toClientDeliveryPeerIds(
+    message: ALMessage,
+    admittedPeerIds: readonly string[] | undefined
+): readonly string[] | undefined {
+    return admittedPeerIds?.filter((peerId) => peerId !== message.id.senderId);
 }

@@ -1,5 +1,6 @@
 import {
     createRelicGame,
+    isRelicHunterEvent,
     isRelicSnapshot,
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
@@ -19,10 +20,10 @@ describe('Relic Hunter server browser contract', () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, {
             createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-            readSessionUsername: (sessionId: string) => Promise.resolve(sessionId === 'alice-session' ? 'Alice' : undefined)
+            readSession: (sessionId: string) => Promise.resolve(sessionId === 'alice-session' ? { username: 'Alice', clientId: 'alice-client' } : undefined)
         });
 
-        await service.applyCommand(joinCommand(), 'alice-session');
+        await service.applyCommand(joinCommand(), { sessionId: 'alice-session', clientId: 'alice-client' });
 
         const message = fake.published[0].message;
         const browserPayload = decodeRelicServerEvent(message.payload.resource);
@@ -40,6 +41,22 @@ describe('Relic Hunter server browser contract', () => {
             playerId: 'alice-session',
             username: 'Alice'
         });
+    });
+
+    it('publishes a refused command\'s hunter event in the shape the browser\'s guard reads', async () => {
+        const fake = createFakeRallar();
+        const service = await installRelicHunterGame(fake.rallar, {
+            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
+            readSession: () => Promise.resolve(undefined)
+        });
+
+        await expect(service.applyCommand(pickupCommand(), ALICE_SENDER)).rejects.toThrow('The expedition has not started.');
+
+        const message = fake.published.at(-1)!.message;
+        expect(message.route.topicId).toBe(RELIC_TOPICS.hunter);
+        expect(message.payload.typeId).toBe(RELIC_TYPES.hunter);
+        expect(isRelicHunterEvent(decodeJsonWireValue(JSON.parse(message.payload.resource), 'Published Relic hunter event')))
+            .toBe(true);
     });
 });
 
@@ -106,6 +123,18 @@ function decodeRelicServerEvent(resource: string): RelicServerEvent {
 
 function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const ALICE_SENDER = { sessionId: 'alice-session', clientId: 'alice-client' };
+
+function pickupCommand(): RelicCommand {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'pickup-relic',
+        gameId: 'room-1',
+        username: 'Alice',
+        relicId: 'no-such-relic'
+    };
 }
 
 function joinCommand(): RelicCommand {

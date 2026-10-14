@@ -1,12 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { onTestFinished } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALInboundRuntimeStores, ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -17,9 +18,16 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as shared from '@shared/mod.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 
-import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import {
+    createNativeRtcConnectionFixture,
+    installNativeRtcRuntime,
+    type NativeRtcConnectionFixture
+} from '../native-rtc-connection-fixture.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { createOriginOverlay } from './rtc-origin-overlay-fixture.ts';
 
@@ -34,6 +42,8 @@ export interface RtcRelayOverlayFixtureInput {
     readonly qosProvider?: ALQosInputProvider;
     /** The keys the overlay is cached under; absent, the bare room id. The browser sender reads the scoped key. */
     readonly overlayIds?: readonly string[];
+    /** The transport faults the relay's overlay reads; absent, a pass-through port. */
+    readonly faultPort?: TransportFaultPort;
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
@@ -48,8 +58,73 @@ export interface RtcRelayOverlayFixture {
     acceptSnapshot(snapshot: GroupSnapshot): void;
 }
 
+interface RtcRelayOverlayResources {
+    readonly groups: LatestRepository<string, GroupSnapshot>;
+    readonly overlays: LatestRepository<string, OverlayInfo>;
+    readonly outboundResources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
+    readonly multicast: shared.WebRtcOverlayMulticastManager;
+}
+
+namespace RtcRelayOverlaySession {
+    export interface Dependencies extends RtcRelayOverlayResources {
+        readonly connection: NativeRtcConnectionFixture;
+        readonly service: shared.WebRtcRxStreamerService;
+        readonly inboundStores: ALInboundRuntimeStores;
+    }
+}
+
+class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
+    private readonly dependencies: RtcRelayOverlaySession.Dependencies;
+    private readonly ready: Promise<void[]>;
+    readonly delivered: ALMessage[] = [];
+
+    constructor(dependencies: RtcRelayOverlaySession.Dependencies, neighbourPeerIds: readonly string[]) {
+        this.dependencies = dependencies;
+        const { connection, service } = dependencies;
+        service.setRttReportingPeerIds([]);
+        service.onAllInboxMessagesDo({
+            onMessage: async (message) => {
+                this.delivered.push(message);
+            }
+        });
+        this.ready = Promise.all(neighbourPeerIds.map((peerId) => {
+            connection.service.ensurePeerConnectionStarted(peerId, true);
+            const peer = connection.service.readPeer(peerId);
+            if (peer === undefined) {
+                throw new Error('The RTC relay neighbour was not created.');
+            }
+            service.addPeer(peer);
+            return connection.nativePeer(peerId).channels[0].open();
+        }));
+    }
+
+    async receive(message: ALMessage, fromPeerId: string): Promise<void> {
+        await this.ready;
+        const { connection, inboundStores, outboundResources } = this.dependencies;
+        await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
+        await waitForOwnedQueueWork(inboundStores.workQueue);
+        await waitForOwnedQueueWork(outboundResources.workQueue);
+    }
+
+    async readSent(peerId: string): Promise<readonly ALMessage[]> {
+        const { connection, outboundResources } = this.dependencies;
+        await waitForOwnedQueueWork(outboundResources.workQueue);
+        return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
+    }
+
+    async enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult> {
+        await this.ready;
+        return await this.dependencies.service.enqueueOutboxIfAbsent(message, 'hold');
+    }
+
+    acceptSnapshot(snapshot: GroupSnapshot): void {
+        this.dependencies.groups.accept('room', snapshot);
+    }
+}
+
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
     const nativeRuntime = installNativeRtcRuntime();
+    onTestFinished(() => nativeRuntime.dispose());
     const connection = createNativeRtcConnectionFixture(
         {
             sessionId: input.selfPeerId,
@@ -61,14 +136,36 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         nativeRuntime,
         createPassThroughTransportFaultPort()
     );
+    onTestFinished(() => connection.dispose());
+    const resources = createDefaultRelayOverlayResources(input, connection);
+    const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();
+    const service = shared.createDefaultWebRtcRxStreamerService({
+        multicast: resources.multicast,
+        sessionId: input.selfPeerId,
+        inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
+        roomAuthorityRefresh: undefined
+    });
+    onTestFinished(() => service.dispose());
+    return new RtcRelayOverlaySession({ ...resources, connection, service, inboundStores }, input.neighbourPeerIds);
+}
+
+function createDefaultRelayOverlayResources(
+    input: RtcRelayOverlayFixtureInput,
+    connection: NativeRtcConnectionFixture
+): RtcRelayOverlayResources {
     const groups = new LatestRepository<string, GroupSnapshot>();
+    onTestFinished(() => groups.dispose());
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
+    onTestFinished(() => overlays.dispose());
     for (const overlayId of input.overlayIds ?? ['room']) {
         overlays.accept(overlayId, createOriginOverlay(input.neighbourPeerIds));
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
     const multicast = new shared.WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: connection.service,
         groupCache: groups,
         overlayCache: overlays,
@@ -79,53 +176,9 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         outboundRuntime: outboundResources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
-    const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();
-    const service = shared.createDefaultWebRtcRxStreamerService({
-        multicast,
-        sessionId: input.selfPeerId,
-        inboundStores,
-        inboundVolatileStores: input.inboundVolatileStores,
-        roomAuthorityRefresh: undefined
-    });
-    service.setRttReportingPeerIds([]);
-    const delivered: ALMessage[] = [];
-    service.onAllInboxMessagesDo({
-        onMessage: async (message) => {
-            delivered.push(message);
-        }
-    });
-    const openings = input.neighbourPeerIds.map((peerId) => {
-        connection.service.ensurePeerConnectionStarted(peerId, true);
-        service.addPeer(connection.service.readPeer(peerId)!);
-        return connection.nativePeer(peerId).channels[0].open();
-    });
-    const ready = Promise.all(openings);
-    onTestFinished(() => {
-        service.dispose();
-        multicast.dispose();
-        connection.dispose();
-        groups.dispose();
-        overlays.dispose();
-        nativeRuntime.dispose();
-    });
-    return {
-        receive: async (message, fromPeerId) => {
-            await ready;
-            await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
-            await waitForOwnedQueueWork(inboundStores.workQueue);
-            await waitForOwnedQueueWork(outboundResources.workQueue);
-        },
-        readSent: async (peerId) => {
-            await waitForOwnedQueueWork(outboundResources.workQueue);
-            return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
-        },
-        delivered,
-        enqueue: async (message) => {
-            await ready;
-            return await service.enqueueOutboxIfAbsent(message, 'hold');
-        },
-        acceptSnapshot: (snapshot) => groups.accept('room', snapshot)
-    };
+    onTestFinished(() => multicast.dispose());
+    return { groups, overlays, outboundResources, multicast };
 }

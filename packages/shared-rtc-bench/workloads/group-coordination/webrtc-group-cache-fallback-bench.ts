@@ -2,8 +2,13 @@ import { dirname } from 'node:path';
 
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type {
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupService } from '@shared/services/web-rtc-group-service.ts';
@@ -169,7 +174,11 @@ export function runWebRtcGroupCacheFallback(
             dataChannelName: 'realtime',
 
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: () => crypto.randomUUID() }),
+        }, {
+            faultPort: createPassThroughTransportFaultPort(),
+            createOfferId: () => crypto.randomUUID(),
+            nowEpochMs: () => Date.now()
+        }),
         {
             ...targetScope,
             groupId: targetGroupId
@@ -275,7 +284,7 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
     };
 }
 
-function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapshot['group'] {
+function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): Group {
     return {
         applicationId: input.scope.applicationId,
         workspaceId: input.scope.workspaceId,
@@ -327,8 +336,8 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
     };
 }
 
-function createGroupSnapshotMembers(input: CreateGroupSnapshotInput): GroupSnapshot['members'] {
-    return input.memberSessionIds.map((sessionId) => ({
+function createGroupSnapshotMembers(input: CreateGroupSnapshotInput): readonly GroupMember[] {
+    return input.memberSessionIds.map((sessionId): GroupMember => ({
         applicationId: input.scope.applicationId,
         workspaceId: input.scope.workspaceId,
         groupId: input.groupId,
@@ -359,8 +368,8 @@ function createGroupSnapshotMembers(input: CreateGroupSnapshotInput): GroupSnaps
 
 function createGroupSnapshotSessions(
     input: CreateGroupSnapshotInput
-): GroupSnapshot['activeSessions'] {
-    return input.memberSessionIds.map((sessionId) => ({
+): readonly GroupPresenceSession[] {
+    return input.memberSessionIds.map((sessionId): GroupPresenceSession => ({
         applicationId: input.scope.applicationId,
         workspaceId: input.scope.workspaceId,
         groupId: input.groupId,

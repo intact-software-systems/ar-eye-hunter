@@ -156,10 +156,13 @@ function toParentAnswer(
             })
         ];
     }
-    const owedPeerIds = pendingAck.expectedFromPeerIds.filter((peerId) =>
-        !pendingAck.ackedFromPeerIds.includes(peerId)
-    );
+    const owedPeerIds = toALPendingAckOwedPeerIds(pendingAck);
     return owedPeerIds.length === 0 ? relayed : [...relayed, toRetriedForward(read, owedPeerIds)];
+}
+
+/** Child hops a repeated parent copy can still forward to using the original canonical envelope. */
+export function toALPendingAckOwedPeerIds(pendingAck: ALPendingAckSnapshot): readonly string[] {
+    return pendingAck.expectedFromPeerIds.filter((peerId) => !pendingAck.ackedFromPeerIds.includes(peerId));
 }
 
 function toReparentedRowMutation(

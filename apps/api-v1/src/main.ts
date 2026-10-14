@@ -7,7 +7,7 @@ import {
     readApiV1Configuration,
     toApiV1ConfigurationStartupSummary
 } from './configuration/read-api-v1-configuration.ts';
-import { createApiV1DatabaseLifecycle } from './db/api-v1-database-lifecycle.ts';
+import { createDefaultApiV1DatabaseLifecycle } from './db/api-v1-database-lifecycle.ts';
 import {
     STATE_SNAPSHOT_READ_EXPOSED_HEADERS
 } from './routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
@@ -35,7 +35,7 @@ console.log(JSON.stringify({
     event: 'api-v1.configuration',
     ...toApiV1ConfigurationStartupSummary(configuration)
 }));
-const databaseLifecycle = await createApiV1DatabaseLifecycle({
+const databaseLifecycle = await createDefaultApiV1DatabaseLifecycle({
     database: configuration.database,
     pgliteEvidence: configuration.blackBox.pgliteEvidence
 });
@@ -107,7 +107,7 @@ const apiProcess = await startApiProcess({
     stopAfterStartupFailure: async (boundHttpServer) => {
         const failures: Error[] = [];
         try {
-            rallar.runtime.qboxEngine.stop();
+            await rallar.runtime.qboxEngine.stop();
         }
         catch (error) {
             failures.push(

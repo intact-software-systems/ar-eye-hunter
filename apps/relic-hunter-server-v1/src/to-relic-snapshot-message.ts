@@ -2,6 +2,7 @@ import {
     RELIC_TOPICS,
     RELIC_TYPES,
     toPublicRelicSnapshot,
+    toRelicRoomGroupRef,
     type RelicGameState,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
@@ -10,10 +11,6 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID
-} from '@shared/api/state-types.ts';
 
 /** How long a snapshot stays deliverable: the 15 s it had before it carried receipts (Q7). */
 export const RELIC_SNAPSHOT_TTL_MS = 15_000;
@@ -36,11 +33,7 @@ export function toRelicSnapshotMessage(state: RelicGameState, serverPeerId: stri
         RELIC_TYPES.snapshot,
         event,
         {
-            groupRef: {
-                applicationId: DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-                groupId: state.roomId
-            },
+            groupRef: toRelicRoomGroupRef(state.roomId),
             reliability: 'at-least-once',
             ack: 'receiver',
             ttlMs: RELIC_SNAPSHOT_TTL_MS

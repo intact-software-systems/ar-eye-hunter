@@ -128,7 +128,8 @@ function createObservedVolatileInboundPair(): ObservedVolatileInboundPair {
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             }),
             workQueue: backend.workQueue,
             evictExpired: () => backend.evictExpired(),
@@ -171,7 +172,7 @@ function readDeadlineMs(message: ALMessage): number {
 /** The leaf `b`'s terminal ACK to its relay `r` for the origin's message. */
 function toChildAck(copy: ALMessage): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: 'ack-b', senderId: 'b', ts: Date.now() },
+        { v: 3, msgId: 'ack-b', senderId: 'b', ts: Date.now() },
         {
             ackedMsgId: copy.id.msgId,
             fromPeerId: 'b',

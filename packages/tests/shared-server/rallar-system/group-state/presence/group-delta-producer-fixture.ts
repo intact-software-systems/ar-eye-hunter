@@ -6,7 +6,10 @@ import {
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import {
+    toDomain,
+    type ResourceInboxRow
+} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import * as GroupNamespaces from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -15,12 +18,18 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
-import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
+import {
+    groupRef,
+    SCOPE
+} from '../mutation/group-mutation-test-runtime.ts';
 import { createService } from './group-presence-test-runtime.ts';
 
 export interface GroupDeltaProducerFixture {
@@ -37,9 +46,9 @@ export interface GroupDeltaProducerFixture {
 export async function createGroupDeltaProducer(sql?: PSqlSql): Promise<GroupDeltaProducerFixture> {
     const database = sql ?? (await createPSqlAdmissionTestStorage()).sql;
     const repository = new PSqlRuntimeStateRepository(database);
-    const resources = createPSqlResourceInboxRepository(database);
-    const queue = new PSqlQueueBox(resources);
     const now = Date.now();
+    const resources = createPSqlResourceInboxRepository(database, () => new Date(now));
+    const queue = new PSqlQueueBox(resources, Temporal.Now.instant);
     const groupId = `proved-${crypto.randomUUID()}`;
     const runtime = await seedConnectedGroup(groupId, now);
     for (const namespace of Object.values(GroupNamespaces)) {

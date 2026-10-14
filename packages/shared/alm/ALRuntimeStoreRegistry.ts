@@ -2,7 +2,11 @@ import { defaultRepositoryManager } from '../cache/defaultRepositoryManager.ts';
 import { RepositoryManager } from '../cache/RepositoryManager.ts';
 import { RepositoryToken } from '../cache/RepositoryToken.ts';
 import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundRuntimeStores
+} from './outbound/al-outbound-message-runtime.ts';
+import type { ALDurableWorkOwnership } from './work/al-durable-work-ownership.ts';
 
 declare const alRuntimeStorePrepared: unique symbol;
 
@@ -22,6 +26,8 @@ export function toALRuntimeStoreId<TPrepared>(id: string): ALRuntimeStoreId<TPre
 export type ALRuntimeStoreFactories<TPrepared> = Readonly<{
     createInboundStores?: () => ALInboundRuntimeStores;
     createOutboundStores?: () => ALOutboundRuntimeStores<TPrepared>;
+    /** One connect's checkpoint pair: its writer runs under the connect's claim on the session's work. */
+    createCheckpointStores?: (ownership: ALDurableWorkOwnership) => ALCheckpointOutboundRuntimeStores<TPrepared>;
 }>;
 
 export type ALRuntimeStoreScope<TPrepared> = Readonly<{
@@ -78,6 +84,20 @@ export function resolveALOutboundRuntimeStores<TPrepared>(
     }
 
     return factories.createOutboundStores();
+}
+
+export function resolveALCheckpointRuntimeStores<TPrepared>(
+    id: ALRuntimeStoreId<TPrepared>,
+    ownership: ALDurableWorkOwnership,
+    manager: RepositoryManager = defaultRepositoryManager
+): ALCheckpointOutboundRuntimeStores<TPrepared> {
+    const factories = resolveALRuntimeStoreFactories<TPrepared>(id, manager);
+
+    if (!factories.createCheckpointStores) {
+        throw new Error(`AL checkpoint runtime stores are not configured: ${id}`);
+    }
+
+    return factories.createCheckpointStores(ownership);
 }
 
 function toALRuntimeStoreFactoryToken<TPrepared>(

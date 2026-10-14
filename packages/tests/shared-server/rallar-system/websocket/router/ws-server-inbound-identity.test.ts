@@ -17,10 +17,13 @@ import {
 import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
+import { SimulatedWebSocket } from '../../../../shared/native-websocket-fixture.ts';
+
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
         const server = new JsonWebSocketServer();
-        const socket = new FakeSocket();
+        const socket = new SimulatedWebSocket('ws://test.invalid');
+        await socket.open();
         server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
         const service = createDefaultWsQueueBoxServerService({
@@ -40,15 +43,15 @@ describe('WS server inbound identity', () => {
                 return Promise.resolve();
             }
         });
-        const forged = message('session-victim', 'forged-message');
-        const matching = message('session-attacker', 'matching-message');
+        const forged = createIdentityMessage('session-victim', 'forged-message');
+        const matching = createIdentityMessage('session-attacker', 'matching-message');
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         try {
-            await socket.dispatchMessage(forged);
+            await socket.receive(JSON.stringify(forged));
             expect(received).toEqual([]);
 
-            await socket.dispatchMessage(matching);
+            await socket.receive(JSON.stringify(matching));
             await expect.poll(() => received).toEqual([matching]);
 
             // The forged message never reached the runtime, so only the admitted one is named here.
@@ -62,22 +65,30 @@ describe('WS server inbound identity', () => {
             })]);
         }
         finally {
-            service.dispose();
-            consoleError.mockRestore();
+            try {
+                await service.dispose();
+            }
+            finally {
+                consoleError.mockRestore();
+            }
         }
     });
 
     it('rejects malformed current envelopes before admission policy runs', async () => {
         const server = new JsonWebSocketServer();
-        const socket = new FakeSocket();
+        const socket = new SimulatedWebSocket('ws://test.invalid');
+        await socket.open();
         server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         const service = createDefaultWsQueueBoxServerService({
-            readAuthenticatedConnectionScope: () => undefined,
+            readAuthenticatedConnectionScope: () => ({
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }),
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1',
-            validateInboundMessage: (message) => {
+            authorizeInboundMessage: (message) => {
                 admittedMessages.push(message);
                 return Either.ofRight(message);
             }
@@ -85,9 +96,9 @@ describe('WS server inbound identity', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         try {
-            await socket.dispatchValue({
+            await socket.receive(JSON.stringify({
                 id: {
-                    v: 2,
+                    v: 3,
                     msgId: 'malformed-message',
                     ts: 1,
                     senderId: 'session-1'
@@ -96,93 +107,22 @@ describe('WS server inbound identity', () => {
                     typeId: 'test.identity.v1',
                     resource: '{}'
                 }
-            });
+            }));
 
             expect(admittedMessages).toEqual([]);
         }
         finally {
-            service.dispose();
-            consoleError.mockRestore();
+            try {
+                await service.dispose();
+            }
+            finally {
+                consoleError.mockRestore();
+            }
         }
     });
 });
 
-class FakeSocket implements WebSocket {
-    readonly CONNECTING = WebSocket.CONNECTING;
-    readonly OPEN = WebSocket.OPEN;
-    readonly CLOSING = WebSocket.CLOSING;
-    readonly CLOSED = WebSocket.CLOSED;
-    binaryType: BinaryType = 'blob';
-    readonly bufferedAmount = 0;
-    readonly extensions = '';
-    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
-    onerror: ((this: WebSocket, event: Event) => void) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
-    onopen: ((this: WebSocket, event: Event) => void) | null = null;
-    readonly protocol = '';
-    readyState: WebSocket['readyState'] = WebSocket.OPEN;
-    readonly url = 'ws://test.invalid';
-    private readonly listeners = new Map<string, EventListenerOrEventListenerObject[]>();
-
-    addEventListener(
-        type: string,
-        listener: EventListenerOrEventListenerObject | null
-    ): void {
-        if (!listener) {
-            return;
-        }
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
-    }
-
-    removeEventListener(
-        type: string,
-        listener: EventListenerOrEventListenerObject | null
-    ): void {
-        if (!listener) {
-            return;
-        }
-        const listeners = this.listeners.get(type) ?? [];
-        this.listeners.set(type, listeners.filter((candidate) => candidate !== listener));
-    }
-
-    dispatchEvent(event: Event): boolean {
-        void this.dispatchListeners(event.type, event);
-        return true;
-    }
-
-    close(): void {
-        this.readyState = WebSocket.CLOSED;
-    }
-
-    send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-    }
-
-    async dispatchMessage(message: ALMessage): Promise<void> {
-        await this.dispatchValue(message);
-    }
-
-    async dispatchValue(value: object): Promise<void> {
-        await this.dispatchListeners(
-            'message',
-            new MessageEvent('message', { data: JSON.stringify(value) })
-        );
-    }
-
-    private async dispatchListeners(type: string, event: Event): Promise<void> {
-        for (const listener of this.listeners.get(type) ?? []) {
-            if (typeof listener === 'function') {
-                await listener.call(this, event);
-            }
-            else {
-                await listener.handleEvent(event);
-            }
-        }
-    }
-}
-
-function message(senderId: string, messageId: string): ALMessage {
+function createIdentityMessage(senderId: string, messageId: string): ALMessage {
     const value = newALUntargetedMessage(
         senderId,
         newALRoute('test.identity', 'context-1', messageId),

@@ -3,10 +3,13 @@ import type {
     RallarBrowserFacadeRuntimeContext,
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
+    BrowserTransportRuntime,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import type {
+    ApiMiddleware,
     RallarConnectionOperations,
     RallarDefaults,
     RallarScopedOperationOptions
@@ -19,6 +22,8 @@ import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session
 import { BrowserSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { createRallarSessionConnectionOperations } from '@shared-web/browser/session/session-connection-operations.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -27,6 +32,7 @@ export interface CreateRallarSessionControllerOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
+    readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly transportRuntime: BrowserTransportRuntimePort;
     readonly authRuntime: RallarAuthRuntimePort;
@@ -40,6 +46,8 @@ export interface RallarSessionController {
     readonly connectionOperations: RallarConnectionOperations;
     readonly auth: RallarAuthFacade;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
+    connectWithRtcCapture(options?: RallarScopedOperationOptions): Promise<BrowserTransportRuntime.Connection>;
+    acquireConnection(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
@@ -61,6 +69,7 @@ export function createRallarSessionController(
         qosProvider: options.qosProvider,
         readVolatileSessionLimits: options.readVolatileSessionLimits,
         sessionDeliveries: options.sessionDeliveries,
+        onResyncRequired: options.onResyncRequired,
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
@@ -91,6 +100,8 @@ export function createRallarSessionController(
         connectionOperations,
         auth,
         connect: (connectionOptions) => authLifecycle.connect(connectionOptions),
+        connectWithRtcCapture: (connectionOptions) => authLifecycle.connectWithRtcCapture(connectionOptions),
+        acquireConnection: (connectionOptions) => authLifecycle.acquireConnection(connectionOptions),
         disconnect: () => authLifecycle.disconnect(),
         readMiddleware: () => options.connectionRuntime.readMiddleware(),
         requireMiddleware: () => options.connectionRuntime.requireMiddleware(),

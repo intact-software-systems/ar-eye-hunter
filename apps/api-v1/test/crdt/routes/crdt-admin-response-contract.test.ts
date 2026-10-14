@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
@@ -10,7 +11,10 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { createCrdtMutationService, type CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import {
+    createCrdtMutationService,
+    type CrdtMutationService
+} from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import {
     PSqlCrdtMutationRepository,
@@ -156,10 +160,10 @@ async function verifyCrdtAdminResponseContract(
 async function createCrdtAdminRouteHarness(
     sql: PGliteSql
 ): Promise<CrdtAdminRouteHarness> {
-    const now = Date.now() + 12 * 60 * 60 * 1_000;
-    const resourceInbox = createPSqlResourceInboxRepository(sql);
+    const now = Date.now();
+    const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const results = new ResourceInboxResultsRepository(sql);
-    const queue = new PSqlQueueBox(resourceInbox);
+    const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
     const inbox = new InboxQueueReader(queue);
     const outbox = new OutboxQueueReader(queue);
     const mutationService = createTestCrdtMutationService(sql);
@@ -284,7 +288,7 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
                 waitRetryIntervalMsecs: 1,
                 waitMaxRetryIntervalMsecs: 4,
                 waitJitterRatio: 0,
-                nowEpochMs: () => input.now + 1
+                nowEpochMs: Date.now
             }
         }
     );
@@ -628,7 +632,7 @@ async function verifyEraseResponseAndAuditDelivery(
     assert.equal(decodeJsonWireObject(result.auditEvent, 'erase audit event').kind, 'erase');
     assert.equal(decodeJsonWireObject(result.metadata, 'erase metadata').lifecycle, 'destroyed');
     assert.equal(harness.audit.length, 0);
-    assert.equal(await readAuditCount(harness.sql, 'ri_status = \'NEW\''), 1);
+    assert.equal(await readAuditCount(harness.sql, 'NEW'), 1);
     await waitForPGliteQueueRow(harness.sql, 'APP_OUTBOX', 'NEW');
     await harness.outbox.dequeueOutbox(
         OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -636,21 +640,16 @@ async function verifyEraseResponseAndAuditDelivery(
     );
     assert.equal(harness.readAuditAttempts(), 2);
     assert.equal(harness.audit.length, 1);
-    assert.equal(await readAuditCount(harness.sql, 'ri_status = \'COMPLETED\''), 1);
+    assert.equal(await readAuditCount(harness.sql, 'COMPLETED'), 1);
 }
 
 async function readAuditCount(
     sql: PGliteSql,
-    statusPredicate: 'ri_status = \'NEW\'' | 'ri_status = \'COMPLETED\''
+    statusPredicate: 'NEW' | 'COMPLETED'
 ): Promise<number> {
-    const rows = statusPredicate === 'ri_status = \'NEW\''
-        ? await sql<SqlCountRow[]>`
-      select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and ri_status = 'NEW'
-    `
-        : await sql<SqlCountRow[]>`
-      select count(*) as count from resource_inbox
-      where ri_type_id = 'APP_OUTBOX' and ri_status = 'COMPLETED'
+    const rows = await sql<SqlCountRow[]>`
+        select count(*) as count from resource_inbox
+        where ri_type_id = 'APP_OUTBOX' and ri_status = ${statusPredicate}
     `;
     return Number(rows[0]?.count);
 }

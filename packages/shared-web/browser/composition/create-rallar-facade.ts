@@ -5,6 +5,7 @@ import {
     createBrowserMediaComposition,
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
+    createBrowserResyncRecoveryComposition,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
@@ -110,7 +111,6 @@ function createBrowserFacadeCompositions(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        rooms,
         session: sessionPort
     });
     return {
@@ -159,12 +159,14 @@ function createBrowserSessionMessaging(
     delivery: typeof browserDeliveryComposition
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
     const { nowMs, deliveries, sessionDeliveries } = delivery;
+    const recovery = createBrowserResyncRecoveryComposition({ nowMs });
     const session = createBrowserSessionCoreComposition({
         foundation,
         state,
         sessionDeliveries,
         qosProvider: undefined,
-        readVolatileSessionLimits: undefined
+        readVolatileSessionLimits: undefined,
+        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const sessionPort = session.session;
     const stateEvents = createBrowserStateEventComposition({
@@ -176,6 +178,7 @@ function createBrowserSessionMessaging(
         deliveries,
         sessionDeliveries,
         nowMs,
+        recoveryOwners: recovery.recoveryOwners,
         state,
         session: sessionPort
     });

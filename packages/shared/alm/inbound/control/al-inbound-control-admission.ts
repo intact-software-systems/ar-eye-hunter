@@ -12,6 +12,7 @@ import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import { toALInboundPendingControlId } from '../al-inbound-pending-admission.ts';
 import { toALDeliveryCarrier, toALInboundMessageOwnerKey } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
+import type { ALInboundAcknowledgementEvidence } from './al-inbound-acknowledgement-evidence.ts';
 import {
     computeALInboundControlAdmission,
     toALInboundControlCommitBundle,
@@ -76,15 +77,24 @@ export class ALInboundControlAdmission {
         this.retention = dependencies.retention;
     }
 
-    async admit(msg: ALMessage, source: ALInboundMessageRuntime.Source): Promise<ALInboundControlAdmissionResult> {
-        return await this.admitArrival({ msg, carrier: toALDeliveryCarrier(source) });
+    async admit(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        evidence?: ALInboundAcknowledgementEvidence
+    ): Promise<ALInboundControlAdmissionResult> {
+        return await this.admitArrival({ msg, carrier: toALDeliveryCarrier(source) }, evidence);
     }
 
-    async replay(payload: ALInboundPendingControl): Promise<ALInboundControlReplayResult> {
+    async replay(
+        payload: ALInboundPendingControl,
+        evidence?: ALInboundAcknowledgementEvidence
+    ): Promise<ALInboundControlReplayResult> {
         if (payload.expiresAtMs <= this.clock.nowMs()) {
+            evidence?.admissionResult('expired');
             return { outcome: { status: 'completed' }, acceptance: undefined, wroteWork: false };
         }
-        const result = await this.admitArrival(payload);
+        const result = await this.admitArrival(payload, evidence);
+        evidence?.admissionResult(result.kind);
         return {
             outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
             acceptance: result.kind === 'committed' ? result.acceptance : undefined,
@@ -92,7 +102,10 @@ export class ALInboundControlAdmission {
         };
     }
 
-    private async admitArrival(arrival: ALInboundControlArrival): Promise<ALInboundControlAdmissionResult> {
+    private async admitArrival(
+        arrival: ALInboundControlArrival,
+        evidence: ALInboundAcknowledgementEvidence | undefined
+    ): Promise<ALInboundControlAdmissionResult> {
         const decoded = decodeALControlMessage(arrival.msg);
         if (decoded.left || decoded.right!.type !== 'ack') {
             return { kind: 'not-handled' };
@@ -104,23 +117,28 @@ export class ALInboundControlAdmission {
         }
         const candidate = computeALInboundControlAdmission(read, this.retention);
         const issues = validateALInboundControlAdmission(candidate);
+        evidence?.candidate(candidate, issues.length === 0);
         if (issues.length > 0) {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        return await this.commitControlAdmission(arrival, candidate, nowMs);
+        return await this.commitControlAdmission(arrival, candidate, evidence);
     }
 
     private async commitControlAdmission(
         arrival: ALInboundControlArrival,
         candidate: ALInboundControlAdmissionCandidate,
-        nowMs: number
+        evidence: ALInboundAcknowledgementEvidence | undefined
     ): Promise<ALInboundControlAdmissionResult> {
         const bundle = toALInboundControlCommitBundle(this.toStoreCandidate(candidate));
+        evidence?.commit('pending');
         const status = await this.admissionStore.commitBundle(bundle);
+        evidence?.commit(status);
         if (status === 'committed') {
             return { kind: 'committed', acceptance: candidate.acceptance };
         }
-        await this.retainPendingControl(arrival, nowMs);
+        evidence?.retention('pending');
+        await this.retainPendingControl(arrival, candidate.read.nowMs);
+        evidence?.retention('returned');
         return { kind: 'pending-control' };
     }
 

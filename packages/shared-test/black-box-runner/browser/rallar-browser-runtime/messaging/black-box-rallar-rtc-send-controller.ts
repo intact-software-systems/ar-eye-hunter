@@ -243,7 +243,6 @@ function toRtcSendRequest(
         reliability: input.reliability ?? defaults.reliability,
         ack: input.ack ?? defaults.ack,
         ownership: input.ownership ?? defaults.ownership,
-        membershipEpoch: input.membershipEpoch ?? defaults.membershipEpoch,
         seq: input.seq ?? defaults.seq,
         orderingKey: input.orderingKey ?? defaults.orderingKey,
         overlayId: input.overlayId ?? defaults.overlayId,

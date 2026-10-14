@@ -1,6 +1,6 @@
 ---
 name: rallar-testing
-description: Use when creating, modifying, reviewing, diagnosing, replacing, or deleting Rallar tests, mocks, fixtures, test support, or validation commands.
+description: Selects and designs Rallar tests and validation commands. Use when creating, changing, reviewing, or deleting tests, mocks, fixtures, or test support.
 ---
 
 # Rallar Testing

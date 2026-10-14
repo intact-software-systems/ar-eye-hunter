@@ -9,6 +9,7 @@ import {
     type RallarBlackBoxTestCommandKind,
     type RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
+import { validateCommandCaptureSelection } from '../recipe/validate-command-capture-selection.ts';
 import { validateRecipeFields } from '../recipe/validate-recipe-fields.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
@@ -110,6 +111,7 @@ function validateCommandRecord(command: RallarBlackBoxTestRecord, depth: number)
     const fields: RallarBlackBoxCommandFieldSet = RALLAR_BLACK_BOX_COMMAND_FIELDS[kind];
     const shapeIssues = [
         ...validateBaseFields(command),
+        ...validateCommandCaptureSelection(command).map(toControlCommandIssue),
         ...validateAllowedFields(command, toCommandFieldSet(fields), kind)
     ];
     if (isCrdtCommandKind(kind)) {

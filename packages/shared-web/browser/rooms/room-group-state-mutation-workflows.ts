@@ -37,6 +37,11 @@ export interface UpdateStateGroupMetadataInput {
     readonly policies?: CommandsOrchestratorPolicies<GroupSnapshot>;
 }
 
+/** A metadata patch written over the metadata of a room read just before. */
+export interface WriteStateGroupMetadataInput extends UpdateStateGroupMetadataInput {
+    readonly current: GroupSnapshot;
+}
+
 export interface UpdateStateGroupDetailsInput {
     readonly groupId: string;
     readonly request: UpdateStateGroupBody;
@@ -49,15 +54,28 @@ export interface UpdateStateGroupDetailsInput {
 export async function updateStateGroupMetadata(
     input: UpdateStateGroupMetadataInput
 ): Promise<GroupSnapshot> {
+    const current = await readCurrentStateGroup(input);
+    return await writeStateGroupMetadata({ ...input, current });
+}
+
+/** The room as the server holds it now, which a metadata write builds on. */
+export async function readCurrentStateGroup(
+    input: Pick<UpdateStateGroupMetadataInput, 'groupId' | 'scope' | 'policies'>
+): Promise<GroupSnapshot> {
+    const scope = input.scope ?? defaultStateScope();
+    return await new Command<GroupSnapshot>(
+        (signal) => findStateGroup(input.groupId, scope, { signal }),
+        input.policies?.command ?? {}
+    ).run();
+}
+
+/** Writes the patch over the current metadata; a `null` patch value removes its key. */
+export async function writeStateGroupMetadata(input: WriteStateGroupMetadataInput): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
     const commandOptions: CommandOptions<GroupSnapshot> = input.policies?.command ?? {};
-    const current = await new Command<GroupSnapshot>(
-        (signal) => findStateGroup(input.groupId, scope, { signal }),
-        commandOptions
-    ).run();
     const request = toRoomMetadataGroupStateRequest({
-        currentMetadata: current.group.metadata,
+        currentMetadata: input.current.group.metadata,
         patch: input.patch,
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId

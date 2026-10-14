@@ -1,6 +1,8 @@
+import type { ALStoreDurability } from '../alm/al-runtime-stores.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
-import type { ALOrderingObservation, ALSupersedenceObservation } from './al-runtime.ts';
+import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } from './al-runtime.ts';
+import { toALSeqRangesText } from './al-seq-range.ts';
 
 import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos-policy.ts';
 import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
@@ -27,11 +29,11 @@ export type ALForwardingAlgo = 'target';
 
 export type ALRepairAlgo = 'none' | 'retransmit';
 
-export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver';
+export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver' | 'leader';
 
 /**
  * What a tracked receipt counts: next hops under `hop` and `subtree`, logical recipients under
- * `receiver`. `none` tracks no receipt.
+ * `receiver`, and the room's leader alone under `leader`. `none` tracks no receipt.
  */
 export type ALReceiptMode = Exclude<ALAckAlgo, 'none'>;
 
@@ -47,7 +49,7 @@ export type ALFanoutAlgo = 'all' | 'limit' | 'random-k';
 
 export type ALCongestionAlgo = 'drop-low' | 'defer' | 'reject';
 
-export type ALDurabilityAlgo = 'volatile' | 'local-outbox' | 'local-inbox';
+export type ALDurabilityAlgo = 'volatile' | 'local-checkpoint' | 'local-outbox' | 'local-inbox';
 
 export type ALOwnershipAlgo = 'shared' | 'exclusive';
 
@@ -162,6 +164,8 @@ export interface ALQosNormalizationInput {
     readonly authorization?: ALQosAuthorization;
     readonly live?: {
         readonly overloaded?: boolean;
+        /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+        readonly backpressured?: boolean;
         readonly connectedNeighborCount?: number;
         readonly hasAlternateRoute?: boolean;
     };
@@ -177,6 +181,8 @@ export interface ALQosMessageContext {
     readonly groupMemberPeerIds?: readonly string[];
     readonly overlayNeighborPeerIds?: readonly string[];
     readonly overloaded?: boolean;
+    /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+    readonly backpressured?: boolean;
 }
 
 export interface ALQosInputProvider {
@@ -210,6 +216,8 @@ export interface ALQosNormalizationResult {
 export interface ALMessagePlanningObservations {
     readonly nowMs: number;
     readonly dedupSeen?: boolean;
+    /** The session holding a live claim on the message's resource key; present only where an admission read one. */
+    readonly claimHolderPeerId?: string;
     readonly orderingObservation?: ALOrderingObservation;
     readonly supersedenceObservation?: ALSupersedenceObservation;
 }
@@ -221,9 +229,14 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly groupMemberPeerIds?: readonly string[];
     readonly overlayNeighborPeerIds?: readonly string[];
     readonly overloaded?: boolean;
+    /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
+    readonly backpressured?: boolean;
 }
 
 export type ALCongestionRuntimeAction = 'none' | 'drop-low' | 'defer' | 'reject';
+
+/** Which live input the congestion policy answers: the session's own volatile bound, or its carrier's channel (D185). */
+export type ALCongestionCause = 'overloaded' | 'backpressured';
 
 /** Why handling stopped. Consumers branch on this code; `dropReason` is the human-readable detail. */
 export type ALMessageDropReasonCode =
@@ -234,8 +247,11 @@ export type ALMessageDropReasonCode =
     | 'expired'
     | 'resync-required'
     | 'overloaded'
+    | 'congested'
     | 'not-yet-in-sync'
-    | 'unauthorized';
+    | 'unauthorized'
+    | 'membership-fenced'
+    | 'held-by-other';
 
 export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = Object.freeze([
     'unmet-requirements',
@@ -245,8 +261,11 @@ export const AL_MESSAGE_DROP_REASON_CODES: readonly ALMessageDropReasonCode[] = 
     'expired',
     'resync-required',
     'overloaded',
+    'congested',
     'not-yet-in-sync',
-    'unauthorized'
+    'unauthorized',
+    'membership-fenced',
+    'held-by-other'
 ]);
 
 export interface ALMessageHandlingPlan {
@@ -278,7 +297,7 @@ export interface ALMessageHandlingPlan {
         readonly enabled: boolean;
         readonly toPeerId?: string;
         readonly reason?: string;
-        readonly missingSeqs: readonly number[];
+        readonly missingRanges: readonly ALSeqRange[];
     };
     readonly repair: {
         readonly enabled: boolean;
@@ -297,6 +316,8 @@ export interface ALMessageHandlingPlan {
         readonly overloaded: boolean;
         readonly action: ALCongestionRuntimeAction;
         readonly priority: number;
+        /** The input the action answers, `overloaded` when both hold (D185); `undefined` exactly when the action is `none`. */
+        readonly cause: ALCongestionCause | undefined;
     };
     readonly ownership: {
         readonly algo: ALOwnershipAlgo;
@@ -390,15 +411,22 @@ export function shouldPersistInbox(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo === 'local-inbox';
 }
 
-/** The sender keeps its copy in browser storage exactly when the channel chose a durability above volatile. */
-export function shouldPersistOutbox(effective: ALQosEffectivePolicy): boolean {
-    return effective.durability.algo !== 'volatile';
+const AL_OUTBOUND_STORE_DURABILITY: Readonly<Record<ALDurabilityAlgo, ALStoreDurability>> = {
+    volatile: 'volatile',
+    'local-checkpoint': 'checkpoint',
+    'local-outbox': 'durable',
+    'local-inbox': 'durable'
+};
+
+/** The sender's store lane for a durability: memory, memory checkpointed to browser storage, or browser storage. */
+export function resolveALOutboundStoreDurability(durability: ALDurabilityAlgo): ALStoreDurability {
+    return AL_OUTBOUND_STORE_DURABILITY[durability];
 }
 
 /**
  * An admission that may wait for a route instead of being refused for lacking one: a message that
- * retries or persists. This is what `shouldPersistOutbox` meant before S3a; the WS server's recipient
- * resolution and the RTC missing-channel check keep that meaning.
+ * retries or is kept beyond the volatile lane. The WS server's recipient resolution and the RTC
+ * missing-channel check read it.
  */
 export function shouldAwaitALRoute(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo !== 'volatile' || effective.retry.algo !== 'none';
@@ -450,16 +478,17 @@ function computeMessageHandlingDecision(
 ): ALMessageHandlingDecision {
     const neighborCount = context.overlayNeighborPeerIds?.length ?? 0;
     const overloaded = context.overloaded ?? input.live?.overloaded ?? false;
+    const backpressured = context.backpressured ?? input.live?.backpressured ?? false;
     const result = normalizeALQosPolicy(msg, {
         ...input,
-        live: { overloaded, connectedNeighborCount: neighborCount, hasAlternateRoute: neighborCount > 1 }
+        live: { overloaded, backpressured, connectedNeighborCount: neighborCount, hasAlternateRoute: neighborCount > 1 }
     });
     return {
         result,
         dedupKey: toDedupKey(msg, result.effective),
         supersedenceRuntime: context.supersedenceObservation ?? { status: 'untracked' },
-        orderingRuntime: context.orderingObservation ?? { status: 'untracked', missingSeqs: [], releasableSeqs: [] },
-        congestion: planCongestion(result.effective, overloaded)
+        orderingRuntime: context.orderingObservation ?? { status: 'untracked', missingRanges: [], releasableSeqs: [] },
+        congestion: planCongestion(result.effective, resolveCongestionCause(overloaded, backpressured))
     };
 }
 
@@ -477,6 +506,9 @@ function resolveMessageDrop(
     }
     if (context.dedupSeen) {
         return { code: 'duplicate', reason: `Duplicate message for dedup key ${dedupKey}` };
+    }
+    if (isHeldByOtherSession(result.effective, context)) {
+        return { code: 'held-by-other', reason: 'Exclusive resource is held by another session' };
     }
     if (supersedenceRuntime.status === 'superseded') {
         return {
@@ -496,16 +528,27 @@ function resolveMessageDrop(
     if (orderingRuntime.status === 'resync-required') {
         return { code: 'resync-required', reason: 'resync-required' };
     }
-    if (congestion.action === 'reject') {
-        return { code: 'overloaded', reason: 'Node overloaded and congestion policy rejects handling' };
+    return resolveCongestionDrop(congestion);
+}
+
+/** `reject` drops every message and `drop-low` the lowest priority; the drop names its cause (D185). */
+function resolveCongestionDrop(congestion: ALMessageHandlingPlan['congestion']): ALMessageDrop | undefined {
+    const dropped = congestion.action === 'reject' ||
+        (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD);
+    if (!dropped) {
+        return undefined;
     }
-    if (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD) {
-        return {
-            code: 'overloaded',
-            reason: 'Node overloaded and congestion policy drops low-priority message'
-        };
+    if (congestion.cause === 'backpressured') {
+        return { code: 'congested', reason: 'Carrier backpressure dropped the send' };
     }
-    return undefined;
+    return congestion.action === 'reject'
+        ? { code: 'overloaded', reason: 'Node overloaded and congestion policy rejects handling' }
+        : { code: 'overloaded', reason: 'Node overloaded and congestion policy drops low-priority message' };
+}
+
+function isHeldByOtherSession(effective: ALQosEffectivePolicy, context: ALMessagePlanningContext): boolean {
+    return effective.ownership.algo === 'exclusive' && context.claimHolderPeerId !== undefined &&
+        context.claimHolderPeerId !== context.fromPeerId;
 }
 
 function computeMessageDelivery(
@@ -523,12 +566,15 @@ function computeMessageDelivery(
             enabled: !dropped && !deferred && isRecipient,
             persist: !dropped && shouldPersistInbox(decision.result.effective),
             deferred,
-            reason: deferred ? `Waiting for missing seqs ${decision.orderingRuntime.missingSeqs.join(', ')}` : undefined
+            reason: deferred
+                ? `Waiting for missing seqs ${toALSeqRangesText(decision.orderingRuntime.missingRanges)}`
+                : undefined
         },
         forwarding: {
             enabled: nextHopPeerIds.length > 0,
             nextHopPeerIds,
-            persist: !dropped && shouldPersistOutbox(decision.result.effective)
+            persist: !dropped &&
+                resolveALOutboundStoreDurability(decision.result.effective.durability.algo) !== 'volatile'
         }
     };
 }
@@ -571,12 +617,12 @@ function planNack(
     if (!context.fromPeerId) {
         return {
             enabled: false,
-            missingSeqs: []
+            missingRanges: []
         };
     }
 
     if (drop?.code === 'resync-required') {
-        return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingSeqs: [] };
+        return { enabled: true, toPeerId: context.fromPeerId, reason: 'resync-required', missingRanges: [] };
     }
 
     if (!drop && orderingRuntime.status === 'gap' && effective.repair.algo !== 'none') {
@@ -584,31 +630,22 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'gap',
-            missingSeqs: orderingRuntime.missingSeqs
+            missingRanges: orderingRuntime.missingRanges
         };
     }
 
-    if (drop?.code === 'expired') {
+    if (drop?.code === 'expired' || drop?.code === 'overloaded' || drop?.code === 'held-by-other') {
         return {
             enabled: true,
             toPeerId: context.fromPeerId,
-            reason: 'expired',
-            missingSeqs: []
-        };
-    }
-
-    if (drop?.code === 'overloaded') {
-        return {
-            enabled: true,
-            toPeerId: context.fromPeerId,
-            reason: 'overloaded',
-            missingSeqs: []
+            reason: drop.code,
+            missingRanges: []
         };
     }
 
     return {
         enabled: false,
-        missingSeqs: []
+        missingRanges: []
     };
 }
 
@@ -630,37 +667,30 @@ function planRepair(
     };
 }
 
+/** The session's own bound comes first: when it and the carrier's backpressure both hold, the cause is `overloaded`. */
+function resolveCongestionCause(overloaded: boolean, backpressured: boolean): ALCongestionCause | undefined {
+    if (overloaded) {
+        return 'overloaded';
+    }
+    return backpressured ? 'backpressured' : undefined;
+}
+
 function planCongestion(
     effective: ALQosEffectivePolicy,
-    overloaded: boolean
+    cause: ALCongestionCause | undefined
 ): ALMessageHandlingPlan['congestion'] {
-    if (!overloaded) {
-        return {
-            overloaded: false,
-            action: 'none',
-            priority: effective.congestion.opts.priority
-        };
+    const { algo, opts: { priority } } = effective.congestion;
+    const overloaded = cause === 'overloaded';
+    if (cause === undefined) {
+        return { overloaded, action: 'none', priority, cause };
     }
-
-    switch (effective.congestion.algo) {
+    switch (algo) {
         case 'reject':
-            return {
-                overloaded: true,
-                action: 'reject',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'reject', priority, cause };
         case 'defer':
-            return {
-                overloaded: true,
-                action: 'defer',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'defer', priority, cause };
         default:
-            return {
-                overloaded: true,
-                action: 'drop-low',
-                priority: effective.congestion.opts.priority
-            };
+            return { overloaded, action: 'drop-low', priority, cause };
     }
 }
 
@@ -723,7 +753,8 @@ function isLogicalRecipient(
         case 'multicast':
             return groupMemberPeerIds.size === 0 || groupMemberPeerIds.has(selfPeerId);
         case 'broadcast':
-            return !targets.exceptPeerIds?.includes(selfPeerId);
+            return !targets.exceptPeerIds?.includes(selfPeerId) &&
+                (targets.recipientPeerIds === undefined || targets.recipientPeerIds.includes(selfPeerId));
     }
 }
 

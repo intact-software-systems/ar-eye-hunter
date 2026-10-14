@@ -25,13 +25,14 @@ import {
 } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
 import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
     INBOUND_TEST_SOURCE
 } from '../inbound-runtime-test-fixture.ts';
+import type { InboundTestRuntime } from '../inbound-runtime-test-fixture.ts';
 import { createOutboundMessage } from '../outbound-runtime-test-fixture.ts';
 import { createOutboundTestSession, createSessionOutboundTestRuntime } from '../session-outbound-test-runtime.ts';
 import {
@@ -84,7 +85,7 @@ describe('ALWorkHandler under a session ownership', () => {
     it('takes nothing over once disposed', async () => {
         const fixture = createOwnedHandler(createTestDurableWorkOwnership(false));
 
-        fixture.handler.dispose();
+        await fixture.handler.dispose();
         fixture.ownership.take();
         await fixture.ownership.owned.whenIdle();
         await fixture.engine.executeOnce();
@@ -132,7 +133,7 @@ describe('two outbound runtimes of one session store', () => {
         const session = createOutboundTestSession();
         const previous = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(true));
         await previous.runtime.ready();
-        previous.runtime.dispose();
+        await previous.runtime.dispose();
         const other = createSessionOutboundTestRuntime(session, createTestDurableWorkOwnership(false));
         await other.runtime.enqueueIfAbsent(createOutboundMessage('durable-1'));
 
@@ -212,8 +213,18 @@ function createTestDurableWorkOwnership(owned: boolean): TestDurableWorkOwnershi
     };
 }
 
-function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership: TOwnership) {
+interface OwnedHandlerFixture<TOwnership extends ALDurableWorkOwnership> {
+    readonly handler: ALWorkHandler;
+    readonly engine: InboxOutboxEngine;
+    readonly ownership: TOwnership;
+    readonly released: readonly string[];
+    readonly probes: readonly ALWorkReadinessProbeDiagnostics[];
+    readonly batchCount: () => number;
+}
+
+function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership: TOwnership): OwnedHandlerFixture<TOwnership> {
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const released: string[] = [];
     const diagnostics: ALWorkDiagnostics[] = [];
     const probes: ALWorkReadinessProbeDiagnostics[] = [];
@@ -230,6 +241,7 @@ function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership
         readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
         readNextReadyAtMs: async () => undefined,
         selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
+        claimSuccessor: undefined,
         runClaim: async () => ({ status: 'completed' }),
         diagnostics: (event) => {
             diagnostics.push(event);
@@ -248,7 +260,12 @@ function createOwnedHandler<TOwnership extends ALDurableWorkOwnership>(ownership
     };
 }
 
-function createInboundSessionRuntime(namespace: string, ownership: TestDurableWorkOwnership) {
+interface InboundSessionFixture {
+    readonly fixture: InboundTestRuntime;
+    readonly ownership: TestDurableWorkOwnership;
+}
+
+function createInboundSessionRuntime(namespace: string, ownership: TestDurableWorkOwnership): InboundSessionFixture {
     const fixture = createInboundTestRuntime({
         stores: createDefaultIndexedDbALInboundRuntimeStores({ dbName: namespace, namespace }),
         carrier: 'ws',

@@ -1,16 +1,10 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarDefaults, RallarFacade, RallarSetupInput } from '@shared-web/browser/rallar.ts';
+import type { ApplicationId, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-
-type RoomDefaults = NonNullable<RallarDefaults['room']>;
-
-type MutableRoomDefaults = {
-    -readonly [K in keyof RoomDefaults]: RoomDefaults[K];
-};
 
 describe('Browser facade runtime state', () => {
     it('clones defaults and resolves operation options from them', () => {
@@ -65,8 +59,7 @@ describe('Browser facade runtime state', () => {
         });
         expect(defaults?.room).not.toBe(context.readDefaults()?.room);
 
-        const mutableRoom = defaults?.room as MutableRoomDefaults;
-        mutableRoom.roomId = 'mutated';
+        Object.assign(defaults?.room ?? {}, { roomId: 'mutated' });
 
         expect(context.defaults()?.room?.roomId).toBe('room-1');
         expect(context.resolveOperationScope()).toEqual({
@@ -87,6 +80,50 @@ describe('Browser facade runtime state', () => {
             maxPeerConnections: 12,
             rttReportingDegreeLimit: 3
         });
+    });
+
+    it('copies capture defaults and keeps an explicit operation mode through projection', () => {
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        const defaults = { applicationId: 'app', rtc: { captureMode: 'native' as const } };
+        context.setDefaults(defaults);
+        Object.assign(defaults.rtc, { captureMode: 'off' });
+        expect(context.defaults()?.rtc?.captureMode).toBe('native');
+        const copy = context.defaults();
+        Object.assign(copy?.rtc ?? {}, { captureMode: 'signaling' });
+        expect(context.defaults()?.rtc?.captureMode).toBe('native');
+        expect(context.resolveOperationOptions({ rtcCaptureMode: 'off' })).toEqual({ rtcCaptureMode: 'off' });
+    });
+
+    it('stores capture-only defaults without inventing application identity and isolates both clones', () => {
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        const defaults = { rtc: { captureMode: 'native' as const } };
+        context.setDefaults(defaults);
+
+        Object.assign(defaults.rtc, { captureMode: 'off' });
+        expect.soft(context.readDefaults()).toStrictEqual({ rtc: { captureMode: 'native' } });
+        const copy = context.defaults();
+        expect.soft(copy).toStrictEqual({ rtc: { captureMode: 'native' } });
+        Object.assign(copy?.rtc ?? {}, { captureMode: 'signaling' });
+        expect.soft(context.defaults()).toStrictEqual({ rtc: { captureMode: 'native' } });
+    });
+
+    it('clears the previous default scope for capture-only settings and keeps an explicit operation scope', () => {
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        context.setDefaults({ applicationId: 'app', workspaceId: 'workspace' });
+        expect(context.readDefaultScope()).toEqual({ applicationId: 'app', workspaceId: 'workspace' });
+
+        context.setDefaults({ rtc: { captureMode: 'off' } });
+        expect.soft(context.readDefaultScope()).toBeUndefined();
+        expect.soft(context.resolveOperationScope()).toBeUndefined();
+        const explicitScope = { applicationId: 'operation-app', workspaceId: 'operation-workspace' };
+        expect(context.resolveOperationScope(explicitScope)).toBe(explicitScope);
+    });
+
+    it('accepts capture-only public defaults while Setup still requires an application', () => {
+        const defaults = { rtc: { captureMode: 'native' as const } };
+        expectTypeOf(defaults).toMatchTypeOf<RallarDefaults>();
+        expectTypeOf<RallarFacade['setDefaults']>().toBeCallableWith(defaults);
+        expectTypeOf<Pick<RallarSetupInput, 'applicationId'>>().toEqualTypeOf<{ readonly applicationId: ApplicationId; }>();
     });
 
     it('keeps current room and connection state isolated per context', () => {

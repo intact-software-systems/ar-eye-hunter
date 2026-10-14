@@ -687,7 +687,7 @@ function message<T>(input: AuthorityMessageFixtureInput<T>): RallarMessage<T> {
         senderId: input.senderId,
         payload: input.payload,
         raw: {
-            id: { v: 2, msgId: 'authority-fixture', senderId: input.senderId, ts: 1_000 },
+            id: { v: 3, msgId: 'authority-fixture', senderId: input.senderId, ts: 1_000 },
             route: { topicId: 'game.authority', contextId: 'room-1', resourceId: 'resource-1' },
             payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
         },

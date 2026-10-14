@@ -239,6 +239,50 @@ describe('atomic admission and QueueBox work', () => {
         expect(await queue.getItem(entry.key)).toBeUndefined();
     });
 
+    it('commits its readwrite once its last request is issued, the compare-and-set put included', async () => {
+        const { db, queue } = await createStorage();
+        const entry = createEntry('committed');
+        const commits = recordTransactionCommits();
+
+        expect(await writeIndexedDbAdmissionMutations(createWrite(db, entry))).toBe(true);
+
+        expect(commits).toEqual(['readwrite']);
+        expect(await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).toHaveLength(1);
+        expect(await queue.getItem(entry.key)).toMatchObject({ resource: 'committed' });
+    });
+
+    it('leaves a write with a deadline to commit on its own, so the deadline can still abort it', async () => {
+        const { db } = await createStorage();
+        const commits = recordTransactionCommits();
+
+        expect(
+            await writeIndexedDbAdmissionMutations({
+                ...createWrite(db, createEntry('deadline')),
+                deadline: { expiresAtMs: Number.MAX_SAFE_INTEGER, nowMs: Date.now }
+            })
+        ).toBe(true);
+
+        expect(commits).toEqual([]);
+    });
+
+    it('rejects with the error of a put its aborted transaction refused, and leaves no rejection unhandled', async () => {
+        const { db } = await createStorage();
+        const refused = new DOMException('The transaction is not active', 'TransactionInactiveError');
+        const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(function (this: IDBObjectStore) {
+            this.transaction.abort();
+            throw refused;
+        });
+        onTestFinished(() => put.mockRestore());
+
+        await expect(writeIndexedDbAdmissionMutations({
+            ...createWrite(db, createEntry('refused')),
+            fence: { rows: new Map(), prefixes: new Map() },
+            queueMutations: []
+        })).rejects.toBe(refused);
+        // One more task, so a rejection the aborted transaction left unhandled fails this test.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
     it('rejects two mutations for one queue key before committing admission', async () => {
         const { db, queue } = await createStorage();
         const entry = createEntry('duplicate');
@@ -303,6 +347,18 @@ async function createStorage(): Promise<AdmissionQueueStorage> {
         observer: createPassThroughIndexedDbOperationObserver()
     });
     return { db, queue };
+}
+
+/** The mode of every transaction committed explicitly, in order; each still commits. */
+function recordTransactionCommits(): readonly IDBTransactionMode[] {
+    const commits: IDBTransactionMode[] = [];
+    const commit = IDBTransaction.prototype.commit;
+    const spy = vi.spyOn(IDBTransaction.prototype, 'commit').mockImplementation(function (this: IDBTransaction) {
+        commits.push(this.mode);
+        commit.call(this);
+    });
+    onTestFinished(() => spy.mockRestore());
+    return commits;
 }
 
 function createWrite(db: IDBDatabase, entry: ResourceEntry): WriteIndexedDbAdmissionMutationsInput {

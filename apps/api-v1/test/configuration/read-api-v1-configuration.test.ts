@@ -7,6 +7,7 @@ import {
     toApiV1ConfigurationStartupSummary,
     type ReadApiV1ConfigurationInput
 } from '../../src/configuration/read-api-v1-configuration.ts';
+import { toApiAppInboxServiceOptions } from '../../src/services/timing-service.ts';
 import {
     CONFIGURATION_SECRET_SENTINELS,
     validConfigurationDefaultsSource,
@@ -27,6 +28,25 @@ const PROD_IN_MEMORY_URL = new URL(
     import.meta.url
 );
 const STATIC_CLIENTS_URL = new URL('../../resources/authorised-clients.json', import.meta.url);
+
+Deno.test('configuration reader carries selected phase timing through AppInbox service options', async () => {
+    for (const selection of [{ raw: 'false', expectedPhase: false }, { raw: 'true', expectedPhase: true }]) {
+        const configuration = await readApiV1Configuration(readerInput({
+            ...validConfigurationEnvironment('prod-in-memory'),
+            RALLAR_TIMING_LOGS: 'true',
+            RALLAR_APP_INBOX_PHASE_TIMING: selection.raw
+        }));
+        assert.deepEqual({
+            timingLogs: configuration.observability.timingLogs,
+            decodedPhase: configuration.appInbox.phaseTiming,
+            appInboxOptionPhase: toApiAppInboxServiceOptions(configuration.appInbox).phaseTiming
+        }, {
+            timingLogs: true,
+            decodedPhase: selection.expectedPhase,
+            appInboxOptionPhase: selection.expectedPhase
+        });
+    }
+});
 
 Deno.test('configuration reader selects only absent or exact canonical profiles', async () => {
     const absentEnvironment = validConfigurationEnvironment();
@@ -206,9 +226,16 @@ Deno.test('configuration reader preserves ordered arrays and isolates the frozen
         readTextFile: (url) => Promise.resolve(JSON.stringify(sources.get(url.href)))
     });
 
-    (defaults.http as { port: number; }).port = 1234;
+    if (defaults.http === null || typeof defaults.http !== 'object' || Array.isArray(defaults.http)) {
+        throw new Error('Configuration fixture HTTP source must be an object.');
+    }
+    Reflect.set(defaults.http, 'port', 1234);
     environmentValues.AUTH_ADMIN_CLIENT_IDS = 'mutated';
-    (staticClients[0] as { clientId: string; }).clientId = 'mutated';
+    const staticClient = staticClients[0];
+    if (staticClient === null || typeof staticClient !== 'object' || Array.isArray(staticClient)) {
+        throw new Error('Configuration fixture static client must be an object.');
+    }
+    Reflect.set(staticClient, 'clientId', 'mutated');
 
     assert.equal(configuration.http.port, 8080);
     assert.deepEqual(configuration.authentication.adminClientIds, ['admin', 'zeta']);
@@ -259,6 +286,60 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
     assert.equal(rendered.includes('databaseUrl'), false);
     assert.equal(rendered.includes('fingerprint'), false);
     assert.equal(rendered.includes('length'), false);
+});
+
+Deno.test('ICE request input overrides defaults and profile without changing window or cache and remains frozen', async () => {
+    const environment = { ...validConfigurationEnvironment('prod-in-memory'), RALLAR_ICE_RATE_LIMIT_REQUESTS: '101' };
+    const input = readerInput(environment);
+    const configuration = await readApiV1Configuration({
+        ...input,
+        readTextFile: async function readIceOverrideConfigurationResource (url) {
+            const source: unknown = JSON.parse(await input.readTextFile(url));
+            if (url.href === PROD_IN_MEMORY_URL.href) {
+                if (source === null || typeof source !== 'object' || Array.isArray(source)) {
+                    throw new Error('Configuration resource must be a JSON object.');
+                }
+                Reflect.set(source, 'ice', { mode: 'local', rateLimit: { requests: 37 } });
+            }
+            return JSON.stringify(source);
+        }
+    });
+    assert.deepEqual(configuration.ice.rateLimit, { requests: 101, windowMs: 60_000 });
+    assert.equal(configuration.ice.cacheTtlMs, 300_000);
+    assertRecursivelyFrozen(configuration);
+    assert.equal(configuration.profile.appliedEnvironmentOverrideNames.includes('RALLAR_ICE_RATE_LIMIT_REQUESTS'), true);
+    const summary = toApiV1ConfigurationStartupSummary(configuration);
+    assert.equal(summary.appliedEnvironmentOverrideNames.includes('RALLAR_ICE_RATE_LIMIT_REQUESTS'), true);
+    for (const secret of Object.values(CONFIGURATION_SECRET_SENTINELS)) {
+        assert.equal(JSON.stringify(summary).includes(secret), false);
+    }
+});
+
+Deno.test('ICE request input rejects malformed and nonpositive integers with safe source diagnostics', async () => {
+    for (const value of ['', 'malformed-input-sentinel', '0', '-1', '1.5', 'Infinity', 'NaN']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment('prod-in-memory'),
+            RALLAR_ICE_RATE_LIMIT_REQUESTS: value
+        }));
+        assert.equal(
+            error.issues.some((issue) =>
+                issue.path === 'ice.rateLimit.requests' && issue.environmentName === 'RALLAR_ICE_RATE_LIMIT_REQUESTS' && issue.source === 'environment'
+            ),
+            true
+        );
+        assert.equal(error.message.includes('malformed-input-sentinel'), false);
+        for (const secret of Object.values(CONFIGURATION_SECRET_SENTINELS)) {
+            assert.equal(error.message.includes(secret), false);
+        }
+    }
+});
+
+Deno.test('all committed profiles preserve the default finite ICE admission policy', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.deepEqual(configuration.ice.rateLimit, { requests: 20, windowMs: 60_000 });
+        assert.equal(configuration.ice.cacheTtlMs, 300_000);
+    }
 });
 
 function readerInput(environmentValues: Record<string, string>): ReadApiV1ConfigurationInput {

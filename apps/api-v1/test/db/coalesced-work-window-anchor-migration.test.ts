@@ -28,7 +28,7 @@ function toStoredMessage(coalescedWork: StoredCoalescedWork | null): string {
             : { kind: 'group-revision', overlayId: 'overlay', __rallarCoalescedWork: coalescedWork }
     };
     return JSON.stringify({
-        id: { v: 2, msgId: 'overlay:group-revision:g1', ts: 1_000, senderId: 'server-1' },
+        id: { v: 3, msgId: 'overlay:group-revision:g1', ts: 1_000, senderId: 'server-1' },
         payload: { typeId: 'RTC_TOPOLOGY_RECOMPUTE', contentType: 'application/json', resource: JSON.stringify(envelope) }
     });
 }

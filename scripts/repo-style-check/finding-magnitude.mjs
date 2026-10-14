@@ -24,6 +24,9 @@ const growthToleranceFraction = 0.1;
 const growthToleranceMinimumUnits = 25;
 
 export function findingMagnitude(finding) {
+    if (finding.ruleId === 'boundary.unknown') {
+        return boundaryUnknownMagnitude(finding);
+    }
     const match = magnitudePatternsByRule[finding.ruleId]?.exec(finding.message);
     if (match !== undefined && match !== null) {
         return Number(match[1]);
@@ -60,13 +63,7 @@ export function boundaryUnknownMagnitude(finding) {
     if (Number.isInteger(finding.affectedCount) && finding.affectedCount > 0) {
         return finding.affectedCount;
     }
-    const summaryPrefix = '... and ';
-    const summarySuffix = ' additional unknown occurrences. Reduce unknown propagation at domain boundaries.';
-    if (!finding.message.startsWith(summaryPrefix) || !finding.message.endsWith(summarySuffix)) {
-        return 1;
-    }
-    const magnitude = finding.message.slice(summaryPrefix.length, -summarySuffix.length);
-    return /^\d+$/u.test(magnitude) ? Number(magnitude) : 1;
+    return 1;
 }
 
 function resolveToleranceTier(tierUpperBounds, magnitude) {

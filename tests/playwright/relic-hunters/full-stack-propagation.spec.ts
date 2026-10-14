@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+
+import { RELIC_TYPES } from '../../../packages/relic-hunters/src/protocol.ts';
 
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
@@ -10,6 +12,7 @@ type RuntimeHook = Readonly<{
         ignoredSnapshotCount: number;
         lastSnapshotSource?: string;
         lastIgnoredSnapshotReason?: string;
+        roundTransitionCues: readonly string[];
         lastAcceptedSnapshot?: Readonly<{
             source: string;
             phase: string;
@@ -58,49 +61,14 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
         const configResponse = await request.get('/api/config');
         expect(configResponse.ok()).toBe(true);
 
-        const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `${Date.now()}-${crypto.randomUUID()}`;
         const contextA = await browser.newContext();
         const contextB = await browser.newContext();
         const pageA = await contextA.newPage();
         const pageB = await contextB.newPage();
 
         try {
-            await registerHunter(pageA, {
-                username: `alice-${suffix}`,
-                displayName: 'Alice',
-                password: `alice-pass-${suffix}`
-            });
-            await registerHunter(pageB, {
-                username: `bob-${suffix}`,
-                displayName: 'Bob',
-                password: `bob-pass-${suffix}`
-            });
-
-            await pageA.getByRole('button', { name: 'New Room' }).click();
-            await expect(pageA.getByRole('button', { name: /Join as/ })).toBeVisible();
-            const roomId = await waitForRoomId(pageA);
-
-            await pageB.getByRole('button', { name: 'Refresh' }).click();
-            const roomButtonB = pageB.locator(`button.room-row[data-room-id="${roomId}"]`);
-            await expect(roomButtonB).toBeVisible();
-            await roomButtonB.click();
-            await waitForRuntime(pageB, (runtime) => runtime.roomId === roomId);
-
-            await pageA.getByRole('button', { name: /Join as/ }).click();
-            await expectConverged(pageA, pageB, {
-                phase: 'lobby',
-                round: 1,
-                playerCount: 1,
-                submittedCount: 0
-            });
-
-            await pageB.getByRole('button', { name: /Join as/ }).click();
-            await expectConverged(pageA, pageB, {
-                phase: 'lobby',
-                round: 1,
-                playerCount: 2,
-                submittedCount: 0
-            });
+            await enterLobbyWithTwoHunters(pageA, pageB, suffix);
 
             await expect(pageA.locator('.lobby-begin-btn')).toBeEnabled();
             await pageA.locator('.lobby-begin-btn').click();
@@ -110,6 +78,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 playerCount: 2,
                 submittedCount: 0
             });
+            await expectRoundTransitionCues(pageA, pageB, ['1:round-started']);
 
             await pageA.getByRole('button', { name: 'Submit Plan' }).click();
             await expectConverged(pageA, pageB, {
@@ -127,6 +96,11 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 submittedCount: 0,
                 minEventCount: 3
             });
+            await expectRoundTransitionCues(pageA, pageB, [
+                '1:round-started',
+                '1:round-resolved',
+                '2:review-continued'
+            ]);
 
             await pageB.reload();
             await expect(pageB.getByRole('button', { name: 'Refresh' })).toBeVisible();
@@ -137,6 +111,17 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 submittedCount: 0,
                 minEventCount: 3
             });
+
+            await pageA.getByRole('button', { name: 'Submit Plan' }).click();
+            await pageB.getByRole('button', { name: 'Submit Plan' }).click();
+            await expectConverged(pageA, pageB, {
+                phase: 'planning',
+                round: 3,
+                playerCount: 2,
+                submittedCount: 0,
+                minEventCount: 5
+            });
+            await expectCuesResumedAfterReload(pageA, pageB);
 
             await pageA.getByRole('button', { name: 'Reset' }).click();
             await expectConverged(pageA, pageB, {
@@ -171,7 +156,132 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
             ]);
         }
     });
+
+    // The command's WS frame never reaches the server, so only the page's checkpoint carries it across the reload.
+    test('a start command held on its WS leg survives a reload inside its deadline and is applied once', async ({ browser }) => {
+        test.setTimeout(180_000);
+
+        const suffix = `${Date.now()}-${crypto.randomUUID()}`;
+        const contextA = await browser.newContext();
+        const contextB = await browser.newContext();
+        const commandHold = await routeRelicCommandHold(contextA);
+        const pageA = await contextA.newPage();
+        const pageB = await contextB.newPage();
+
+        try {
+            await enterLobbyWithTwoHunters(pageA, pageB, suffix);
+            const eventCount = (await readRuntime(pageA))?.snapshot?.eventCount ?? 0;
+
+            commandHold.hold();
+            await pageA.locator('.lobby-begin-btn').click();
+            await expect.poll(() => commandHold.heldCount()).toBeGreaterThan(0);
+            // An admission inside the last checkpoint interval is lost with its page, so the reload waits one out.
+            await pageA.waitForTimeout(CHECKPOINT_SETTLE_MS);
+            expect((await readRuntime(pageB))?.snapshot?.phase).toBe('lobby');
+            commandHold.release();
+            await pageA.reload();
+
+            await expectConverged(pageA, pageB, {
+                phase: 'planning',
+                round: 1,
+                playerCount: 2,
+                submittedCount: 0,
+                minEventCount: eventCount + 1
+            });
+            await waitForRuntime(pageA, (runtime) => runtime.diagnostics.phase === 'ready');
+            // A second application would append a second start event; give a repeat time to land before counting.
+            await pageA.waitForTimeout(REPEAT_WINDOW_MS);
+            const [runtimeA, runtimeB] = await Promise.all([readRuntime(pageA), readRuntime(pageB)]);
+            expect(runtimeA?.snapshot?.eventCount).toBe(eventCount + 1);
+            expect(runtimeB?.snapshot?.eventCount).toBe(eventCount + 1);
+        }
+        finally {
+            await Promise.all([
+                contextA.close(),
+                contextB.close()
+            ]);
+        }
+    });
 });
+
+/** One checkpoint interval (1 s, the browser default) and a margin. */
+const CHECKPOINT_SETTLE_MS = 2_000;
+const REPEAT_WINDOW_MS = 3_000;
+const RALLAR_WS_PATH = /\/api\/ws\//;
+
+interface RelicCommandHold {
+    hold(): void;
+    release(): void;
+    heldCount(): number;
+}
+
+/**
+ * Withholds the page's Relic command frames from the server while held, as a carrier that accepted them and never
+ * delivered. Every other frame, and every frame of a socket opened after the release, goes through.
+ */
+async function routeRelicCommandHold(context: BrowserContext): Promise<RelicCommandHold> {
+    let holding = false;
+    let held = 0;
+    await context.routeWebSocket(RALLAR_WS_PATH, (socket) => {
+        const server = socket.connectToServer();
+        socket.onMessage((message) => {
+            if (holding && String(message).includes(RELIC_TYPES.command)) {
+                held += 1;
+                return;
+            }
+            server.send(message);
+        });
+    });
+    return {
+        hold: () => {
+            holding = true;
+        },
+        release: () => {
+            holding = false;
+        },
+        heldCount: () => held
+    };
+}
+
+/** Two hunters register, Alice opens a room, both join it, and both pages agree on the lobby. */
+async function enterLobbyWithTwoHunters(pageA: Page, pageB: Page, suffix: string): Promise<void> {
+    await registerHunter(pageA, {
+        username: `alice-${suffix}`,
+        displayName: 'Alice',
+        password: `alice-pass-${suffix}`
+    });
+    await registerHunter(pageB, {
+        username: `bob-${suffix}`,
+        displayName: 'Bob',
+        password: `bob-pass-${suffix}`
+    });
+
+    await pageA.getByRole('button', { name: 'New Room' }).click();
+    await expect(pageA.getByRole('button', { name: /Join as/ })).toBeVisible();
+    const roomId = await waitForRoomId(pageA);
+
+    await pageB.getByRole('button', { name: 'Refresh' }).click();
+    const roomButtonB = pageB.locator(`button.room-row[data-room-id="${roomId}"]`);
+    await expect(roomButtonB).toBeVisible();
+    await roomButtonB.click();
+    await waitForRuntime(pageB, (runtime) => runtime.roomId === roomId);
+
+    await pageA.getByRole('button', { name: /Join as/ }).click();
+    await expectConverged(pageA, pageB, {
+        phase: 'lobby',
+        round: 1,
+        playerCount: 1,
+        submittedCount: 0
+    });
+
+    await pageB.getByRole('button', { name: /Join as/ }).click();
+    await expectConverged(pageA, pageB, {
+        phase: 'lobby',
+        round: 1,
+        playerCount: 2,
+        submittedCount: 0
+    });
+}
 
 async function registerHunter(
     page: Page,
@@ -260,6 +370,31 @@ async function expectConverged(
     return comparableSnapshot(lastA.snapshot);
 }
 
+/** Both pages cued exactly these round transitions, in this order. */
+async function expectRoundTransitionCues(pageA: Page, pageB: Page, expected: readonly string[]): Promise<void> {
+    for (const page of [pageA, pageB]) {
+        await expect.poll(async () => (await readRuntime(page))?.diagnostics.roundTransitionCues ?? [], {
+            timeout: 30_000
+        }).toEqual(expected);
+    }
+}
+
+/**
+ * The page that stayed cued round 2 out and round 3 in. The reloaded page cues round 3 at the latest: what it cued of
+ * round 2 depends on the server repairing that track for it, and whatever it cued is in the track order.
+ */
+async function expectCuesResumedAfterReload(stayed: Page, reloaded: Page): Promise<void> {
+    const roundTwoAndThree = ['2:review-continued', '2:round-resolved', '3:review-continued'];
+    await expect.poll(async () => (await readRuntime(stayed))?.diagnostics.roundTransitionCues ?? [], {
+        timeout: 30_000
+    }).toEqual(['1:round-started', '1:round-resolved', ...roundTwoAndThree]);
+    await expect.poll(async () => (await readRuntime(reloaded))?.diagnostics.roundTransitionCues.at(-1), {
+        timeout: 30_000
+    }).toBe('3:review-continued');
+    const reloadedCues = (await readRuntime(reloaded))?.diagnostics.roundTransitionCues ?? [];
+    expect(roundTwoAndThree.filter((cue) => reloadedCues.includes(cue))).toEqual(reloadedCues);
+}
+
 async function waitForRuntime(
     page: Page,
     predicate: (runtime: RuntimeHook) => boolean
@@ -274,7 +409,7 @@ async function waitForRuntime(
 
 async function readRuntime(page: Page): Promise<RuntimeHook | undefined> {
     return await page.evaluate(() =>
-        (window as unknown as { __relicHuntersRuntime?: RuntimeHook; }).__relicHuntersRuntime
+        (window as Window & { __relicHuntersRuntime?: RuntimeHook; }).__relicHuntersRuntime
     );
 }
 

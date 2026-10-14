@@ -1,4 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
+import { areSameUniqueStringSet } from '../assert/are-same-unique-string-set.ts';
 import { isAssertOperatorSatisfied } from '../assert/assert-value-operators.ts';
 import type { ResolvedGroupAssertionEvidenceRow } from './group-assertions-evidence.ts';
 import type {
@@ -62,7 +63,40 @@ export function computeGroupAssertionVerdict(
             return computeAllEqualVerdict(resolved);
         case 'allEqualWithin':
             return computeAllEqualWithinVerdict(resolved, assertion.tolerance);
+        case 'sameUniqueStringSetAsRole':
+            return {
+                kind: 'equality',
+                ok: false,
+                violatingAgentIds: [],
+                reason: 'Comparison role evidence is required.'
+            };
     }
+}
+
+export function computeRoleSetVerdict(
+    senders: readonly ResolvedGroupAssertionEvidenceRow[],
+    receivers: readonly ResolvedGroupAssertionEvidenceRow[],
+    expectedReceiverCount: number
+): EqualityGroupAssertionVerdict {
+    const sessions = receivers.map((row) => row.value);
+    const complete = expectedReceiverCount > 0 && receivers.length === expectedReceiverCount &&
+        sessions.every((value) => typeof value === 'string' && value.trim().length > 0) &&
+        new Set(sessions).size === sessions.length;
+    const violatingSenders = senders
+        .filter((row) => !complete || !areSameUniqueStringSet(row.value, sessions))
+        .map((row) => row.agentId);
+    const invalidReceivers = receivers
+        .filter((row) =>
+            typeof row.value !== 'string' || row.value.trim().length === 0 ||
+            sessions.filter((value) => value === row.value).length !== 1
+        )
+        .map((row) => row.agentId);
+    return {
+        kind: 'equality',
+        ok: complete && violatingSenders.length === 0,
+        violatingAgentIds: [...violatingSenders, ...invalidReceivers],
+        reason: 'Recipient set differs from the frozen receiver connection sessions or those sessions are unusable.'
+    };
 }
 
 function computePredicateVerdict(

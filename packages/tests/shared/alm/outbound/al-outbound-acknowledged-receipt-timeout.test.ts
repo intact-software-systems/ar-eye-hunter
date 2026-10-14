@@ -161,7 +161,7 @@ async function createReceiptedSendFixture(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
             ackTracking,
             retryTracking: { enabled: true, maxAttempts: 3 }
@@ -234,7 +234,7 @@ async function refuseForGood(
     relayPeerId: string
 ): Promise<void> {
     const nack = newALNackControlMessage(
-        { v: 2, msgId: `${relayPeerId}-nack:${msg.id.msgId}`, senderId: relayPeerId, ts: Date.now() },
+        { v: 3, msgId: `${relayPeerId}-nack:${msg.id.msgId}`, senderId: relayPeerId, ts: Date.now() },
         {
             msgId: msg.id.msgId,
             fromPeerId: relayPeerId,
@@ -268,7 +268,7 @@ async function acknowledge(
     const observedAtEpochMs = Date.now();
     const ack = newALAckControlMessage(
         {
-            v: 2,
+            v: 3,
             msgId: `${recipientPeerId}-ack:${msg.id.msgId}`,
             senderId: recipientPeerId,
             ts: observedAtEpochMs

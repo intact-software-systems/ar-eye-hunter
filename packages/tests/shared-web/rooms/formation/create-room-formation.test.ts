@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
@@ -20,10 +27,14 @@ import {
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
-import { readRoomWorkflowMocks, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from '../room-workflow-test-runtime.ts';
+import {
+    getRoomWorkflowMocks,
+    resetRoomWorkflowTestRuntime,
+    seedRoomSnapshots
+} from '../room-workflow-test-runtime.ts';
 import { createFormationSnapshot, createLayoutOverlay } from './room-formation-test-fixtures.ts';
 
-const roomWorkflowMocks = readRoomWorkflowMocks();
+const roomWorkflowMocks = getRoomWorkflowMocks();
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const topologyConfig = { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 } as const;
 

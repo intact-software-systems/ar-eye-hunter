@@ -1,13 +1,6 @@
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
-import {
-    EntityStatus,
-    isKeysEqual,
-    toKeyAsString,
-    toResourceEntryWithKey
-} from '@shared/queuebox/ResourceEntry.ts';
 // @vitest-environment happy-dom
 
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -17,6 +10,7 @@ import {
 } from 'vitest';
 
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -26,19 +20,26 @@ import {
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundIdentityKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '@shared/persistence/indexed-db-request.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    toKeyAsString,
+    toResourceEntryWithKey
+} from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { waitForSettledOutboundWork } from '../wait-for-al-outbound-work.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
-    holdOutboundClaims
+    holdOutboundClaims,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('canonical outbound payload storage', () => {
     it('retains IndexedDB canonical facts through public QueueBox cleanup and restart', async () => {
@@ -68,7 +69,7 @@ describe('canonical outbound payload storage', () => {
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'captured' }] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => runtime.dispose());
@@ -97,7 +98,7 @@ describe('canonical outbound payload storage', () => {
         });
         const otherRuntime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: otherStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'other-session' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'other-session' }] }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         onTestFinished(() => otherRuntime.dispose());
@@ -165,7 +166,7 @@ describe('canonical outbound payload storage', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ peer: 'first' }, { peer: 'second' }, { peer: 'third' }]
             }),
             sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
@@ -203,7 +204,7 @@ describe('canonical outbound payload storage', () => {
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: selectedDeadline } },
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ peer: 'captured' }]
             }),
             sendPreparedMessage: async () => {
@@ -251,7 +252,7 @@ describe('canonical outbound payload storage', () => {
         const createRuntime = () =>
             createDefaultOutboundTestRuntime({
                 stores,
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'captured' }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'captured' }] }),
                 sendPreparedMessage: async () => {
                     throw new Error('Expired work must never send');
                 }
@@ -261,10 +262,12 @@ describe('canonical outbound payload storage', () => {
         const claims = holdOutboundClaims(stores);
         const runtime = createRuntime();
         const message = createOutboundMessage('crossing-deadline', { ttlMs: 10 });
-        const candidate = operation === 'commit' ? await computeOutboundTestAdmission(store, message) : undefined;
+        const candidate = operation === 'commit'
+            ? await readOutboundTestAdmission({ store: store, message: message, creationNow: () => Temporal.Now.instant(), clock: { nowMs: () => Date.now() } })
+            : undefined;
         const admission = await runtime.enqueueIfAbsent(message);
-        runtime.dispose();
-        await claims.release();
+        await runtime.dispose();
+        await claims.release(runtime);
         const crossedKey = crossedAt === 'payload' ? admission.entry!.key : toALOutboundIdentityKey(admission.entry!.key);
         const getItem = backend.workQueue.getItem.bind(backend.workQueue);
         vi.spyOn(backend.workQueue, 'getItem').mockImplementation(async (key) => {
@@ -302,8 +305,18 @@ describe('canonical outbound payload storage', () => {
         });
         const first = createOutboundMessage('same-message-id');
         const second = { ...first, id: { ...first.id, senderId: 'different-sender' } };
-        const firstAdmission = await computeOutboundTestAdmission(store, first);
-        const secondAdmission = await computeOutboundTestAdmission(store, second);
+        const firstAdmission = await readOutboundTestAdmission({
+            store: store,
+            message: first,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
+        const secondAdmission = await readOutboundTestAdmission({
+            store: store,
+            message: second,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(await store.commitBundle(firstAdmission)).toBe('committed');
         await expect(store.commitBundle(secondAdmission)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect((await store.readSentMessage(first.id.msgId))?.msg.id.senderId).toBe(first.id.senderId);
@@ -331,7 +344,7 @@ describe('canonical outbound payload storage', () => {
         const runtime = createDefaultOutboundTestRuntime({
             queueEngine: new InboxOutboxEngine(),
             stores: { admissionStore, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'receiver' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'receiver' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent', submissionAttempted: true };
@@ -395,7 +408,7 @@ describe('canonical outbound payload storage', () => {
             const runtime = createDefaultOutboundTestRuntime({
                 queueEngine: new InboxOutboxEngine(),
                 stores: { admissionStore, workQueue: backend.workQueue },
-                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: namespace }] }),
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: namespace }] }),
                 sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
             });
             onTestFinished(() => runtime.dispose());

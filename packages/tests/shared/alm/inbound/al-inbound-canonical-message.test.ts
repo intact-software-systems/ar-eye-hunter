@@ -1,3 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
+
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
@@ -11,11 +19,12 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { normalizeALRuntimeStoreRetention, type NormalizedALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionMutation,
+    type ALInboundAdmissionStore,
     type ALInboundCommitBundle
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
@@ -30,12 +39,6 @@ import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished
-} from 'vitest';
 
 const NAMESPACE = 'inbound-canonical';
 const SCOPED_WS_SOURCE = {
@@ -48,7 +51,7 @@ interface CanonicalRuntimeFixture {
     readonly state: ALAdmissionMemoryState;
     readonly backend: InMemoryAdmissionBackend;
     readonly runtime: ALInboundMessageRuntime;
-    readonly admissionStore: ReturnType<typeof createALInboundAdmissionStore>;
+    readonly admissionStore: ALInboundAdmissionStore;
     readonly delivered: string[];
     readonly forwarded: string[];
 }
@@ -109,7 +112,8 @@ describe('inbound canonical message ownership', () => {
             orderingTrackTtlMs: retention.repositoryTtlMs,
             supersedenceTrackTtlMs: retention.repositoryTtlMs,
             retention,
-            nowMs: () => clock.nowMs
+            nowMs: () => clock.nowMs,
+            maxOrderingTracks: undefined
         });
         const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
         const trackKey = toALOrderingTrackKey(gapped)!;
@@ -224,11 +228,11 @@ describe('inbound canonical message ownership', () => {
 interface RetentionFixture {
     readonly state: ALAdmissionMemoryState;
     readonly backend: InMemoryAdmissionBackend;
-    readonly admissionStore: ReturnType<typeof createALInboundAdmissionStore>;
+    readonly admissionStore: ALInboundAdmissionStore;
 }
 
 function createRetentionFixture(
-    retention: ReturnType<typeof normalizeALRuntimeStoreRetention>,
+    retention: NormalizedALRuntimeStoreRetentionConfig,
     nowMs: number
 ): RetentionFixture {
     const state = createInMemoryALAdmissionState(new InMemoryQueueBox());
@@ -242,7 +246,8 @@ function createRetentionFixture(
             orderingTrackTtlMs: retention.repositoryTtlMs,
             supersedenceTrackTtlMs: retention.repositoryTtlMs,
             retention,
-            nowMs: () => nowMs
+            nowMs: () => nowMs,
+            maxOrderingTracks: undefined
         })
     };
 }
@@ -277,11 +282,12 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         backend,
         orderingTrackTtlMs: 5 * 60_000,
         supersedenceTrackTtlMs: 5 * 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant()),
         stores: { admissionStore, workQueue: state.workQueue }
     });
     const delivered: string[] = [];
@@ -304,7 +310,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
 }
 
 async function admitMessage(
-    admissionStore: ReturnType<typeof createALInboundAdmissionStore>,
+    admissionStore: ALInboundAdmissionStore,
     msg: ALMessage,
     nowMs: number
 ): Promise<ALInboundCommitBundle> {
@@ -323,7 +329,7 @@ async function admitMessage(
         facts: readALInboundEffectFacts(nowMs, {
             selfPeerId: 'receiver',
             newControlId: crypto.randomUUID.bind(crypto),
-            createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         })
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
