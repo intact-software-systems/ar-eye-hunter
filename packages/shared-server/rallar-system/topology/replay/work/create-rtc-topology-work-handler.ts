@@ -7,6 +7,7 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
@@ -140,11 +141,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         attemptCount: entry.dequeueAudit.attempts,
         expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
     };
-    const attempt = {
-        options,
-        facts,
-        mutationRead
-    };
+    const attempt = { options, facts, mutationRead };
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
         await writeSkippedRttRefinement({ options, entry, sourceWorkId: workId, reservationFinish, accepted });
@@ -164,11 +161,15 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
-    const computed = await computeRtcTopologyWork(computationInput);
-    const issues = await validateRtcTopologyWork(computationInput, computed);
+    const computation = await computeRtcTopologyWork(computationInput);
+    const issues = await validateRtcTopologyWork(computationInput, computation);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }
+    if (computation.right === undefined) {
+        throw Object.assign(new RuntimeStateWriteConflictError(), { cause: computation.left });
+    }
+    const computed = computation.right;
     await writeAcceptedRtcTopologyWork({
         options,
         accepted: computed.accepted,

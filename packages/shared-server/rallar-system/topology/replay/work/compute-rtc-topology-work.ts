@@ -5,14 +5,15 @@ import type { RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { GroupTopologyValidationError } from '../../group-topology-errors.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
+    type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput,
     type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
@@ -69,6 +70,11 @@ interface ComputedRtcTopologyWork {
     readonly write: AcceptedRtcTopologyWorkWrite;
 }
 
+type RtcTopologyWorkComputation = Either<
+    Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>,
+    ComputedRtcTopologyWork
+>;
+
 export interface RtcTopologyWorkValidationIssue {
     readonly path: string;
     readonly message: string;
@@ -94,22 +100,26 @@ interface ToTopologyPublicationInput {
 
 export async function computeRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
-): Promise<ComputedRtcTopologyWork> {
+): Promise<RtcTopologyWorkComputation> {
     const accepted = await computeAcceptedRtcTopologyWork(input);
-    return {
-        accepted,
-        write: await computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted))
-    };
+    if (accepted.right === undefined) {
+        return Either.ofLeft(accepted.left!);
+    }
+    return Either.ofRight({
+        accepted: accepted.right,
+        write: await computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted.right))
+    });
 }
 
 export async function validateRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput,
-    computed: ComputedRtcTopologyWork
+    computed: RtcTopologyWorkComputation
 ): Promise<readonly RtcTopologyWorkValidationIssue[]> {
     const expected = await computeRtcTopologyWork(input);
     return [
-        ...validateComputedProjection(expected, computed, 'computed'),
-        ...validateAcceptedTopologyDecision(expected.accepted)
+        ...validateComputedProjection(expected.left, computed.left, 'computed.left'),
+        ...validateComputedProjection(expected.right, computed.right, 'computed.right'),
+        ...(expected.right === undefined ? [] : validateAcceptedTopologyDecision(expected.right.accepted))
     ];
 }
 
@@ -175,14 +185,14 @@ function toRtcTopologyWorkWriteInput(
 
 async function computeAcceptedRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
-): Promise<AcceptedRtcTopologyWork> {
+): Promise<Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork>> {
     const { facts, read } = input;
     const work = facts.workEnvelope.data;
     const { authority, promotion: promotionRead } = read;
     const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
     const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
     if (fingerprintSkip !== null) {
-        return fingerprintSkip;
+        return Either.ofRight(fingerprintSkip);
     }
     const computedTopology = computeGroupTopologyFromAuthority(
         authority,
@@ -193,13 +203,13 @@ async function computeAcceptedRtcTopologyWork(
         }
     );
     if (computedTopology.action === 'frozen') {
-        return {
+        return Either.ofRight({
             decision: 'skipped-frozen',
             work,
             group: authority.group,
             promotionRead,
             criterionPetition: { authority, planned: computedTopology.current }
-        };
+        });
     }
     const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
     if (
@@ -207,7 +217,7 @@ async function computeAcceptedRtcTopologyWork(
         read.mutation.snapshot.value.sourceGroupStateCausalRevision.presenceRevision ===
             authority.group.causalRevision.presenceRevision
     ) {
-        return {
+        return Either.ofRight({
             decision: 'skipped-unchanged',
             work,
             group: authority.group,
@@ -215,7 +225,7 @@ async function computeAcceptedRtcTopologyWork(
             promotionRead,
             criterionPetition: { authority, planned: read.mutation.snapshot.value },
             planningObservation: computedTopology.planningObservation
-        };
+        });
     }
     return await computeAcceptedTopologyMutation({
         facts,
@@ -253,7 +263,7 @@ function computeFingerprintSkip(
 
 async function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
-): Promise<AcceptedRtcTopologyWork> {
+): Promise<Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork>> {
     const { authority, planned, inputFingerprint, promotionRead, publicationExpireAtTimestamp } = input;
     const { workEnvelope, workId, attemptCount } = input.facts;
     const work = workEnvelope.data;
@@ -284,12 +294,12 @@ async function computeAcceptedTopologyMutation(
     };
     const computed = computeTopologyMutation(mutationInput);
     if (computed.outcome === 'retry') {
-        throw new RuntimeStateWriteConflictError();
+        return Either.ofLeft(computed);
     }
     if (computed.outcome === 'loaded') {
         throw new TypeError('RTC topology publication claim appeared on a claim-miss path');
     }
-    return {
+    return Either.ofRight({
         decision: 'accepted',
         work,
         group: authority.group,
@@ -300,7 +310,7 @@ async function computeAcceptedTopologyMutation(
         promotionRead,
         criterionPetition: { authority, planned: planned.snapshot },
         planningObservation: planned.planningObservation
-    };
+    });
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {

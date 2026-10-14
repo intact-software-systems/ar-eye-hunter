@@ -25,6 +25,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import {
     createGroupRef,
@@ -34,6 +35,49 @@ import {
 import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology complete write computation', () => {
+    it('returns an incomparable causal tuple as a typed retry that validates without throwing', async () => {
+        const fixture = createCompleteWorkInput();
+        const work = fixture.facts.workEnvelope.data;
+        if (work.kind !== 'group-revision') {
+            throw new Error('Expected group revision work');
+        }
+        const group = { ...fixture.read.authority.group, causalRevision: { groupRevision: 1, presenceRevision: 2 } };
+        const stored = {
+            ...createCandidateSnapshot(group),
+            sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 1 }
+        };
+        const input: ComputeRtcTopologyWorkInput = {
+            ...fixture,
+            facts: {
+                ...fixture.facts,
+                workEnvelope: {
+                    ...fixture.facts.workEnvelope,
+                    data: { ...work, groupSnapshot: group, sourceGroupStateCausalRevision: group.causalRevision }
+                }
+            },
+            read: {
+                ...fixture.read,
+                authority: { ...fixture.read.authority, group },
+                mutation: {
+                    publicationClaim: null,
+                    snapshot: {
+                        value: stored,
+                        entry: { key: 'snapshot', value: JSON.stringify(stored), expireAtTimestamp: 10_000, updatedTimestamp: 'now', revision: 1 }
+                    }
+                }
+            }
+        };
+
+        await expect(computeRtcTopologyWork(input)).resolves.toMatchObject({
+            left: { outcome: 'retry', reason: 'incomparable-causal-revision' },
+            right: undefined
+        });
+        const computed = await computeRtcTopologyWork(input);
+        expect(await validateRtcTopologyWork(input, computed)).toEqual([]);
+        expect(await validateRtcTopologyWork(input, Either.ofLeft({ outcome: 'retry', reason: 'publication-ahead-of-snapshot' })))
+            .toEqual(expect.arrayContaining([expect.objectContaining({ path: 'computed.left.reason' })]));
+    });
+
     it('rejects a changed persistence-ready publication proof before transaction entry', async () => {
         const fixture = createCompleteWorkInput();
         const input = {
@@ -41,8 +85,9 @@ describe('RTC topology complete write computation', () => {
             publicationExpireAtTimestamp: 10_000,
             facts: { ...fixture.facts, workEnvelope: { ...fixture.facts.workEnvelope, data: { ...fixture.facts.workEnvelope.data, publish: true } } }
         };
-        const computed = await computeRtcTopologyWork(input);
-        if (computed.write.kind !== 'transaction' || !computed.write.transaction.delivery) {
+        const computation = await computeRtcTopologyWork(input);
+        const computed = computation.right;
+        if (computed === undefined || computed.write.kind !== 'transaction' || !computed.write.transaction.delivery) {
             throw new Error('Expected publication delivery');
         }
         expect(computed.write.transaction.delivery.provenanceWrites).toHaveLength(1);
@@ -56,15 +101,16 @@ describe('RTC topology complete write computation', () => {
                 }
             }
         };
-        expect(await validateRtcTopologyWork(input, altered)).toEqual(expect.arrayContaining([
+        expect(await validateRtcTopologyWork(input, Either.ofRight(altered))).toEqual(expect.arrayContaining([
             expect.objectContaining({ path: expect.stringContaining('provenanceWrites') })
         ]));
     });
 
     it('recomputes the complete decision and persistence-ready write from explicit input', async () => {
         const input = createCompleteWorkInput();
-        const computed = await computeRtcTopologyWork(input);
-        if (computed.write.kind !== 'transaction') {
+        const computation = await computeRtcTopologyWork(input);
+        const computed = computation.right;
+        if (computed === undefined || computed.write.kind !== 'transaction') {
             throw new Error('Expected a topology transaction fixture');
         }
         const altered = {
@@ -78,8 +124,8 @@ describe('RTC topology complete write computation', () => {
             }
         } as const;
 
-        expect(await validateRtcTopologyWork(input, altered)).not.toEqual([]);
-        await expect(computeRtcTopologyWork(input)).resolves.toEqual(computed);
+        expect(await validateRtcTopologyWork(input, Either.ofRight(altered))).not.toEqual([]);
+        await expect(computeRtcTopologyWork(input)).resolves.toEqual(computation);
     });
 
     it('rejects a write whose precomputed promotion request was removed', async () => {

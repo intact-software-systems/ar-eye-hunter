@@ -117,6 +117,53 @@ describe('automatic topology presence convergence', () => {
         expect((await fixture.accepted.findSnapshot(REF))?.sourceGroupStateCausalRevision.presenceRevision).toBe(5);
     });
 
+    it('preserves an incomparable tuple reason without writing and rereads a newer winner on redelivery', async () => {
+        const fixture = new PresenceConvergenceFixture();
+        await fixture.seed();
+        const returned = await fixture.departAndReturn();
+        const initial = await fixture.snapshots.findSnapshotEntry(REF);
+        if (initial === undefined) {
+            throw new Error('Expected the current planned row');
+        }
+        const incomparable = {
+            ...initial.value,
+            sourceGroupStateCausalRevision: { groupRevision: returned.causalRevision.groupRevision + 1, presenceRevision: 3 }
+        };
+        expect(await fixture.snapshots.commitSnapshotGuard(incomparable, initial.entry.revision)).toMatchObject({ status: 'accepted' });
+        const outboxBefore = [...fixture.database.outboxEntries];
+        const begin = fixture.database.begin;
+        const readMutation = fixture.executions.readTopologyMutation.bind(fixture.executions);
+        let transactions = 0;
+        let reads = 0;
+        fixture.database.begin = async (write) => {
+            transactions += 1;
+            return await begin(write);
+        };
+        fixture.executions.readTopologyMutation = async (ref, workId) => {
+            reads += 1;
+            return await readMutation(ref, workId);
+        };
+
+        await expect.soft(fixture.drainTopology()).rejects.toMatchObject({
+            name: 'RuntimeStateWriteConflictError',
+            cause: { outcome: 'retry', reason: 'incomparable-causal-revision' }
+        });
+        expect(transactions).toBe(0);
+        expect(reads).toBe(1);
+        expect(await fixture.requirePlanned()).toEqual(incomparable);
+        expect([...fixture.database.outboxEntries]).toEqual(outboxBefore);
+        expect((await fixture.queue.getItem(toCoalescedGroupRevisionKey(REF)))?.status).toBe(EntityStatus.RESERVED);
+
+        const winner = { ...incomparable, sourceGroupStateCausalRevision: { ...incomparable.sourceGroupStateCausalRevision, presenceRevision: 5 } };
+        expect(await fixture.snapshots.commitSnapshotGuard(winner, initial.entry.revision + 1)).toMatchObject({ status: 'accepted' });
+        await fixture.redeliver();
+
+        expect(reads).toBe(2);
+        expect(transactions).toBe(1);
+        expect(await fixture.requirePlanned()).toEqual(winner);
+        expect([...fixture.database.outboxEntries]).toEqual(outboxBefore);
+    });
+
     it('rejects a stale conditional write and rereads the winner on outer queue redelivery', async () => {
         const fixture = new PresenceConvergenceFixture();
         await fixture.seed();
