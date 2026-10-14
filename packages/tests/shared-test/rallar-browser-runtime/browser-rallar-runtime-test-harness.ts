@@ -5,6 +5,7 @@ import {
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import type { RallarRtcDiagnostics } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';
 
 import {
     facadeBehavior,
@@ -37,7 +38,7 @@ const defaultRtcStatus = {
     peers: []
 };
 
-const defaultRtcDiagnostics = {
+const defaultRtcDiagnostics: RallarRtcDiagnostics = {
     sessionId: 'session-1',
     generatedAtEpochMs: 123,
     peerCount: 1,
@@ -45,6 +46,8 @@ const defaultRtcDiagnostics = {
     relayPeerCount: 0,
     peers: [{
         peerId: 'peer-1',
+        captureIdentity: { peerConnectionId: { status: 'unavailable', reason: 'disabled' }, channelId: { status: 'unavailable', reason: 'disabled' } },
+        statsObservation: 'unsupported',
         connection: {
             hasLocalDescription: true,
             hasRemoteDescription: true,

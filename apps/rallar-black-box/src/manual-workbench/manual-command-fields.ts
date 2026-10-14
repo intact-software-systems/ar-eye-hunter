@@ -1,5 +1,16 @@
-import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeJsonValue, decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
+
 import type { ManualWorkbenchValues } from '../manual-workbench.ts';
 
 export interface ManualRtcScope {
@@ -69,9 +80,9 @@ function parseOptionalRecord(text: string): RallarBlackBoxTestRecord | undefined
     }
 
     try {
-        const parsed: RallarMessagePayload = JSON.parse(trimmed);
+        const parsed = decodeJsonValue(JSON.parse(trimmed));
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? parsed as RallarBlackBoxTestRecord
+            ? decodeRecord(parsed)
             : undefined;
     }
     catch {
@@ -87,5 +98,24 @@ function toMinSnapshotVersion(value: ManualWorkbenchValues): number | undefined 
 
 function toDefaultRoomRef(values: ManualWorkbenchValues): RallarBlackBoxTestRecord | undefined {
     const groupId = toOptionalText(values.groupId);
-    return groupId ? { groupId } : undefined;
+    const applicationId = toOptionalText(values.applicationId);
+    const workspaceId = toOptionalText(values.workspaceId);
+    return applicationId && groupId
+        ? { applicationId, ...(workspaceId ? { workspaceId } : {}), groupId }
+        : undefined;
+}
+
+/** Validates authored intent without materializing runtime defaults. */
+export function decodeManualRtcReadinessText(text: string): Either<string, RallarBlackBoxTestRtcConnectCommand> {
+    try {
+        const parsed: unknown = text.trim() === '' ? undefined : JSON.parse(text);
+        const command = { kind: 'rtc.connect', ...(parsed === undefined ? {} : { readiness: parsed }) };
+        const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command);
+        return validation.ok
+            ? Either.ofRight(command as RallarBlackBoxTestRtcConnectCommand)
+            : Either.ofLeft(formatJsonSchemaValidationErrors(validation.errors));
+    }
+    catch (error) {
+        return Either.ofLeft(error instanceof Error ? error.message : String(error));
+    }
 }

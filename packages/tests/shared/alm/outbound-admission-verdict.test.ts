@@ -1,15 +1,12 @@
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
-import {
-    createDefaultOutboundTestStores,
-    createOutboundCanonicalEntry,
-    createOutboundMessage
-} from './outbound-runtime-test-fixture.ts';
 
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createInitialALDeliveryLifecycle,
     type ALDeliveryLifecycle,
@@ -25,6 +22,12 @@ import type {
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import {
+    createDefaultOutboundTestStores,
+    createOutboundCanonicalEntry,
+    createOutboundMessage,
+    type OutboundTestStores
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound admission verdict', () => {
@@ -37,7 +40,7 @@ describe('outbound admission verdict', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ resourceId: 'first-attempt' }]
             }),
             observedCanonicalEntry: undefined,
@@ -45,7 +48,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -64,7 +67,7 @@ describe('outbound admission verdict', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ resourceId: 'first-attempt' }]
             }),
             observedCanonicalEntry: undefined,
@@ -72,7 +75,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -90,13 +93,13 @@ describe('outbound admission verdict', () => {
         const message = createOutboundMessage('verdict-no-route');
         const read = await store.readOutgoingMessage({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             observedCanonicalEntry: undefined,
             intent: 'dequeue'
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'dequeue',
             phase: 'dequeue',
@@ -116,13 +119,13 @@ describe('outbound admission verdict', () => {
         const message = createOutboundMessage('verdict-expired', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now() + 1_000_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -142,7 +145,7 @@ describe('outbound admission verdict', () => {
                 msg: message,
                 dropReason: 'Sender is not a room member',
                 dropReasonCode: 'unauthorized',
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
@@ -150,7 +153,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -174,7 +177,7 @@ describe('outbound admission verdict', () => {
                 msg: message,
                 dropReason: 'The session is over its volatile bound.',
                 dropReasonCode: 'capacity',
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
@@ -182,7 +185,41 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
+            dispatchAtMs: Date.now(),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toStrictEqual({
+            kind: 'refused',
+            reason: 'capacity',
+            detail: 'The session is over its volatile bound.'
+        });
+        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(false);
+    });
+
+    it('is refused as capacity with the limit the session volatile ledger names', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-capacity-tracks');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'The session\'s volatile bound refused the send (tracks).',
+                dropReasonCode: 'capacity',
+                capacityLimit: 'tracks',
+                lane: 'volatile',
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -192,9 +229,43 @@ describe('outbound admission verdict', () => {
         expect(computed.verdict).toEqual({
             kind: 'refused',
             reason: 'capacity',
-            detail: 'The session is over its volatile bound.'
+            limit: 'tracks',
+            detail: 'The session\'s volatile bound refused the send (tracks).'
         });
-        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(false);
+    });
+
+    it('is refused as congested when the planner drops the message for carrier backpressure, and hands it over', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-congested');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'Carrier backpressure dropped the send',
+                dropReasonCode: 'congested',
+                congestionDrop: { cause: 'backpressured', priority: 0 },
+                lane: 'volatile',
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
+            dispatchAtMs: Date.now(),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toStrictEqual({
+            kind: 'refused',
+            reason: 'congested',
+            detail: 'Carrier backpressure dropped the send'
+        });
+        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(true);
     });
 
     it('is deferred as not-yet-in-sync when the planner drops the message with that code', async () => {
@@ -207,7 +278,7 @@ describe('outbound admission verdict', () => {
                 msg: message,
                 dropReason: 'Awaiting room snapshot authority',
                 dropReasonCode: 'not-yet-in-sync',
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             observedCanonicalEntry: undefined,
@@ -215,7 +286,7 @@ describe('outbound admission verdict', () => {
         });
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: Date.now(),
             intent: 'enqueue',
             phase: 'immediate',
@@ -236,7 +307,7 @@ describe('outbound admission verdict', () => {
         const planner = () => ({
             msg: message,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable' as const,
             preparedMessages: [] as readonly OutboundTestPayload[]
         });
         const commitInput = { msg: message, planner, intent: 'enqueue' as const, phase: 'immediate' as const, origin: 'send' as const, options: {} };
@@ -258,7 +329,7 @@ describe('outbound admission verdict', () => {
         const toPlan = (msg: typeof newer) => () => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable' as const,
             preparedMessages: [] as readonly OutboundTestPayload[],
             supersedenceTracking
         });
@@ -328,10 +399,8 @@ describe('outbound admission verdict', () => {
     });
 });
 
-type TestOutboundMessage = ReturnType<typeof createOutboundMessage>;
-
 function toSupersedingCommit(
-    msg: TestOutboundMessage,
+    msg: ALMessage,
     replacesMsgId: string | undefined,
     intent: 'enqueue' | 'dequeue'
 ): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
@@ -340,7 +409,7 @@ function toSupersedingCommit(
         planner: () => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId }
         }),
@@ -351,7 +420,7 @@ function toSupersedingCommit(
     };
 }
 
-function toSupersededFact(predecessor: TestOutboundMessage, replacement: TestOutboundMessage): ALOutboundSettlementFact {
+function toSupersededFact(predecessor: ALMessage, replacement: ALMessage): ALOutboundSettlementFact {
     return {
         kind: 'superseded',
         msgId: predecessor.id.msgId,
@@ -362,7 +431,7 @@ function toSupersededFact(predecessor: TestOutboundMessage, replacement: TestOut
 
 /** The lifecycle a registry reduces for one message from the superseded facts its owner stated. */
 function toSupersededLifecycle(
-    message: TestOutboundMessage,
+    message: ALMessage,
     facts: readonly ALOutboundSettlementFact[]
 ): ALDeliveryLifecycle {
     const settlements = facts.flatMap((fact): ALDeliverySettlement[] =>
@@ -391,14 +460,14 @@ function toSupersededLifecycle(
 }
 
 function createTestOutboundDispatchAdmission(
-    stores: ReturnType<typeof createDefaultOutboundTestStores>,
+    stores: OutboundTestStores,
     settlements: ALOutboundSettlementEmitter = () => {}
 ): ALOutboundDispatchAdmission<OutboundTestPayload> {
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
         lane: 'durable',
         admissionStore: stores.admissionStore,
         workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,

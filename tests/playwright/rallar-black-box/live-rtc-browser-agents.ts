@@ -1,12 +1,31 @@
-import { expect, type BrowserContext } from '@playwright/test';
+import {
+    expect,
+    type BrowserContext,
+    type Page,
+    type Response
+} from '@playwright/test';
+
+import type { BlackBoxRallarRoomRefreshOptions } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+import type {
+    FullStackRtcBrowserEntry,
+    FullStackRtcServedBuild
+} from '@shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+
+import {
+    toFullStackRtcBrowserEntry,
+    writeFullStackRtcBrowserEntries
+} from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { installLiveRtcWireObservation } from './live-rtc-wire-observation.ts';
 
 export interface LiveRtcBrowserAgentConfig {
+    readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
+    readonly productionBuild?: FullStackRtcServedBuild;
     readonly spaBaseUrl: string;
     readonly controlWsUrl: string;
     readonly apiBaseUrl: string;
@@ -47,6 +66,12 @@ export interface LiveRtcBrowserContextFactory {
     newContext(): Promise<Pick<BrowserContext, 'newPage' | 'close'>>;
 }
 
+export interface LiveRtcBrowserEntryPage {
+    goto(url: string): ReturnType<Page['goto']> | Promise<void>;
+    on(event: 'response', listener: (response: Pick<Response, 'url' | 'status' | 'body'>) => void): void;
+    off(event: 'response', listener: (response: Pick<Response, 'url' | 'status' | 'body'>) => void): void;
+}
+
 export async function openLiveRtcBrowserAgent(
     browser: LiveRtcBrowserContextFactory,
     input: OpenLiveRtcBrowserAgentInput
@@ -64,7 +89,7 @@ export async function openLiveRtcBrowserAgent(
 
         const query = toLiveRtcBrowserAgentQuery(input);
 
-        await page.goto(`${input.config.spaBaseUrl}/?${query.toString()}`);
+        await openLiveRtcBrowserEntry(page, input, query);
 
         if (input.auth.kind === 'login') {
             await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
@@ -98,6 +123,44 @@ export async function openLiveRtcBrowserAgent(
     }
 }
 
+export async function openLiveRtcBrowserEntry(
+    page: LiveRtcBrowserEntryPage,
+    input: OpenLiveRtcBrowserAgentInput,
+    query: URLSearchParams
+): Promise<void> {
+    const build = input.config.productionBuild;
+    if (!build) {
+        await page.goto(`${input.config.spaBaseUrl}/?${query.toString()}`);
+        return;
+    }
+    const responses: Promise<FullStackRtcBrowserEntry>[] = [];
+    const readResponse = (response: Pick<Response, 'url' | 'status' | 'body'>) => {
+        const url = new URL(response.url());
+        const path = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+        if (url.origin === build.seal.spaOrigin && ['index.html', ...build.seal.entryFiles].includes(path)) {
+            const entry = readLiveRtcBrowserEntry(build, input.prefix, response);
+            void entry.catch(() => undefined);
+            responses.push(entry);
+        }
+    };
+    page.on('response', readResponse);
+    try {
+        await page.goto(`${input.config.spaBaseUrl}/?${query.toString()}`);
+        const entries = await Promise.all(responses);
+        if (!['index.html', ...build.seal.entryFiles].every((path) => entries.some((entry) => entry.path === path))) {
+            throw new Error('Original browser entry response proof is incomplete.');
+        }
+        await writeFullStackRtcBrowserEntries(build, entries);
+    }
+    catch {
+        throw new Error('Original production browser entry could not be verified.');
+    }
+    finally {
+        page.off('response', readResponse);
+        await Promise.allSettled(responses);
+    }
+}
+
 /** Serialized in the owned browser page; imports are type-only at this boundary. */
 export async function refreshLiveRtcBrowserRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void> {
     if (!('__blackBoxRallar' in window)) {
@@ -124,8 +187,10 @@ export async function closeLiveRtcBrowserAgentContexts(
     return errors;
 }
 
-function toLiveRtcBrowserAgentQuery(input: OpenLiveRtcBrowserAgentInput): URLSearchParams {
+export function toLiveRtcBrowserAgentQuery(input: OpenLiveRtcBrowserAgentInput): URLSearchParams {
     return new URLSearchParams({
+        routineBrowserDiagnostics: input.config.routineBrowserDiagnostics ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics,
         mode: 'control',
         provider: 'browser-rallar',
         autoConnect: '1',
@@ -149,4 +214,21 @@ function toLiveRtcBrowserAgentQuery(input: OpenLiveRtcBrowserAgentInput): URLSea
             }
             : {})
     });
+}
+
+async function readLiveRtcBrowserEntry(
+    build: FullStackRtcServedBuild,
+    prefix: LiveRtcControlClient.Agent['prefix'],
+    response: Pick<Response, 'url' | 'status' | 'body'>
+): Promise<FullStackRtcBrowserEntry> {
+    const entry = toFullStackRtcBrowserEntry(build, {
+        prefix,
+        url: response.url(),
+        status: response.status(),
+        bytes: await response.body()
+    });
+    if (!entry.right) {
+        throw new Error('Original browser response bytes did not match the production build.');
+    }
+    return entry.right;
 }

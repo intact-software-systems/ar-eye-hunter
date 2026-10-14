@@ -1,10 +1,3 @@
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import { createDefaultWsQueueBoxClientService, WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 import {
     afterEach,
     describe,
@@ -13,6 +6,14 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
+
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 describe('WsQueueBoxClientService.sendLive', () => {
@@ -63,9 +64,7 @@ describe('WsQueueBoxClientService.sendLive', () => {
 
         expect(service.sendLive(message)).toBe('sent');
 
-        expect(native.sent).toEqual([
-            QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE).resource
-        ]);
+        expect(native.sent).toEqual([JSON.stringify(message)]);
         expect(decodePersistedALMessage(native.sent[0]!).id.msgId).toBe(message.id.msgId);
     });
 });

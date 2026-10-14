@@ -1,8 +1,17 @@
-import { toRallarCommandOptions, toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import { shouldRetryRallarOperation, toRallarCommandOptions, toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar operation options compatibility', () => {
+    it('classifies arbitrary retry failures without coercing them', () => {
+        const coercion = vi.fn(() => {
+            throw new Error('conversion must not run');
+        });
+        const failure = { [Symbol.toPrimitive]: coercion };
+        expect(shouldRetryRallarOperation(failure)).toBe(true);
+        expect(coercion).not.toHaveBeenCalled();
+    });
+
     it('normalizes operation options without adding empty fields', () => {
         const signal = new AbortController().signal;
         const shouldRetry = vi.fn(() => true);

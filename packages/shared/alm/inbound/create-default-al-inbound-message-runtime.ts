@@ -1,10 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import {
@@ -74,9 +75,10 @@ function createLocalALInboundRuntimeStores(nowMs: () => number): ALInboundRuntim
             nowMs,
             namespace: 'al-inbound-runtime',
             backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(workQueue), nowMs),
-            orderingTrackTtlMs: 5 * 60_000,
+            orderingTrackTtlMs: DEFAULT_AL_REPOSITORY_TTL_MS,
             supersedenceTrackTtlMs: 5 * 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         }),
         workQueue
     };

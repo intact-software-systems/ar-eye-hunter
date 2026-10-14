@@ -1,6 +1,8 @@
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+
+import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import {
     writeResourceInboxReservationFinish,
@@ -31,32 +33,37 @@ export interface AppInboxMutationTransactionWriter {
     writeComputedMutation<Result>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<Result>,
-        write: (transaction: PSqlSql) => Promise<void>
+        write: PSqlTransactionWrite<void>
     ): Promise<Result>;
 }
 
 export namespace AppInboxTransactionWriter {
     export interface Dependencies {
+        readonly completionNotifications?: ResourceInboxCompletionNotifications;
         readonly database: PSqlSql;
+        readonly nowEpochMs: () => number;
     }
 
     export interface Config {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
-        readonly nowEpochMs?: () => number;
     }
 }
 
 export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly finalizationByContext = new WeakMap<object, AppInboxHandlerFinalization>();
+    private readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     private readonly database: PSqlSql;
+    private readonly nowEpochMs: () => number;
     private readonly config: AppInboxTransactionWriter.Config;
 
     constructor(
         dependencies: AppInboxTransactionWriter.Dependencies,
         config: AppInboxTransactionWriter.Config
     ) {
+        this.completionNotifications = dependencies.completionNotifications;
         this.database = dependencies.database;
+        this.nowEpochMs = dependencies.nowEpochMs;
         this.config = config;
     }
 
@@ -78,7 +85,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     async writeComputedMutation<Result>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<Result>,
-        write: (transaction: PSqlSql) => Promise<void>
+        write: PSqlTransactionWrite<void>
     ): Promise<Result> {
         await this.writeFinalizedMutation(context, computed, write);
         return computed.durableResult;
@@ -105,12 +112,13 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             await runInPSqlTransaction(this.database, async (transaction) => {
                 await writeAppInboxCompletion(transaction, computed);
             }));
+        this.completionNotifications?.publish(computed.finalizedEntry.key);
     }
 
     private async writeFinalizedMutation<DurableResult>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<DurableResult>,
-        write: (transaction: PSqlSql) => Promise<void>
+        write: PSqlTransactionWrite<void>
     ): Promise<void> {
         this.ensurePending(context);
         await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
@@ -122,6 +130,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             status: computed.reservationFinish.status,
             result: computed.encodedResult
         });
+        this.completionNotifications?.publish(computed.finalizedEntry.key);
     }
 
     private ensurePending(context: AppInboxExecutionMetadata): void {
@@ -137,7 +146,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     private async inTransaction<ReturnResult>(
         context: AppInboxExecutionMetadata,
         details: RallarTimingDetails,
-        write: (transaction: PSqlSql) => Promise<ReturnResult>
+        write: PSqlTransactionWrite<ReturnResult>
     ): Promise<ReturnResult> {
         return await timeRallarAsync(
             this.config.timing,
@@ -162,10 +171,6 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             context.entry,
             context.attemptTelemetry
         );
-    }
-
-    private nowEpochMs(): number {
-        return this.config.nowEpochMs?.() ?? Date.now();
     }
 }
 

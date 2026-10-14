@@ -27,6 +27,7 @@ export namespace ParallelCommandExecution {
     export interface Ports {
         readonly now: () => number;
         readonly runChildCommand: (command: RallarBlackBoxTestCommand) => Promise<RallarBlackBoxTestResult>;
+        readonly forkChildCommands: () => Ports['runChildCommand'];
         readonly cancelRequested: () => boolean;
     }
     export interface Command extends RallarBlackBoxTestParallelCommand {
@@ -117,7 +118,14 @@ export class ParallelCommandExecution {
         const startedAtEpochMs = this.ports.now();
         const groupId = group.groupId ?? `group-${groupIndex + 1}`;
         const results: RallarBlackBoxTestParallelChildResult[] = [];
-        const stop = await this.runGroupCommands({ run, group, groupId, groupIndex, results });
+        const stop = await this.runGroupCommands({
+            run,
+            group,
+            groupId,
+            groupIndex,
+            results,
+            runChildCommand: this.ports.forkChildCommands()
+        });
         return {
             result: {
                 groupId,
@@ -163,7 +171,7 @@ export class ParallelCommandExecution {
         const context = { groupId: input.groupId, groupIndex: input.groupIndex, commandIndex };
         const childIndex = input.results.length;
         const template = group.commands[commandIndex];
-        const result = await this.ports.runChildCommand(this.toChildCommand({ run, template, group, context }));
+        const result = await input.runChildCommand(this.toChildCommand({ run, template, group, context }));
         const root = RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH;
         return {
             commandId: result.commandId,
@@ -273,6 +281,7 @@ export class ParallelCommandExecution {
 }
 
 interface GroupCommandsInput {
+    readonly runChildCommand: ParallelCommandExecution.Ports['runChildCommand'];
     readonly run: ParallelCommandExecution.Run;
     readonly group: RallarBlackBoxTestParallelGroup;
     readonly groupId: string;

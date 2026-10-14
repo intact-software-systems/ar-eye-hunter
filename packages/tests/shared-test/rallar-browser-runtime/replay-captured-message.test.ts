@@ -20,7 +20,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
     describe,
     expect,
@@ -55,9 +55,12 @@ function createSessionOutbounds(): SessionOutbounds {
     const rtc = createUnsubmittingOutbound(stores.rtc, 'rtc');
     const ws = createUnsubmittingOutbound(stores.ws, 'ws');
     onTestFinished(async () => {
-        rtc.dispose();
-        ws.dispose();
+        const cleanup = await Promise.allSettled([rtc.dispose(), ws.dispose()]);
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: defaultStateScope(), storage: diagnosticsPorts.storage });
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     const wake = vi.fn();
     const replayed: ALMessage[] = [];
@@ -101,7 +104,7 @@ function createUnsubmittingOutbound(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })

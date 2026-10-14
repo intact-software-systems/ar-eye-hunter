@@ -1,13 +1,17 @@
 import type {
+    RallarMessageScope,
     RallarMessageSendBase,
     RallarMessageTransport,
+    RallarRoomAudienceInput,
     RallarRtcSendInput,
     RallarTypedMessageChannelDefinition,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { validateRallarTypedChannelPolicy } from '@shared-web/browser/messages/validate-rallar-typed-channel-policy.ts';
+import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
@@ -23,7 +27,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 export interface ResolvedWsMessageInput<T> {
     readonly input: RallarWsSendInput<T>;
-    readonly scope: 'room' | 'world' | 'all';
+    readonly scope: RallarMessageScope;
     readonly roomId: string | undefined;
     readonly roomRef: GroupRef | undefined;
 }
@@ -38,6 +42,11 @@ interface PushOptionalRouteIdIssueInput {
 interface RoomMessageIdentity {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
+}
+
+/** Exclusive as the policy normalizes it: a `qos.ownership` request wins over the `ownership` option (D174). */
+export function isExclusiveSendInput(send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos'>): boolean {
+    return (send.qos?.ownership?.algo ?? send.ownership) === 'exclusive';
 }
 
 export namespace BrowserMessageInputValidator {
@@ -77,6 +86,11 @@ export class BrowserMessageInputValidator {
         this.pushRtcRouteIssues(input, issues);
         this.pushRtcSequenceIssues(input, issues);
         this.pushRoomIdentityIssue(input, issues);
+        const scope = input.scope ?? 'room';
+        this.pushScopeIssue(scope, 'RTC', issues);
+        this.pushAudienceIssues(input, scope, issues);
+        issues.push(...validateLeaderAudience(input.ack, scope));
+        issues.push(...validateExclusiveClaim(input, scope));
         if (roomId !== undefined) {
             this.pushOptionalRouteId({
                 value: roomId,
@@ -99,19 +113,14 @@ export class BrowserMessageInputValidator {
             issues
         });
         this.pushOptionalGroupRef(input.roomRef, '$.roomRef', issues);
-        input.exceptPeerIds?.forEach((peerId, index) =>
-            this.pushOptionalRouteId({
-                value: peerId,
-                path: `$.exceptPeerIds[${index}]`,
-                label: 'Peer ID',
-                issues
-            })
-        );
         this.pushOptionalNonNegativeInteger(input.minSnapshotVersion, '$.minSnapshotVersion', issues);
         this.pushWsScopeIssues(resolved, issues);
-        if (scope === 'room') {
+        if (scope === 'room' || scope === 'principal') {
             this.pushWsRoomIssues(roomId, roomRef, issues);
         }
+        this.pushAudienceIssues(input, scope, issues);
+        issues.push(...validateLeaderAudience(input.ack, scope));
+        issues.push(...validateExclusiveClaim(input, scope));
         return issues;
     }
 
@@ -202,7 +211,6 @@ export class BrowserMessageInputValidator {
         input: RallarRtcSendInput<T>,
         issues: RallarValidationIssue[]
     ): void {
-        this.pushOptionalNonNegativeInteger(input.membershipEpoch, '$.membershipEpoch', issues);
         this.pushOptionalNonNegativeInteger(input.minSnapshotVersion, '$.minSnapshotVersion', issues);
         this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
         this.pushOptionalNonNegativeInteger(input.fanoutLimit, '$.fanoutLimit', issues);
@@ -232,18 +240,30 @@ export class BrowserMessageInputValidator {
         issues.push(...validateQosRequest(input.qos));
     }
 
+    /** A `room.` topic is room-scoped by its name, so the server refuses a world send on it as malformed. */
     private pushWsScopeIssues<T>(
         resolved: ResolvedWsMessageInput<T>,
         issues: RallarValidationIssue[]
     ): void {
-        if (!['room', 'world', 'all'].includes(resolved.scope)) {
+        this.pushScopeIssue(resolved.scope, 'WS', issues);
+        this.pushRoomIdentityIssue(resolved.input, issues);
+        if (resolved.scope === 'world' && (resolved.input.topicId ?? resolved.input.typeId).startsWith('room.')) {
+            issues.push({
+                path: '$.topicId',
+                code: 'world-on-room-topic',
+                message: 'A world-scoped send takes a topic outside room.'
+            });
+        }
+    }
+
+    private pushScopeIssue(scope: RallarMessageScope, carrier: 'RTC' | 'WS', issues: RallarValidationIssue[]): void {
+        if (!['room', 'world', 'principal'].includes(scope)) {
             issues.push({
                 path: '$.scope',
                 code: 'invalid-scope',
-                message: 'WS scope must be room, world, or all.'
+                message: `${carrier} scope must be room, world, or principal.`
             });
         }
-        this.pushRoomIdentityIssue(resolved.input, issues);
     }
 
     private pushWsRoomIssues(
@@ -267,6 +287,63 @@ export class BrowserMessageInputValidator {
             return;
         }
         this.pushOptionalGroupRef(roomRef, '$.roomRef', issues);
+    }
+
+    /** A principal send names its principal, a fixed list rides a room send, and every named session is a route id. */
+    private pushAudienceIssues(
+        audience: Omit<RallarRoomAudienceInput, 'scope'>,
+        scope: RallarMessageScope,
+        issues: RallarValidationIssue[]
+    ): void {
+        if (scope === 'principal' && audience.principalId === undefined) {
+            issues.push({
+                path: '$.principalId',
+                code: 'missing-principal-id',
+                message: 'A principal-scoped send names its principalId.'
+            });
+        }
+        if (audience.principalId !== undefined && scope !== 'principal') {
+            issues.push({
+                path: '$.principalId',
+                code: 'principal-scope-required',
+                message: 'A principalId is sent with scope principal.'
+            });
+        }
+        this.pushOptionalRouteId({ value: audience.principalId, path: '$.principalId', label: 'Principal ID', issues });
+        audience.exceptPeerIds?.forEach((peerId, index) =>
+            this.pushOptionalRouteId({ value: peerId, path: `$.exceptPeerIds[${index}]`, label: 'Peer ID', issues })
+        );
+        if (audience.recipientPeerIds !== undefined) {
+            this.pushFixedAudienceIssues(audience.recipientPeerIds, scope, issues);
+        }
+    }
+
+    private pushFixedAudienceIssues(
+        recipientPeerIds: readonly string[],
+        scope: RallarMessageScope,
+        issues: RallarValidationIssue[]
+    ): void {
+        if (scope !== 'room') {
+            issues.push({
+                path: '$.recipientPeerIds',
+                code: 'fixed-audience-requires-room-scope',
+                message: 'A fixed recipient list is sent with room scope.'
+            });
+        }
+        if (
+            recipientPeerIds.length === 0 || recipientPeerIds.length > AL_MESSAGE_RESOURCE_LIMITS.collectionEntries ||
+            new Set(recipientPeerIds).size !== recipientPeerIds.length
+        ) {
+            issues.push({
+                path: '$.recipientPeerIds',
+                code: 'invalid-fixed-audience',
+                message:
+                    `A fixed recipient list names 1 to ${AL_MESSAGE_RESOURCE_LIMITS.collectionEntries} distinct session ids.`
+            });
+        }
+        recipientPeerIds.forEach((peerId, index) =>
+            this.pushOptionalRouteId({ value: peerId, path: `$.recipientPeerIds[${index}]`, label: 'Peer ID', issues })
+        );
     }
 
     private pushRoomIdentityIssue(
@@ -336,4 +413,47 @@ function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly Ralla
     catch (error) {
         return [{ path: '$.qos', code: 'invalid-qos', message: toError(error).message }];
     }
+}
+
+/** A `group-leader` send addresses its room's leader, so it names a room audience: never the world (D166). */
+function validateLeaderAudience(
+    ack: ALAckMode | undefined,
+    scope: RallarMessageScope
+): readonly RallarValidationIssue[] {
+    return ack === 'group-leader' && scope === 'world'
+        ? [{
+            path: '$.ack',
+            code: 'leader-requires-room-audience',
+            message: 'A group-leader send addresses its room\'s leader: it names a room audience, never the world.'
+        }]
+        : [];
+}
+
+/**
+ * An exclusive send claims the resource it names in its room (D174): a fresh resource id per send would claim nothing,
+ * and the world has no room to hold the claim. A principal send without a room is already refused as roomless.
+ */
+function validateExclusiveClaim(
+    send: Pick<RallarMessageSendBase<never>, 'ownership' | 'qos' | 'resourceId'>,
+    scope: RallarMessageScope
+): readonly RallarValidationIssue[] {
+    if (!isExclusiveSendInput(send)) {
+        return [];
+    }
+    const issues: RallarValidationIssue[] = [];
+    if (send.resourceId === undefined) {
+        issues.push({
+            path: '$.ownership',
+            code: 'exclusive-requires-resource',
+            message: 'An exclusive send claims a resource: it names its resourceId.'
+        });
+    }
+    if (scope === 'world') {
+        issues.push({
+            path: '$.ownership',
+            code: 'exclusive-requires-room-audience',
+            message: 'An exclusive send claims a resource in its room: it names a room.'
+        });
+    }
+    return issues;
 }

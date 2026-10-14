@@ -1,5 +1,6 @@
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import {
     assertRallarAiAuthorized,
     createRallarAiDiagnosticEvent,
@@ -32,7 +33,8 @@ export type RallarServerAiResultPublicationInput<TValue extends RallarAiJsonValu
     & RallarServerAiResultPublicationBase<TValue>
     & (
         | Readonly<{ scope?: 'room'; roomRef: GroupRef; }>
-        | Readonly<{ scope: 'world' | 'all'; roomRef?: never; }>
+        | Readonly<{ scope: 'world'; worldScope: StateScope; roomRef?: never; }>
+        | Readonly<{ scope: 'all'; roomRef?: never; }>
     );
 
 export type RallarServerAiResultPublicationTarget =
@@ -86,36 +88,45 @@ export function createRallarServerAiResultPublisher(
             result: input.result,
             kind: 'envelope-broadcast-started'
         });
-
-        try {
-            const message = toRallarServerAiResultMessage({
-                publication: input,
-                senderId: publisher.serverSenderId,
-                target
-            });
-            const result = await publisher.publication.publish({ message, fanout: input.fanout });
-            await reportRallarServerAiPublication({
-                publisher,
-                result: input.result,
-                kind: 'envelope-broadcast-completed'
-            });
-            return result;
-        }
-        catch (error) {
-            const cause = error instanceof Error ? error : new Error(String(error));
-            await reportRallarServerAiPublication({
-                publisher,
-                result: input.result,
-                kind: 'envelope-broadcast-failed',
-                error: cause
-            });
-            throw cause;
-        }
+        return await publishRallarServerAiResult(publisher, input, target);
     };
 }
 
+async function publishRallarServerAiResult<TValue extends RallarAiJsonValue>(
+    publisher: CreateRallarServerAiResultPublisherInput,
+    input: RallarServerAiResultPublicationInput<TValue>,
+    target: RallarServerAiResultPublicationTarget
+): Promise<RallarServerWsPublishResult> {
+    try {
+        const message = toRallarServerAiResultMessage({
+            publication: input,
+            senderId: publisher.serverSenderId,
+            target
+        });
+        const result = await publisher.publication.publish(
+            toRallarServerAiPublishInput(message, input.fanout, input.scope === 'world' ? input.worldScope : undefined)
+        );
+        await reportRallarServerAiPublication({
+            publisher,
+            result: input.result,
+            kind: 'envelope-broadcast-completed'
+        });
+        return result;
+    }
+    catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        await reportRallarServerAiPublication({
+            publisher,
+            result: input.result,
+            kind: 'envelope-broadcast-failed',
+            error: cause
+        });
+        throw cause;
+    }
+}
+
 interface ToRallarServerAiResultMessageInput<TValue extends RallarAiJsonValue> {
-    readonly publication: RallarServerAiResultPublicationInput<TValue>;
+    readonly publication: RallarServerAiResultPublicationBase<TValue>;
     readonly senderId: string;
     readonly target: RallarServerAiResultPublicationTarget;
 }
@@ -143,6 +154,15 @@ export function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
             ack: input.target.scope === 'room' ? 'receiver' : 'none'
         }
     );
+}
+
+/** A world result reaches the scope it names; a room result is scoped by its groupRef and an all result by none. */
+export function toRallarServerAiPublishInput(
+    message: ALMessage,
+    fanout: RallarServerWsFanout | undefined,
+    worldScope: StateScope | undefined
+): RallarServerWsPublishInputDto {
+    return { message, fanout, ...(worldScope === undefined ? {} : { scope: worldScope }) };
 }
 
 function requireRallarServerAiGroupRef(value: GroupRef | undefined): GroupRef {

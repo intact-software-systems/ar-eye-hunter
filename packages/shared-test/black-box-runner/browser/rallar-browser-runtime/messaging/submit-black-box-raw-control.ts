@@ -3,7 +3,7 @@ import {
     writeCarrierOutboxAdmission
 } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
@@ -50,7 +50,12 @@ export async function submitBlackBoxRawControl(
 
 function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: string): ALMessage {
     const { control, nowMs } = input;
-    const ack = newALAckControlMessage({ v: 2, msgId: control.msgId, senderId: sessionId, ts: nowMs }, {
+    const ack = newALAckControlMessage({
+        v: AL_MESSAGE_ENVELOPE_VERSION,
+        msgId: control.msgId,
+        senderId: sessionId,
+        ts: nowMs
+    }, {
         ackedMsgId: control.ackedMsgId,
         fromPeerId: sessionId,
         toPeerId: control.toPeerId,

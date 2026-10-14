@@ -1,9 +1,20 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import {
+    existsSync,
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
+import {
+    dirname,
+    join,
+    resolve
+} from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { chromium } from '@playwright/test';
 
+import { Either } from '../../../shared/resilience/Either.ts';
 import { isRtcBrowserBaselineId } from '../../baseline/contracts/rtc-baseline-id.ts';
 import {
     computeRtcDataChannelBrowserSoakSample,
@@ -22,57 +33,29 @@ const {
 const DEFAULT_DIAGNOSTIC_OUT = 'tmp/perf/results/rtc-data-channel-browser-soak.json';
 const DEFAULT_BASELINE_ROOT = 'tmp/perf/rtc-baseline';
 
-function fail(message) {
-    throw new Error(`RTC-B05: ${message}`);
-}
+/**
+ * @typedef {object} BrowserSoakReadFailure
+ * @property {'artifact-read-failed'} code
+ * @property {'read-json' | 'read-directory' | 'read-output-path'} operation
+ * @property {string} path
+ * @property {string} message
+ * @property {Error} cause
+ */
 
-function readOptions(argumentsList) {
-    const options = new Map();
-    for (const [index, argument] of argumentsList.entries()) {
-        if (!argument.startsWith('--') || !argument.includes('=')) {
-            fail(`argument ${index + 1} must use --name=value syntax`);
-        }
-        const separator = argument.indexOf('=');
-        const name = argument.slice(2, separator);
-        if (options.has(name)) {
-            fail(`option --${name} may appear only once`);
-        }
-        options.set(name, argument.slice(separator + 1));
-    }
-    return options;
-}
+/**
+ * @typedef {{ code: 'invalid-admission', issues: readonly string[] }} BrowserSoakValidationFailure
+ * @typedef {BrowserSoakValidationFailure | BrowserSoakReadFailure} BrowserSoakAdmissionFailure
+ */
 
-function requiredOption(options, name) {
-    const value = options.get(name);
-    if (value === undefined || value.length === 0) {
-        fail(`option --${name} is required`);
-    }
-    return value;
-}
-
-function boundedInteger({ value, name, minimum, maximum }) {
+function validateIntegerOption({ value, name, minimum, maximum }) {
     const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-        fail(`option --${name} must be an integer from ${minimum} through ${maximum}`);
-    }
-    return parsed;
+    return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
+        ? []
+        : [`option --${name} must be an integer from ${minimum} through ${maximum}`];
 }
 
-function parseDiagnosticCommand(options) {
-    const iterations = boundedInteger({
-        value: options.get('iterations') ?? '25',
-        name: 'iterations',
-        minimum: 1,
-        maximum: 10_000
-    });
-    return {
-        mode: 'diagnostic',
-        iterations,
-        outputPath: options.get('out') ?? DEFAULT_DIAGNOSTIC_OUT
-    };
-}
-
-function parseRawEvidenceCommand(options) {
+function validateRawEvidenceOptions(options) {
+    const issues = [];
     const allowed = new Set([
         'capture',
         'baseline-id',
@@ -84,62 +67,99 @@ function parseRawEvidenceCommand(options) {
     ]);
     for (const name of options.keys()) {
         if (!allowed.has(name)) {
-            fail(`option --${name} cannot override the accepted raw-evidence workload`);
+            issues.push(`option --${name} cannot override the accepted raw-evidence workload`);
         }
     }
-    const baselineId = requiredOption(options, 'baseline-id');
-    if (!isRtcBrowserBaselineId(baselineId)) {
-        fail('baseline ID does not match the accepted E2 browser grammar');
+    for (const name of ['baseline-id', 'case-id', 'input-key', 'intended-phase', 'outer-ordinal', 'out']) {
+        if (!options.get(name)) {
+            issues.push(`option --${name} is required`);
+        }
     }
-    const intendedPhase = requiredOption(options, 'intended-phase');
-    if (intendedPhase !== 'warmup' && intendedPhase !== 'retained') {
-        fail('option --intended-phase must be warmup or retained');
+    if (options.get('baseline-id') && !isRtcBrowserBaselineId(options.get('baseline-id'))) {
+        issues.push('baseline ID does not match the accepted E2 browser grammar');
     }
-    return {
-        mode: 'raw-evidence',
-        baselineId,
-        caseId: requiredOption(options, 'case-id'),
-        inputKey: requiredOption(options, 'input-key'),
-        intendedPhase,
-        outerOrdinal: boundedInteger({
-            value: requiredOption(options, 'outer-ordinal'),
+    const intendedPhase = options.get('intended-phase');
+    if (intendedPhase && intendedPhase !== 'warmup' && intendedPhase !== 'retained') {
+        issues.push('option --intended-phase must be warmup or retained');
+    }
+    if (options.get('outer-ordinal')) {
+        issues.push(...validateIntegerOption({
+            value: options.get('outer-ordinal'),
             name: 'outer-ordinal',
             minimum: 1,
             maximum: 999
-        }),
-        rawResultRelativePath: requiredOption(options, 'out')
-    };
+        }));
+    }
+    return issues;
 }
 
 function parseCommand(argumentsList) {
-    const options = readOptions(argumentsList);
-    return options.get('capture') === 'raw-evidence'
-        ? parseRawEvidenceCommand(options)
-        : parseDiagnosticCommand(options);
+    const options = new Map();
+    const issues = [];
+    for (const [index, argument] of argumentsList.entries()) {
+        if (!argument.startsWith('--') || !argument.includes('=')) {
+            issues.push(`argument ${index + 1} must use --name=value syntax`);
+            continue;
+        }
+        const separator = argument.indexOf('=');
+        const name = argument.slice(2, separator);
+        if (options.has(name)) {
+            issues.push(`option --${name} may appear only once`);
+            continue;
+        }
+        options.set(name, argument.slice(separator + 1));
+    }
+    const rawEvidence = options.get('capture') === 'raw-evidence';
+    const iterations = options.get('iterations') ?? '25';
+    issues.push(
+        ...(rawEvidence
+            ? validateRawEvidenceOptions(options)
+            : validateIntegerOption({ value: iterations, name: 'iterations', minimum: 1, maximum: 10_000 }))
+    );
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
+    return Either.ofRight(
+        rawEvidence
+            ? {
+                mode: 'raw-evidence',
+                baselineId: options.get('baseline-id'),
+                caseId: options.get('case-id'),
+                inputKey: options.get('input-key'),
+                intendedPhase: options.get('intended-phase'),
+                outerOrdinal: Number(options.get('outer-ordinal')),
+                rawResultRelativePath: options.get('out')
+            }
+            : {
+                mode: 'diagnostic',
+                iterations: Number(iterations),
+                outputPath: options.get('out') ?? DEFAULT_DIAGNOSTIC_OUT
+            }
+    );
 }
 
-function pad(value) {
+function toPaddedOrdinal(value) {
     return String(value).padStart(3, '0');
 }
 
-function acceptedSampleId(intendedPhase, outerOrdinal) {
+function toAcceptedSampleId(intendedPhase, outerOrdinal) {
     return [
         'rtc-b05-browser-data-channel-lifecycle-iterations-25',
         intendedPhase,
-        pad(outerOrdinal),
+        toPaddedOrdinal(outerOrdinal),
         '001'
     ].join('-');
 }
 
-function acceptedRawRelativePath(intendedPhase, outerOrdinal) {
+function toAcceptedRawRelativePath(intendedPhase, outerOrdinal) {
     return [
         'artifacts/staging/rtc-b05-browser-data-channel-lifecycle-iterations-25',
         intendedPhase,
-        `${pad(outerOrdinal)}.json`
+        `${toPaddedOrdinal(outerOrdinal)}.json`
     ].join('-');
 }
 
-function expectedOuterAttempts(retainedSampleMultiplier) {
+function computeExpectedOuterAttempts(retainedSampleMultiplier) {
     const retainedCount = retainedSampleMultiplier === 1 ? 5 : 10;
     const attempt = (intendedPhase, outerOrdinal) => ({
         workloadId: WORKLOAD_ID,
@@ -148,7 +168,7 @@ function expectedOuterAttempts(retainedSampleMultiplier) {
         environmentId: ENVIRONMENT_ID,
         intendedPhase,
         outerOrdinal,
-        sampleIds: [acceptedSampleId(intendedPhase, outerOrdinal)]
+        sampleIds: [toAcceptedSampleId(intendedPhase, outerOrdinal)]
     });
     return [
         attempt('warmup', 1),
@@ -156,139 +176,240 @@ function expectedOuterAttempts(retainedSampleMultiplier) {
     ];
 }
 
+/** @returns {Either<BrowserSoakReadFailure, import('../../baseline/contracts/rtc-baseline-contracts.ts').RtcBaselineJson>} */
 function readJson(path, artifactName) {
     try {
-        return JSON.parse(readFileSync(path, 'utf8'));
+        return Either.ofRight(JSON.parse(readFileSync(path, 'utf8')));
     }
     catch (error) {
-        fail(
-            `${artifactName} could not be read as JSON: ${error instanceof Error ? error.message : error}`
-        );
+        const cause = error instanceof Error ? error : new Error(String(error));
+        return Either.ofLeft({
+            code: 'artifact-read-failed',
+            operation: 'read-json',
+            path,
+            cause,
+            message: `${artifactName} could not be read as JSON: ${cause.message}`
+        });
     }
 }
 
-function same(left, right) {
+function isSameJson(left, right) {
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function isJsonObject(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function validateRepeatContract(manifest, baselineId) {
+    const issues = [];
     const repeat = baselineId.endsWith('-repeat-01');
-    const multiplier = manifest.request?.retainedSampleMultiplier;
+    const multiplier = manifest.request.retainedSampleMultiplier;
     if (multiplier !== (repeat ? 2 : 1)) {
-        fail('manifest retained-sample multiplier does not match the baseline identity');
+        issues.push('manifest retained-sample multiplier does not match the baseline identity');
     }
-    const repeatLink = manifest.request?.repeatLink;
+    const repeatLink = manifest.request.repeatLink;
     if (!repeat && repeatLink !== null) {
-        fail('primary manifest must not contain a repeat link');
+        issues.push('primary manifest must not contain a repeat link');
     }
     if (
         repeat &&
         (repeatLink?.primaryBaselineId !== baselineId.replace(/-repeat-01$/, '') ||
+            typeof repeatLink?.primarySummarySha256 !== 'string' ||
             !/^[0-9a-f]{64}$/.test(repeatLink?.primarySummarySha256 ?? ''))
     ) {
-        fail('repeat manifest must link to the exact primary summary');
+        issues.push('repeat manifest must link to the exact primary summary');
     }
-    if (!same(manifest.repeatLink, repeatLink)) {
-        fail('manifest repeat link differs from its request');
+    if (!isSameJson(manifest.repeatLink, repeatLink)) {
+        issues.push('manifest repeat link differs from its request');
     }
-    return multiplier;
+    return issues;
 }
 
 function validateManifest(manifest, command) {
+    if (!isJsonObject(manifest)) {
+        return ['manifest identity does not match the raw-evidence command'];
+    }
+    const issues = [];
     const request = manifest.request;
+    const requestPresent = isJsonObject(request);
     if (
         manifest.schema !== 'rallar.rtc-baseline.manifest.v1' ||
-        request?.schema !== 'rallar.rtc-baseline.capture-request.v1' ||
-        request.baselineId !== command.baselineId ||
-        request.environmentId !== ENVIRONMENT_ID
+        !requestPresent || request.schema !== 'rallar.rtc-baseline.capture-request.v1' ||
+        request.baselineId !== command.baselineId || request.environmentId !== ENVIRONMENT_ID
     ) {
-        fail('manifest identity does not match the raw-evidence command');
+        issues.push('manifest identity does not match the raw-evidence command');
     }
     if (
-        !same(request.workloadIds, [WORKLOAD_ID]) ||
-        !same(manifest.workloadIds, [WORKLOAD_ID]) ||
-        !same(manifest.cases, [{ workloadId: WORKLOAD_ID, caseId: CASE_ID, inputKey: INPUT_KEY }]) ||
-        !same(request.conditionalEnvironmentDecisions, []) ||
-        !same(manifest.expectedCohorts, [])
+        (requestPresent && !isSameJson(request.workloadIds, [WORKLOAD_ID])) ||
+        !isSameJson(manifest.workloadIds, [WORKLOAD_ID]) ||
+        !isSameJson(manifest.cases, [{ workloadId: WORKLOAD_ID, caseId: CASE_ID, inputKey: INPUT_KEY }]) ||
+        (requestPresent && !isSameJson(request.conditionalEnvironmentDecisions, [])) ||
+        !isSameJson(manifest.expectedCohorts, [])
     ) {
-        fail('manifest changes the immutable RTC-B05 workload');
+        issues.push('manifest changes the immutable RTC-B05 workload');
     }
-    const multiplier = validateRepeatContract(manifest, command.baselineId);
-    if (!same(manifest.outerAttempts, expectedOuterAttempts(multiplier))) {
-        fail('manifest outer process identities differ from the accepted RTC-B05 matrix');
+    if (requestPresent) {
+        issues.push(...validateRepeatContract(manifest, command.baselineId));
     }
-    const outerAttempt = manifest.outerAttempts.find(
-        (entry) =>
-            entry.workloadId === WORKLOAD_ID &&
-            entry.caseId === command.caseId &&
-            entry.inputKey === command.inputKey &&
-            entry.intendedPhase === command.intendedPhase &&
-            entry.outerOrdinal === command.outerOrdinal
-    );
-    if (!outerAttempt) {
-        fail('manifest does not predeclare the requested RTC-B05 outer process identity');
+    const multiplier = command.baselineId.endsWith('-repeat-01') ? 2 : 1;
+    if (!isSameJson(manifest.outerAttempts, computeExpectedOuterAttempts(multiplier))) {
+        issues.push('manifest outer process identities differ from the accepted RTC-B05 matrix');
     }
-    return outerAttempt;
+    if (
+        Array.isArray(manifest.outerAttempts) && !manifest.outerAttempts.some(
+            (entry) => isJsonObject(entry) && isRequestedOuterAttempt(entry, command)
+        )
+    ) {
+        issues.push('manifest does not predeclare the requested RTC-B05 outer process identity');
+    }
+    return issues;
+}
+
+function isRequestedOuterAttempt(entry, command) {
+    return entry.workloadId === WORKLOAD_ID && entry.caseId === command.caseId &&
+        entry.inputKey === command.inputKey && entry.intendedPhase === command.intendedPhase &&
+        entry.outerOrdinal === command.outerOrdinal;
 }
 
 function validateEnvironment(environment, manifest) {
+    if (!isJsonObject(environment)) {
+        return ['environment identity does not match the immutable manifest'];
+    }
+    const issues = [];
     if (
         environment.schema !== 'rallar.rtc-baseline.environment.v1' ||
         environment.baselineId !== manifest.request.baselineId ||
         environment.environmentId !== ENVIRONMENT_ID ||
-        !same(environment.workloadIds, [WORKLOAD_ID]) ||
-        !same(environment.repeatLink, manifest.repeatLink) ||
-        !same(environment.conditionalEnvironmentDecisions, []) ||
+        !isSameJson(environment.workloadIds, [WORKLOAD_ID]) ||
+        !isSameJson(environment.repeatLink, manifest.repeatLink) ||
+        !isSameJson(environment.conditionalEnvironmentDecisions, []) ||
         environment.observation === null
     ) {
-        fail('environment identity does not match the immutable manifest');
+        issues.push('environment identity does not match the immutable manifest');
     }
     const observation = environment.observation;
-    const issues = validateRtcDataChannelBrowserSoakRuntimeObservation(
-        observation,
-        manifest.request.baselineId
-    );
-    if (issues.length > 0) {
-        fail(`environment changes the accepted RTC-B05 configuration or provenance: ${issues[0].code}`);
+    if (
+        !isJsonObject(observation) || !Array.isArray(observation.sourceHashes) ||
+        !observation.sourceHashes.every((entry) => isJsonObject(entry) && typeof entry.sha256 === 'string')
+    ) {
+        issues.push(
+            'environment changes the accepted RTC-B05 configuration or provenance: invalid-runtime-observation'
+        );
     }
-    return observation;
+    else {
+        issues.push(
+            ...validateRtcDataChannelBrowserSoakRuntimeObservation(
+                observation,
+                manifest.request.baselineId
+            ).map((issue) => `environment changes the accepted RTC-B05 configuration or provenance: ${issue.code}`)
+        );
+    }
+    return issues;
 }
 
-function assertDirectory(path, label) {
-    if (!existsSync(path)) {
-        fail(`${label} directory does not exist`);
+/** @returns {Either<BrowserSoakAdmissionFailure, string>} */
+function readDirectory(path, label) {
+    try {
+        if (!existsSync(path)) {
+            return Either.ofLeft({ code: 'invalid-admission', issues: [`${label} directory does not exist`] });
+        }
+        const status = lstatSync(path);
+        return status.isSymbolicLink() || !status.isDirectory()
+            ? Either.ofLeft({ code: 'invalid-admission', issues: [`${label} must be a non-symlink directory`] })
+            : Either.ofRight(path);
     }
-    const status = lstatSync(path);
-    if (status.isSymbolicLink() || !status.isDirectory()) {
-        fail(`${label} must be a non-symlink directory`);
+    catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        return Either.ofLeft({
+            code: 'artifact-read-failed',
+            operation: 'read-directory',
+            path,
+            cause,
+            message: `${label} directory could not be read: ${cause.message}`
+        });
+    }
+}
+
+/** @returns {Either<BrowserSoakAdmissionFailure, string>} */
+function readRawOutputPath({ command, baselinePath, outerAttempt }) {
+    const expectedRelativePath = toAcceptedRawRelativePath(
+        outerAttempt.intendedPhase,
+        outerAttempt.outerOrdinal
+    );
+    if (command.rawResultRelativePath !== expectedRelativePath) {
+        return Either.ofLeft({
+            code: 'invalid-admission',
+            issues: [`raw output path must equal ${expectedRelativePath}`]
+        });
+    }
+    const outputPath = join(baselinePath, expectedRelativePath);
+    try {
+        return existsSync(outputPath)
+            ? Either.ofLeft({
+                code: 'invalid-admission',
+                issues: [`raw output already exists at ${expectedRelativePath}`]
+            })
+            : Either.ofRight(outputPath);
+    }
+    catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        return Either.ofLeft({
+            code: 'artifact-read-failed',
+            operation: 'read-output-path',
+            path: outputPath,
+            cause,
+            message: `raw output path could not be read at ${expectedRelativePath}: ${cause.message}`
+        });
     }
 }
 
 function readRawCaptureContext(command, baselineRootPath) {
     const baselinePath = join(baselineRootPath, command.baselineId);
-    assertDirectory(baselineRootPath, 'baseline root');
-    assertDirectory(baselinePath, 'baseline');
-    assertDirectory(join(baselinePath, 'artifacts'), 'artifact');
-    assertDirectory(join(baselinePath, 'artifacts/staging'), 'staging');
-    const manifest = readJson(join(baselinePath, 'manifest.json'), 'manifest');
-    const outerAttempt = validateManifest(manifest, command);
-    const expectedRelativePath = acceptedRawRelativePath(
-        outerAttempt.intendedPhase,
-        outerAttempt.outerOrdinal
-    );
-    if (command.rawResultRelativePath !== expectedRelativePath) {
-        fail(`raw output path must equal ${expectedRelativePath}`);
+    for (
+        const [path, label] of [
+            [baselineRootPath, 'baseline root'],
+            [baselinePath, 'baseline'],
+            [join(baselinePath, 'artifacts'), 'artifact'],
+            [join(baselinePath, 'artifacts/staging'), 'staging']
+        ]
+    ) {
+        const directory = readDirectory(path, label);
+        if (directory.left !== undefined) {
+            return Either.ofLeft(directory.left);
+        }
     }
-    const outputPath = join(baselinePath, expectedRelativePath);
-    if (existsSync(outputPath)) {
-        fail(`raw output already exists at ${expectedRelativePath}`);
+    const manifestRead = readJson(join(baselinePath, 'manifest.json'), 'manifest');
+    if (manifestRead.left !== undefined) {
+        return Either.ofLeft(manifestRead.left);
     }
-    const environment = readJson(join(baselinePath, 'environment.json'), 'environment');
-    return {
-        outerAttempt,
-        outputPath,
-        runtimeObservation: validateEnvironment(environment, manifest)
-    };
+    const manifest = manifestRead.right;
+    const manifestIssues = validateManifest(manifest, command);
+    if (manifestIssues.length > 0) {
+        return Either.ofLeft({ code: 'invalid-admission', issues: manifestIssues });
+    }
+    const outerAttempt = manifest.outerAttempts.find((entry) => isRequestedOuterAttempt(entry, command));
+    const outputPath = readRawOutputPath({ command, baselinePath, outerAttempt });
+    if (outputPath.left !== undefined) {
+        return Either.ofLeft(outputPath.left);
+    }
+    const environmentRead = readJson(join(baselinePath, 'environment.json'), 'environment');
+    if (environmentRead.left !== undefined) {
+        return Either.ofLeft(environmentRead.left);
+    }
+    const environment = environmentRead.right;
+    const environmentIssues = validateEnvironment(environment, manifest);
+    return environmentIssues.length > 0
+        ? Either.ofLeft({ code: 'invalid-admission', issues: environmentIssues })
+        : Either.ofRight({ outerAttempt, outputPath: outputPath.right, runtimeObservation: environment.observation });
+}
+
+function toCliAdmissionError(failure) {
+    if (Array.isArray(failure) || failure.code === 'invalid-admission') {
+        const issues = Array.isArray(failure) ? failure : failure.issues;
+        return new Error(`RTC-B05: ${issues.join('; ')}`);
+    }
+    return new Error(`RTC-B05: ${failure.message}`, { cause: failure.cause });
 }
 
 async function measureBrowserLifecycle(iterations, iterationIdPrefix, dependencies) {
@@ -298,7 +419,7 @@ async function measureBrowserLifecycle(iterations, iterationIdPrefix, dependenci
         const cdp = await page.context().newCDPSession(page);
         await cdp.send('Performance.enable');
         const readHeapUsed = async () => {
-            await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
+            await cdp.send('HeapProfiler.collectGarbage');
             const metrics = await cdp.send('Performance.getMetrics');
             return metrics.metrics?.find((metric) => metric.name === 'JSHeapUsedSize')?.value ?? null;
         };
@@ -507,7 +628,7 @@ async function runPageLifecycle(page, input) {
     }, input);
 }
 
-function createAcceptedSample({ command, context, measurement, argumentsList, nowUtc }) {
+function createAcceptedSample({ command, context, measurement, argumentsList, createdAt }) {
     const sampleIdentity = {
         sampleId: context.outerAttempt.sampleIds[0],
         workloadId: WORKLOAD_ID,
@@ -533,7 +654,7 @@ function createAcceptedSample({ command, context, measurement, argumentsList, no
             evidenceClass: 'native-browser',
             metrics: [],
             rawEvidence: {
-                createdAt: nowUtc(),
+                createdAt,
                 identity,
                 input: { iterations: ACCEPTED_ITERATIONS },
                 producerCommand: {
@@ -550,13 +671,13 @@ function createAcceptedSample({ command, context, measurement, argumentsList, no
     );
 }
 
-function toExternalAttempt({ command, context, measurement, argumentsList, nowUtc }) {
+function toExternalAttempt({ command, context, measurement, argumentsList, createdAt }) {
     const sample = createAcceptedSample({
         command,
         context,
         measurement,
         argumentsList,
-        nowUtc
+        createdAt
     });
     return {
         schema: 'rallar.rtc-baseline.external-attempt.v1',
@@ -595,7 +716,11 @@ function writeJson(path, value, createNew) {
 }
 
 export async function runRtcDataChannelBrowserSoakCli(argumentsList, overrides = {}) {
-    const command = parseCommand(argumentsList);
+    const parsedCommand = parseCommand(argumentsList);
+    if (parsedCommand.left !== undefined) {
+        throw toCliAdmissionError(parsedCommand.left);
+    }
+    const command = parsedCommand.right;
     const dependencies = {
         baselineRootPath: overrides.baselineRootPath ?? DEFAULT_BASELINE_ROOT,
         launchBrowser: overrides.launchBrowser ?? ((options) => chromium.launch(options)),
@@ -616,18 +741,23 @@ export async function runRtcDataChannelBrowserSoakCli(argumentsList, overrides =
         writeJson(command.outputPath, output, false);
         return { mode: command.mode, outputPath: command.outputPath, output };
     }
-    const context = readRawCaptureContext(command, dependencies.baselineRootPath);
+    const captureContext = readRawCaptureContext(command, dependencies.baselineRootPath);
+    if (captureContext.left !== undefined) {
+        throw toCliAdmissionError(captureContext.left);
+    }
+    const context = captureContext.right;
     const measurement = await measureBrowserLifecycle(
         ACCEPTED_ITERATIONS,
         context.outerAttempt.sampleIds[0],
         dependencies
     );
+    const createdAt = dependencies.nowUtc();
     const output = toExternalAttempt({
         command,
         context,
         measurement,
         argumentsList,
-        nowUtc: dependencies.nowUtc
+        createdAt
     });
     writeJson(context.outputPath, output, true);
     return { mode: command.mode, outputPath: context.outputPath, output };

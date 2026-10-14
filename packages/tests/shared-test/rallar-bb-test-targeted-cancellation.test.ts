@@ -10,7 +10,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -18,7 +18,7 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 describe('targeted recipe cancellation', () => {
     it('refuses a stale target while preserving the actual active recipe', async () => {
         const cleanup: RallarBlackBoxTestCleanupInput[] = [];
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             cleanup: (input) => {
                 cleanup.push(input);
             }
@@ -64,7 +64,7 @@ it.each(
         { sameId: true, firstToFinish: 'b' }
     ] as const
 )('refuses ambiguous overlapping invocations: $sameId / $firstToFinish', async ({ sameId, firstToFinish }) => {
-    const runtime = createRallarBlackBoxTestRuntime();
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
     const a = new PendingRecipe(runtime, { rootId: 'a', waitId: 'wait-a', topic: 'a-complete' });
     const b = new PendingRecipe(runtime, { rootId: sameId ? 'a' : 'b', waitId: 'wait-b', topic: 'b-complete' });
     await Promise.all([a.started, b.started]);
@@ -131,7 +131,7 @@ class PendingRecipe {
 }
 
 it('keeps ownership at the top-level through nested composites and cached replays', async () => {
-    const runtime = createRallarBlackBoxTestRuntime();
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
     const cached = await runtime.execute({ kind: 'stats', commandId: 'cached-stats' });
     expect(cached.ok).toBe(true);
     const entered = Promise.withResolvers<void>();

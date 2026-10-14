@@ -1,4 +1,6 @@
+import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
@@ -22,18 +24,26 @@ test.describe('exhaustive RTC/Realtimes direct Rallar mode', () => {
         await expectFullStackApiReady(request, config);
         const groupId = uniqueGroupId(testInfo);
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
+        let pageA: Page | undefined;
+        let pageB: Page | undefined;
         try {
+            contextB = await browser.newContext();
+            pageA = await contextA.newPage();
+            pageB = await contextB.newPage();
             const [, receiverSession] = await Promise.all([
-                loginUser(pageA, config, config.userA, {
+                loginUser({
+                    page: pageA,
+                    config,
+                    user: config.userA,
                     groupId,
                     sessionId: `${groupId}-rtc-a`,
                     tab: 'rtc-realtime'
                 }),
-                loginUser(pageB, config, config.userB, {
+                loginUser({
+                    page: pageB,
+                    config,
+                    user: config.userB,
                     groupId,
                     sessionId: `${groupId}-rtc-b`,
                     tab: 'rtc-realtime'
@@ -112,18 +122,12 @@ test.describe('exhaustive RTC/Realtimes direct Rallar mode', () => {
             await expect(topology).toContainText(/nodes|routes|room/i, { timeout: 30_000 });
         }
         finally {
-            await Promise.all([
-                cleanupRallarPage(pageA),
-                cleanupRallarPage(pageB)
-            ]);
-            await Promise.all([
-                pageA.goto('about:blank', { timeout: 5_000 }).catch(() => undefined),
-                pageB.goto('about:blank', { timeout: 5_000 }).catch(() => undefined)
-            ]);
-            await Promise.all([
-                contextA.close(),
-                contextB.close()
-            ]);
+            try {
+                await Promise.all([pageA && cleanupRallarPage(pageA), pageB && cleanupRallarPage(pageB)]);
+            }
+            finally {
+                await Promise.all([contextA.close(), contextB?.close()]);
+            }
         }
     });
 });

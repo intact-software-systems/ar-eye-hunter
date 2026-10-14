@@ -2,12 +2,16 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { toAgentReloadResult, writeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import { decodeControlBarrierEnvelope, toBarrierResolvedEvent } from './barrier/control-barrier-protocol.ts';
+import {
+    ControlRecipeEventHistory,
+    toUnavailableRecipeHistoryResult
+} from './control-client/control-recipe-event-history.ts';
 import { deleteBrowserStorageEntries } from './control-client/delete-browser-storage-entries.ts';
 import {
     decodeControlAgentFleetLocation,
     toControlAgentIdentity
 } from './control-client/to-control-agent-identity.ts';
-import { toControlAgentReport } from './control-client/to-control-agent-report.ts';
+import { toControlAgentReport, toControlOwnedReportState } from './control-client/to-control-agent-report.ts';
 import {
     writeControlFinalReport,
     type RallarBlackBoxControlFetch
@@ -22,7 +26,9 @@ import {
     type ControlResultEnvelope
 } from './control-protocol.ts';
 import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
+import { decodeRtcCaptureSupport } from './distributed/rtc-capture-support.ts';
 import type {
+    RallarBlackBoxRtcCaptureSupport,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
@@ -30,6 +36,11 @@ import type {
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState
 } from './rallar-black-box-test-contracts.ts';
+import {
+    computeCountedEventHistory,
+    createEventHistory,
+    type RallarBlackBoxEventHistory
+} from './runtime/event-history.ts';
 import { toRuntimeStats } from './runtime/to-runtime-stats.ts';
 
 export type RallarBlackBoxControlConnectionState =
@@ -97,6 +108,7 @@ export type RallarBlackBoxControlSnapshotListener = (snapshot: RallarBlackBoxCon
 
 export interface RallarBlackBoxControlClientOptions {
     readonly runtime: RallarBlackBoxTestRuntime;
+    readonly now: () => number;
     readonly webSocketFactory: RallarBlackBoxControlWebSocketFactory;
     readonly fetch: RallarBlackBoxControlFetch;
     readonly heartbeatIntervalMs: number;
@@ -115,6 +127,8 @@ export interface RallarBlackBoxControlConnectOptions {
     /** Absent when the agent sends its final report only over the control socket. */
     readonly finalReportUploadUrl?: string;
     readonly completedCommandIds: readonly string[];
+    /** Present only when this page resumes active owned reload executions. */
+    readonly recipeExecutions?: ControlRecipeEventHistory.Resume;
 }
 
 export interface RallarBlackBoxAgentControlClient {
@@ -147,6 +161,7 @@ export function createDefaultRallarBlackBoxControlClient(
 ): RallarBlackBoxControlClient {
     return new RallarBlackBoxControlClient({
         ...input,
+        now: Date.now,
         webSocketFactory: (url) => new WebSocket(url),
         fetch: (request, init) => globalThis.fetch(request, init),
         reconnectBaseMs: DEFAULT_RECONNECT_BASE_MS,
@@ -156,9 +171,20 @@ export function createDefaultRallarBlackBoxControlClient(
 
 export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlClient {
     private readonly options: RallarBlackBoxControlClientOptions;
+    private readonly rtcCaptureSupport: RallarBlackBoxRtcCaptureSupport | undefined;
     private readonly unsubscribeRuntime: () => void;
     private readonly snapshotListeners = new Set<RallarBlackBoxControlSnapshotListener>();
-    private readonly sentEventIds = new Set<string>();
+    private publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
+    private eventGeneration = 0;
+    private visitedEventOrdinal = 0;
+    private observedEventOrdinal = 0;
+    private publishedHistory: RallarBlackBoxEventHistory | undefined;
+    private readonly completedControlCommandIds = new Set<string>();
+    private readonly admittedControlCommandIds = new Set<string>();
+    private completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
+    private assignmentGeneration = 0;
+    private readonly recipeEventHistory = new ControlRecipeEventHistory();
+    private observedRuntimeGeneration = 0;
     private statsEventSequence = 1;
     private reportSequence = 1;
     private lastTerminalReportKey: string | undefined;
@@ -170,6 +196,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private statsTimer: ReturnType<typeof globalThis.setInterval> | undefined;
     private reconnectTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
     private manualClose = false;
+    private disposed = false;
     private disconnectReported = false;
     private snapshot: RallarBlackBoxControlSnapshot = {
         state: 'idle',
@@ -179,8 +206,14 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     };
 
     constructor(options: RallarBlackBoxControlClientOptions) {
-        this.options = options;
-        this.unsubscribeRuntime = options.runtime.subscribe((state) => {
+        this.options = Object.freeze({ ...options });
+        this.rtcCaptureSupport = decodeRtcCaptureSupport(this.options.runtime.rtcCaptureSupport).right?.support;
+        this.observedRuntimeGeneration = this.options.runtime.state().eventHistory.generation;
+        this.unsubscribeRuntime = this.options.runtime.subscribe((state) => {
+            if (state.eventHistory.generation !== this.observedRuntimeGeneration) {
+                this.recipeEventHistory.clear();
+                this.observedRuntimeGeneration = state.eventHistory.generation;
+            }
             this.sendNewEvents(state);
             this.sendTerminalReport(state);
         });
@@ -198,7 +231,35 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     }
 
     connect(connection: RallarBlackBoxControlConnectOptions): void {
-        this.connection = connection;
+        if (this.disposed) {
+            throw new Error('Control client is disposed.');
+        }
+        if (connection.runId !== this.connection?.runId || connection.agentId !== this.connection?.agentId) {
+            this.assignmentGeneration += 1;
+            this.recipeEventHistory.restore(connection.recipeExecutions ?? {});
+            this.completedControlCommandIds.clear();
+            this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
+            this.admittedControlCommandIds.clear();
+            this.publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
+            this.lastTerminalReportKey = undefined;
+            const history = this.options.runtime.state().eventHistory;
+            this.eventGeneration = history.generation;
+            this.visitedEventOrdinal = history.totalEvents;
+            this.observedEventOrdinal = history.totalEvents;
+            this.publishedHistory = createEventHistory(history.policy, history, history.capture);
+        }
+        for (const commandId of connection.completedCommandIds) {
+            this.completedControlCommandIds.add(commandId);
+        }
+        this.connection = Object.freeze({
+            url: connection.url,
+            runId: connection.runId,
+            agentId: connection.agentId,
+            token: connection.token,
+            finalReportUploadUrl: connection.finalReportUploadUrl,
+            completedCommandIds: Object.freeze([...connection.completedCommandIds])
+        });
+        this.options.runtime.beginEventCapture({ runId: connection.runId, agentId: connection.agentId });
         this.manualClose = false;
         this.disconnectReported = false;
         this.stopReconnectTimer();
@@ -219,6 +280,13 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     }
 
     dispose(): void {
+        this.disposed = true;
+        for (const root of Object.keys(this.recipeEventHistory.snapshot())) {
+            if (this.connection !== undefined) {
+                this.options.runtime.releaseRecipeExecution(root, this.connection);
+            }
+        }
+        this.recipeEventHistory.clear();
         this.disconnect();
         this.unsubscribeRuntime();
     }
@@ -261,7 +329,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private readonly onSocketOpen = (): void => {
         this.publishSnapshotUpdate({
             state: 'registered',
-            connectedAtEpochMs: Date.now(),
+            connectedAtEpochMs: this.options.now(),
             reconnectAttempt: 0,
             lastError: undefined
         });
@@ -278,7 +346,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         const connection = this.assertConnection();
         this.publishSnapshotUpdate({
             receivedCount: this.snapshot.receivedCount + 1,
-            lastMessageAtEpochMs: Date.now()
+            lastMessageAtEpochMs: this.options.now()
         });
 
         const identity = { runId: connection.runId, agentId: connection.agentId };
@@ -335,11 +403,10 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     }
 
     private async runCommand(envelope: ControlCommandEnvelope): Promise<void> {
-        const cached = this.options.runtime.state().resultCache[envelope.commandId];
-        if (cached) {
-            this.sendResult(cached, true);
-            return;
-        }
+        const connection = this.assertConnection();
+        const generation = this.assignmentGeneration;
+        const identity = { runId: connection.runId, agentId: connection.agentId };
+        this.admittedControlCommandIds.add(envelope.commandId);
 
         this.recordDiagnostic({
             topic: 'rallar.bb.control.command_received',
@@ -348,8 +415,9 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             commandId: envelope.commandId
         });
         const command = toEnvelopeCommand(envelope);
-        if (command.kind === 'agent.reload') {
-            this.startAgentReload(envelope.commandId, command.readyTimeoutMs);
+        const history = this.recipeEventHistory.admit(envelope);
+        if (command.kind === 'agent.reload' && history.error === undefined) {
+            this.startAgentReload(envelope, command.readyTimeoutMs);
             return;
         }
         if (command.kind === 'reset') {
@@ -361,18 +429,56 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             });
         }
 
-        this.sendResult(await this.options.runtime.execute(command), false);
+        const atEpochMs = this.options.now();
+        const result: RallarBlackBoxTestResult = history.error === undefined
+            ? await this.options.runtime.execute(
+                command,
+                identity,
+                { eventHistorySelection: history.selection, recipeExecution: envelope.recipeExecution }
+            )
+            : toUnavailableRecipeHistoryResult(envelope, history.error, atEpochMs);
+
+        if (generation !== this.assignmentGeneration || this.disposed) {
+            if (envelope.recipeExecution !== undefined) {
+                this.options.runtime.releaseRecipeExecution(envelope.recipeExecution.rootCommandId, identity);
+            }
+            return;
+        }
+        this.recipeEventHistory.settle(envelope, result);
+        this.completedControlCommandIds.add(envelope.commandId);
+        if (result.replayed !== true) {
+            this.completedControlResults.add(result);
+        }
+        this.sendResult(result, result.replayed === true);
+        this.sendTerminalReport(this.options.runtime.state());
     }
 
     /** The result only buffers on the socket, so the reload waits one macrotask to give that write a turn to flush. */
-    private startAgentReload(commandId: string, readyTimeoutMs: number): void {
+    private startAgentReload(envelope: ControlCommandEnvelope, readyTimeoutMs: number): void {
+        const commandId = envelope.commandId;
         const connection = this.assertConnection();
+        if (envelope.recipeExecution?.last) {
+            this.options.runtime.releaseRecipeExecution(envelope.recipeExecution.rootCommandId, {
+                runId: connection.runId,
+                agentId: connection.agentId
+            });
+            this.recipeEventHistory.clear(envelope.recipeExecution.rootCommandId);
+        }
         const written = writeAgentResumeRecord({
             runId: connection.runId,
             agentId: connection.agentId,
-            completedCommandIds: this.resolveCompletedCommandIds([commandId])
+            completedCommandIds: this.resolveCompletedCommandIds([commandId]),
+            recipeExecutions: this.recipeEventHistory.snapshot()
         });
-        this.sendResult(toAgentReloadResult({ commandId, readyTimeoutMs, written, atEpochMs: Date.now() }), false);
+        const result = toAgentReloadResult({ commandId, readyTimeoutMs, written, atEpochMs: this.options.now() });
+        this.recipeEventHistory.settle(envelope, result);
+        if (!result.ok && envelope.recipeExecution !== undefined) {
+            this.options.runtime.releaseRecipeExecution(envelope.recipeExecution.rootCommandId, {
+                runId: connection.runId,
+                agentId: connection.agentId
+            });
+        }
+        this.sendResult(result, false);
         if (written === 'written') {
             globalThis.setTimeout(() => globalThis.location.reload(), 0);
         }
@@ -382,7 +488,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         return [
             ...new Set([
                 ...this.assertConnection().completedCommandIds,
-                ...Object.keys(this.options.runtime.state().resultCache),
+                ...this.completedControlCommandIds,
                 ...extraCommandIds
             ])
         ];
@@ -390,7 +496,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     private sendRegister(): void {
         const connection = this.assertConnection();
-        const atEpochMs = Date.now();
+        const atEpochMs = this.options.now();
         const identity = this.readAgentIdentity(connection.agentId, atEpochMs);
         this.publishSnapshotUpdate({ identity: identity.identity });
         this.sendEnvelope({
@@ -409,7 +515,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private sendHeartbeat(): void {
         const connection = this.assertConnection();
         const state = this.options.runtime.state();
-        const atEpochMs = Date.now();
+        const atEpochMs = this.options.now();
         const identity = this.readAgentIdentity(connection.agentId, atEpochMs);
         this.sendEnvelope({
             kind: 'heartbeat',
@@ -419,7 +525,9 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             atEpochMs,
             status: state.status,
             identity: identity.identity,
-            lastCommandId: state.commandHistory.at(-1)?.commandId,
+            lastCommandId: Object.values(state.resultCache).findLast((result) =>
+                this.completedControlResults.has(result)
+            )?.commandId,
             lastEventAtEpochMs: state.events.at(-1)?.atEpochMs
         });
         this.publishSnapshotUpdate({ lastHeartbeatAtEpochMs: atEpochMs, identity: identity.identity });
@@ -432,6 +540,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         return {
             identity: toControlAgentIdentity({
                 config,
+                rtcCaptureSupport: this.rtcCaptureSupport,
                 agentId,
                 userAgent: globalThis.navigator?.userAgent,
                 location: location.right?.location,
@@ -460,7 +569,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     private sendStats(): void {
         const connection = this.assertConnection();
-        const atEpochMs = Date.now();
+        const atEpochMs = this.options.now();
         const event: RallarBlackBoxTestEvent = {
             eventId: `control-stats-${this.statsEventSequence++}`,
             kind: 'stats',
@@ -494,13 +603,13 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             return;
         }
 
-        const atEpochMs = Date.now();
+        const atEpochMs = this.options.now();
         const report = toControlAgentReport({
             runId: connection.runId,
             agentId: connection.agentId,
             reportId: `control-report-${this.reportSequence++}`,
             reason,
-            state: this.options.runtime.state(),
+            state: this.toControlOwnedState(),
             atEpochMs
         });
         const event: RallarBlackBoxTestEvent = {
@@ -532,7 +641,11 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         uploadUrl: string,
         token: string | undefined
     ): Promise<void> {
+        const generation = this.assignmentGeneration;
         const upload = await writeControlFinalReport({ fetch: this.options.fetch, uploadUrl, token, envelope });
+        if (generation !== this.assignmentGeneration) {
+            return;
+        }
         upload.fold(
             (failure) => {
                 this.publishSnapshotUpdate({ lastError: failure });
@@ -542,12 +655,18 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
                     payload: { error: failure, uploadUrl }
                 });
             },
-            () => this.publishSnapshotUpdate({ lastReportUploadAtEpochMs: Date.now() })
+            () => this.publishSnapshotUpdate({ lastReportUploadAtEpochMs: this.options.now() })
         );
     }
 
     private sendCompletedResults(): void {
-        Object.values(this.options.runtime.state().resultCache).forEach((result) => this.sendResult(result, true));
+        const cache = this.options.runtime.state().resultCache;
+        for (const commandId of this.completedControlCommandIds) {
+            const result = cache[commandId];
+            if (result && this.completedControlResults.has(result)) {
+                this.sendResult(result, true);
+            }
+        }
     }
 
     private sendResult(result: RallarBlackBoxTestResult, replayed: boolean): void {
@@ -559,7 +678,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             agentId: connection.agentId,
             commandId: result.commandId,
             ok: result.ok,
-            result,
+            result: { ...result, replayed },
             error: result.ok
                 ? undefined
                 : {
@@ -574,28 +693,117 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
 
     private sendNewEvents(state: RallarBlackBoxTestState): void {
         const connection = this.connection;
-        if (!connection || !this.isSocketOpen()) {
+        const generation = this.assignmentGeneration;
+        if (!connection) {
             return;
         }
-
+        this.observeEventHistory(state.eventHistory);
+        if (!this.isSocketOpen()) {
+            return;
+        }
         for (const event of state.events) {
-            if (!this.sentEventIds.has(event.eventId)) {
-                this.sentEventIds.add(event.eventId);
-                this.sendEnvelope(toControlEventEnvelope(event, connection.runId, connection.agentId));
+            if (generation !== this.assignmentGeneration || !this.isSocketOpen()) {
+                return;
+            }
+            const sequence = event.history;
+            if (
+                !sequence || sequence.runtimeId !== state.eventHistory.runtimeId ||
+                sequence.generation !== this.eventGeneration ||
+                !Number.isSafeInteger(sequence.ordinal) || sequence.ordinal < 1
+            ) {
+                this.options.runtime.recordEventCaptureGap('invalid-runtime-event-sequence');
+                continue;
+            }
+            if (sequence.ordinal <= this.visitedEventOrdinal) {
+                continue;
+            }
+            this.visitedEventOrdinal = sequence.ordinal;
+            if (this.isEventOwnedAtAddress(event, connection)) {
+                this.writeRuntimeEvent(event, connection);
             }
         }
     }
 
+    private observeEventHistory(history: RallarBlackBoxEventHistory): void {
+        if (history.generation !== this.eventGeneration) {
+            if (this.visitedEventOrdinal < this.observedEventOrdinal) {
+                this.options.runtime.recordEventCaptureGap('unsent-events-reset');
+            }
+            this.eventGeneration = history.generation;
+            this.visitedEventOrdinal = 0;
+            this.observedEventOrdinal = 0;
+            this.publishedHistory = createEventHistory(history.policy, history, history.capture);
+        }
+        this.observedEventOrdinal = history.totalEvents;
+        if (this.visitedEventOrdinal < history.evictedEvents) {
+            this.visitedEventOrdinal = history.evictedEvents;
+            this.options.runtime.recordEventCaptureGap('unsent-events-evicted');
+        }
+    }
+
+    private isEventOwnedAtAddress(
+        event: RallarBlackBoxTestEvent,
+        connection: RallarBlackBoxControlConnectOptions
+    ): boolean {
+        if (
+            this.assignmentGeneration > 1 && this.admittedControlCommandIds.size === 0 &&
+            !event.topic.startsWith('rallar.bb.control.')
+        ) {
+            return false;
+        }
+        return event.kind !== 'result' ||
+            (event.control?.runId === connection.runId && event.control.agentId === connection.agentId &&
+                this.admittedControlCommandIds.has(event.control.rootCommandId));
+    }
+
+    private writeRuntimeEvent(event: RallarBlackBoxTestEvent, connection: RallarBlackBoxControlConnectOptions): void {
+        const generation = this.assignmentGeneration;
+        try {
+            this.sendEnvelope(toControlEventEnvelope(event, connection.runId, connection.agentId));
+            if (generation !== this.assignmentGeneration) {
+                return;
+            }
+            this.publishedEvents.add(event);
+            const history = this.publishedHistory;
+            if (history) {
+                this.publishedHistory = computeCountedEventHistory(history, event);
+            }
+        }
+        catch (caught) {
+            if (generation !== this.assignmentGeneration) {
+                return;
+            }
+            this.options.runtime.recordEventCaptureGap('event-publication-failed');
+            if (generation === this.assignmentGeneration) {
+                this.publishSnapshotUpdate({ lastError: toError(caught).message });
+            }
+        }
+    }
+
+    /** The client owns publication sets; the report core projects their actual admitted facts. */
+    private toControlOwnedState(state = this.options.runtime.state()): RallarBlackBoxTestState {
+        return toControlOwnedReportState({
+            state,
+            admittedCommandIds: this.admittedControlCommandIds,
+            completedResults: this.completedControlResults,
+            publishedEvents: this.publishedEvents,
+            publishedHistory: this.publishedHistory
+        });
+    }
+
     private sendTerminalReport(state: RallarBlackBoxTestState): void {
-        if (!TERMINAL_RUNTIME_STATUSES.includes(state.status)) {
+        const owned = this.toControlOwnedState(state);
+        if (!TERMINAL_RUNTIME_STATUSES.includes(owned.status)) {
             return;
         }
-
-        const latestCommandId = state.commandHistory.at(-1)?.commandId ?? 'no-command';
-        const reportKey = `${state.status}:${latestCommandId}:${state.commandHistory.length}`;
+        const latestCommandId = owned.commandHistory.at(-1)?.commandId;
+        if (latestCommandId === undefined) {
+            return;
+        }
+        const reportKey = `${owned.status}:${latestCommandId}:${owned.commandHistory.length}`;
         if (this.lastTerminalReportKey !== reportKey) {
             this.lastTerminalReportKey = reportKey;
-            this.sendFinalReport(`runtime-${state.status}`);
+            this.sendFinalReport(`runtime-${owned.status}`);
         }
     }
 

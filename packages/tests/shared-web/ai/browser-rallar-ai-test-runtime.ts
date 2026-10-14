@@ -50,7 +50,8 @@ export function createFakeRallar(): FakeBrowserAiRallar {
                 onMessage: () => noopUnsubscribe
             },
             channel: unusedByBrowserAi,
-            room: unusedByBrowserAi
+            room: unusedByBrowserAi,
+            readUsage: unusedByBrowserAi
         }
     };
 }

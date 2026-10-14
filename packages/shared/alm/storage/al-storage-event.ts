@@ -1,7 +1,10 @@
-import type { ALStorageResetEvent } from '../open-indexed-db-admission-database.ts';
+import type { ALInboundOrderingTracksReport } from '../inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import type { ALInboundResyncCursor } from '../inbound/al-inbound-resync-required.ts';
+import type { ALStorageResetEvent, ALStorageResetSink } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
 
-export type ALStorageHealthStatus = 'healthy' | 'failing';
+/** `delayed` only on a checkpoint store: a write failed or the oldest unsaved change is two intervals old, within the lag bound. */
+export type ALStorageHealthStatus = 'healthy' | 'delayed' | 'failing';
 
 export interface ALStorageHealthState {
     readonly status: ALStorageHealthStatus;
@@ -12,6 +15,8 @@ export interface ALStorageHealthState {
     readonly lastFailure: ALStorageUnavailable | undefined;
     /** The store's last recovery point; `undefined` before its first one. */
     readonly lastRecoveryPointAtMs: number | undefined;
+    /** How old a checkpoint store's oldest unsaved change was when it went `delayed` or `failing`; else `undefined`. */
+    readonly oldestUnsavedAgeMs: number | undefined;
 }
 
 /** What a durable store found when its lane started: exactly one per store, or per lane of a shared store, per connect. */
@@ -19,20 +24,24 @@ export type ALStorageRecoveryOutcome =
     | Readonly<{ kind: 'restored'; claimed: number; expired: number; }>
     | Readonly<{ kind: 'expired-at-recovery'; expired: number; }>
     | Readonly<{ kind: 'storage-created'; }>
-    | Readonly<{ kind: 'storage-reset'; reason: ALStorageResetEvent['reason'] | 'other-context'; }>;
+    | Readonly<{ kind: 'storage-reset'; reason: ALStorageResetEvent['reason']; }>;
 
 export type ALStoragePersistOutcome = 'granted' | 'denied' | 'unsupported';
 
 /**
- * `persist` answers the session's one persistence request, so it names no store. A reset the cleanup
- * caused names the database it reset, not a store. A recovery of a store two lanes share names the lane
- * after the store id, as `<store id>/<lane>`.
+ * `persist` answers the session's one persistence request, so it names no store. A database-wide
+ * reset observation names the affected database, not a store. A recovery of a store two lanes share names the lane
+ * after the store id, as `<store id>/<lane>`. `recovery-owner-invoked` names no store either: the
+ * browser states it, with the cursor it handed a channel's recovery owner, on this same port. `ordering-tracks` is the
+ * number of ordering snapshots an inbound store holds after the eviction pass a new track runs (D191).
  */
 export type ALStorageEvent =
     | Readonly<{ kind: 'reset'; storeId: string; event: ALStorageResetEvent; }>
     | Readonly<{ kind: 'recovery'; storeId: string; outcome: ALStorageRecoveryOutcome; }>
     | (Readonly<{ kind: 'health'; storeId: string; }> & ALStorageHealthState)
-    | Readonly<{ kind: 'persist'; outcome: ALStoragePersistOutcome; }>;
+    | Readonly<{ kind: 'persist'; outcome: ALStoragePersistOutcome; }>
+    | (Readonly<{ kind: 'recovery-owner-invoked'; }> & ALInboundResyncCursor)
+    | Readonly<{ kind: 'ordering-tracks'; storeId: string; tracks: number; }>;
 
 export type ALStorageEventSink = (event: ALStorageEvent) => void;
 
@@ -40,9 +49,13 @@ export function createPassThroughALStorageEventSink(): ALStorageEventSink {
     return () => {};
 }
 
+export function toALOrderingTracksReport(storage: ALStorageEventSink, storeId: string): ALInboundOrderingTracksReport {
+    return (tracks) => storage({ kind: 'ordering-tracks', storeId, tracks });
+}
+
 export function toALStorageResetSink(
     storage: ALStorageEventSink,
     storeId: string
-): (event: ALStorageResetEvent) => void {
+): ALStorageResetSink {
     return (event) => storage({ kind: 'reset', storeId, event });
 }

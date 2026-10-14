@@ -30,6 +30,9 @@ export function createInboundTestDispatch(
     const dispatched: string[] = [];
     const delivery = new ALInboundAdmittedDelivery({
         admissionStore: stores.admissionStore,
+        lane: 'durable',
+        effectWorkerId: 'inbound-test-dispatch',
+        diagnostics: undefined,
         planIncomingMessage: planInboundTestMessage,
         dispatchInboxEntry: async (entry) => {
             dispatched.push(decodePersistedALMessage(entry.resource).id.msgId);

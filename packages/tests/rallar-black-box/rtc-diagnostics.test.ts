@@ -1,4 +1,13 @@
 import { describe, expect, it } from 'vitest';
+
+import type {
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
 import type { DistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     computeRtcDiagnostics,
@@ -7,83 +16,75 @@ import {
     DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT,
     resolveRtcConnectStageId
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState
-} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
-const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
-function event(
-    eventId: string,
-    topic: string,
-    atEpochMs: number,
-    payload: Record<string, unknown> = {}
-): RallarBlackBoxTestEvent {
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
+const RTC_DIAGNOSTIC_CONFIG: RallarBlackBoxTestConfig = {
+    runId: 'run-1',
+    agentId: 'agent-1',
+    actor: 'alice',
+    sessionId: 'alice-session',
+    roomId: 'room-1',
+    transport: 'realtime',
+    apiBaseUrl: 'https://api.example.test',
+    control: { providerMode: 'browser-rallar' },
+    rallar: {
+        username: 'alice',
+        password: '<redacted>',
+        restoreSession: true,
+        logoutOnClose: true,
+        leaveRoomOnClose: true
+    },
+    defaults: { connection: 'aliceRtc' }
+};
+
+interface RtcDiagnosticEventFixture {
+    readonly eventId: string;
+    readonly topic: string;
+    readonly atEpochMs: number;
+    readonly payload: ApiJsonObject;
+}
+
+interface RtcDiagnosticResultFixture {
+    readonly commandId: string;
+    readonly kind: RallarBlackBoxTestResult['kind'];
+    readonly startedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+function createRtcDiagnosticEvent(fixture: RtcDiagnosticEventFixture): RallarBlackBoxTestEvent {
     return {
-        eventId,
+        ...fixture,
         kind: 'diagnostic',
-        topic,
-        atEpochMs,
         connection: 'aliceRtc',
         actor: 'alice',
         transport: 'realtime',
-        severity: 'info',
-        payload
+        severity: 'info'
     };
 }
 
-function result(
-    commandId: string,
-    kind: RallarBlackBoxTestResult['kind'],
-    startedAtEpochMs: number,
-    durationMs: number
-): RallarBlackBoxTestResult {
+function createRtcDiagnosticResult(fixture: RtcDiagnosticResultFixture): RallarBlackBoxTestResult {
     return {
-        commandId,
-        kind,
+        ...fixture,
         status: 'ok',
         ok: true,
-        startedAtEpochMs,
-        endedAtEpochMs: startedAtEpochMs + durationMs,
-        durationMs
+        endedAtEpochMs: fixture.startedAtEpochMs + fixture.durationMs
     };
 }
 
-function state(
+function createRtcDiagnosticState(
     events: readonly RallarBlackBoxTestEvent[],
-    commandHistory: readonly RallarBlackBoxTestResult[] = []
+    commandHistory: readonly RallarBlackBoxTestResult[]
 ): RallarBlackBoxTestState {
+    const current = createRuntimeStateFixture(events);
     return {
+        ...current,
         status: 'completed',
-        currentConfig: {
-            runId: 'run-1',
-            agentId: 'agent-1',
-            actor: 'alice',
-            sessionId: 'alice-session',
-            roomId: 'room-1',
-            transport: 'realtime',
-            apiBaseUrl: 'https://api.example.test',
-            control: {
-                providerMode: 'browser-rallar'
-            },
-            rallar: {
-                username: 'alice',
-                password: '<redacted>',
-                restoreSession: true,
-                logoutOnClose: true,
-                leaveRoomOnClose: true
-            },
-            defaults: {
-                connection: 'aliceRtc'
-            }
-        },
+        currentConfig: RTC_DIAGNOSTIC_CONFIG,
         commandHistory,
-        events,
-        failures: [],
         resultCache: Object.fromEntries(commandHistory.map((entry) => [entry.commandId, entry])),
         latestStats: {
+            eventHistory: current.eventHistory,
             atEpochMs: 200,
             status: 'completed',
             counters: {
@@ -105,37 +106,57 @@ function state(
 
 describe('rallar-black-box RTC diagnostics', () => {
     it('maps runtime topics and phases to connect stages', () => {
-        expect(resolveRtcConnectStageId(event('event-1', 'rallar.browser.auth.completed', 10)))
+        expect(resolveRtcConnectStageId(createRtcDiagnosticEvent({ eventId: 'event-1', topic: 'rallar.browser.auth.completed', atEpochMs: 10, payload: {} })))
             .toBe('auth');
-        expect(resolveRtcConnectStageId(event('event-2', 'rallar.browser.connect.phase_failed', 11, {
-            phase: 'peer-discovery'
+        expect(resolveRtcConnectStageId(createRtcDiagnosticEvent({
+            eventId: 'event-2',
+            topic: 'rallar.browser.connect.phase_failed',
+            atEpochMs: 11,
+            payload: {
+                phase: 'peer-discovery'
+            }
         }))).toBe('peer-discovery');
         expect(resolveRtcConnectStageId({
-            ...event('event-3', 'rallar.browser.messages.rtc.message', 12),
+            ...createRtcDiagnosticEvent({ eventId: 'event-3', topic: 'rallar.browser.messages.rtc.message', atEpochMs: 12, payload: {} }),
             kind: 'message'
         })).toBe('first-payload');
     });
 
     it('derives timeline, membership, latency, and bundle data from runtime events', () => {
         const events: RallarBlackBoxTestEvent[] = [
-            event('event-auth', 'rallar.browser.auth.completed', 100, { phase: 'auth' }),
-            event('event-runtime', 'rallar.browser.runtime.bootstrap_completed', 120),
-            event('event-group', 'rallar.browser.room.joined', 140, {
-                roomId: 'room-1',
-                sessionId: 'alice-session',
-                expectedClients: ['alice-session', 'bob-session'],
-                observedClients: ['alice-session'],
-                peerCount: 1,
-                laneHealth: 'opening'
+            createRtcDiagnosticEvent({ eventId: 'event-auth', topic: 'rallar.browser.auth.completed', atEpochMs: 100, payload: { phase: 'auth' } }),
+            createRtcDiagnosticEvent({ eventId: 'event-runtime', topic: 'rallar.browser.runtime.bootstrap_completed', atEpochMs: 120, payload: {} }),
+            createRtcDiagnosticEvent({
+                eventId: 'event-group',
+                topic: 'rallar.browser.room.joined',
+                atEpochMs: 140,
+                payload: {
+                    roomId: 'room-1',
+                    sessionId: 'alice-session',
+                    expectedClients: ['alice-session', 'bob-session'],
+                    observedClients: ['alice-session'],
+                    peerCount: 1,
+                    laneHealth: 'opening'
+                }
             }),
-            event('event-signal', 'rallar.browser.signaling.ready', 150),
-            event('event-peer', 'rallar.browser.peer.discovered', 160, {
-                peerId: 'bob-session'
+            createRtcDiagnosticEvent({ eventId: 'event-signal', topic: 'rallar.browser.signaling.ready', atEpochMs: 150, payload: {} }),
+            createRtcDiagnosticEvent({
+                eventId: 'event-peer',
+                topic: 'rallar.browser.peer.discovered',
+                atEpochMs: 160,
+                payload: {
+                    peerId: 'bob-session'
+                }
             }),
-            event('event-channel', 'rallar.browser.data_channel.ready', 170, {
-                laneHealth: 'open',
-                readyPeerIds: ['alice-session', 'bob-session'],
-                activePeerIds: ['alice-session', 'bob-session']
+            createRtcDiagnosticEvent({
+                eventId: 'event-channel',
+                topic: 'rallar.browser.data_channel.ready',
+                atEpochMs: 170,
+                payload: {
+                    laneHealth: 'open',
+                    readyPeerIds: ['alice-session', 'bob-session'],
+                    activePeerIds: ['alice-session', 'bob-session']
+                }
             }),
             {
                 eventId: 'event-message',
@@ -157,9 +178,9 @@ describe('rallar-black-box RTC diagnostics', () => {
             }
         ];
         const diagnostics = computeRtcDiagnostics(
-            state(events, [
-                result('connect-1', 'rtc.connect', 90, 85),
-                result('send-1', 'rtc.send', 180, 12)
+            createRtcDiagnosticState(events, [
+                createRtcDiagnosticResult({ commandId: 'connect-1', kind: 'rtc.connect', startedAtEpochMs: 90, durationMs: 85 }),
+                createRtcDiagnosticResult({ commandId: 'send-1', kind: 'rtc.send', startedAtEpochMs: 180, durationMs: 12 })
             ]),
             DIAGNOSTICS_NOW_EPOCH_MS
         );
@@ -215,19 +236,24 @@ describe('rallar-black-box RTC diagnostics', () => {
 
     it('surfaces failed connect stages and missing expected clients', () => {
         const failure = {
-            ...event('event-failure', 'rallar.browser.connect.phase_failed', 150, {
-                phase: 'data-channel',
-                error: {
-                    message: 'channel timeout'
-                },
-                expectedClients: ['bob-session']
+            ...createRtcDiagnosticEvent({
+                eventId: 'event-failure',
+                topic: 'rallar.browser.connect.phase_failed',
+                atEpochMs: 150,
+                payload: {
+                    phase: 'data-channel',
+                    error: {
+                        message: 'channel timeout'
+                    },
+                    expectedClients: ['bob-session']
+                }
             }),
             severity: 'error'
         } satisfies RallarBlackBoxTestEvent;
         const diagnostics = computeRtcDiagnostics(
-            state([failure], [
+            createRtcDiagnosticState([failure], [
                 {
-                    ...result('connect-1', 'rtc.connect', 100, 50),
+                    ...createRtcDiagnosticResult({ commandId: 'connect-1', kind: 'rtc.connect', startedAtEpochMs: 100, durationMs: 50 }),
                     status: 'failed',
                     ok: false,
                     error: {
@@ -253,28 +279,38 @@ describe('rallar-black-box RTC diagnostics', () => {
 
     it('surfaces ready peers, active peers, lane health, and NACK evidence', () => {
         const diagnostics = computeRtcDiagnostics(
-            state([
-                event('event-send', 'rallar.bb.fake.rtc.send_completed', 130, {
-                    expectedClients: ['bob-session', 'charlie-session'],
-                    readyPeerIds: ['bob-session'],
-                    activePeerIds: ['bob-session'],
-                    laneHealth: 'degraded',
-                    peerCount: 1
+            createRtcDiagnosticState([
+                createRtcDiagnosticEvent({
+                    eventId: 'event-send',
+                    topic: 'rallar.bb.fake.rtc.send_completed',
+                    atEpochMs: 130,
+                    payload: {
+                        expectedClients: ['bob-session', 'charlie-session'],
+                        readyPeerIds: ['bob-session'],
+                        activePeerIds: ['bob-session'],
+                        laneHealth: 'degraded',
+                        peerCount: 1
+                    }
                 }),
                 {
-                    ...event('event-nack', 'rallar.bb.fake.rtc.not-yet-in-sync', 140, {
-                        negativeCase: 'not-yet-in-sync',
-                        nack: {
-                            code: 'not-yet-in-sync',
-                            message: 'Snapshot is behind the minimum requested version.'
-                        },
-                        expectedClients: ['bob-session', 'charlie-session'],
-                        observedClients: ['bob-session']
+                    ...createRtcDiagnosticEvent({
+                        eventId: 'event-nack',
+                        topic: 'rallar.bb.fake.rtc.not-yet-in-sync',
+                        atEpochMs: 140,
+                        payload: {
+                            negativeCase: 'not-yet-in-sync',
+                            nack: {
+                                code: 'not-yet-in-sync',
+                                message: 'Snapshot is behind the minimum requested version.'
+                            },
+                            expectedClients: ['bob-session', 'charlie-session'],
+                            observedClients: ['bob-session']
+                        }
                     }),
                     severity: 'warning'
                 }
             ], [
-                result('send-1', 'rtc.send', 120, 20)
+                createRtcDiagnosticResult({ commandId: 'send-1', kind: 'rtc.send', startedAtEpochMs: 120, durationMs: 20 })
             ]),
             DIAGNOSTICS_NOW_EPOCH_MS
         );
@@ -294,29 +330,39 @@ describe('rallar-black-box RTC diagnostics', () => {
     });
 
     it('derives RTC time-series buckets for events, messages, failures, and phase durations', () => {
-        const sampleState = state([
-            event('event-phase-1', 'rallar.direct.rtc_realtime.phase', 1_000, {
-                phase: 'start',
-                durationMs: 10
+        const sampleState = createRtcDiagnosticState([
+            createRtcDiagnosticEvent({
+                eventId: 'event-phase-1',
+                topic: 'rallar.direct.rtc_realtime.phase',
+                atEpochMs: 1_000,
+                payload: {
+                    phase: 'start',
+                    durationMs: 10
+                }
             }),
             {
-                ...event('event-message', 'rallar.direct.rtc_realtime.message', 2_000),
+                ...createRtcDiagnosticEvent({ eventId: 'event-message', topic: 'rallar.direct.rtc_realtime.message', atEpochMs: 2_000, payload: {} }),
                 kind: 'message'
             },
             {
-                ...event('event-ws-message', 'rallar.direct.ws.message', 2_000),
+                ...createRtcDiagnosticEvent({ eventId: 'event-ws-message', topic: 'rallar.direct.ws.message', atEpochMs: 2_000, payload: {} }),
                 kind: 'message',
                 transport: 'ws'
             },
             {
-                ...event('event-failed', 'rallar.direct.rtc_realtime.phase', 3_000, {
-                    phase: 'send',
-                    durationMs: 30,
-                    error: 'failed'
+                ...createRtcDiagnosticEvent({
+                    eventId: 'event-failed',
+                    topic: 'rallar.direct.rtc_realtime.phase',
+                    atEpochMs: 3_000,
+                    payload: {
+                        phase: 'send',
+                        durationMs: 30,
+                        error: 'failed'
+                    }
                 }),
                 severity: 'error'
             }
-        ]);
+        ], []);
         const diagnostics = computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS);
         const series = computeRtcDiagnosticsTimeseries(
             sampleState,
@@ -345,32 +391,47 @@ describe('rallar-black-box RTC diagnostics', () => {
     });
 
     it('derives scatter, distribution, waterfall, and lane matrix performance views', () => {
-        const sampleState = state([
-            event('event-auth', 'rallar.browser.auth.completed', 100, { phase: 'auth' }),
-            event('event-runtime', 'rallar.browser.runtime.bootstrap_completed', 120),
-            event('event-group', 'rallar.browser.room.joined', 140, {
-                roomId: 'room-1',
-                sessionId: 'alice-session',
-                expectedClients: ['alice-session', 'bob-session'],
-                observedClients: ['alice-session', 'bob-session']
+        const sampleState = createRtcDiagnosticState([
+            createRtcDiagnosticEvent({ eventId: 'event-auth', topic: 'rallar.browser.auth.completed', atEpochMs: 100, payload: { phase: 'auth' } }),
+            createRtcDiagnosticEvent({ eventId: 'event-runtime', topic: 'rallar.browser.runtime.bootstrap_completed', atEpochMs: 120, payload: {} }),
+            createRtcDiagnosticEvent({
+                eventId: 'event-group',
+                topic: 'rallar.browser.room.joined',
+                atEpochMs: 140,
+                payload: {
+                    roomId: 'room-1',
+                    sessionId: 'alice-session',
+                    expectedClients: ['alice-session', 'bob-session'],
+                    observedClients: ['alice-session', 'bob-session']
+                }
             }),
-            event('event-signal', 'rallar.browser.signaling.ready', 150),
-            event('event-peer', 'rallar.browser.peer.discovered', 160, {
-                peerId: 'bob-session'
+            createRtcDiagnosticEvent({ eventId: 'event-signal', topic: 'rallar.browser.signaling.ready', atEpochMs: 150, payload: {} }),
+            createRtcDiagnosticEvent({
+                eventId: 'event-peer',
+                topic: 'rallar.browser.peer.discovered',
+                atEpochMs: 160,
+                payload: {
+                    peerId: 'bob-session'
+                }
             }),
-            event('event-channel', 'rallar.browser.data_channel.ready', 170, {
-                readyPeerIds: ['alice-session', 'bob-session'],
-                activePeerIds: ['alice-session'],
-                durationMs: 18
+            createRtcDiagnosticEvent({
+                eventId: 'event-channel',
+                topic: 'rallar.browser.data_channel.ready',
+                atEpochMs: 170,
+                payload: {
+                    readyPeerIds: ['alice-session', 'bob-session'],
+                    activePeerIds: ['alice-session'],
+                    durationMs: 18
+                }
             }),
             {
-                ...event('event-message', 'rallar.browser.realtime.message', 205),
+                ...createRtcDiagnosticEvent({ eventId: 'event-message', topic: 'rallar.browser.realtime.message', atEpochMs: 205, payload: {} }),
                 kind: 'message'
             }
         ], [
-            result('connect-1', 'rtc.connect', 90, 85),
-            result('send-1', 'rtc.send', 180, 12),
-            result('ws-1', 'ws.send', 210, 34)
+            createRtcDiagnosticResult({ commandId: 'connect-1', kind: 'rtc.connect', startedAtEpochMs: 90, durationMs: 85 }),
+            createRtcDiagnosticResult({ commandId: 'send-1', kind: 'rtc.send', startedAtEpochMs: 180, durationMs: 12 }),
+            createRtcDiagnosticResult({ commandId: 'ws-1', kind: 'ws.send', startedAtEpochMs: 210, durationMs: 34 })
         ]);
         const diagnostics = computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS);
         const performance = computeRtcPerformanceView({
@@ -422,12 +483,27 @@ describe('rallar-black-box RTC diagnostics', () => {
     });
 
     it('adds distributed monitor agent timing to RTC performance views', () => {
-        const sampleState = state([
-            event('event-runtime', 'rallar.browser.runtime.bootstrap_completed', 120)
+        const sampleState = createRtcDiagnosticState([
+            createRtcDiagnosticEvent({ eventId: 'event-runtime', topic: 'rallar.browser.runtime.bootstrap_completed', atEpochMs: 120, payload: {} })
         ], [
-            result('send-1', 'rtc.send', 180, 12)
+            createRtcDiagnosticResult({ commandId: 'send-1', kind: 'rtc.send', startedAtEpochMs: 180, durationMs: 12 })
         ]);
-        const distributedMonitor = {
+        const distributedMonitor: DistributedRunMonitor = {
+            distributedRunId: 'distributed-1',
+            state: 'completed',
+            commandCounts: { total: 6, stage: 2, barrier: 2, start: 2, cancel: 0, completed: 6, failed: 1, pending: 0 },
+            resultCounts: { total: 6, ok: 5, failed: 1 },
+            compositeCounts: { total: 0, passed: 0, failed: 0, childResults: 0, composite: 0, leaf: 0 },
+            diagnosticCounts: { total: 0, info: 0, warning: 0, error: 0, ws: 0, rtc: 0, http: 0, runtime: 0 },
+            latency: { count: 6 },
+            artifact: { status: 'not-loaded', fileCount: 0, message: 'No artifact loaded' },
+            timeline: [],
+            recipeProgress: [],
+            readiness: [],
+            failures: [],
+            events: [],
+            runtimeDiagnostics: [],
+            compositeDrilldowns: [],
             agentProgress: [
                 {
                     agentId: 'agent-a',
@@ -454,7 +530,7 @@ describe('rallar-black-box RTC diagnostics', () => {
                     stageCommandCount: 1,
                     barrierCommandCount: 1,
                     startCommandCount: 1,
-                    completedCommandCount: 2,
+                    completedCommandCount: 3,
                     failedCommandCount: 1,
                     resultCount: 3,
                     eventCount: 1,
@@ -462,7 +538,7 @@ describe('rallar-black-box RTC diagnostics', () => {
                     lastActivityAtEpochMs: 260
                 }
             ]
-        } as unknown as DistributedRunMonitor;
+        };
         const performance = computeRtcPerformanceView({
             diagnostics: computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS),
             state: sampleState,
@@ -485,7 +561,7 @@ describe('rallar-black-box RTC diagnostics', () => {
     });
 
     it('returns explicit empty RTC performance states', () => {
-        const emptyState = state([]);
+        const emptyState = createRtcDiagnosticState([], []);
         const performance = computeRtcPerformanceView({
             diagnostics: computeRtcDiagnostics(emptyState, DIAGNOSTICS_NOW_EPOCH_MS),
             state: emptyState,
@@ -514,17 +590,22 @@ describe('rallar-black-box RTC diagnostics', () => {
 
         for (const [topic, source] of cases) {
             const diagnostics = computeRtcDiagnostics(
-                state([
+                createRtcDiagnosticState([
                     {
-                        ...event('event-failure', topic, 150, {
-                            phase: topic.includes('phase_failed') ? 'room-join' : undefined,
-                            error: {
-                                message: 'failure'
+                        ...createRtcDiagnosticEvent({
+                            eventId: 'event-failure',
+                            topic,
+                            atEpochMs: 150,
+                            payload: {
+                                ...(topic.includes('phase_failed') ? { phase: 'room-join' } : {}),
+                                error: {
+                                    message: 'failure'
+                                }
                             }
                         }),
                         severity: 'error'
                     }
-                ]),
+                ], []),
                 DIAGNOSTICS_NOW_EPOCH_MS
             );
 

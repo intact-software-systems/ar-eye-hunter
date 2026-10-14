@@ -1,3 +1,5 @@
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type {
@@ -11,6 +13,7 @@ import {
     RESPONSE_MARGIN_MS,
     toBudgetMs
 } from './alm-conformance-budgets.ts';
+import { toControlAdmissionWait } from './alm-conformance-diagnostic-waits.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
@@ -21,7 +24,7 @@ import {
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import { toCommandId, toConnectionName, toScenarioTypeId } from './alm-conformance-step-identities.ts';
 
 /** The recipient roles the receipt of a send confirms and leaves unconfirmed once its scenario has run. */
 export interface AlmConformanceReceiptRoles {
@@ -32,9 +35,34 @@ export interface AlmConformanceReceiptRoles {
 /** The state the handle has reached when the origin reads its receipt: complete, or past its deadline. */
 export type AlmConformanceReceiptEnding = Extract<ALDeliveryState, 'acknowledged' | 'expired'>;
 
+/** What the origin's receipt reads after the scenario window: who confirmed, the state it ended in, and its mode. */
+export interface AlmConformanceReceiptWindow {
+    readonly roles: AlmConformanceReceiptRoles;
+    readonly ending: AlmConformanceReceiptEnding;
+    /** `receiver` for a send that asks for its logical recipients, `leader` for one that asks for the room's leader. */
+    readonly mode: Extract<ALReceiptMode, 'receiver' | 'leader'>;
+}
+
+/** Who a room send reaches inside its room: its principal's other sessions, or the one session a lane role names. */
+export type AlmConformanceSendAudience =
+    | Readonly<{ scope: 'principal'; principalId: string; }>
+    | Readonly<{ recipientPeer: NonNullable<RallarBlackBoxTestMessagesSendCommand['recipientPeer']>; }>;
+
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
+    /** `all-logical-recipients` asks every session of the frozen audience, `group-leader` the room's leader alone. */
+    readonly ack: Extract<RallarBlackBoxTestMessagesSendCommand['ack'], 'all-logical-recipients' | 'group-leader'>;
+    /** Absent, every live session of the room. */
+    readonly audience?: AlmConformanceSendAudience;
+    /** Absent, the send claims nothing: it is `shared` on a resource the product mints. */
+    readonly claim?: AlmConformanceSendClaim;
+}
+
+/** An exclusive send claims its named resource for the sending session. */
+export interface AlmConformanceSendClaim {
+    readonly ownership: 'exclusive';
+    readonly resourceId: string;
 }
 
 /** The first send of an addressed scenario, admitted and observed until its addressee acknowledges it. */
@@ -59,26 +87,46 @@ export function toAddressedSendCommands(
     ];
 }
 
+/** The first send of an audience scenario: one room send, its audience frozen at its admission. */
+export function toAudienceSendCommand(
+    { sender, ttlMs, ack, audience, claim }: AlmConformanceAudienceSendInput
+): RallarBlackBoxTestCommand {
+    return toSendCommand({
+        ...sender,
+        index: 1,
+        payload: toAudiencePayload(sender),
+        delivery: {
+            ack,
+            reliability: 'at-least-once',
+            ttlMs,
+            commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS),
+            ...audience,
+            ...claim
+        }
+    });
+}
+
 /**
- * One room send that asks for every logical recipient of the audience frozen at its admission (D41): the request
- * name maps to `receiver`, so the receipt of the origin expects that audience minus itself.
+ * The audience send, admitted. Asking for every logical recipient of the audience frozen at its admission (D41) maps
+ * to `receiver`, so the receipt of the origin expects that audience minus itself.
  */
-export function toAudienceSendCommands(
-    { sender, ttlMs }: AlmConformanceAudienceSendInput
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toSendCommand({
-            ...sender,
-            index: 1,
-            payload: toAudiencePayload(sender),
-            delivery: {
-                ack: 'all-logical-recipients',
-                reliability: 'at-least-once',
-                ttlMs,
-                commandTimeoutMs: Math.min(ttlMs, NON_EXPIRING_SEND_TIMEOUT_MS)
-            }
-        }),
-        ...toAdmissionCommands({ ...sender, index: 1 })
+export function toAudienceSendCommands(input: AlmConformanceAudienceSendInput): readonly RallarBlackBoxTestCommand[] {
+    return [toAudienceSendCommand(input), ...toAdmissionCommands({ ...input.sender, index: 1 })];
+}
+
+/**
+ * Over ws the receipt is a control of the trusted server, so the origin states its own admission of it. The wait
+ * matches the first receipt frame committed for the send, the `admitted` one; the frame carries no phase in its
+ * diagnostic, so completion is proven by the receipt read after the window, which must read `acknowledged`.
+ */
+export function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return sender.input.carrier !== 'ws' ? [] : [
+        toControlAdmissionWait({
+            step: { ...sender, index: 1 },
+            name: 'receipt-admitted-1',
+            controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+            outcome: 'committed'
+        })
     ];
 }
 
@@ -90,31 +138,44 @@ export function toAudienceSendCommands(
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
-    roles: AlmConformanceReceiptRoles,
-    ending: AlmConformanceReceiptEnding
+    window: AlmConformanceReceiptWindow
 ): readonly RallarBlackBoxTestCommand[] {
-    const windowMs = sender.input.deadlineMs - RESPONSE_MARGIN_MS;
+    return [toSelfAbsenceCommand(sender), ...toReceiptReadCommands(sender, window)];
+}
+
+/**
+ * The origin reads the receipt of its first send once its own window has passed: the state the handle ended in, the
+ * receipt mode and the length of each recipient list.
+ */
+export function toReceiptReadCommands(
+    origin: AlmConformanceStepInput,
+    { roles, ending, mode }: AlmConformanceReceiptWindow
+): readonly RallarBlackBoxTestCommand[] {
     const lists = [
         ['expectedRecipientPeerIds', roles.confirmed.length + roles.unconfirmed.length],
         ['confirmedRecipientPeerIds', roles.confirmed.length],
         ['unconfirmedRecipientPeerIds', roles.unconfirmed.length]
     ] as const;
     return [
-        {
-            kind: 'messages.received',
-            commandId: toCommandId(sender, 'received-self-1'),
-            connection: sender.input.senderConnection,
-            typeId: toScenarioTypeId(sender),
-            count: 1,
-            absent: true,
-            windowMs,
-            timeoutMs: windowMs + RESPONSE_MARGIN_MS
-        },
-        toReceiptsCommand({ ...sender, index: 1 }),
-        toReceiptAssertion(sender, 'state', ending),
-        toReceiptAssertion(sender, 'receiptMode', 'receiver'),
-        ...lists.map(([field, expected]) => toReceiptAssertion(sender, `${field}.length`, expected))
+        toReceiptsCommand({ ...origin, index: 1 }),
+        toReceiptAssertion(origin, 'state', ending),
+        toReceiptAssertion(origin, 'receiptMode', mode),
+        ...lists.map(([field, expected]) => toReceiptAssertion(origin, `${field}.length`, expected))
     ];
+}
+
+export function toSelfAbsenceCommand(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const windowMs = sender.input.deadlineMs - RESPONSE_MARGIN_MS;
+    return {
+        kind: 'messages.received',
+        commandId: toCommandId(sender, 'received-self-1'),
+        connection: toConnectionName(sender),
+        typeId: toScenarioTypeId(sender),
+        count: 1,
+        absent: true,
+        windowMs,
+        timeoutMs: windowMs + RESPONSE_MARGIN_MS
+    };
 }
 
 /** The carrier scopes the payload, so a combined recipe never matches the arrival of an earlier carrier. */

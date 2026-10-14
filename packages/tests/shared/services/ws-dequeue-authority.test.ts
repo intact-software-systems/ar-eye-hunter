@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -23,7 +24,7 @@ import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-m
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -40,7 +41,7 @@ describe('WS first dequeue authority', () => {
         async (shape) => {
             const fixture = createFixture();
             const message = createMessage(shape.startsWith('canonical') ? 'broadcast' : 'unicast');
-            const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
             expect(decodePersistedALMessage(raw.resource)).toEqual(message);
             const entry = shape.startsWith('canonical')
                 ? { ...raw, key: toALOutboundCanonicalKey(fixture.stores.admissionStore.canonicalScope, message) }
@@ -86,7 +87,7 @@ describe('WS first dequeue authority', () => {
             }
 
             const observed = shape === 'colliding-raw'
-                ? QueueBoxUtilities.toResourceEntryFromMsg(older, EnqueuedType.WS_OUTBOX)
+                ? QueueBoxUtilities.toResourceEntryFromMsg(older, EnqueuedType.WS_OUTBOX, Temporal.Now.instant())
                 : { ...completed, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } };
             if (shape === 'colliding-raw') {
                 await fixture.stores.workQueue.enqueue(observed);
@@ -110,7 +111,7 @@ describe('WS first dequeue authority', () => {
     it('captures verified scoped unicast at the real dequeue boundary', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(() => fixture.native.sent.length).toBe(1);
@@ -124,7 +125,7 @@ describe('WS first dequeue authority', () => {
             qos: { durability: { algo: 'local-outbox' } },
             groupRef: { ...SCOPE, groupId: 'room' }
         });
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
@@ -134,7 +135,7 @@ describe('WS first dequeue authority', () => {
     it('captures an explicitly empty frozen audience without widening it to the connected target', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: [], recipientScope: SCOPE }));
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await fixture.stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => fixture.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(true);
@@ -149,7 +150,7 @@ describe('WS first dequeue authority', () => {
             return { admittedAudience: ['peer'], recipientScope: SCOPE };
         }, stores);
         const message = createMessage('unicast');
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         await stores.workQueue.enqueue(entry);
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
@@ -169,10 +170,18 @@ function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
         });
 }
 
+interface DequeueAuthorityFixture {
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly engine: InboxOutboxEngine;
+    readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly service: WsQueueBoxServerService;
+}
+
 function createFixture(
     readProducerProvenance?: WsQueueBoxServerService.Input['readProducerProvenance'],
     stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage })
-) {
+): DequeueAuthorityFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
@@ -189,9 +198,12 @@ function createFixture(
         readProducerProvenance
     };
     const service = createDefaultWsQueueBoxServerService(input);
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { socket, native, engine, stores, service };
 }
@@ -205,7 +217,7 @@ async function writeCompetingAdmission(
         msg: message,
         observedCanonicalEntry: entry,
         intent: 'dequeue',
-        planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [], admittedAudience: [], recipientScope: SCOPE })
+        planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], admittedAudience: [], recipientScope: SCOPE })
     });
     const computed = computeALOutboundDispatch({
         read,

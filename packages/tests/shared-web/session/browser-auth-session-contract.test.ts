@@ -15,6 +15,8 @@ import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = readAuthSessionContractMocks();
 
 installFakeBroadcastChannelPerTest();
@@ -99,7 +101,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             ...mocks.ctx.session,
             expiresAtEpochMs: 1_500
         };
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         mocks.readSession.mockImplementation(() =>
             Date.now() >= expiringSession.expiresAtEpochMs
                 ? undefined
@@ -117,6 +119,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         });
         mocks.rtcRxStreamer.dispose.mockImplementation(() => {
             transportState.rtcReceiverDisposed = true;
+            return Promise.resolve();
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             transportState.remoteLogoutRequested = true;
@@ -131,6 +134,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             }
             webSocketClose = { code, reason };
             mocks.webSocket.close(code, reason);
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
         const authStates: RallarAuthState[] = [];
@@ -205,13 +209,14 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         };
         let currentSession: typeof oldSession | undefined = oldSession;
         let transportClosed = false;
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
         mocks.readSession.mockImplementation(() => currentSession);
         mocks.clearSession.mockImplementation(() => {
             currentSession = undefined;
         });
         mocks.webSocketQueueBox.close.mockImplementation(() => {
             transportClosed = true;
+            return Promise.resolve();
         });
         const facade = createRallarFacade();
 

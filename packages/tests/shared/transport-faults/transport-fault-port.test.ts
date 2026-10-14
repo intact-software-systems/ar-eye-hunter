@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 /** Both carriers put `JSON.stringify(ALMessage)` on the wire, so the frames here are built, not hand-written. */
 const ackFrame = JSON.stringify(newALAckControlMessage(
-    { v: 2, msgId: 'ctl-1', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-1', senderId: 'b', ts: 1 },
     {
         ackedMsgId: 'msg-1',
         originPeerId: 'a',
@@ -25,7 +25,7 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
     }
 ));
 const nackFrame = JSON.stringify(newALNackControlMessage(
-    { v: 2, msgId: 'ctl-2', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-2', senderId: 'b', ts: 1 },
     {
         msgId: 'msg-2',
         fromPeerId: 'b',
@@ -35,7 +35,7 @@ const nackFrame = JSON.stringify(newALNackControlMessage(
     }
 ));
 const repairFrame = JSON.stringify(newALRepairControlMessage(
-    { v: 2, msgId: 'ctl-3', senderId: 'b', ts: 1 },
+    { v: 3, msgId: 'ctl-3', senderId: 'b', ts: 1 },
     {
         msgId: 'msg-3',
         fromPeerId: 'b',
@@ -85,6 +85,44 @@ describe('transport fault port', () => {
     it('passes everything through by default', () => {
         const port = createPassThroughTransportFaultPort();
         expect(port.decideSend('ws', ackFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideBackpressure('rtc', JSON.parse(dataFrame))).toBe(false);
+    });
+
+    it('holds one carrier backpressured for a matching message, one decision per count', () => {
+        const port = createScriptedTransportFaultPort();
+        const message = JSON.parse(dataFrame);
+        const match = { controlType: undefined, typeId: 'chat', msgId: undefined };
+        port.inject({ faultId: 'full', carrier: 'rtc', match, action: 'backpressure', remaining: 2 });
+
+        expect(port.decideBackpressure('ws', message)).toBe(false);
+        expect(port.decideBackpressure('rtc', JSON.parse(ackFrame))).toBe(false);
+        expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('ready');
+        expect(port.decideBackpressure('rtc', message)).toBe(true);
+        expect(port.decideBackpressure('rtc', message)).toBe(true);
+        expect(port.decideBackpressure('rtc', message)).toBe(false);
+        expect(port.getObservations()).toEqual([
+            { faultId: 'full', carrier: 'rtc', decision: 'backpressure' },
+            { faultId: 'full', carrier: 'rtc', decision: 'backpressure' }
+        ]);
+    });
+
+    it('keeps a carrier backpressured until the fault is cleared', () => {
+        const port = createScriptedTransportFaultPort();
+        const message = JSON.parse(dataFrame);
+        port.inject({
+            faultId: 'held-full',
+            carrier: 'ws',
+            match: { controlType: undefined, typeId: undefined, msgId: message.id.msgId },
+            action: 'backpressure',
+            remaining: 'until-cleared'
+        });
+
+        for (let decision = 0; decision < 50; decision += 1) {
+            expect(port.decideBackpressure('ws', message)).toBe(true);
+        }
+        port.clear();
+        expect(port.decideBackpressure('ws', message)).toBe(false);
     });
 
     it.each(

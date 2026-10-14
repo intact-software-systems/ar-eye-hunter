@@ -2,16 +2,14 @@ import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state
 import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RelicCommandSender } from './relic-command-sender.ts';
 import type { RelicRestAuthorizationMode } from './relic-hunter-server-configuration.ts';
-
-export type RelicRestAuthSession = Pick<AuthSession, 'clientId' | 'sessionId'>;
 
 type RelicRestAuthInput = Readonly<{
     mode: RelicRestAuthorizationMode;
     gameId: string;
-    session: RelicRestAuthSession;
+    session: RelicCommandSender;
     snapshot?: GroupSnapshot;
 }>;
 
@@ -75,7 +73,7 @@ function requireRelicGroupSnapshot(input: RelicRestAuthInput): GroupSnapshot {
     return input.snapshot;
 }
 
-function actorFromSession(session: RelicRestAuthSession) {
+function actorFromSession(session: RelicCommandSender) {
     return {
         principalId: session.clientId,
         sessionId: session.sessionId

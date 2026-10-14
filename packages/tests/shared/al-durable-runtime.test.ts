@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -80,7 +81,7 @@ describe('AL state retained across runtime recreation', () => {
         });
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
-        runtime1.dispose();
+        await runtime1.dispose();
         const restartedStores = createRetainedInboundStoreSet(stores);
         const restartedRuntime = createDefaultInboundRuntime(restartedStores, dispatchedMsgIds);
 
@@ -121,7 +122,7 @@ describe('AL state retained across runtime recreation', () => {
         ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
 
-        runtime1.dispose();
+        await runtime1.dispose();
         const runtime2 = createDefaultInboundRuntime(
             createRetainedInboundStoreSet(stores),
             dispatchedMsgIds,
@@ -136,7 +137,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
-            'al.control.nack.v1'
+            'al.control.nack.v2'
         );
     });
 
@@ -147,7 +148,7 @@ describe('AL state retained across runtime recreation', () => {
         const runtime = createDefaultOutboundRuntime(stores, sent);
         const firstPresence = createPresenceMessage('presence-1', true);
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, firstPresence);
-        runtime.dispose();
+        await runtime.dispose();
 
         const restartedStores = createRetainedOutboundStoreSet(stores);
         const restarted = createDefaultOutboundRuntime(restartedStores, sent);
@@ -187,7 +188,7 @@ describe('AL state retained across runtime recreation', () => {
         await enqueueOutboundOrThrow(runtime, seq1);
         await enqueueOutboundOrThrow(runtime, seq2);
 
-        runtime.dispose();
+        await runtime.dispose();
         const restartedForRepair = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
             sent
@@ -195,7 +196,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await restartedForRepair.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
@@ -204,7 +205,7 @@ describe('AL state retained across runtime recreation', () => {
                     observedAtEpochMs: 1,
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
-                    missingSeqs: [1]
+                    missingRanges: [{ from: 1, to: 1 }]
                 }
             ),
             'peer'
@@ -223,7 +224,7 @@ describe('AL state retained across runtime recreation', () => {
         const msg = createOutboundMessage('msg-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
@@ -260,8 +261,7 @@ describe('AL state retained across runtime recreation', () => {
         expect(sent.filter((entry) => entry.kind === 'send')).toHaveLength(1);
         expect(sent.filter((entry) => entry.kind === 'repair')).toHaveLength(1);
 
-        runtime1.dispose();
-        runtime2.dispose();
+        await Promise.all([runtime1.dispose(), runtime2.dispose()]);
     });
 });
 
@@ -282,7 +282,8 @@ function createRetainedInboundStoreSet(
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             })
         }
     };
@@ -307,7 +308,7 @@ function createDefaultInboundRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
@@ -354,14 +355,14 @@ function createDefaultOutboundRuntime(
             carrier: 'ws',
             outbox: stores.runtimeStores.workQueue,
             stores: stores.runtimeStores,
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: planOutboundTestMessage,
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -386,7 +387,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
         return {
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: `presence:${msg.route.contextId}` }
         };
@@ -394,7 +395,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
     return {
         msg,
         dropReasonCode: undefined,
-        persist: false,
+        lane: 'volatile',
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' },
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }

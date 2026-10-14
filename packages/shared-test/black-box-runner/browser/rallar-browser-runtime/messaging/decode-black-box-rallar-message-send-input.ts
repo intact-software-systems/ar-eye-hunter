@@ -1,5 +1,5 @@
 import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
-import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALOwnershipAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -29,13 +29,16 @@ type MessageSendOptions = Pick<
     'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'onStorageUnavailable' | 'minSnapshotVersion' | 'qos'
 >;
 
+type MessageSendAudience = Pick<BlackBoxRallarMessageSendInput, 'toPeer' | 'principalId' | 'recipientPeer'>;
+
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
-const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'all'];
+const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'principal'];
 const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
     'best-effort',
     'at-least-once'
 ];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
+const MESSAGE_OWNERSHIPS: readonly ALOwnershipAlgo[] = ['shared', 'exclusive'];
 const ON_STORAGE_UNAVAILABLE: readonly NonNullable<BlackBoxRallarMessageSendInput['onStorageUnavailable']>[] = [
     'refuse',
     'volatile'
@@ -45,6 +48,10 @@ const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['t
     'server',
     'receiver'
 ];
+const MESSAGE_RECIPIENT_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['recipientPeer']>[] = [
+    'receiver',
+    'recipient-b'
+];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
     'carrier',
@@ -53,6 +60,10 @@ const REPLAY_REFUSED_FIELDS = [
     'payload',
     'roomRef',
     'scope',
+    'principalId',
+    'recipientPeer',
+    'ownership',
+    'resourceId',
     'reliability',
     'ack',
     'durability',
@@ -106,7 +117,15 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
-    return decodeMessagePeerRole(value.toPeer).flatMap(
+    const ownership = decodeKnownSendOption(
+        value.ownership,
+        MESSAGE_OWNERSHIPS,
+        'ownership must be shared or exclusive'
+    );
+    if (isInputIssue(ownership)) {
+        return Either.ofLeft(ownership);
+    }
+    return decodeMessageAudience(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (peer) =>
             decodeMessageSendIdentity(value).flatMap(
@@ -117,6 +136,8 @@ function decodeOrdinarySend(
                         ...options,
                         ...peer,
                         payload,
+                        ownership,
+                        resourceId: decodeBlackBoxCommandString(value.resourceId),
                         topicId: decodeBlackBoxCommandString(value.topicId),
                         ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
                         orderingKey: decodeBlackBoxCommandString(value.orderingKey),
@@ -126,16 +147,18 @@ function decodeOrdinarySend(
     );
 }
 
-function decodeMessagePeerRole(
-    value: unknown
-): Either<BlackBoxRallarInputIssue, Pick<BlackBoxRallarMessageSendInput, 'toPeer'>> {
-    if (value === undefined) {
-        return Either.ofRight({ toPeer: undefined });
+function decodeMessageAudience(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendAudience> {
+    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === record.toPeer);
+    if (record.toPeer !== undefined && toPeer === undefined) {
+        return Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' });
     }
-    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === value);
-    return toPeer === undefined
-        ? Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' })
-        : Either.ofRight({ toPeer });
+    const recipientPeer = MESSAGE_RECIPIENT_PEER_ROLES.find((role) => role === record.recipientPeer);
+    if (record.recipientPeer !== undefined && recipientPeer === undefined) {
+        return Either.ofLeft({ message: 'messages.send.recipientPeer must be receiver or recipient-b.' });
+    }
+    return Either.ofRight({ toPeer, principalId: decodeBlackBoxCommandString(record.principalId), recipientPeer });
 }
 
 function decodeMessageSendIdentity(
@@ -167,7 +190,7 @@ function decodeMessageSendIdentity(
 function decodeMessageSendOptions(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
-    const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or all');
+    const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or principal');
     const reliability = decodeKnownSendOption(
         record.reliability,
         MESSAGE_RELIABILITIES,
@@ -176,7 +199,7 @@ function decodeMessageSendOptions(
     const durability = decodeKnownSendOption(
         record.durability,
         AL_DURABILITY_ALGOS,
-        'durability must be volatile, local-outbox or local-inbox'
+        'durability must be volatile, local-checkpoint, local-outbox or local-inbox'
     );
     const onStorageUnavailable = decodeKnownSendOption(
         record.onStorageUnavailable,

@@ -1,13 +1,14 @@
-import { expect, it, onTestFinished } from 'vitest';
+import {
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { newALReceiptControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -45,7 +46,6 @@ it('enqueues a browser room message with a queue creator that fits the durable c
 
     expect(result.verdict.kind).toBe('admitted');
     expect(row?.typeId).toBe('WS_OUTBOX');
-    expect(row?.audit.createdBy).toBe(toAppQueueCreatedBy(browserSessionId));
     expect(row?.audit.createdBy.length).toBeLessThanOrEqual(16);
     expect(row === undefined ? undefined : decodePersistedALMessage(row.resource).audit?.createdBy)
         .toBe(browserSessionId);
@@ -67,7 +67,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
     onTestFinished(() => service.dispose());
     const nowMs = Date.now();
     const message = newALReceiptControlMessage(
-        { v: 2, msgId: 'receipt-1', senderId: serverId, ts: nowMs },
+        { v: 3, msgId: 'receipt-1', senderId: serverId, ts: nowMs },
         {
             msgId: 'message-1',
             originPeerId: 'origin',
@@ -85,11 +85,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
     expect(result.verdict.kind).toBe('admitted');
     expect(row?.typeId).toBe('WS_OUTBOX');
     // A receipt carries no message audit, so its row takes the owner's fallback creator, never the raw server id.
-    expect(row?.audit.createdBy)
-        .toBe(
-            QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX).audit
-                .createdBy
-        );
+    expect(row?.audit.createdBy).toBe('test');
     expect(row?.audit.createdBy.length).toBeLessThanOrEqual(16);
     expect(row?.audit.createdBy).not.toBe(serverId);
     expect(row === undefined ? undefined : decodePersistedALMessage(row.resource).id.senderId).toBe(

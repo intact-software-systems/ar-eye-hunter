@@ -1,4 +1,5 @@
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../manual-workbench.ts';
+import { decodeManualRtcReadinessText } from '../manual-workbench/manual-command-fields.ts';
 import { toManualRtcDeliveryMatrixCommands } from '../manual-workbench/manual-rtc-probe-commands.ts';
 import type { FlowBuilderDefinition, FlowBuilderTemplate } from './flow-builder-contracts.ts';
 import { toCreateGroupCommand } from './flow-builder-steps.ts';
@@ -262,6 +263,13 @@ const RTC_MATRIX_MANUAL_VALUES = {
     timeoutMs: 5000
 };
 
+const RTC_MATRIX_CONNECT = decodeManualRtcReadinessText(RTC_MATRIX_MANUAL_VALUES.rtcReadinessText).fold(
+    (error) => {
+        throw new Error(error);
+    },
+    (command) => command
+);
+
 const RTC_MATRIX_FLOW: FlowBuilderDefinition = {
     flowId: 'flow-rtc-matrix',
     name: 'RTC delivery matrix',
@@ -274,6 +282,7 @@ const RTC_MATRIX_FLOW: FlowBuilderDefinition = {
             label: 'Realtime matrix',
             kind: 'rtc.send',
             commands: toManualRtcDeliveryMatrixCommands({
+                rtcConnect: RTC_MATRIX_CONNECT,
                 values: RTC_MATRIX_MANUAL_VALUES,
                 payload: '{{payload}}',
                 sequence: 1,
@@ -286,6 +295,7 @@ const RTC_MATRIX_FLOW: FlowBuilderDefinition = {
             label: 'Messages RTC matrix',
             kind: 'rtc.send',
             commands: toManualRtcDeliveryMatrixCommands({
+                rtcConnect: RTC_MATRIX_CONNECT,
                 values: RTC_MATRIX_MANUAL_VALUES,
                 payload: '{{payload}}',
                 sequence: 20,

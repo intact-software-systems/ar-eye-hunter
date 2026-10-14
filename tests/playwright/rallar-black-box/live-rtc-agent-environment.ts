@@ -1,9 +1,17 @@
+import {
+    toRallarBlackBoxRoutineBrowserDiagnostics,
+    type RallarBlackBoxRoutineBrowserDiagnostics
+} from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
-
+import { readDefaultFullStackRtcServedBuild } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import {
     closeLiveRtcBrowserAgentContexts,
     openLiveRtcBrowserAgent,
@@ -12,12 +20,20 @@ import {
 } from './live-rtc-browser-agents.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
+import { loadLiveRtcPerformanceAttempt } from './live-rtc-performance-evidence.ts';
 
-/**
- * The environment every live three-browser spec reads and the trio it opens. Extracted so the
- * lifecycle acceptance spec and the matrix spec resolve the same variables from one place rather
- * than each carrying its own copy of the fallback chains.
- */
+export interface OpenAgentTrioInput {
+    readonly runId: string;
+    readonly groupId: string;
+    readonly suffix: string;
+    readonly label: string;
+}
+
+export type LiveRtcAgentTrio = readonly [
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent
+];
 
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
 export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
@@ -27,13 +43,36 @@ export const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 export const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
 export const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
 export const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
+export const routineBrowserDiagnostics = readLiveRtcRoutineBrowserDiagnostics(
+    process.env.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS
+);
+export const almDiagnostics = toAlmDiagnostics(process.env.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS);
+
+export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = parseRtcCaptureMode(
+    process.env.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE
+).fold(
+    (issues) => {
+        throw new Error(issues.map((issue) => issue.message).join(' '));
+    },
+    (parsed) => parsed.mode
+);
+
+const productionAttempt = await loadLiveRtcPerformanceAttempt({ repoRoot: process.cwd(), environment: process.env });
+const productionBuild = productionAttempt?.locator.environmentId === 'E3-memory'
+    ? await readDefaultFullStackRtcServedBuild(productionAttempt, {
+        buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
+        apiBaseUrl: apiBaseUrl ?? '',
+        spaBaseUrl: SPA_BASE_URL,
+        environment: process.env
+    })
+    : undefined;
 
 export const fullStackEnabled = booleanEnv('RALLAR_BLACK_BOX_FULL_STACK');
 export const liveMatrixEnabled = booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_MATRIX');
 
-const agentAAuth = resolveLiveRtcBrowserAgentAuth('A');
-const agentBAuth = resolveLiveRtcBrowserAgentAuth('B');
-const agentCAuth = resolveLiveRtcBrowserAgentAuth('C');
+const agentAAuth = readLiveRtcBrowserAgentAuth('A');
+const agentBAuth = readLiveRtcBrowserAgentAuth('B');
+const agentCAuth = readLiveRtcBrowserAgentAuth('C');
 
 export const hasThreeAgentConfig = Boolean(
     fullStackEnabled && liveMatrixEnabled && apiBaseUrl && agentAAuth && agentBAuth && agentCAuth
@@ -99,7 +138,7 @@ export function numberEnv(key: string): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function resolveLiveRtcBrowserAgentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth | undefined {
+export function readLiveRtcBrowserAgentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth | undefined {
     const genericUsername = prefix === 'A' ? ['VITE_RALLAR_USERNAME'] : [];
     const genericPassword = prefix === 'A' ? ['VITE_RALLAR_PASSWORD'] : [];
     const username = firstEnvValue(
@@ -164,21 +203,10 @@ export function actorFor(prefix: AgentPrefix, suffix: string): string {
         `agent-${prefix.toLowerCase()}-${suffix}`;
 }
 
-export interface OpenAgentTrioInput {
-    readonly runId: string;
-    readonly groupId: string;
-    readonly suffix: string;
-    readonly label: string;
-}
-
-export type LiveRtcAgentTrio = readonly [
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent
-];
-
 export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
     return {
+        routineBrowserDiagnostics,
+        productionBuild,
         spaBaseUrl: SPA_BASE_URL,
         controlWsUrl: CONTROL_WS_URL,
         apiBaseUrl: readLiveRtcAgentApiUrls(apiBaseUrl).A,
@@ -222,4 +250,24 @@ export async function openAgentTrio(
         await closeLiveRtcBrowserAgentContexts(handles);
         throw toError(error);
     }
+}
+
+function readLiveRtcRoutineBrowserDiagnostics(value: string | undefined): RallarBlackBoxRoutineBrowserDiagnostics {
+    const mode = value === undefined
+        ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics
+        : toRallarBlackBoxRoutineBrowserDiagnostics(value);
+    if (mode === undefined) {
+        throw new Error('Routine browser diagnostics environment selection must be enabled or disabled.');
+    }
+    return mode;
+}
+
+function toAlmDiagnostics(value: string | undefined): boolean {
+    if (value === undefined || value === 'true') {
+        return true;
+    }
+    if (value === 'false') {
+        return false;
+    }
+    throw new Error('ALM diagnostics environment selection must be true or false.');
 }

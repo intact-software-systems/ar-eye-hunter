@@ -1,6 +1,11 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { computeRtcFrozenAudienceRefusal } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import {
@@ -14,6 +19,7 @@ import {
 import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 
+import { BrowserChannelRecoveryOwners } from '@shared-web/browser/messages/browser-channel-recovery-owners.ts';
 import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
@@ -54,7 +60,11 @@ describe('typed message fallback identity', () => {
             const original = fixture.attempts[0].message;
             expect(fixture.attempts[1].message).toEqual(original);
             expect(result.msgId).toBe(original.id.msgId);
-            expect(original.targets).toMatchObject({ groupRef: fixture.originalRoom, minSnapshotVersion: 9 });
+            expect(original.targets).toMatchObject({
+                groupRef: fixture.originalRoom,
+                minSnapshotVersion: 9,
+                rosterVersion: CACHED_ROSTER_VERSION
+            });
             expect(original.ordering).toMatchObject({ seq: 7, orderingKey: 'ready-order' });
             expect(original.route.contextId).toBe('room-one');
             expect(original.constraints?.expiresAtMs).toBe(Date.parse('2026-01-01T00:00:30Z'));
@@ -85,7 +95,7 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
 
@@ -100,17 +110,15 @@ describe('typed message fallback identity', () => {
         [
             ['rtc-with-ws-fallback', 'none', ['rtc', 'ws'], 'queued'],
             ['rtc-with-ws-fallback', 'receiver', ['rtc', 'ws'], 'queued'],
-            ['rtc-with-ws-fallback', 'group-leader', ['rtc', 'ws'], 'queued'],
             ['rtc', 'none', ['rtc'], 'rejected'],
-            ['rtc', 'receiver', ['rtc'], 'rejected'],
-            ['rtc', 'group-leader', ['rtc'], 'rejected']
+            ['rtc', 'receiver', ['rtc'], 'rejected']
         ] as const
     )('moves a %s send with ack %s whose RTC room exceeds the wire audience bound (R-S2c-ii-13)', async (strategy, ack, carriers, state) => {
         const audience = { recipientPeerIds: Array.from({ length: 299 }, (_, index) => `s${index}`), snapshotVersion: 4 };
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) =>
-                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience)).fold(
+                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience), msg).fold(
                     (refusal) => ({ ...refusal, preparedMessages: [] }),
                     () => {
                         throw new Error('A room of 300 sessions must exceed the RTC room limit');
@@ -136,7 +144,7 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
 
@@ -158,7 +166,7 @@ describe('typed message fallback identity', () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstDurationMs: 101,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100, ack: 'receiver' });
 
@@ -201,7 +209,7 @@ describe('typed message fallback identity', () => {
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) => ({
                 msg,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'The session is over its volatile bound.',
                 dropReasonCode: 'capacity'
@@ -257,7 +265,7 @@ describe('typed message fallback identity', () => {
                     : change === 'authority'
                     ? { ...msg, targets: { mode: 'unicast', toPeerId: 'changed' } }
                     : msg,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
                 dropReasonCode: 'no-route'
@@ -306,28 +314,17 @@ describe('typed message fallback identity', () => {
         expect(fixture.attempts).toEqual([]);
     });
 
-    it('preserves excluded recipients on both carriers', async () => {
+    it('preserves excluded recipients and the sender fence on both carriers', async () => {
         const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        const handle = await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'] });
+        const handle = await fixture.channel.send({ action: 'ready' }, { exceptPeerIds: ['excluded-peer'], minSnapshotVersion: 9 });
         await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([
-            expect.objectContaining({ scope: 'room', exceptPeerIds: ['excluded-peer'] }),
-            expect.objectContaining({ scope: 'room', exceptPeerIds: ['excluded-peer'] })
-        ]);
-    });
-
-    it('rejects a fallback strategy that would change a global audience into a room audience', async () => {
-        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        await expect(fixture.channel.send({ action: 'ready' }, { strategy: 'ws-then-rtc', scope: 'all' }))
-            .rejects.toThrow('$.scope');
-        expect(fixture.attempts).toEqual([]);
-    });
-
-    it('rejects unsupported membership fencing before trying either carrier', async () => {
-        const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
-        await expect(fixture.channel.send({ action: 'ready' }, { membershipEpoch: 2 }))
-            .rejects.toThrow('$.membershipEpoch');
-        expect(fixture.attempts).toEqual([]);
+        const roomBroadcast = expect.objectContaining({
+            scope: 'room',
+            exceptPeerIds: ['excluded-peer'],
+            minSnapshotVersion: 9,
+            rosterVersion: CACHED_ROSTER_VERSION
+        });
+        expect(fixture.attempts.map((attempt) => attempt.message.targets)).toEqual([roomBroadcast, roomBroadcast]);
     });
 });
 
@@ -338,6 +335,7 @@ interface ChannelInput {
     readonly firstPlanner?: (message: ALMessage) => ALOutboundDispatchPlan<never>;
 }
 
+const CACHED_ROSTER_VERSION = 4;
 /** A fresh durable admission: the shape both the default first attempt and every later attempt settle as. */
 const ADMITTED_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
 const NO_ROUTE_VERDICT: ALDeliveryAdmissionVerdict = { kind: 'unroutable', reason: 'no-route', detail: 'no route' };
@@ -365,14 +363,20 @@ function createChannel(input: ChannelInput): ChannelFixture {
     const inputValidator = new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 });
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, { deliverySettlements: feed, readMiddleware: () => context });
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
+        deliverySettlements: feed,
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
     sessionDeliveries.beginSession(context.session);
     const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries,
@@ -384,13 +388,14 @@ function createChannel(input: ChannelInput): ChannelFixture {
         resolveCurrentRoomRef: () => admission.currentRoom,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: (room) => typeof room === 'string' ? { ...admission.originalRoom, groupId: room } : room,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: CACHED_ROSTER_VERSION })
     });
     const channels = new BrowserTypedMessageChannels({
         inputValidator,
         sender,
         rtc: { onMessage: () => () => {} },
-        ws: { onMessage: () => () => {} }
+        ws: { onMessage: () => () => {} },
+        recoveryOwners: new BrowserChannelRecoveryOwners()
     });
     return {
         originalRoom: admission.originalRoom,

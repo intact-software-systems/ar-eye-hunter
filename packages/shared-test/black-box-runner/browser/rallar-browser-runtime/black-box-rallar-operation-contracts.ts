@@ -2,9 +2,11 @@ import type {
     RallarMessagePayload,
     RallarStorageUnavailablePolicy
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
+    RallarDefaults,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessageSelectorInput,
@@ -16,13 +18,18 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type {
+    ALDurabilityAlgo,
+    ALOwnershipAlgo,
+    ALQosPolicyRequest
+} from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
     ALDeliveryCarrier,
     ALDeliveryEvidence,
     ALDeliveryReceiptEvidence,
+    ALDeliveryRefusalReason,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -56,6 +63,7 @@ import type {
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
@@ -77,8 +85,10 @@ export interface BlackBoxRallarRoomRef {
     readonly groupId: string;
 }
 
-export interface BlackBoxRallarConfig {
+export interface BlackBoxRallarConfig extends Pick<RallarOperationOptions, 'rtcCaptureMode' | 'rtcCaptureContext'> {
     readonly apiBaseUrl: string;
+    /** Host settings are distinct from the per-operation rtcCaptureMode above. */
+    readonly rtc?: Pick<NonNullable<RallarDefaults['rtc']>, 'captureMode'>;
     readonly applicationId?: string;
     readonly workspaceId?: string;
     readonly scope?: BlackBoxRallarScope;
@@ -105,7 +115,6 @@ export interface BlackBoxRallarConfig {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    readonly membershipEpoch?: number;
     readonly minSnapshotVersion?: number;
     readonly seq?: number;
     readonly orderingKey?: string;
@@ -117,6 +126,13 @@ export interface BlackBoxRallarConfig {
     readonly logoutOnClose?: boolean;
     /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
+    /** Harness recording only; omission records ALM events. */
+    readonly almDiagnostics?: boolean;
+    /**
+     * Harness-only: `record` declares a recovery owner on the typed channel this connect subscribes, one that
+     * records each invocation as a diagnostic. Absent, the channel declares none, as a product channel by default.
+     */
+    readonly recoveryOwner?: 'record';
 }
 
 export interface BlackBoxRallarConnectionConfig {
@@ -150,7 +166,6 @@ export interface BlackBoxRallarSendInput {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    readonly membershipEpoch?: number;
     readonly minSnapshotVersion?: number;
     readonly seq?: number;
     readonly orderingKey?: string;
@@ -163,6 +178,8 @@ export interface BlackBoxRallarSendInput {
 
 export interface BlackBoxRallarEvent {
     readonly kind: 'diagnostic' | 'message' | 'close';
+    /** Producer-certified routine progress with no failure or functional evidence; absence is unclassified. */
+    readonly routineBrowserDiagnostic?: true;
     readonly topic: string;
     readonly atEpochMs: number;
     readonly connection?: string;
@@ -192,6 +209,9 @@ export interface BlackBoxRallarDocumentFacts {
 }
 
 export interface BlackBoxRallarConnectDiagnostics {
+    /** Absent when this acquisition installed no harness diagnostics ports. */
+    readonly almDiagnostics?: boolean;
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';
     readonly connection: string;
@@ -264,6 +284,7 @@ export type BlackBoxRallarSendDiagnostics =
 
 /** The room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly status: 'sent';
     readonly connection: string;
     readonly actor: string | undefined;
@@ -272,7 +293,7 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly roomRef?: BlackBoxRallarRoomRef;
     readonly applicationId?: string;
     readonly workspaceId?: string;
-    readonly scope: 'room' | 'world' | 'all';
+    readonly scope: 'room' | 'world';
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly contextId: string | undefined;
@@ -292,7 +313,15 @@ export interface BlackBoxRallarMessageSendInput {
     readonly topicId: string | undefined;
     readonly payload: RallarMessagePayload;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
-    readonly scope: 'room' | 'world' | 'all' | undefined;
+    readonly scope: 'room' | 'world' | 'principal' | undefined;
+    /** With scope `principal`: the principal whose live sessions in the room the send reaches. */
+    readonly principalId: string | undefined;
+    /** Absent, the send names no fixed audience. */
+    readonly recipientPeer: 'receiver' | 'recipient-b' | undefined;
+    /** Absent, the send is `shared`. */
+    readonly ownership: ALOwnershipAlgo | undefined;
+    /** Absent, the product mints a fresh resource per send. */
+    readonly resourceId: string | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */
@@ -380,6 +409,8 @@ export interface BlackBoxRallarDeliveryObservation
     readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
     /** The carrier of every settled attempt, index-aligned with `attemptOutcomes`: a hand-over reads `rtc` then `ws` (D56). */
     readonly attemptCarriers: readonly ALDeliveryCarrier[];
+    /** The reason of every refused admission row, in attempt order: a leg the fallback carrier took over. */
+    readonly attemptRefusalReasons: readonly ALDeliveryRefusalReason[];
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
     readonly backpressured: boolean;
@@ -533,6 +564,7 @@ export interface BlackBoxRallarCrdtRuntimeSummary {
 }
 
 export interface BlackBoxRallarCrdtCommandDiagnostics {
+    readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly status:
         | 'opened'
         | 'applied'

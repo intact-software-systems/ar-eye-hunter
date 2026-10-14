@@ -6,6 +6,7 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
+import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
@@ -102,7 +103,7 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
     return read.orderingAcceptance.observation.releasableSeqs.map((seq) => {
         const buffered = bufferedBySequence.get(seq);
         return {
-            effectId: toEffectId(['release', trackKey, seq]),
+            effectId: toALInboundReleaseEffectId(trackKey, seq),
             expireAtTimestamp: buffered === undefined
                 ? undefined
                 : resolveALMessageExpireAtMs(buffered.msg, buffered.plan.effective),
@@ -111,6 +112,11 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
             payload: { kind: 'release-buffered', trackKey, seq }
         };
     });
+}
+
+/** The one row that releases `seq` of a track: a delivered predecessor finds its successor by it (D190). */
+export function toALInboundReleaseEffectId(trackKey: string, seq: number): string {
+    return toEffectId(['release', trackKey, seq]);
 }
 
 export function toALInboundLocalDeliveryEffects(
@@ -138,6 +144,7 @@ export function toALInboundNegativeControlEffects(
     }
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     const reason = toNackReason(input.plan.nack.reason);
+    const authorityRefusal = isAuthorityRefusalNackReason(reason);
     const nack: ALInboundEffectIntent = {
         effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
@@ -147,10 +154,15 @@ export function toALInboundNegativeControlEffects(
             toPeerId,
             msgId: input.msg.id.msgId,
             reason,
-            ordering: reason === 'not-yet-in-sync' ? undefined : input.plan.orderingRuntime
+            ordering: authorityRefusal ? undefined : input.plan.orderingRuntime
         }
     };
-    return reason === 'not-yet-in-sync' ? [nack] : [nack, ...toRepairEffects(input)];
+    return authorityRefusal ? [nack] : [nack, ...toRepairEffects(input)];
+}
+
+/** An authority refusal is about the receiver's roster or a claim, never the ordering track, so it asks for no repair. */
+function isAuthorityRefusalNackReason(reason: ALNackReason): boolean {
+    return reason === 'not-yet-in-sync' || reason === 'membership-fenced' || reason === 'held-by-other';
 }
 
 function toRepairEffects(
@@ -169,7 +181,7 @@ function toRepairEffects(
             input.plan.orderingRuntime.trackKey ?? '-',
             input.plan.orderingRuntime.seq ?? '-',
             input.plan.orderingRuntime.expectedSeq ?? '-',
-            input.plan.orderingRuntime.missingSeqs.join(',')
+            toALSeqRangesText(input.plan.orderingRuntime.missingRanges)
         ]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         carrier: input.carrier,
@@ -245,6 +257,10 @@ function toNackReason(reason?: string) {
             return 'overloaded' as const;
         case 'not-yet-in-sync':
             return 'not-yet-in-sync' as const;
+        case 'membership-fenced':
+            return 'membership-fenced' as const;
+        case 'held-by-other':
+            return 'held-by-other' as const;
         default:
             return 'stale' as const;
     }

@@ -35,11 +35,15 @@ interface RallarBrowserEventPayload extends
     readonly data: ApiJsonValue | undefined;
 }
 
+export interface RallarBrowserEventInput extends RallarBlackBoxTestRuntimeEventInput {
+    readonly payload: RallarBrowserEventPayload | RallarBlackBoxRuntimeDiagnosticPayload;
+}
+
 const DEFAULT_RALLAR_BROWSER_EVENT_TOPIC = 'rallar.browser.event';
 
 export function toRallarBrowserEventInput(
     event: RallarBlackBoxBrowserRallarEvent
-): RallarBlackBoxTestRuntimeEventInput {
+): RallarBrowserEventInput {
     const topic = event.topic ?? DEFAULT_RALLAR_BROWSER_EVENT_TOPIC;
     const payload = toRallarBrowserEventPayload(event);
     const base = { topic, connection: event.connection, actor: event.actor, transport: event.transport };

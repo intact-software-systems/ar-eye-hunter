@@ -10,6 +10,7 @@ import {
     vi
 } from 'vitest';
 
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -20,6 +21,8 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+
+import { createResourceInboxQueryCapture } from './p-sql-resource-inbox-test-harness.ts';
 
 interface ReleaseAdapter {
     readonly name: string;
@@ -70,20 +73,12 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
         release: async (reserved, current) => {
             const observedReservation = { ...reserved, db: { id: '1' } };
             const storedCurrent = { ...current, db: { id: '1' } };
-            const transactionOwners = {
-                reservations: {
-                    releaseReserved: vi.fn(async () => null)
-                },
-                entries: {
-                    findAnyByKey: vi.fn(async () => storedCurrent)
-                }
-            };
-            const repository = {
-                transaction: vi.fn(
-                    async (work: (value: typeof transactionOwners) => Promise<Map<Key, ResourceEntry>>) => await work(transactionOwners)
-                )
-            };
-            const queue = new PSqlQueueBox(repository as never);
+            const capture = createResourceInboxQueryCapture();
+            const repository = createPSqlResourceInboxRepository(capture.sql, () => new Date());
+            repository.reservations.releaseReserved = vi.fn(async () => null);
+            repository.entries.findAnyByKey = vi.fn(async () => storedCurrent);
+            repository.transaction = async (work) => await work(repository);
+            const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
             return firstValue(
                 await queue.releaseEntries([{
                     entry: observedReservation,
@@ -143,7 +138,7 @@ function createReservedRtcTopologyEntry(): ResourceEntry {
         }
     };
     const message = {
-        id: { v: 2, msgId: key.resourceId, ts: createdAtEpochMs, senderId },
+        id: { v: 3, msgId: key.resourceId, ts: createdAtEpochMs, senderId },
         route: key,
         constraints: { expiresAtMs: expireAtEpochMs },
         payload: {

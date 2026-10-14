@@ -21,9 +21,10 @@ import {
     type IndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultOutboundTestRuntime,
     createOutboundMessage
@@ -47,7 +48,7 @@ function createStores(
     kind: 'memory' | 'indexeddb',
     nowMs: () => number,
     observer: IndexedDbOperationObserver = createPassThroughIndexedDbOperationObserver()
-) {
+): ALOutboundRuntimeStores<OutboundTestPayload> {
     const backend = kind === 'memory'
         ? new InMemoryAdmissionBackend(
             createInMemoryALAdmissionState(
@@ -138,7 +139,7 @@ function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntim
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
             ackTracking: input.ackTracking
         }),
@@ -194,7 +195,7 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(probes.map((probe) => probe.durationMs)).toEqual([0, 0, 0]);
         expect(new Set(probes.map((probe) => probe.workerId)).size).toBe(1);
         expect(probes[0]?.workerId).toMatch(/^al-outbound:/);
-        runtime.dispose();
+        await runtime.dispose();
     }
 );
 
@@ -230,7 +231,7 @@ it.each(['memory', 'indexeddb'] as const)(
             ['no-memory', 'none'],
             ['own-commit', CLOCK_START_MS + ACK_TIMEOUT_MS]
         ]);
-        runtime.dispose();
+        await runtime.dispose();
     }
 );
 
@@ -273,7 +274,7 @@ it.each(['memory', 'indexeddb'] as const)(
 
         expect(clock.atMs).toBe(CLOCK_START_MS + ACK_TIMEOUT_MS + 1);
         expect(probesOf(diagnostics).map((probe) => probe.cause).slice(0, 2)).toEqual(['no-memory', 'own-commit']);
-        runtime.dispose();
+        await runtime.dispose();
     }
 );
 
@@ -311,7 +312,7 @@ it('spends only age-bound probes over twenty idle seconds after a warm send over
         .toEqual(Array.from({ length: ageBoundProbes }, () => 'age-bound'));
     expect(observer.getCounts().byKind, IDLE_WINDOW_REASON).toEqual({ 'work-page': ageBoundProbes });
     expect(drainsOf(diagnostics).slice(drained), IDLE_WINDOW_REASON).toEqual([]);
-    runtime.dispose();
+    await runtime.dispose();
 });
 
 it('reports the idle owner\'s probes even where its batch has nothing to report', async () => {
@@ -341,5 +342,5 @@ it('reports the idle owner\'s probes even where its batch has nothing to report'
         'age-bound'
     ]);
     expect(drainsOf(diagnostics)).toHaveLength(1);
-    runtime.dispose();
+    await runtime.dispose();
 });

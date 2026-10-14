@@ -43,7 +43,7 @@ export interface DirectRallarOperationContext {
 }
 
 export interface DirectRallarWsSendInput {
-    readonly scope: 'room' | 'world' | 'all';
+    readonly scope: 'room' | 'world';
     readonly typeId: string;
     /** Absent when the operator let the type id name the topic. */
     readonly topicId?: string;

@@ -82,7 +82,8 @@ export async function readALOutboundPendingDispatch<TPrepared>(
     input: ReadALOutboundPendingDispatchInput<TPrepared>
 ): Promise<ALOutboundPendingDispatchVerdict | undefined> {
     const { read, options, outboxEntry } = input.dispatch;
-    if (input.dispatch.intent !== 'enqueue' || options.pendingAdmission || !read.canonicalEntry || read.sentSnapshot) {
+    const retained = read.canonicalEntry;
+    if (input.dispatch.intent !== 'enqueue' || options.pendingAdmission || !retained || read.sentSnapshot) {
         return undefined;
     }
     const reference = toALOutboundMessageReference(input.canonicalScope, outboxEntry, read.msg);
@@ -105,12 +106,12 @@ export async function readALOutboundPendingDispatch<TPrepared>(
         return { verdict: { kind: 'failed', detail: reason }, entries: [], reason };
     }
     if (isPendingALOutboundWork(entry)) {
-        return { verdict: { kind: 'pending' }, entries: [outboxEntry], reason: undefined };
+        return { verdict: { kind: 'pending' }, entries: [retained], reason: undefined };
     }
     const reason = 'Pending admission has already terminated';
     return {
         verdict: { kind: 'skipped', reason: 'pending-terminated', detail: reason },
-        entries: [outboxEntry],
+        entries: [retained],
         reason
     };
 }

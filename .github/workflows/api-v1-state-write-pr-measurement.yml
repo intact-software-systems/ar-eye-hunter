@@ -6,9 +6,16 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch or commit to measure against its merge base with main'
+        description: 'Branch or commit to measure'
         required: true
         type: string
+
+      mode:
+        description: 'Comparison or one bounded candidate diagnostic'
+        required: false
+        type: choice
+        default: comparison
+        options: [comparison, diagnostic]
 
 permissions:
   contents: read
@@ -16,12 +23,12 @@ permissions:
 # The label is part of the group, so labelling a pull request for any other reason cannot cancel a
 # measurement in progress.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || inputs.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || inputs.ref }}-${{ inputs.mode || 'comparison' }}
   cancel-in-progress: true
 
 jobs:
   compare:
-    name: State-write A-B-B-A comparison
+    name: State-write hosted measurement
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.label.name == 'measure-state-write' &&
@@ -29,10 +36,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
+      MEASUREMENT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'comparison' }}
       CANDIDATE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
       DATABASE_URL: postgres://app:app@localhost:5433/appdb
       COMPOSE_PROJECT_NAME: state-write-comparison
-      MEASUREMENT_OUTPUT: tmp/perf/state-write-comparison
+      MEASUREMENT_OUTPUT: ${{ inputs.mode == 'diagnostic' && format('tmp/perf/state-write-diagnostic/{0}-{1}', github.run_id, github.run_attempt) || 'tmp/perf/state-write-comparison' }}
       COMPARATOR_FILES: >-
         apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs
         apps/api-v1/scripts/perf/api-v1-state-write-artifact-validation.mjs
@@ -61,6 +69,7 @@ jobs:
           deno-version: v2.x
 
       - name: Resolve the merge base and validate the runner
+        if: env.MEASUREMENT_MODE == 'comparison'
         shell: bash
         run: |
           set -euo pipefail
@@ -101,6 +110,7 @@ jobs:
           free -b > "$output/host-memory.txt"
 
       - name: Give both sides the candidate's harness
+        if: env.MEASUREMENT_MODE == 'comparison'
         shell: bash
         run: |
           set -euo pipefail
@@ -127,47 +137,27 @@ jobs:
               > "$output/$role-native-check.log" 2>&1
           done
 
-      - name: Capture A-B-B-A on the same runner
+      - name: Install and check the diagnostic candidate
+        if: env.MEASUREMENT_MODE == 'diagnostic'
         shell: bash
         run: |
           set -euo pipefail
           output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
-          position=0
-          for source_commit in "$BASE_MEASUREMENT_COMMIT" "$CANDIDATE_COMMIT" "$CANDIDATE_COMMIT" "$BASE_MEASUREMENT_COMMIT"; do
-            position=$((position + 1))
-            git checkout --detach "$source_commit"
-            test -z "$(git status --porcelain --untracked-files=no)"
-            test -z "$(docker ps -aq)"
-            docker compose -f docker-compose.perf-bench.yml up -d --wait \
-              > "$output/position-$position-compose.log" 2>&1
-            npm run db:migrate > "$output/position-$position-migrate.log" 2>&1
-            node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
-              --stage preflight --container rallar-perf-bench-postgres \
-              --database-url "$DATABASE_URL" --out "$output/position-$position-preflight.json"
-            # Reject an unsupported image or resource setting before the expensive benchmark.
-            node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
-              --stage postflight --container rallar-perf-bench-postgres \
-              --database-url "$DATABASE_URL" --preflight "$output/position-$position-preflight.json" \
-              --out "$output/position-$position-environment-check.txt"
-            benchmark_status=0
-            npm run perf:api-v1:state-write -- \
-              --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
-              --out="$MEASUREMENT_OUTPUT/position-$position.json" \
-              > "$output/position-$position-benchmark.log" 2>&1 || benchmark_status=$?
-            printf '%s\n' "$benchmark_status" > "$output/position-$position-exit.txt"
-            grep '^{"workload"' "$output/position-$position-benchmark.log" || true
-            node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
-              --stage postflight --container rallar-perf-bench-postgres \
-              --database-url "$DATABASE_URL" --preflight "$output/position-$position-preflight.json" \
-              --out "$output/position-$position-environment.txt"
-            docker logs rallar-perf-bench-postgres > "$output/position-$position-postgres.log" 2>&1
-            test "$benchmark_status" -eq 0
-            test "$(docker ps -aq | wc -l)" -eq 1
-            test "$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' rallar-perf-bench-postgres)" = "$COMPOSE_PROJECT_NAME"
-            docker compose -f docker-compose.perf-bench.yml down -v
-          done
+          mkdir -p "$output"
+          npm ci > "$output/install.log" 2>&1
+          deno check --config apps/api-v1/deno.json \
+            apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
+            > "$output/candidate-native-check.log" 2>&1
+
+      - name: Capture the selected measurement
+        id: measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          node apps/api-v1/scripts/perf/run-api-v1-state-write-measurement.mjs
 
       - name: Pool and compare with the unchanged comparator
+        if: env.MEASUREMENT_MODE == 'comparison'
         shell: bash
         run: |
           set -euo pipefail
@@ -193,7 +183,7 @@ jobs:
             2>&1 | tee "$output/comparison.log"
 
       - name: Retain the captures and the verdict
-        if: always()
+        if: always() && env.MEASUREMENT_MODE == 'comparison' && steps.measurement.outputs.raw-admitted == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: state-write-comparison-${{ github.run_id }}-${{ github.run_attempt }}
@@ -201,5 +191,23 @@ jobs:
             tmp/perf/state-write-comparison
             !tmp/perf/state-write-comparison/approved-base.json
             !tmp/perf/state-write-comparison/candidate.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Retain safe terminal evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: state-write-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.MEASUREMENT_OUTPUT }}/terminal.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Retain original diagnostic acquisition and command streams
+        if: always() && env.MEASUREMENT_MODE == 'diagnostic' && steps.measurement.outputs.raw-admitted == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: state-write-diagnostic-originals-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.MEASUREMENT_OUTPUT }}
           if-no-files-found: warn
           retention-days: 14

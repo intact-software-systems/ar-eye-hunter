@@ -13,7 +13,8 @@ import { AL_MESSAGE_DROP_REASON_CODES, type ALMessageHandlingPlan } from '../../
 import {
     decodeALAdmissionArray,
     decodeALAdmissionNumber,
-    decodeALAdmissionRecord
+    decodeALAdmissionRecord,
+    decodeALAdmissionSeqRanges
 } from '../al-admission-value-validation.ts';
 
 const PLAN_FIELDS = [
@@ -59,7 +60,9 @@ export function decodeALInboundPlan(value: unknown): ALMessageHandlingPlan {
     requireOptionalDropReasonCode(plan.dropReasonCode);
     assertDeliveryAndForwarding(plan);
     assertControlPlan(plan);
-    assertSupersedenceAndCongestion(plan);
+    assertSupersedencePlan(plan.supersedence);
+    assertCongestionPlan(plan.congestion);
+    assertOwnershipPlan(plan.ownership);
     assertOrderingObservation(plan.orderingRuntime);
     return value as ALMessageHandlingPlan;
 }
@@ -121,14 +124,14 @@ function assertControlPlan(plan: PersistedALRecord): void {
     const ack = requirePersistedALRecord(plan.ack, 'ack plan');
     requirePersistedALFields(ack, ['enabled', 'algo', 'toPeerId', 'deferred'], ['enabled', 'algo', 'deferred']);
     requireBooleans(ack, ['enabled', 'deferred']);
-    requireVariant(ack.algo, ['none', 'hop', 'subtree', 'receiver'], 'ack algorithm');
+    requireVariant(ack.algo, ['none', 'hop', 'subtree', 'receiver', 'leader'], 'ack algorithm');
     requireOptionalPersistedALNonEmptyString(ack.toPeerId, 'ack peer');
     const nack = requirePersistedALRecord(plan.nack, 'nack plan');
-    requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingSeqs'], ['enabled', 'missingSeqs']);
+    requirePersistedALFields(nack, ['enabled', 'toPeerId', 'reason', 'missingRanges'], ['enabled', 'missingRanges']);
     requireBooleans(nack, ['enabled']);
     requireOptionalPersistedALNonEmptyString(nack.toPeerId, 'nack peer');
     requireOptionalPersistedALNonEmptyString(nack.reason, 'nack reason');
-    decodeALAdmissionArray(nack.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(nack.missingRanges);
     const repair = requirePersistedALRecord(plan.repair, 'repair plan');
     requirePersistedALFields(repair, ['enabled', 'algo', 'reason'], ['enabled', 'algo']);
     requireBooleans(repair, ['enabled']);
@@ -136,8 +139,8 @@ function assertControlPlan(plan: PersistedALRecord): void {
     requireOptionalPersistedALNonEmptyString(repair.reason, 'repair reason');
 }
 
-function assertSupersedenceAndCongestion(plan: PersistedALRecord): void {
-    const supersedence = requirePersistedALRecord(plan.supersedence, 'supersedence plan');
+function assertSupersedencePlan(value: PersistedALValue): void {
+    const supersedence = requirePersistedALRecord(value, 'supersedence plan');
     requirePersistedALFields(supersedence, ['enabled', 'algo', 'key', 'replacesMsgId', 'status', 'latestMsgId'], [
         'enabled',
         'algo',
@@ -153,14 +156,27 @@ function assertSupersedenceAndCongestion(plan: PersistedALRecord): void {
     for (const field of ['key', 'replacesMsgId', 'latestMsgId']) {
         requireOptionalPersistedALNonEmptyString(supersedence[field], `supersedence ${field}`);
     }
-    const congestion = requirePersistedALRecord(plan.congestion, 'congestion plan');
-    requirePersistedALFields(congestion, ['overloaded', 'action', 'priority'], ['overloaded', 'action', 'priority']);
+}
+
+function assertCongestionPlan(value: PersistedALValue): void {
+    const congestion = requirePersistedALRecord(value, 'congestion plan');
+    requirePersistedALFields(
+        congestion,
+        ['overloaded', 'action', 'priority', 'cause'],
+        ['overloaded', 'action', 'priority']
+    );
     requireBooleans(congestion, ['overloaded']);
     requireVariant(congestion.action, ['none', 'drop-low', 'defer', 'reject'], 'congestion action');
     if (typeof congestion.priority !== 'number' || !Number.isFinite(congestion.priority)) {
         throw new TypeError('Persisted congestion priority is invalid');
     }
-    const ownership = requirePersistedALRecord(plan.ownership, 'ownership plan');
+    if (congestion.cause !== undefined) {
+        requireVariant(congestion.cause, ['overloaded', 'backpressured'], 'congestion cause');
+    }
+}
+
+function assertOwnershipPlan(value: PersistedALValue): void {
+    const ownership = requirePersistedALRecord(value, 'ownership plan');
     requirePersistedALFields(ownership, ['algo', 'exclusive'], ['algo', 'exclusive']);
     requireVariant(ownership.algo, ['shared', 'exclusive'], 'ownership algorithm');
     requireBooleans(ownership, ['exclusive']);
@@ -174,9 +190,9 @@ function assertOrderingObservation(value: PersistedALValue): void {
         'seq',
         'expectedSeq',
         'lastContiguousSeq',
-        'missingSeqs',
+        'missingRanges',
         'releasableSeqs'
-    ], ['status', 'missingSeqs', 'releasableSeqs']);
+    ], ['status', 'missingRanges', 'releasableSeqs']);
     requireVariant(
         ordering.status,
         ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required'],
@@ -186,7 +202,7 @@ function assertOrderingObservation(value: PersistedALValue): void {
     requireOptionalPersistedALSafeInteger(ordering.seq, 0, 'ordering sequence');
     requireOptionalPersistedALSafeInteger(ordering.expectedSeq, 0, 'ordering expected sequence');
     requireOptionalPersistedALSafeInteger(ordering.lastContiguousSeq, -1, 'ordering contiguous sequence');
-    decodeALAdmissionArray(ordering.missingSeqs, decodeALAdmissionNumber);
+    decodeALAdmissionSeqRanges(ordering.missingRanges);
     decodeALAdmissionArray(ordering.releasableSeqs, decodeALAdmissionNumber);
 }
 

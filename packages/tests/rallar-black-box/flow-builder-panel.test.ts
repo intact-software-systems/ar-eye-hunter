@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import type {
     RallarBlackBoxTestCommand,
@@ -24,7 +25,14 @@ vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const idleState: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const idleState: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const globalValues: CommandCenterGlobalValues = {
     apiBaseUrl: 'https://api.example.test',
     applicationId: 'primary-application',

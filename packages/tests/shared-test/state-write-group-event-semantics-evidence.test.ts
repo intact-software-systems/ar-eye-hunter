@@ -1,23 +1,17 @@
-import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
-import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
-import type { GroupEventType } from '@shared/api/group-types.ts';
-import { describe, expect, it } from 'vitest';
-import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-const commandRow = {
-    ri_row_id: 1,
-    ri_resource_id: 'group-row',
-    ri_topic_id: 'app-inbox',
-    fk_ext_bank_id: 'scope',
-    ri_status: 'COMPLETED',
-    ri_attempts: 1,
-    start_ts: new Date(1),
-    end_ts: new Date(2),
-    next_ts: null,
-    result_status: 'COMPLETED',
-    result_resource: '{}',
-    ri_resource: '{}'
-};
+import type { ApiV1StateWriteEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
+import type { GroupEventType } from '@shared/api/group-types.ts';
+
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import {
+    createGroupStateWriteEvidenceFixture,
+    type GroupStateWriteEvidenceFixture
+} from './group-state-write-evidence-fixtures.ts';
 
 const commandPolicies = [
     ['GROUP_CREATE', ['group-created'], false],
@@ -44,107 +38,25 @@ const commandPolicies = [
     readonly [string, readonly GroupEventType[], boolean]
 )[];
 
-type ReceiptOverrides = Readonly<{
-    outcome?: string;
-    eventId?: string | null;
-    snapshotVersion?: number;
-}>;
-
-function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
-    const resourceId = `physical-${commandType}`;
-    const logicalId = `command-${commandType}`;
-    const groupRef = {
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId: 'group-1'
-    };
-    const fixture = createGroupSnapshotFixture({
-        ...groupRef,
-        sessionIds: ['owner-session', 'member-session']
-    });
-    const snapshot = {
-        ...fixture,
-        causalRevision: { groupRevision: 8, presenceRevision: 2 },
-        group: { ...fixture.group, snapshotVersion: 8, presenceVersion: 2 }
-    };
-    const event = {
-        ...groupRef,
+function groupEvidenceCase(commandType: string, eventType: GroupEventType): GroupStateWriteEvidenceFixture {
+    return createGroupStateWriteEvidenceFixture({
+        resourceId: `physical-${commandType}`,
+        commandId: `command-${commandType}`,
+        commandType,
+        commandHash: `sha256:${'a'.repeat(64)}`,
         eventId: `event-${commandType}`,
-        eventType,
-        snapshotVersion: 8,
-        causalRevision: { groupRevision: 8, presenceRevision: 1 },
-        occurredAtEpochMs: 1,
-        actor: { kind: 'service', serviceId: 'api-v1' },
-        reason: null,
-        traceId: null,
-        requestId: logicalId,
-        payload: {}
-    };
-    const evidence = (
-        candidateEvent: unknown = event,
-        receiptOverrides: ReceiptOverrides = {},
-        candidateSnapshot: unknown = snapshot
-    ) => {
-        const receipt = {
-            appInboxResourceId: resourceId,
-            commandId: logicalId,
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            outcome: 'applied',
-            outboxIds: [],
-            identityKind: 'physical-resource-id' as const,
-            requestId: logicalId,
-            aggregateRef: groupRef,
-            causalRevision: { groupRevision: 8, presenceRevision: 1 },
-            snapshotVersion: 8,
-            eventId: event.eventId,
-            ...receiptOverrides
-        };
-        const authoritative: readonly PersistedCommandEvidence[] = [{
-            appInboxResourceId: resourceId,
-            appInboxTopicId: 'app-inbox',
-            appInboxContextId: 'scope',
-            valid: true,
-            commandType,
-            commandIds: [logicalId],
-            receipt
-        }];
-        const result = {
-            ...commandRow,
-            ri_resource_id: resourceId,
-            ri_resource: JSON.stringify({
-                payload: {
-                    typeId: commandType,
-                    resource: JSON.stringify({ commandId: logicalId })
-                }
-            }),
-            result_resource: JSON.stringify({
-                status: 'ok',
-                result: {
-                    snapshot: candidateSnapshot,
-                    event: candidateEvent
-                }
-            })
-        };
-        return deriveApiV1StateWriteEvidence(
-            { match: 'scope', commandTypes: [commandType] },
-            [result],
-            [],
-            [],
-            undefined,
-            authoritative
-        );
-    };
-    return { event, evidence };
+        eventType
+    });
 }
 
-function expectValid(evidence: Record<string, unknown>): void {
+function expectValid(evidence: ApiV1StateWriteEvidence): void {
     expect(evidence).toMatchObject({
         atomicCompletionFailures: 0,
         statusResultFailures: 0
     });
 }
 
-function expectInvalid(evidence: Record<string, unknown>): void {
+function expectInvalid(evidence: ApiV1StateWriteEvidence): void {
     expect(evidence).toMatchObject({
         atomicCompletionFailures: 1,
         statusResultFailures: 1

@@ -3,7 +3,11 @@ import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-
 import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import type { AuthUserRepository } from '../../persistence/auth-user-repository.ts';
 import type { PersistedAgentSessionTicket } from '../../persistence/persisted-auth-ticket.ts';
-import type { AuthMutationCommand, AuthMutationRead, AuthSessionEntries } from '../auth-mutation-contracts.ts';
+import type {
+    AuthMutationCommand,
+    AuthMutationRead,
+    AuthSessionEntries
+} from '../auth-mutation-contracts.ts';
 import { readAuthSessionEntries } from './read-auth-session-entries.ts';
 
 type AuthUserRegistrationRead = Extract<AuthMutationRead, { kind: 'register-user'; }>;
@@ -85,10 +89,12 @@ async function readAuthWebSocketTicketConsume(
     sessions: AuthSessionRepository,
     command: Extract<AuthMutationCommand, { kind: 'consume-ws-ticket'; }>
 ): Promise<AuthWebSocketTicketConsumeRead> {
-    const ticket = (await sessions.findWebSocketTicketByDigestEntry(command.ticketDigest)) ?? null;
+    const ticketRead = await sessions.readWebSocketTicketByDigestEntry(command.ticketDigest);
+    const ticket = ticketRead.value ?? null;
     return {
         kind: command.kind,
         ticket,
+        expiredTicketEntry: ticketRead.expiredEntry ?? null,
         session: ticket
             ? ((await sessions.findSessionBySessionIdEntry(ticket.value.sessionId)) ?? null)
             : null

@@ -66,6 +66,7 @@ function snapshot(phase: RelicPublicSnapshot['phase']): RelicPublicSnapshot {
         phase,
         round: 1,
         maxRounds: 10,
+        createdAtEpochMs: 1,
         updatedAtEpochMs: Date.now(),
         map: [room('entrance', 'entrance')],
         relics: [],

@@ -1,8 +1,9 @@
-import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -14,6 +15,7 @@ import {
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
@@ -35,8 +37,11 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { authSession } from '../../group-state/group-state-test-runtime.ts';
@@ -256,7 +261,21 @@ describe('topology AppInbox transaction and idempotency', () => {
             expect(entries).toHaveLength(2);
             expect(new Set(entries.map((entry) => entry.key.contextId)).size).toBe(2);
         });
-        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        const commands = (await harness.queueEntries()).filter((entry) => entry.key.resourceId === 'shared-graph-request');
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        registerApplicationQueueReaderTasks({
+            engine,
+            inboxQueueReader: harness.reader,
+            outboxQueueReader: new OutboxQueueReader(harness.queue),
+            appInboxResilience: createResilience(),
+            appOutboxResilience: createResilience()
+        });
+        await expect.poll(async () => {
+            await engine.executeOnce();
+            const results = await Promise.all(commands.map((entry) => harness.results.findByKey(entry.key)));
+            return results.filter((entry) => entry !== undefined).length;
+        }).toBe(2);
         const settled = await Promise.allSettled([owner, other]);
         expect(settled).not.toContainEqual(
             expect.objectContaining({
@@ -363,7 +382,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         expect(collisionEntry.key).toEqual(expectedEntry.key);
         expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
         await harness.database.begin(async (transaction) => {
-            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(collisionEntry);
+            await createPSqlResourceInboxRepository(transaction, () => new Date(harness.nowEpochMs)).entries.writeIfAbsentOrMatch(collisionEntry);
         });
         expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
         const enqueue = await createAuthenticatedTopologyEnqueue({
@@ -385,7 +404,8 @@ describe('topology AppInbox transaction and idempotency', () => {
         );
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(
             message,
-            EnqueuedType.APP_INBOX
+            EnqueuedType.APP_INBOX,
+            Temporal.Now.instant()
         );
         const handler = new TopologyAppInboxHandler({
             groupStateService: harness.groupStateService,

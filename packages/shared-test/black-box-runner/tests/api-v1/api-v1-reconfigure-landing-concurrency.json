@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 reconfigure landing concurrency: reconfigureLanding \"apply\" has no coverage anywhere in the corpus -- every recipe that sets it pins \"hold\", so a reconfigure has never been observed actually landing. Two reconfigures asking for different degree limits are released together by a barrier, so neither can be skipped as unchanged and neither is merely adjacent to the other. The row then settles on exactly one of the two requested limits, not a merge of both and not the baseline, and the layout version must have advanced so a landing provably happened.",
+  "description": "No-browser API-v1 reconfigure landing concurrency: two explicit reconfigure commands with degree limits 5 and 2 are released together by a barrier under reconfigureLanding apply. Degree 5 may equal the baseline. Accepted queued responses do not prove landing. Within one bounded observation wait, the layout must advance beyond the captured baseline version and carry exactly one requested degree limit.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -403,69 +403,84 @@
     },
     {
       "name": "theLandedLayoutSettles",
-      "type": "http",
-      "connection": "api",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
         "poll": {
           "maxAttempts": 25,
           "maxDurationMs": 15000,
           "backoffMs": 150,
           "backoffMultiplier": 1.25
-        },
-        "outputs": {
-          "settledDegreeLimit": "body.snapshot.degreeLimit",
-          "settledVersion": "body.snapshot.version"
         }
       },
-      "expect": {
-        "status": 200,
-        "body": {
-          "snapshot": {
-            "state": "active"
-          }
+      "groups": [
+        {
+          "name": "theLandedLayoutSettlesObservation",
+          "steps": [
+            {
+              "name": "readTheLandedLayout",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "settledDegreeLimit": "body.snapshot.degreeLimit",
+                  "settledVersion": "body.snapshot.version"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "snapshot": {
+                    "state": "active"
+                  }
+                }
+              }
+            },
+            {
+              "name": "exactlyOneOfTheTwoLimitsLanded",
+              "type": "assert",
+              "actual": {
+                "degreeLimit": "{settledDegreeLimit}"
+              },
+              "expect": {
+                "missingActualValue": "MISSING",
+                "anyOf": [
+                  {
+                    "degreeLimit": 5
+                  },
+                  {
+                    "degreeLimit": 2
+                  }
+                ]
+              }
+            },
+            {
+              "name": "theLandingAdvancedTheLayoutVersion",
+              "type": "assert",
+              "actual": {
+                "settled": "{settledVersion}",
+                "baseline": "{baselineVersion}"
+              },
+              "expect": {
+                "missingActualValue": "MISSING",
+                "comparators": [
+                  {
+                    "path": "settled",
+                    "gt": "{baselineVersion}"
+                  }
+                ]
+              }
+            }
+          ]
         }
-      }
-    },
-    {
-      "name": "exactlyOneOfTheTwoLimitsLanded",
-      "type": "assert",
-      "actual": {
-        "degreeLimit": "{settledDegreeLimit}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "anyOf": [
-          {
-            "degreeLimit": 5
-          },
-          {
-            "degreeLimit": 2
-          }
-        ]
-      }
-    },
-    {
-      "name": "theLandingAdvancedTheLayoutVersion",
-      "type": "assert",
-      "actual": {
-        "settled": "{settledVersion}",
-        "baseline": "{baselineVersion}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "comparators": [
-          {
-            "path": "settled",
-            "gt": "{baselineVersion}"
-          }
-        ]
-      }
+      ]
     }
   ],
   "postRunAssertions": [

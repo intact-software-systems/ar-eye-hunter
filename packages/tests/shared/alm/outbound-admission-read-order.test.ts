@@ -1,3 +1,13 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
@@ -6,13 +16,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import {
     createDefaultOutboundTestRuntime,
@@ -44,7 +48,7 @@ describe('outbound admission observation order', () => {
                     workQueue: backend.workQueue,
                     nowMs: Date.now
                 }),
-                toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+                toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
                 browserLocks: undefined,
@@ -73,7 +77,11 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
+        });
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
         });
         await captured.promise;
         const won = await winner.commit({
@@ -82,7 +90,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const winningSnapshot = await store.readSentMessage(message.id.msgId);
         resume.resolve();
@@ -95,7 +103,7 @@ describe('outbound admission observation order', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'changed' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
                 return { status: 'sent', submissionAttempted: true };
@@ -128,7 +136,7 @@ describe('outbound admission observation order', () => {
                 workQueue: backend.workQueue,
                 nowMs: Date.now
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -141,7 +149,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -158,8 +166,12 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
+        });
         await captured.promise;
         expect(
             await store.commitBundle({
@@ -198,7 +210,7 @@ describe('outbound admission observation order', () => {
                 workQueue: backend.workQueue,
                 nowMs: Date.now
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -211,7 +223,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -234,8 +246,12 @@ describe('outbound admission observation order', () => {
         });
         const pending = store.readRepairMessage(
             message.id.msgId,
-            (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         );
+        onTestFinished(async () => {
+            resume.resolve();
+            await pending;
+        });
         await captured.promise;
         expect(
             await store.commitBundle({

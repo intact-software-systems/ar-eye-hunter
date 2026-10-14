@@ -3,14 +3,17 @@ import { validateRtcBaselineSample } from '../contracts/rtc-baseline-artifact-va
 import type {
     RtcBaselineCaptureManifestDto,
     RtcBaselineCaptureWorkloadInputDto,
+    RtcBaselineExternalAttemptDto,
     RtcBaselineInitializeAcceptanceInputDto,
     RtcBaselineIssueDto,
     RtcBaselineJson,
     RtcBaselineOuterAttemptDto,
     RtcBaselineRecordAttemptInputDto,
     RtcBaselineRecordCohortInputDto,
+    RtcBaselineResolvedConfigurationValueDto,
     RtcBaselineResult,
-    RtcBaselineSampleDto
+    RtcBaselineSampleDto,
+    RtcBaselineSampleIdentityDto
 } from '../contracts/rtc-baseline-contracts.ts';
 import { normalizeRtcBaselineJson } from '../contracts/rtc-baseline-decoding.ts';
 import {
@@ -23,12 +26,16 @@ import {
     type RtcBaselineAcceptedArtifact,
     type RtcBaselineFailureOwner
 } from './rtc-baseline-failure-accounting.ts';
+import { validateRtcB06CaptureEvidence } from './validate-rtc-b06-capture-evidence.ts';
 
-interface Dependencies {
+interface RtcBaselineEvidenceAcceptanceDependencies {
     initializeStore(
         baselineId: string,
         input: RtcBaselineInitializeAcceptanceInputDto
     ): Promise<RtcBaselineResult<void>>;
+    readInitializedConfiguration(
+        baselineId: string
+    ): Promise<RtcBaselineResult<readonly RtcBaselineResolvedConfigurationValueDto[]>>;
     readManifest(baselineId: string): Promise<RtcBaselineResult<RtcBaselineCaptureManifestDto>>;
     writeAcceptedArtifact(
         baselineId: string,
@@ -54,6 +61,23 @@ interface PersistFailureInput {
     owner: RtcBaselineFailureOwner;
     issues: readonly RtcBaselineIssueDto[];
     rawEvidence: RtcBaselineJson;
+}
+
+interface RtcBaselineAttemptAdmissionContext {
+    manifest: RtcBaselineCaptureManifestDto;
+    owner: Extract<RtcBaselineFailureOwner, { kind: 'sample'; }>;
+}
+interface RtcBaselineWorkerAdmissionInput {
+    baselineId: string;
+    manifest: RtcBaselineCaptureManifestDto;
+    identity: RtcBaselineSampleIdentityDto;
+}
+interface RtcBaselineWorkerOutcomeInput {
+    baselineId: string;
+    manifest: RtcBaselineCaptureManifestDto;
+    expected: RtcBaselineSampleIdentityDto;
+    outcome: RtcBaselineSampleDto;
+    index: number;
 }
 
 type AcceptedSamples = Promise<RtcBaselineResult<{ acceptedSampleCount: number; }>>;
@@ -112,12 +136,30 @@ function entryOwnershipIssue(
 }
 
 export function createRtcBaselineEvidenceAcceptance(
-    dependencies: Dependencies
+    dependencies: RtcBaselineEvidenceAcceptanceDependencies
 ): RtcBaselineEvidenceAcceptance {
-    async function persistFailure(input: PersistFailureInput) {
+    return new RtcBaselineEvidenceAcceptanceController(dependencies);
+}
+
+class RtcBaselineEvidenceAcceptanceController implements RtcBaselineEvidenceAcceptance {
+    private readonly dependencies: RtcBaselineEvidenceAcceptanceDependencies;
+
+    constructor(dependencies: RtcBaselineEvidenceAcceptanceDependencies) {
+        this.dependencies = dependencies;
+    }
+
+    recordBrowser(input: RtcBaselineRecordAttemptInputDto): AcceptedSamples {
+        return this.prepareAttempt(input, 'browser');
+    }
+
+    recordExternalAttempt(input: RtcBaselineRecordAttemptInputDto): AcceptedSamples {
+        return this.prepareAttempt(input, 'external');
+    }
+
+    private async persistFailure(input: PersistFailureInput) {
         const artifacts = buildRtcBaselineFailureSequence(input);
         for (const artifact of artifacts) {
-            const written = await dependencies.writeAcceptedArtifact(input.baselineId, artifact);
+            const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, artifact);
             if (!written.ok) {
                 return written;
             }
@@ -125,14 +167,14 @@ export function createRtcBaselineEvidenceAcceptance(
         return { ok: false as const, issues: [...input.issues] };
     }
 
-    async function readStagedEvidence(
+    private async readStagedEvidence(
         input: RtcBaselineRecordAttemptInputDto | RtcBaselineRecordCohortInputDto,
         owner: RtcBaselineFailureOwner,
         manifest?: RtcBaselineCaptureManifestDto
     ) {
         if (input.producerExitStatus !== 0 && !retainsStructuredProducerFailure(input)) {
             const producerIssue = producerExitIssue(input.producerExitStatus);
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 manifest,
                 owner,
@@ -140,10 +182,10 @@ export function createRtcBaselineEvidenceAcceptance(
                 rawEvidence: { producerExitStatus: input.producerExitStatus }
             });
         }
-        const staged = await dependencies.readStagedJson(input.baselineId, input.rawResultRelativePath);
+        const staged = await this.dependencies.readStagedJson(input.baselineId, input.rawResultRelativePath);
         return staged.ok
             ? staged
-            : persistFailure({
+            : this.persistFailure({
                 baselineId: input.baselineId,
                 manifest,
                 owner,
@@ -156,18 +198,18 @@ export function createRtcBaselineEvidenceAcceptance(
             });
     }
 
-    async function initializeBaseline(input: RtcBaselineInitializeAcceptanceInputDto) {
-        const issues = await dependencies.reconcileAcceptedOperation('initialize', {
+    async initializeBaseline(input: RtcBaselineInitializeAcceptanceInputDto) {
+        const issues = await this.dependencies.reconcileAcceptedOperation('initialize', {
             baselineId: input.request.baselineId
         });
         if (issues.length > 0) {
             return { ok: false as const, issues };
         }
-        return dependencies.initializeStore(input.request.baselineId, input);
+        return this.dependencies.initializeStore(input.request.baselineId, input);
     }
 
-    async function captureWorkload(input: RtcBaselineCaptureWorkloadInputDto) {
-        const manifestResult = await dependencies.readManifest(input.baselineId);
+    async captureWorkload(input: RtcBaselineCaptureWorkloadInputDto) {
+        const manifestResult = await this.dependencies.readManifest(input.baselineId);
         if (!manifestResult.ok) {
             return manifestResult;
         }
@@ -179,9 +221,9 @@ export function createRtcBaselineEvidenceAcceptance(
             (attempt) => attempt.workloadId === input.workloadId
         );
         const allIdentities = deriveRtcBaselineSampleIdentities(attempts);
-        const reconciliation = await dependencies.reconcileAcceptedOperation('capture', input);
+        const reconciliation = await this.dependencies.reconcileAcceptedOperation('capture', input);
         if (reconciliation.length > 0) {
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 manifest: manifestResult.value,
                 owner: { kind: 'sample', identity: allIdentities[0]! },
@@ -192,90 +234,24 @@ export function createRtcBaselineEvidenceAcceptance(
         let acceptedSampleCount = 0;
         let globalIndex = 0;
         for (const outerAttempt of attempts) {
-            let worker: { outcomes: RtcBaselineSampleDto[]; };
-            try {
-                worker = await dependencies.runFreshWorker({ baselineId: input.baselineId, outerAttempt });
-            }
-            catch (error) {
-                const workerIssue = issue(
-                    '$.worker',
-                    'worker-threw',
-                    error instanceof Error ? error.message : String(error)
-                );
-                return persistFailure({
-                    baselineId: input.baselineId,
-                    manifest: manifestResult.value,
-                    owner: { kind: 'sample', identity: allIdentities[globalIndex]! },
-                    issues: [workerIssue],
-                    rawEvidence: null
-                });
-            }
-            const actualCount = worker.outcomes.length;
-            if (actualCount !== outerAttempt.sampleIds.length) {
-                const expectedCount = outerAttempt.sampleIds.length;
-                const cardinalityIssue = issue(
-                    '$.worker.outcomes',
-                    'worker-outcome-cardinality',
-                    `Worker returned ${actualCount} outcomes for ${expectedCount} expected inner samples.`
-                );
-                return persistFailure({
-                    baselineId: input.baselineId,
-                    manifest: manifestResult.value,
-                    owner: { kind: 'sample', identity: allIdentities[globalIndex]! },
-                    issues: [cardinalityIssue],
-                    rawEvidence: null
-                });
+            const worker = await this.readWorkerAttempt({
+                baselineId: input.baselineId,
+                manifest: manifestResult.value,
+                identity: allIdentities[globalIndex]!
+            }, outerAttempt);
+            if (!worker.ok) {
+                return worker;
             }
             for (let index = 0; index < outerAttempt.sampleIds.length; index += 1) {
-                const expected = allIdentities[globalIndex]!;
-                const outcome = worker.outcomes[index];
-                const rawOutcome = normalizeRtcBaselineJson(outcome);
-                const decoded = rawOutcome.ok ? decodeRtcBaselineSample(rawOutcome.value) : rawOutcome;
-                const expectedEvidenceClass = expected.workloadId === 'RTC-B05'
-                    ? 'native-browser'
-                    : expected.workloadId === 'RTC-B06'
-                    ? 'local-full-stack'
-                    : 'synthetic-path';
-                if (
-                    !decoded.ok ||
-                    validateRtcBaselineSample(decoded.value).length > 0 ||
-                    !rtcBaselineSampleIdentityEquals(decoded.value.identity, expected) ||
-                    decoded.value.evidenceClass !== expectedEvidenceClass
-                ) {
-                    const invalidIssue = issue(
-                        `$.worker.outcomes[${index}]`,
-                        'invalid-worker-outcome',
-                        'Worker outcome does not match the expected inner identity.'
-                    );
-                    return persistFailure({
-                        baselineId: input.baselineId,
-                        manifest: manifestResult.value,
-                        owner: { kind: 'sample', identity: expected },
-                        issues: [invalidIssue],
-                        rawEvidence: rawOutcome.ok ? rawOutcome.value : null
-                    });
-                }
-                if (outcome.outcome !== 'passed') {
-                    const outcomeIssues = outcome.issues.length > 0
-                        ? outcome.issues
-                        : [
-                            issue(
-                                `$.worker.outcomes[${index}].outcome`,
-                                'worker-outcome-failed',
-                                'A failed worker outcome stops the capture workload.'
-                            )
-                        ];
-                    return persistFailure({
-                        baselineId: input.baselineId,
-                        manifest: manifestResult.value,
-                        owner: { kind: 'sample', identity: expected },
-                        issues: outcomeIssues,
-                        rawEvidence: outcome.rawEvidence
-                    });
-                }
-                const written = await dependencies.writeAcceptedArtifact(input.baselineId, decoded.value);
-                if (!written.ok) {
-                    return written;
+                const accepted = await this.acceptWorkerOutcome({
+                    baselineId: input.baselineId,
+                    manifest: manifestResult.value,
+                    expected: allIdentities[globalIndex]!,
+                    outcome: worker.value.outcomes[index]!,
+                    index
+                });
+                if (!accepted.ok) {
+                    return accepted;
                 }
                 acceptedSampleCount += 1;
                 globalIndex += 1;
@@ -284,11 +260,105 @@ export function createRtcBaselineEvidenceAcceptance(
         return { ok: true as const, value: { acceptedSampleCount } };
     }
 
-    async function prepareAttempt(
+    private async readWorkerAttempt(
+        input: RtcBaselineWorkerAdmissionInput,
+        outerAttempt: RtcBaselineOuterAttemptDto
+    ): Promise<RtcBaselineResult<{ outcomes: RtcBaselineSampleDto[]; }>> {
+        let worker: { outcomes: RtcBaselineSampleDto[]; };
+        try {
+            worker = await this.dependencies.runFreshWorker({ baselineId: input.baselineId, outerAttempt });
+        }
+        catch (error) {
+            const workerIssue = issue(
+                '$.worker',
+                'worker-threw',
+                error instanceof Error ? error.message : String(error)
+            );
+            return this.persistFailure({
+                baselineId: input.baselineId,
+                manifest: input.manifest,
+                owner: { kind: 'sample', identity: input.identity },
+                issues: [workerIssue],
+                rawEvidence: null
+            });
+        }
+        const actualCount = worker.outcomes.length;
+        if (actualCount !== outerAttempt.sampleIds.length) {
+            const expectedCount = outerAttempt.sampleIds.length;
+            const cardinalityIssue = issue(
+                '$.worker.outcomes',
+                'worker-outcome-cardinality',
+                `Worker returned ${actualCount} outcomes for ${expectedCount} expected inner samples.`
+            );
+            return this.persistFailure({
+                baselineId: input.baselineId,
+                manifest: input.manifest,
+                owner: { kind: 'sample', identity: input.identity },
+                issues: [cardinalityIssue],
+                rawEvidence: null
+            });
+        }
+        return { ok: true, value: worker };
+    }
+
+    private async acceptWorkerOutcome(input: RtcBaselineWorkerOutcomeInput): Promise<RtcBaselineResult<void>> {
+        const { expected, outcome, index } = input;
+        const rawOutcome = normalizeRtcBaselineJson(outcome);
+        const decoded = rawOutcome.ok ? decodeRtcBaselineSample(rawOutcome.value) : rawOutcome;
+        const expectedEvidenceClass = expected.workloadId === 'RTC-B05'
+            ? 'native-browser'
+            : expected.workloadId === 'RTC-B06'
+            ? 'local-full-stack'
+            : 'synthetic-path';
+        if (
+            !decoded.ok ||
+            validateRtcBaselineSample(decoded.value).length > 0 ||
+            !rtcBaselineSampleIdentityEquals(decoded.value.identity, expected) ||
+            decoded.value.evidenceClass !== expectedEvidenceClass
+        ) {
+            const invalidIssue = issue(
+                `$.worker.outcomes[${index}]`,
+                'invalid-worker-outcome',
+                'Worker outcome does not match the expected inner identity.'
+            );
+            return this.persistFailure({
+                baselineId: input.baselineId,
+                manifest: input.manifest,
+                owner: { kind: 'sample', identity: expected },
+                issues: [invalidIssue],
+                rawEvidence: rawOutcome.ok ? rawOutcome.value : null
+            });
+        }
+        if (outcome.outcome !== 'passed') {
+            const outcomeIssues = outcome.issues.length > 0
+                ? outcome.issues
+                : [
+                    issue(
+                        `$.worker.outcomes[${index}].outcome`,
+                        'worker-outcome-failed',
+                        'A failed worker outcome stops the capture workload.'
+                    )
+                ];
+            return this.persistFailure({
+                baselineId: input.baselineId,
+                manifest: input.manifest,
+                owner: { kind: 'sample', identity: expected },
+                issues: outcomeIssues,
+                rawEvidence: outcome.rawEvidence
+            });
+        }
+        const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, decoded.value);
+        if (!written.ok) {
+            return written;
+        }
+        return written;
+    }
+
+    private async readAttemptContext(
         input: RtcBaselineRecordAttemptInputDto,
         entry: 'browser' | 'external'
-    ) {
-        const manifestResult = await dependencies.readManifest(input.baselineId);
+    ): Promise<RtcBaselineResult<RtcBaselineAttemptAdmissionContext>> {
+        const manifestResult = await this.dependencies.readManifest(input.baselineId);
         if (!manifestResult.ok) {
             return manifestResult;
         }
@@ -310,9 +380,9 @@ export function createRtcBaselineEvidenceAcceptance(
                 ]
             };
         }
-        const reconciliation = await dependencies.reconcileAcceptedOperation(entry, input);
+        const reconciliation = await this.dependencies.reconcileAcceptedOperation(entry, input);
         if (reconciliation.length > 0) {
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 manifest: manifestResult.value,
                 owner,
@@ -320,12 +390,19 @@ export function createRtcBaselineEvidenceAcceptance(
                 rawEvidence: null
             });
         }
-        const staged = await readStagedEvidence(input, owner, manifestResult.value);
+        return { ok: true, value: { manifest: manifestResult.value, owner } };
+    }
+
+    private async readAcceptedAttempt(
+        input: RtcBaselineRecordAttemptInputDto,
+        context: RtcBaselineAttemptAdmissionContext
+    ) {
+        const staged = await this.readStagedEvidence(input, context.owner, context.manifest);
         if (!staged.ok) {
             return staged;
         }
-        const expectedOuter = manifestResult.value.outerAttempts.find(
-            (attempt) => attempt.sampleIds[0] === owner.identity.sampleId
+        const expectedOuter = context.manifest.outerAttempts.find(
+            (attempt) => attempt.sampleIds[0] === context.owner.identity.sampleId
         )!;
         const accepted = decodeRtcBaselineAcceptedAttempt(staged.value, {
             baselineId: input.baselineId,
@@ -335,10 +412,10 @@ export function createRtcBaselineEvidenceAcceptance(
         });
         if (!accepted.ok) {
             const failedProducer = input.producerExitStatus !== 0;
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
-                manifest: manifestResult.value,
-                owner,
+                manifest: context.manifest,
+                owner: context.owner,
                 issues: failedProducer
                     ? [producerExitIssue(input.producerExitStatus)]
                     : accepted.issues,
@@ -347,13 +424,44 @@ export function createRtcBaselineEvidenceAcceptance(
                     : staged.value
             });
         }
-        const failedIndex = accepted.value.samples.findIndex(
+        return accepted;
+    }
+
+    private async prepareAttempt(input: RtcBaselineRecordAttemptInputDto, entry: 'browser' | 'external') {
+        const context = await this.readAttemptContext(input, entry);
+        if (!context.ok) {
+            return context;
+        }
+        const accepted = await this.readAcceptedAttempt(input, context.value);
+        if (!accepted.ok) {
+            return accepted;
+        }
+        const failed = await this.retainAttemptFailure(input, context.value, accepted.value);
+        if (failed !== null) {
+            return failed;
+        }
+        const captureFailure = await this.admitCaptureReceipts(input, context.value, accepted.value.samples);
+        if (captureFailure !== null) {
+            return captureFailure;
+        }
+        const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, accepted.value);
+        return written.ok
+            ? { ok: true as const, value: { acceptedSampleCount: accepted.value.sampleOutcomes.length } }
+            : written;
+    }
+
+    private async retainAttemptFailure(
+        input: RtcBaselineRecordAttemptInputDto,
+        context: RtcBaselineAttemptAdmissionContext,
+        attempt: RtcBaselineExternalAttemptDto
+    ) {
+        const failedIndex = attempt.samples.findIndex(
             (sample) => sample.outcome !== 'passed' || sample.issues.length > 0
         );
-        const failed = accepted.value.samples[failedIndex];
+        const failed = attempt.samples[failedIndex];
         if (failed) {
-            for (const sample of accepted.value.samples.slice(0, failedIndex)) {
-                const written = await dependencies.writeAcceptedArtifact(input.baselineId, sample);
+            for (const sample of attempt.samples.slice(0, failedIndex)) {
+                const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, sample);
                 if (!written.ok) {
                     return written;
                 }
@@ -368,9 +476,9 @@ export function createRtcBaselineEvidenceAcceptance(
                     producerExitIssue(input.producerExitStatus),
                     ...failed.issues.filter((candidate) => candidate.code !== 'producer-exit-status')
                 ];
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
-                manifest: manifestResult.value,
+                manifest: context.manifest,
                 owner: { kind: 'sample', identity: failed.identity },
                 issues: failedIssues,
                 rawEvidence: failed.rawEvidence
@@ -378,24 +486,48 @@ export function createRtcBaselineEvidenceAcceptance(
         }
         if (input.producerExitStatus !== 0) {
             const producerIssue = producerExitIssue(input.producerExitStatus);
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
-                manifest: manifestResult.value,
-                owner,
+                manifest: context.manifest,
+                owner: context.owner,
                 issues: [producerIssue],
-                rawEvidence: accepted.value.samples[0]?.rawEvidence ?? {
+                rawEvidence: attempt.samples[0]?.rawEvidence ?? {
                     producerExitStatus: input.producerExitStatus
                 }
             });
         }
-        const written = await dependencies.writeAcceptedArtifact(input.baselineId, accepted.value);
-        return written.ok
-            ? { ok: true as const, value: { acceptedSampleCount: accepted.value.sampleOutcomes.length } }
-            : written;
+        return null;
     }
 
-    async function recordExternalCohortAssertion(input: RtcBaselineRecordCohortInputDto) {
-        const manifestResult = await dependencies.readManifest(input.baselineId);
+    private async admitCaptureReceipts(
+        input: RtcBaselineRecordAttemptInputDto,
+        context: RtcBaselineAttemptAdmissionContext,
+        samples: readonly RtcBaselineSampleDto[]
+    ) {
+        if (input.locator.workloadId === 'RTC-B06') {
+            const configuration = await this.dependencies.readInitializedConfiguration(input.baselineId);
+            if (!configuration.ok) {
+                return configuration;
+            }
+            for (const sample of samples) {
+                const issues = validateRtcB06CaptureEvidence(sample, configuration.value);
+                if (issues.length > 0) {
+                    const original = normalizeRtcBaselineJson(sample);
+                    return this.persistFailure({
+                        baselineId: input.baselineId,
+                        manifest: context.manifest,
+                        owner: { kind: 'sample', identity: sample.identity },
+                        issues,
+                        rawEvidence: original.ok ? original.value : sample.rawEvidence
+                    });
+                }
+            }
+        }
+        return null;
+    }
+
+    async recordExternalCohortAssertion(input: RtcBaselineRecordCohortInputDto) {
+        const manifestResult = await this.dependencies.readManifest(input.baselineId);
         if (!manifestResult.ok) {
             return manifestResult;
         }
@@ -415,22 +547,22 @@ export function createRtcBaselineEvidenceAcceptance(
             };
         }
         const owner = { kind: 'cohort' as const, identity };
-        const reconciliation = await dependencies.reconcileAcceptedOperation('cohort', input);
+        const reconciliation = await this.dependencies.reconcileAcceptedOperation('cohort', input);
         if (reconciliation.length > 0) {
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 owner,
                 issues: reconciliation,
                 rawEvidence: null
             });
         }
-        const staged = await readStagedEvidence(input, owner);
+        const staged = await this.readStagedEvidence(input, owner);
         if (!staged.ok) {
             return staged;
         }
         const accepted = decodeRtcBaselineAcceptedCohort(staged.value, identity);
         if (!accepted.ok) {
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 owner,
                 issues: accepted.issues,
@@ -438,7 +570,7 @@ export function createRtcBaselineEvidenceAcceptance(
             });
         }
         if (accepted.value.outcome !== 'passed' || accepted.value.issues.length > 0) {
-            return persistFailure({
+            return this.persistFailure({
                 baselineId: input.baselineId,
                 owner,
                 issues: correctnessIssues(
@@ -449,15 +581,7 @@ export function createRtcBaselineEvidenceAcceptance(
                 rawEvidence: accepted.value.rawEvidence
             });
         }
-        const written = await dependencies.writeAcceptedArtifact(input.baselineId, accepted.value);
+        const written = await this.dependencies.writeAcceptedArtifact(input.baselineId, accepted.value);
         return written.ok ? { ok: true as const, value: { acceptedCohortCount: 1 } } : written;
     }
-
-    return {
-        initializeBaseline,
-        captureWorkload,
-        recordBrowser: (input) => prepareAttempt(input, 'browser'),
-        recordExternalAttempt: (input) => prepareAttempt(input, 'external'),
-        recordExternalCohortAssertion
-    };
 }

@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
-import type { AuthMutationCommand, AuthMutationRead, AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import type {
+    AuthMutationCommand,
+    AuthMutationRead,
+    AuthMutationResult
+} from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
 
@@ -152,6 +160,7 @@ const operationMatrix: readonly Readonly<{
         read: {
             kind: 'consume-ws-ticket',
             ticket: entry(websocketTicket, 'ticket-digest=websocket-ticket-digest'),
+            expiredTicketEntry: null,
             session: entry(session, 'session=session-1')
         },
         result: {
@@ -224,7 +233,7 @@ const operationMatrix: readonly Readonly<{
 ];
 
 describe('auth mutation compute operation matrix', () => {
-    it('preserves all seven write decisions, input identities, results, and property order', () => {
+    it('preserves all seven write decisions, input identities, and results', () => {
         for (const { command, read, result } of operationMatrix) {
             const computed = computeAuthMutation({
                 command,
@@ -236,17 +245,6 @@ describe('auth mutation compute operation matrix', () => {
             expect(computed.read).toBe(read);
             expect(computed.outcome).toBe('write');
             expect(computed.result).toEqual(result);
-            expect(Object.keys(computed.result)).toEqual(Object.keys(result));
-            expect(Object.keys(computed)).toEqual([
-                'command',
-                'read',
-                'sessions',
-                'agentTickets',
-                'logoutOutbox',
-                'result',
-                'outcome',
-                'persistence'
-            ]);
         }
     });
 

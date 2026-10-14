@@ -1,4 +1,4 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -8,9 +8,9 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -27,12 +27,22 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
+
 interface StreamingEndpoint {
     readonly streamer: WebRtcRxStreamerService;
     readonly peer: WebRtcConnectionService.Peer;
     readonly wire: LoopbackDataChannel;
     readonly measurements: RttMeasurementInfo[];
 }
+
+interface StreamingPeer {
+    readonly peer: WebRtcConnectionService.Peer;
+    readonly wire: LoopbackDataChannel;
+}
+
+const SIGNALER = { send: async () => undefined, connect: async () => undefined };
+const ICE_CANDIDATES = { iceServers: [], expiresAtEpochMs: 60_000 };
 
 describe('RTC single-reporter heartbeat lifecycle', () => {
     beforeEach(() => {
@@ -125,6 +135,31 @@ describe('RTC single-reporter heartbeat lifecycle', () => {
         expect(responder.measurements).toEqual([]);
     });
 
+    it('numbers every peer\'s measurements from one counter, so a removed peer leaves no version behind', async () => {
+        const reporter = createStreamingEndpoint('session-a', 'session-b');
+        const responder = createStreamingEndpoint('session-b', 'session-a');
+        openStreamingPair(reporter, responder);
+        await vi.advanceTimersByTimeAsync(5_020);
+        reporter.streamer.removePeer(reporter.peer);
+
+        const toThirdPeer = createStreamingPeer('session-a', 'session-c');
+        const third = createStreamingEndpoint('session-c', 'session-a');
+        toThirdPeer.wire.remote = third.wire;
+        third.wire.remote = toThirdPeer.wire;
+        third.streamer.setRttReportingPeerIds([]);
+        reporter.streamer.addPeer(toThirdPeer.peer);
+        toThirdPeer.peer.channel.connect(true);
+        reporter.streamer.setRttReportingPeerIds(['session-c']);
+        toThirdPeer.wire.open();
+        third.wire.open();
+        await vi.advanceTimersByTimeAsync(5_020);
+
+        expect(reporter.measurements.map((measurement) => [measurement.sessionIdTo, measurement.version])).toEqual([
+            ['session-b', 2],
+            ['session-c', 3]
+        ]);
+    });
+
     it('answers zero-origin pings but ignores malformed traffic and unsolicited passive pongs', async () => {
         const reporter = createStreamingEndpoint('session-a', 'session-b');
         const responder = createStreamingEndpoint('session-b', 'session-a');
@@ -171,14 +206,12 @@ describe('RTC single-reporter heartbeat lifecycle', () => {
     });
 });
 
-function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
-    const signaler = { send: async () => undefined, connect: async () => undefined };
-    const iceCandidates = { iceServers: [], expiresAtEpochMs: 60_000 };
-    const connection = new QRtcPeerConnection(signaler, {
+function createStreamingPeer(sessionId: string, peerSessionId: string): StreamingPeer {
+    const connection = new QRtcPeerConnection(SIGNALER, {
         sessionId,
         peerSessionId,
         token: 'test-token',
-        iceCandidates,
+        iceCandidates: ICE_CANDIDATES,
         isPolite: false
     }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId: peerSessionId, dataChannelName: 'rtc-test' });
@@ -191,15 +224,22 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         channels: new Map([['reliable', channel]]),
         media: new QRtcMediaChannel(connection, { peerId: peerSessionId })
     };
-    const connectionService = new WebRtcConnectionService(signaler, {
+    return { peer, wire };
+}
+
+function createStreamingEndpoint(sessionId: string, peerSessionId: string): StreamingEndpoint {
+    const { peer, wire } = createStreamingPeer(sessionId, peerSessionId);
+    const connectionService = new WebRtcConnectionService(SIGNALER, {
         sessionId,
         token: 'test-token',
-        iceCandidates,
+        iceCandidates: ICE_CANDIDATES,
         dataChannelName: 'rtc-test',
 
         rtcSignalingTopicId: 'rtc-signaling'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
     const multicast = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: connectionService,
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
@@ -212,13 +252,12 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    onTestFinished(() => multicast.dispose());
     const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });
-    onTestFinished(() => {
-        streamer.dispose();
-        multicast.dispose();
-    });
+    onTestFinished(() => streamer.dispose());
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {
         onHeartbeat: async (measurement) => {
@@ -226,7 +265,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         }
     });
     streamer.addPeer(peer);
-    channel.connect(true);
+    peer.channel.connect(true);
     return { streamer, peer, wire, measurements };
 }
 

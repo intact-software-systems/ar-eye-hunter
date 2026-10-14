@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type {
@@ -127,91 +131,72 @@ describe('auth mutation validation', () => {
 });
 
 function computedTamperCases() {
+    return [...sessionTamperCases(), ...agentTicketTamperCases(), ...logoutTamperCases()];
+}
+
+function sessionTamperCases() {
     const issueSession = registrationAndSessionCases()[1];
-    const issueSessionComputed = computeAuth(issueSession.command, issueSession.read);
-    const computedSession = issueSessionComputed.sessions[0]?.session;
-    if (!computedSession) {
+    const computed = computeAuth(issueSession.command, issueSession.read);
+    const session = computed.sessions[0]?.session;
+    if (!session) {
         throw new Error('Missing computed session tamper fixture');
     }
-    const issueAgentTickets = agentTicketCases()[0];
-    const issueAgentTicketsComputed = computeAuth(
-        issueAgentTickets.command,
-        issueAgentTickets.read
-    );
-    const computedAgentTicket = issueAgentTicketsComputed.agentTickets[0];
-    if (!computedAgentTicket) {
-        throw new Error('Missing computed agent ticket tamper fixture');
-    }
-    const logoutCommand = registrationAndSessionCases()[2].command as Extract<AuthMutationCommand, { kind: 'logout-session'; }>;
-    const logoutRead = {
-        kind: 'logout-session',
-        ...matchingSessionEntries(session)
-    } as const;
-    const logoutComputed = computeAuth(logoutCommand, logoutRead);
-    const logoutOutbox = logoutComputed.logoutOutbox;
-    const persistedLogoutOutbox = logoutComputed.persistence.logoutOutbox;
-    if (!logoutOutbox || !persistedLogoutOutbox) {
-        throw new Error('Missing logout outbox tamper fixture');
-    }
-    const alteredLogoutOutbox = {
-        ...logoutOutbox,
-        resource: '{"tampered":true}'
-    };
-
     return [
         {
             label: 'result',
-            command: issueSession.command,
-            read: issueSession.read,
-            computed: {
-                ...issueSessionComputed,
-                result: { ...issueSessionComputed.result, requestId: 'forged-request' }
-            }
+            ...issueSession,
+            computed: { ...computed, result: { ...computed.result, requestId: 'forged-request' } }
         },
-        {
-            label: 'outcome',
-            command: issueSession.command,
-            read: issueSession.read,
-            computed: withRecomputedPersistence(issueSessionComputed, { outcome: 'no-op' })
-        },
+        { label: 'outcome', ...issueSession, computed: withRecomputedPersistence(computed, { outcome: 'no-op' }) },
         {
             label: 'session',
-            command: issueSession.command,
-            read: issueSession.read,
-            computed: withRecomputedPersistence(issueSessionComputed, {
-                sessions: [{ session: { ...computedSession, username: 'mallory' } }]
-            })
-        },
-        {
-            label: 'agent ticket',
-            command: issueAgentTickets.command,
-            read: issueAgentTickets.read,
-            computed: withRecomputedPersistence(issueAgentTicketsComputed, {
-                agentTickets: [{ ...computedAgentTicket, agentId: 'forged-agent' }]
-            })
-        },
+            ...issueSession,
+            computed: withRecomputedPersistence(computed, { sessions: [{ session: { ...session, username: 'mallory' } }] })
+        }
+    ];
+}
+
+function agentTicketTamperCases() {
+    const issueAgentTickets = agentTicketCases()[0];
+    const computed = computeAuth(issueAgentTickets.command, issueAgentTickets.read);
+    const ticket = computed.agentTickets[0];
+    if (!ticket) {
+        throw new Error('Missing computed agent ticket tamper fixture');
+    }
+    return [{
+        label: 'agent ticket',
+        ...issueAgentTickets,
+        computed: withRecomputedPersistence(computed, { agentTickets: [{ ...ticket, agentId: 'forged-agent' }] })
+    }];
+}
+
+function logoutTamperCases() {
+    const command = registrationAndSessionCases()[2].command as Extract<AuthMutationCommand, { kind: 'logout-session'; }>;
+    const read = { kind: 'logout-session', ...matchingSessionEntries(session) } as const;
+    const computed = computeAuth(command, read);
+    const logoutOutbox = computed.logoutOutbox;
+    const persistedLogoutOutbox = computed.persistence.logoutOutbox;
+    if (!logoutOutbox || !persistedLogoutOutbox) {
+        throw new Error('Missing logout outbox tamper fixture');
+    }
+    return [
         {
             label: 'raw logout outbox',
-            command: logoutCommand,
-            read: logoutRead,
-            computed: withRecomputedPersistence(logoutComputed, {
-                logoutOutbox: alteredLogoutOutbox
-            })
+            command,
+            read,
+            computed: withRecomputedPersistence(computed, { logoutOutbox: { ...logoutOutbox, resource: '{"tampered":true}' } })
         },
         {
             label: 'persistence conflict',
-            command: logoutCommand,
-            read: logoutRead,
+            command,
+            read,
             computed: {
-                ...logoutComputed,
+                ...computed,
                 persistence: {
-                    ...logoutComputed.persistence,
+                    ...computed.persistence,
                     logoutOutbox: {
                         ...persistedLogoutOutbox,
-                        conflict: new ResourceInboxInvariantCorruptionError(
-                            persistedLogoutOutbox.entry.key,
-                            'Forged persistence conflict'
-                        )
+                        conflict: new ResourceInboxInvariantCorruptionError(persistedLogoutOutbox.entry.key, 'Forged persistence conflict')
                     }
                 }
             }
@@ -304,6 +289,7 @@ function webSocketTicketCases(): readonly AuthMutationCase[] {
             read: {
                 kind: 'consume-ws-ticket',
                 ticket: entry(websocketTicket, 'ticket=websocket-ticket-digest'),
+                expiredTicketEntry: null,
                 session: entry(session, 'session=session-1')
             }
         }

@@ -14,10 +14,10 @@ import {
 import {
     normalizeALQosPolicy,
     planALMessageHandling,
+    resolveALOutboundStoreDurability,
     resolveALQosNormalizationInput,
     shouldAwaitALRoute,
     shouldPersistInbox,
-    shouldPersistOutbox,
     type ALMessagePlanningContext,
     type ALQosInputProvider,
     type ALQosNormalizationInput
@@ -35,7 +35,7 @@ describe('AL QoS policy', () => {
         Object.freeze(msg.delivery);
         Object.freeze(msg.targets);
         Object.freeze(msg);
-        const orderingObservation = Object.freeze({ status: 'resync-required' as const, missingSeqs: Object.freeze([]), releasableSeqs: Object.freeze([]) });
+        const orderingObservation = Object.freeze({ status: 'resync-required' as const, missingRanges: Object.freeze([]), releasableSeqs: Object.freeze([]) });
         const context = Object.freeze({
             nowMs: msg.id.ts,
             selfPeerId: 'self',
@@ -51,7 +51,7 @@ describe('AL QoS policy', () => {
         expect(plan.forwarding.enabled).toBe(false);
         expect(plan.ack.enabled).toBe(false);
         expect(plan.repair.enabled).toBe(false);
-        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'resync-required', missingSeqs: [] });
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'sender', reason: 'resync-required', missingRanges: [] });
         expect(planALMessageHandling(msg, context)).toEqual(plan);
     });
 
@@ -88,7 +88,7 @@ describe('AL QoS policy', () => {
         const context: ALMessagePlanningContext = {
             nowMs: message.id.ts,
             selfPeerId: 'self',
-            orderingObservation: { status: 'resync-required', missingSeqs: [], releasableSeqs: [] }
+            orderingObservation: { status: 'resync-required', missingRanges: [], releasableSeqs: [] }
         };
         const originating = planALMessageHandling(message, context);
         expect(originating.dropReason).toBe('resync-required');
@@ -96,7 +96,7 @@ describe('AL QoS policy', () => {
         expect(originating.repair.enabled).toBe(false);
         const expired = planALMessageHandling(message, { ...context, fromPeerId: 'sender', nowMs: message.id.ts + 2 });
         expect(expired.nack.reason).toBe('expired');
-        expect(expired.nack.missingSeqs).toEqual([]);
+        expect(expired.nack.missingRanges).toEqual([]);
         expect(expired.ack.enabled).toBe(false);
     });
 
@@ -380,6 +380,40 @@ describe('AL QoS policy', () => {
         expect(plan.ack.enabled).toBe(false);
     });
 
+    it('drops an exclusive message on a resource another session holds and NACKs the sender held-by-other', () => {
+        const plan = planALMessageHandling(roomBroadcast('exclusive'), {
+            nowMs: 0,
+            selfPeerId: 'server',
+            fromPeerId: 'claimant-b',
+            claimHolderPeerId: 'claimant-a'
+        });
+
+        expect(plan.dropReasonCode).toBe('held-by-other');
+        expect(plan.dropReason).toBe('Exclusive resource is held by another session');
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding.enabled).toBe(false);
+        expect(plan.ack.enabled).toBe(false);
+        expect(plan.nack).toEqual({ enabled: true, toPeerId: 'claimant-b', reason: 'held-by-other', missingRanges: [] });
+    });
+
+    it.each(
+        [
+            { ownership: 'exclusive', claimHolderPeerId: 'claimant-b', name: 'the holder\'s own exclusive re-send' },
+            { ownership: 'shared', claimHolderPeerId: 'claimant-a', name: 'a shared send on a held resource' },
+            { ownership: 'exclusive', claimHolderPeerId: undefined, name: 'an exclusive send on a free resource' }
+        ] as const
+    )('admits $name', ({ ownership, claimHolderPeerId }) => {
+        const plan = planALMessageHandling(roomBroadcast(ownership), {
+            nowMs: 0,
+            selfPeerId: 'server',
+            fromPeerId: 'claimant-b',
+            claimHolderPeerId
+        });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.nack.enabled).toBe(false);
+    });
+
     it('keeps semantic dedup sender-scoped by default', () => {
         const first = newALUnicastMessage(
             'sender-semantic-1',
@@ -537,7 +571,7 @@ describe('AL QoS policy', () => {
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                orderingObservation: { status: 'gap', missingSeqs: [2], releasableSeqs: [] }
+                orderingObservation: { status: 'gap', missingRanges: [{ from: 2, to: 2 }], releasableSeqs: [] }
             }
         );
 
@@ -545,7 +579,7 @@ describe('AL QoS policy', () => {
         expect(plan.localDelivery.enabled).toBe(false);
         expect(plan.localDelivery.deferred).toBe(true);
         expect(plan.nack.enabled).toBe(true);
-        expect(plan.nack.missingSeqs).toEqual([2]);
+        expect(plan.nack.missingRanges).toEqual([{ from: 2, to: 2 }]);
         expect(plan.orderingRuntime.status).toBe('gap');
         expect(plan.forwarding.enabled).toBe(true);
     });
@@ -707,6 +741,17 @@ describe('AL QoS policy', () => {
     });
 });
 
+function roomBroadcast(ownership: 'shared' | 'exclusive'): ALMessage {
+    return newALBroadcastMessage(
+        'claimant-b',
+        { topicId: 'arena.intent', contextId: 'room', resourceId: 'pickup-1' },
+        'room',
+        'pickup-intent.v1',
+        {},
+        { groupRef: groupRef('room'), ownership, ttlMs: 30_000 }
+    );
+}
+
 function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
@@ -729,15 +774,16 @@ describe('durability decoupled from retry (S3a)', () => {
 
         expect(effective.durability.algo).toBe('volatile');
         expect(effective.retry.algo).toBe('exp-backoff');
-        expect(shouldPersistOutbox(effective)).toBe(false);
+        expect(resolveALOutboundStoreDurability(effective.durability.algo)).toBe('volatile');
         expect(shouldAwaitALRoute(effective)).toBe(true);
     });
 
     it.each([
-        { algo: 'volatile' as const, outbox: false, inbox: false },
-        { algo: 'local-outbox' as const, outbox: true, inbox: false },
-        { algo: 'local-inbox' as const, outbox: true, inbox: true }
-    ])('honours a requested $algo: outbox $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
+        { algo: 'volatile' as const, outbox: 'volatile', inbox: false },
+        { algo: 'local-checkpoint' as const, outbox: 'checkpoint', inbox: false },
+        { algo: 'local-outbox' as const, outbox: 'durable', inbox: false },
+        { algo: 'local-inbox' as const, outbox: 'durable', inbox: true }
+    ])('honours a requested $algo: outbox lane $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
         const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
             reliability: 'at-least-once',
             qos: { durability: { algo } }
@@ -746,13 +792,123 @@ describe('durability decoupled from retry (S3a)', () => {
         const { effective } = normalizeALQosPolicy(message);
 
         expect(effective.durability.algo).toBe(algo);
-        expect(shouldPersistOutbox(effective)).toBe(outbox);
+        expect(resolveALOutboundStoreDurability(effective.durability.algo)).toBe(outbox);
         expect(shouldPersistInbox(effective)).toBe(inbox);
+    });
+
+    it('lets a best-effort checkpointed message wait for a route and forwards it as kept beyond memory', () => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            qos: { durability: { algo: 'local-checkpoint' } }
+        });
+        const { effective } = normalizeALQosPolicy(message);
+
+        const plan = planALMessageHandling(message, {
+            nowMs: message.id.ts,
+            selfPeerId: 'self',
+            groupMemberPeerIds: ['self', 'peer'],
+            overlayNeighborPeerIds: ['peer'],
+            connectedPeerIds: ['peer']
+        });
+
+        expect(shouldAwaitALRoute(effective)).toBe(true);
+        expect(plan.forwarding.persist).toBe(true);
+        expect(plan.localDelivery.persist).toBe(false);
+    });
+
+    it.each([
+        { requested: 'local-outbox' as const, maxDurability: 'local-checkpoint' as const, effective: 'local-checkpoint' },
+        { requested: 'local-checkpoint' as const, maxDurability: 'volatile' as const, effective: 'volatile' },
+        { requested: 'local-checkpoint' as const, maxDurability: 'local-outbox' as const, effective: 'local-checkpoint' }
+    ])('ranks local-checkpoint between volatile and local-outbox: $requested under $maxDurability is $effective', (
+        { requested, maxDurability, effective }
+    ) => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            qos: { durability: { algo: requested } }
+        });
+
+        const normalized = normalizeALQosPolicy(message, { authorization: { maxDurability } });
+
+        expect(normalized.effective.durability.algo).toBe(effective);
     });
 
     it('lets a best-effort volatile message be refused for lacking a route', () => {
         const message = newALMulticastMessage('self', route, room, 'chat.typing.v1', {});
 
         expect(shouldAwaitALRoute(normalizeALQosPolicy(message).effective)).toBe(false);
+    });
+});
+
+describe('the congestion policy on a live cause', () => {
+    const route = { topicId: 'chat', resourceId: 'congested', contextId: 'room' };
+
+    function originate(options: Parameters<typeof newALUnicastMessage>[5] = {}): ALMessage {
+        return newALUnicastMessage('self', route, 'peer', 'chat.message.v1', {}, options);
+    }
+
+    function planOrigination(
+        message: ALMessage,
+        live: Pick<ALMessagePlanningContext, 'overloaded' | 'backpressured'>
+    ) {
+        return planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self', ...live });
+    }
+
+    it('drops a best-effort origination as congested when its carrier reads backpressure', () => {
+        const plan = planOrigination(originate(), { backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('congested');
+        expect(plan.dropReason).toBe('Carrier backpressure dropped the send');
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'drop-low', priority: 0, cause: 'backpressured' });
+        expect(plan.nack.enabled).toBe(false);
+    });
+
+    it('lets an at-least-once origination through backpressure under the default policy', () => {
+        const plan = planOrigination(originate({ reliability: 'at-least-once', ack: 'receiver' }), {
+            backpressured: true
+        });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'drop-low', priority: 5, cause: 'backpressured' });
+    });
+
+    it('refuses an origination of any priority as congested under the reject policy', () => {
+        const message = originate({ qos: { congestion: { algo: 'reject', opts: { priority: 9 } } } });
+
+        const plan = planOrigination(message, { backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('congested');
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'reject', priority: 9, cause: 'backpressured' });
+    });
+
+    it('drops nothing at planning under the defer policy, which leaves the wait to submission', () => {
+        const message = originate({ qos: { congestion: { algo: 'defer', opts: { priority: 0 } } } });
+
+        const plan = planOrigination(message, { backpressured: true });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toEqual({ overloaded: false, action: 'defer', priority: 0, cause: 'backpressured' });
+    });
+
+    it('names the overloaded cause when the session bound and the carrier backpressure both hold', () => {
+        const plan = planOrigination(originate(), { overloaded: true, backpressured: true });
+
+        expect(plan.dropReasonCode).toBe('overloaded');
+        expect(plan.congestion).toEqual({ overloaded: true, action: 'drop-low', priority: 0, cause: 'overloaded' });
+    });
+
+    it('reads backpressure from the live input when the planning context names none', () => {
+        const message = originate();
+
+        const plan = planALMessageHandling(message, { nowMs: message.id.ts, selfPeerId: 'self' }, {
+            live: { backpressured: true }
+        });
+
+        expect(plan.dropReasonCode).toBe('congested');
+    });
+
+    it('names no cause and takes no action when neither input holds', () => {
+        const plan = planOrigination(originate(), { overloaded: false, backpressured: false });
+
+        expect(plan.dropReasonCode).toBeUndefined();
+        expect(plan.congestion).toStrictEqual({ overloaded: false, action: 'none', priority: 0, cause: undefined });
     });
 });

@@ -37,8 +37,10 @@ The intended playable loop is:
   is labelled in the joined roster.
 - During planning, the AI Companion panel can produce a browser-local planning
   suggestion on explicit request. It can prime the normal draft controls, but it
-  does not submit plans or change authoritative state. Shared AI proposals from
-  other browsers appear as read-only party notes.
+  does not submit plans or change authoritative state. The suggestion is sent to
+  the hunter's own sessions in the room only; other hunters never receive it. The
+  panel shows the hunter's newest suggestion in one card: one asked on another of
+  the hunter's sessions replaces it there, read-only, without Prime.
 - `GameHudLayout` gives the SPA stable regions:
   - top: connection, room, round, score, progress, and language/status controls
   - side: auth, room actions, lobby controls, or round planning
@@ -73,6 +75,10 @@ The intended playable loop is:
   `Submit Plan`; themed copy should stay in supporting text.
 - After a plan is locked, the locked-plan card remains visible and the action
   picker can still be used for inspection, but submission stays disabled.
+- A command the rules refuse shows the rule's text in the error panel of the
+  session that sent it. The hunter's other sessions are other players and show
+  nothing of it; the locked-plan card stays the one display of the plan this
+  session submitted.
 - The AI Companion is disabled once the local hunter has locked a plan, is down,
   has escaped, or the snapshot is outside planning. Stale suggestions remain
   visible as stale until the player asks again on the current turn.

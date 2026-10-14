@@ -12,15 +12,100 @@ lock, `rallar:al-outbound-commit:<senderId>`, is a name on the shared Web Locks 
 acceptance, the ACK-timeout schedule, and the not-yet-in-sync retry schedule; it
 commits new bundles and never sends.
 [`ALOutboundRepairRetransmission`](./al-outbound-repair-retransmission.ts) owns the
-repair-by-hint path and commits through dispatch admission.
-[`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three
-message-shaped effects — `admit-message`, `dequeue-message`, and `send-prepared`.
-[`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the
-existing [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts) through
-[`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable
-reservation, release, expiry, retry, and exhausted-attempt recovery. A queued native
-send retains its claimed work until transport settlement; it does not block available
-peers or complete merely because the carrier accepted local queue ownership.
+repair-by-hint path and commits through dispatch admission. Without a repair planner it
+retries a room-scoped message along the sender's own hop only: every peer still owed, or the
+hop that asked for the hint, must be the sender's own hop, so a retry resends the same frame
+to the same hop and never widens a room audience. A peer is the sender's own hop from either of
+two sources: the captured plan's next hops (`ackTracking.nextHopPeerIds`), or the hops the
+composition declares every frame passes through (`ALOutboundMessageRuntime.Dependencies.hopPeerIds`).
+A WS client's unicast addressed to the server, and its `hop` or `subtree` room send, track the
+server as a next hop; a `receiver` or `leader` room send, or a `receiver` session unicast, has no
+client-tracked hop and stays the server's to retry. The WS client also names its server as its
+composition's hop, so an ordered at-least-once room send at the browser's defaults, whose effective
+`ack` is `none` and tracks no receipt, still has the server's gap NACK served along that hop; the
+RTC compositions and the WS server declare no fixed hop. Control acceptance applies the same
+exemption: without a repair planner, a room-scoped gap NACK or repair control is admitted only when
+its requester is the sender's own hop, so the server's gap NACK to its own WS client commits the
+repair hint that retransmits the missing ranges along that hop. The WS server repairs its own
+publications through its repair planner instead: a WS client's gap NACK on a track whose sequences
+the server minted pages the missing sequences from the server's ordering index and resends each to
+that requester alone, and only when the requester is in the audience the resent message was admitted
+to and still expected by the receipt of the message whose NACK revealed the gap, so a session that
+joined later is never served and a keyed server publication asks `ack: 'receiver'` (an `ack: 'none'`
+one gets no ranged repair) (D43, D153). The budget is per message: the first requester spends
+`maxRepairs` and another requester of the same sequence falls back to the receipt's retries. Only
+the `outbox` fan-out mints; a keyed publish without a sequence at `live-only` or `none` is refused.
+Relic Hunters' round transitions are that track's consumer: one track per round, the game's
+incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the game id) as ordering key and
+the round the transition enters as epoch, the finish entering the round past the last (D151).
+[`isALOutboundOwnHopPeer`](./is-al-outbound-own-hop-peer.ts) is the one predicate both owners share.
+A hint names what is missing as inclusive `ALSeqRange` `{ from, to }` ranges (`missingRanges`, at
+most `AL_MESSAGE_RESOURCE_LIMITS.repairRanges` = 128, the most a 256 window can hold), as the
+`al.control.nack.v2` and `al.control.repair.v2` payloads and the planner's NACK plan do;
+[`decodeALSeqRanges`](../../al-contracts/al-seq-range.ts) is the one bounded range decoder for the
+wire and the rows. A NACK and a repair request naming the same gap are one hint: the gap --
+requester, ordering track and ranges, the ranges joined as `from-to` with `,` -- names the hint's
+effect row ([`toALOutboundRepairHintEffectId`](./to-al-outbound-effect-id.ts)), never the control
+that reported it, so the second control is absorbed by the write-if-absent effect store rather than
+filed again. One execution of a hint retransmits at most
+`AL_MESSAGE_RESOURCE_LIMITS.repairPageMessages` (32) sequences, ascending across its ranges, and
+re-commits the remaining ranges as one follow-up hint whose identity is those ranges, so a wide gap
+costs a bounded page of indexed reads and dispatch commits per execution and no page is served
+twice. The repair budget (`maxRepairs`, 1 by default) is charged by dispatch admission under the
+sender's fence, once per attempt identity, so a hint re-executed after a conflict or an expired
+lease finds its sends committed and charges nothing more. When dispatch finds the budget spent it
+answers `skipped`/`repair-exhausted`, and the retransmitter settles the message once with that
+verdict through the lane's settlement sink and writes nothing else: the handle reads `failed` with
+`failure.kind: 'skipped'` and `failure.reason: 'repair-exhausted'`.
+[`ALOutboundMessageEffects`](./al-outbound-message-effects.ts) runs the three message-shaped effects
+— `admit-message`, `dequeue-message`, and `send-prepared`.
+[`ALWorkHandler`](../work/al-work-handler.ts) registers outbound work with the existing
+[`InboxOutboxEngine`](../../services/inbox-outbox-engine.ts) through
+[`ALWorkQueuePort`](../work/al-work-queue-port.ts). QueueBox owns durable reservation, release,
+expiry, retry, and exhausted-attempt recovery. A queued native send retains its claimed work until
+transport settlement; it does not block available peers or complete merely because the carrier
+accepted local queue ownership.
+
+## Private server receipt work evidence
+
+[`ALOutboundReceiptWorkEvidence`](./lane/al-outbound-receipt-observation.ts) owns the
+closed receipt/work snapshot for a decoded claim. WS-server construction installs
+its optional `Capture` capability: the concrete `createALOutboundReceiptWorkEvidence`
+function, the [batch observation resource](../work/al-work-batch-observations.ts) constructor
+and the server observer. Browser composition installs none of these and the lane
+imports only the evidence type, so receipt projection is outside browser bundles.
+The factory reads readonly decoded facts, without policy, clocks, storage or sink calls;
+the lane guards construction failure and still carries the batch deferral to transport.
+The evidence captures the immutable receipt, worker, effect kind, attempt count and existing audit/batch/lease stamps;
+message effects add the authority, actual admission return and known failure stage.
+`effectLocator` hashes the exact effect/attempt id; `workLocator` hashes the exact
+work key. They are compact diagnostic joins, not authority: raw identities may
+contain session, trace or prepared-message data and are never published.
+
+Capture-enabled [`ALWorkHandler`](../work/al-work-handler.ts) batches supply a
+private observation deferral capability from that resource. The handler calls the installed class's `tryCreate` and owns when to call `publish`;
+the resource guards its own construction and owns the callback array,
+ordered reentrant drain and per-sink guards. Their references to the canonical
+deferral/resource types are erased, so their two-way type dependency is not a runtime cycle.
+The lane carries the deferral on the existing send
+lifecycle to the WS recipient/cluster owner and registered publisher. Each producer
+freezes its own facts before deferring the sink call. The handler drains that bounded
+batch after release, timing, readiness/end and pending-commit scheduling, also on
+failure; no new clock or storage read is made. Disabled batches create no capture
+buffer. If an enabled batch resource fails to construct, the handler supplies the
+resource's inert `discard` deferral: work/native/cluster diagnostic records are lost, never published
+early or treated as negative delivery facts. Per-claim evidence construction
+failure with a healthy batch still permits native diagnostics after release.
+The installed canonical static methods are the verified capability; `tryCreate`
+constructs the selected subclass through `new this()`. Arbitrary static overrides
+are outside these guarantees.
+A `callbackOutcome` is the callback's actual return or `threw`, never a
+release-success receipt. A retained callback can settle and release later, outside
+that batch; this server receipt transport currently returns settled results only.
+
+The [WS server map](../../services/ws-queue-box-server/README.md#private-receipt-evidence)
+owns the native, publisher and wrapper distinctions. Missing or lost evidence proves
+no negative delivery fact, and producer clocks are not synchronized across processes.
 
 ## Construction and registration
 
@@ -43,8 +128,9 @@ engine remains available to its other tasks; a runtime-owned engine stops. An
 interrupted durable claim remains recoverable after its lease expires.
 
 **One durable owner per session.** The resources carry `durableWorkOwnership`
-([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)), and only the durable lane takes
-it; the memory lane always owns its pair. The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
+([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)). The durable lane's work follows
+it; the memory lanes always run their own pairs, and the checkpoint of the checkpoint lane follows it
+(see "The checkpoint lane"). The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
 server's, Node's and every runtime's whose durable store no other runtime drains, and keeps the
 handler's construction-time registration. While another runtime of the session owns the work, the
 durable lane's [`ALWorkHandler`](../work/al-work-handler.ts) joins no engine round, its `ready()`
@@ -88,17 +174,28 @@ admission, repair retransmission, work handler and engine task over its one pair
 shared engine. The WS server builds the runtime without a memory pair (`volatileStores: undefined`), so
 every server message keeps its one backend.
 
-- **Routing by durability.** An admission goes to the lane its plan's `persist` names, and every
-  browser planner states `persist` as `shouldPersistOutbox(effective)`: the message's effective
-  durability alone. `local-outbox` and `local-inbox` go to IndexedDB; `volatile`, the default for
-  every send that names none, goes to memory. Reliability no longer implies durability: a default
+- **Routing by durability.** An admission goes to the lane its plan's `lane` names, and every
+  browser planner states `lane` as `resolveALOutboundStoreDurability(effective.durability.algo)`: the
+  message's effective durability alone. `local-outbox` and `local-inbox` name `durable` and go to
+  IndexedDB; `volatile`, the default for every send that names none, goes to memory; `local-checkpoint`
+  names `checkpoint` and goes to the checkpoint lane; a runtime without one sends it to its volatile
+  lane, `durable: false`, and a runtime with neither memory pair (the one-lane Node compositions, whose
+  server planner never produces a checkpoint plan) to its only lane, the durable one. A
+  dropping plan names `volatile`. A captured policy row keeps only whether its copy outlives memory
+  (`persist`), so a re-plan under it keeps its own lane when the two agree and reads `durable` or
+  `volatile` when they do not. Reliability no longer implies durability: a default
   typed send is at-least-once, receipted and volatile (D2, D52), and a lane send that names no
   durability is volatile too (R-S3a-0). The plan is computed once and handed to that lane's admission. The admission verdict's
   `durable` says whether rows were persisted: the memory lane states every admission `durable: false`.
+- **A `local-checkpoint` send carries no client sequence.** A restored checkpoint could send a `seq`
+  again for different content, so both browser planners refuse a `local-checkpoint` send that carries
+  one as `unsupported` ([`computeALOutboundOrderingRefusal`](./admission/compute-al-outbound-ordering-refusal.ts)).
+  An ordering key alone carries no position (every room send carries its group key), and a superseded
+  unsent copy was never seen outside the runtime, so both pass.
 - **Grouped sends.** A group whose members differ in durability commits as one group per lane: there
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
-- **Controls, receipts and retransmission** go to the volatile lane when it owns the target message
-  (one memory read), else to the durable lane.
+- **Controls, receipts and retransmission** go to the memory lane, volatile or checkpoint, that owns
+  the target message (a memory read each), else to the durable lane.
 - **One cancel.** `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
   takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab. A
@@ -126,15 +223,61 @@ every server message keeps its one backend.
   durabilities is split between the lanes; no caller declares one that way.
 - **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
-  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1's.
+  task turn until it ends (R-S3a-7). A burst loop should yield or batch: the outbound claim order is
+  the queue's own order, not a rotation across senders or tracks, so a backlog admitted ahead puts
+  a later sender's send behind it. V1b-ii measured this and kept the order, since concurrent
+  admissions interleave through the per-sender commit queue.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
-  `readiness-probe` carry a required `lane: 'durable' | 'volatile'` (R-S3a-15), so a reader of the
-  runner's storage speed can leave the memory lane out.
+  `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
+  `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lanes out.
+
+### The checkpoint lane
+
+A carrier runtime given `checkpointStores` holds a third pair: a memory pair built as the volatile one
+is, without the budget and with the memory retention rule, whose rows a checkpoint saves to IndexedDB
+([`createCheckpointALOutboundRuntimeStores`](../al-runtime-stores.ts), built once per connect under the
+connect's claim, which the pair's `checkpoint` port, an [`ALCheckpoint`](../checkpoint/al-checkpoint.ts),
+holds). A `checkpoint` plan
+(`local-checkpoint`) is admitted, dispatched, receipted and cleaned up from memory by the lane
+`${effectWorkerId}/checkpoint`, in every runtime of the session.
+
+- **Saved rows.** The checkpoint owns the pair's
+  [`ALCheckpointDirtySet`](../checkpoint/al-checkpoint-dirty-set.ts) and its
+  [`ALCheckpointWriter`](../checkpoint/al-checkpoint-writer.ts), which saves the dirty keys in one
+  readwrite over `entries` and `alm-work`
+  ([`IndexedDbAdmissionBackend.writeUnfencedMutations`](../indexed-db-admission-backend.ts), one
+  `al-admission` `write`): the row shapes the durable pair writes, under the pair's own namespace
+  (`browser:<checkpoint store id>`), which is also its canonical scope, so two memory pairs never save
+  one row. The oldest unsaved change arms one checkpoint an interval after it; nothing runs while the
+  pair is clean; one write is in flight; a completed write clears only the keys still at the revision it
+  captured.
+- **Owner only.** Only the runtime that owns the session's durable work (`durableWorkOwnership`) saves
+  and restores the checkpoint. Another runtime's checkpointed sends run from its memory and its
+  `admitted` verdicts read `durable: false`; what it changed is saved once ownership turns to it. A
+  checkpoint lane's settlement is relayed to the session's other tabs as a durable lane's is.
+- **Restore.** The lane's readiness restores before its first work batch: one `al-admission` `list`
+  ([`IndexedDbAdmissionBackend.readNamespaceRows`](../indexed-db-admission-backend.ts) over
+  [`readALWorkRowsInRanges`](../storage/read-al-work-rows-in-ranges.ts)) reads the pair's rows, and the
+  live ones load into the memory pair without marking, keeping every key the pair already holds. A
+  reserved row is claimed once its lease ends; a work row past its expiry is not loaded and is counted
+  as expired. The first batch after the restore reports `restored` (or `expired-at-recovery`) under the
+  checkpoint store's id. On takeover the restore runs when ownership turns true and wakes the lane. A
+  store that cannot be read is stated on the checkpoint store's health, and the lane runs from memory.
+- **Lag.** The checkpoint store's health reads `delayed` once a write failed (it is retried an interval
+  later and named on the state) or the oldest unsaved change is two intervals old, a throttled timer; a
+  timer a few milliseconds late states nothing. Past the recovery-lag bound it reads `failing` with cause
+  `checkpoint-lag`; a completed checkpoint ends either. The lane keeps admitting from memory: the browser
+  dispatch, which reads the store's health, refuses or downgrades a new checkpointed send while the store
+  reads `failing`, for the lag or any other cause, as the channel's `onStorageUnavailable` says.
+- **Flush.** `flushCheckpoint()` starts a checkpoint now, or right after the one in flight, and is never
+  awaited: a write the page does not finish leaves the saved rows as they were.
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 11 `al-work` IndexedDB operations; one
-volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
+one durable send spends 10 `al-admission` and 9 `al-work` IndexedDB operations; one
+volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations, and
+so do `local-checkpoint` sends on the checkpoint lane, whose checkpoint is counted on its own: one
+IndexedDB `write` per interval, whatever the sends changed, and none while the lane is clean. The
 idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
 empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,
@@ -215,9 +358,11 @@ deadline read storage. Its safety rests on its key and on the reference check, n
 resets: an entry is found only for a work row committed with the same effect id, and a held row that
 does not match that work row's reference fails closed as corruption and is never sent. Dispose
 clears it, and a commit that resolves after dispose records nothing. A storage reset clears it only
-when the lane hears of it: the IndexedDB pair's own open tells the lane through
-`ALStorageResetListeners`, while the browser session cleanup's and expiry eviction's reset events
-(and another tab's reset) do not reach it; the memory pair's lane has none.
+when the lane is notified through `ALStorageResetListeners`: the IndexedDB pair's own
+open forwards an observed external recreation. Database-wide cleanup reports such an
+observation on its database-named storage sink, which does not notify this pair. Cleanup
+itself removes selected rows and never resets the database; the memory pair's lane has
+no IndexedDB reset listener.
 After `attempt-started` the claim reads its guards, supersedence and then (unless superseded)
 receipt state, in one readonly session (`readSendGuards`), so a hand-off hit costs the claim one
 admission read session and a miss two: the canonical read stays its own session before the
@@ -262,17 +407,17 @@ transport action and does not confirm the logical audience; a server receipt doe
 
 ## Admission and invocation paths
 
-| Entry                        | Decision and durable result                                                                                                                                                                                                                                                                                                                                                      | After commit                                                                                                                                                                                                                                                                |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                                                                                                                                            | The runtime wakes the existing worker after commit, outside admission's sender/browser lock.                                                                                                                                                                                |
-| `enqueueAllIfAbsent`         | One sender's messages read, compute, and validate as `enqueueIfAbsent` does. A homogeneous group attempts one `commitBundles` write under one version fence; a mixed control/data group commits members separately (see Grouped control sends below).                                                                                                                            | The runtime wakes the existing worker for committed work; each message still reports its own `commit-phases` event.                                                                                                                                                         |
-| `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                                                                                                                                                        | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK.                                                                                                                             |
-| `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                                                        | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                       |
-| `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's pending admission authority with no prepared copies, then rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                                                                | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and runs the configured `afterDequeueAdmission` port. |
-| `send-prepared` work         | `ALOutboundMessageEffects` rechecks supersedence and receipt completion from one read session (`readSendGuards`), then the deadline and abort, before calling the transport.                                                                                                                                                                                                     | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                                                                             |
-| `ack-timeout` work           | Repair admission rereads the receipt snapshot. Before the deadline it recommits the next timeout; at it, it charges one attempt and commits the next timeout plus a `repair-hint`, clears a complete receipt (a receipt a control ended has its timeout row completed in that commit, so only a row a batch already leased gets here), and out of budget schedules nothing more. | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                                                                            |
-| `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached message (by ordering track when the hint names missing sequences), applies repair policy, and commits a fresh dispatch through dispatch admission.                                                                                                                                                                                   | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                                                                                  |
-| Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row with the canonical message it references, handed over by the lane's own commit or else read (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.                                     | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim.                                                           |
+| Entry                        | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | After commit                                                                                                                                                                                                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker after commit, outside admission's sender/browser lock.                                                                                                                                                                                |
+| `enqueueAllIfAbsent`         | One sender's messages read, compute, and validate as `enqueueIfAbsent` does. A homogeneous group attempts one `commitBundles` write under one version fence; a mixed control/data group commits members separately (see Grouped control sends below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The runtime wakes the existing worker for committed work; each message still reports its own `commit-phases` event.                                                                                                                                                         |
+| `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK.                                                                                                                             |
+| `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                       |
+| `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's pending admission authority with no prepared copies, then rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and runs the configured `afterDequeueAdmission` port. |
+| `send-prepared` work         | `ALOutboundMessageEffects` rechecks supersedence and receipt completion from one read session (`readSendGuards`), then the deadline and abort, before calling the transport.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                                                                             |
+| `ack-timeout` work           | Repair admission rereads the receipt snapshot. Before the deadline it recommits the next timeout; at it, it charges one attempt and commits the next timeout plus a `repair-hint`, clears a complete receipt (a receipt a control ended has its timeout row completed in that commit, so only a row a batch already leased gets here), and out of budget schedules nothing more.                                                                                                                                                                                                                                                                                                                                                                                                  | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                                                                            |
+| `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached messages (by ordering track and sequence when the hint names missing ranges: one page of `repairPageMessages` per execution, the remaining ranges re-committed as one follow-up hint), applies repair policy, and commits a fresh dispatch through dispatch admission, which charges the repair budget and answers `skipped`/`repair-exhausted` once it is spent; that answer is settled once per message. Without a repair planner, a room-scoped hint is served only as the sender's own-hop retry (every failed peer, or the hint's requester, is the sender's own hop: a tracked next hop or a composition-declared one); a `receiver` room send with no client-tracked hop schedules no `ack-timeout` and is never retried here. | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                                                                                  |
+| Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row with the canonical message it references, handed over by the lane's own commit or else read (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.                                                                                                                                                                                                                                                                                                                                                                                                                                      | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim.                                                           |
 
 The receipt an acknowledgement completes against is an obligation that expires exactly at the
 message's deadline, however early or late its retry schedule ends. The `ack-timeout` rows expire
@@ -306,15 +451,16 @@ A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
 store namespace never collide on a message id. Its `mode` is the send's resolved ack algorithm
 and types its peer lists: next hops under `hop` and `subtree`, logical recipients under
-`receiver`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
-`receiver`, its sender under `hop`, and under `subtree` its sender only on that hop's own
+`receiver` and `leader`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
+`receiver` and `leader`, its sender under `hop`, and under `subtree` its sender only on that hop's own
 completion ACK (a leaf's `delivered`, a relay's terminal `subtree-complete`), never on a
 `forwarded` ACK the hop relays for a recipient below it -- so a hop ACK never stands in for a
 logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
 no write and no version bump. The `acknowledgement`
-settlement carries the `mode`, so `complete` under `receiver` is logical completion. A
+settlement carries the `mode`, so `complete` under `receiver` is logical completion, and under
+`leader` it is the confirmation of the one director session the carrier froze at admission (D164). A
 `receiver` room send frozen to an empty audience (an origin alone in its room) is admitted and
 states a complete `acknowledgement` settlement at its commit, with no receipt row, as the WS
 server answers an empty audience.
@@ -378,6 +524,37 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   sessions that authority admits (active members with live leases) minus itself, at the admission's
   `snapshotVersion` (R-S2c-ii-2). Every later attempt and every stored row keeps that audience, whatever
   the room has become.
+- A principal or fixed-list send narrows that audience at the same freeze (D159, D160):
+  `computeFrozenAudience` takes a required `narrowing: ALAudienceNarrowing | undefined`, `undefined`
+  freezing the whole room, `{ kind: 'principal', principalId }` keeping the admitted sessions of that principal,
+  `{ kind: 'list', recipientPeerIds }` the admitted sessions the list names and `{ kind: 'leader', sessionId }`
+  the director session alone, in the origin freeze
+  (`toRtcOriginFrozenMessage`) and in the carrier-gap path alike, so a room-bounded audience is one
+  computation on RTC. A listed session the room does not admit is dropped silently, as a multicast's
+  audience narrows, and an empty result is an empty frozen audience, as for an origin alone in its
+  room. RTC carries no `world` or `all` audience, nor a principal broadcast that names no room: such a broadcast is refused at admission as
+  `refused/unsupported` (D157), and the browser sender routes a `world` send to WS first whenever
+  the strategy allows it.
+- A `group-leader` room send narrows that audience to the room's leader (D164, D165, D166). The narrowing
+  comes from the message, its `delivery.ack` on a room-bounded target, never from a side input, and its
+  `sessionId` is resolved at admission from the room snapshot the carrier holds by
+  `resolveRallarGroupLeaderSessionId` ([`group-director.ts`](../../api/group-director.ts)): the appointed
+  director session when `isRallarGroupDirectorSessionActive` holds, so `isALAudienceSession` stays a session
+  comparison. The RTC origin refuses the admission `refused/no-leader` when it resolves no director, when the
+  director is the origin itself, and when the director is outside the audience the send names after its
+  exclusions (a fixed list or a principal without it, or `exceptPeerIds` naming it); otherwise it freezes
+  `[director]`, and its receipt row, under mode `leader`, expects that session alone. A send held for a carrier
+  gap resolves its director when it freezes. The leader stays frozen through a succession: the receipt expects
+  the session it froze, and a resend re-admits against the current appointment.
+  `refused/no-leader` is no fallback trigger, since WS reads the same appointment.
+- An exclusive send is refused at the RTC origin as `refused/unsupported` (D174): no RTC peer can arbitrate an
+  exclusive claim on its resource key.
+  [`computeRtcExclusiveRefusal`](../../multicast/compute-rtc-exclusive-refusal.ts) reads the effective ownership the
+  policy normalizes (a `qos.ownership` request wins over the `ownership` option) right after the scope refusal,
+  before anything is persisted or sent, and names the refused message with the targets its sender gave, so a fallback
+  carrier takes over the sender's own audience. The browser sender routes
+  an exclusive send to WS first whenever the strategy allows it, as it routes a `world` send, so the refusal is the
+  verdict of an `rtc`-only send and the RTC carrier's own guard.
 - **The RTC room limit (R-S2c-ii-13).** The RTC frozen audience rides on the wire, where one
   collection holds at most `AL_MESSAGE_RESOURCE_LIMITS.collectionEntries` (256) ids, so an RTC room
   multicast reaches rooms of at most 257 sessions, the origin included. A larger audience is refused as
@@ -385,10 +562,16 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
   delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
   with the typed reason, never `failed`.
-- The WS server freezes a room message at its admission stamp from the sessions it authorizes. A
-  multicast an RTC origin froze that falls back to WS keeps its frozen set narrowed to the sessions the
-  server authorizes: a frozen audience narrows what the admitting authority allows and never widens it,
-  and an empty intersection means nobody, never "no filter".
+- The WS server freezes a room message at its admission stamp from the sessions it authorizes,
+  narrowed for a principal broadcast that names its room to that principal's sessions (the group
+  snapshot's `activeSessions[].principalId`), for a room broadcast that carries
+  `recipientPeerIds` to the listed sessions, and for a `group-leader` send to the director session the room
+  authorizer resolves from the snapshot it reads, the leader alone in the narrowed `sessions`; that narrowed set
+  is the room audience its receipt
+  aggregate expects and its repair serves, and the send is fenced on the room's roster as any room
+  send (D143, D159). A multicast an RTC origin froze that falls back to WS keeps its frozen set
+  narrowed to the sessions the server authorizes: a frozen audience narrows what the admitting
+  authority allows and never widens it, and an empty intersection means nobody, never "no filter".
 - The outbound authority checks (`validateALOutboundPlannedMessage`, canonical reuse) accept exactly one
   difference between an original and its planned or stored copy: unfrozen to frozen. A copy that drops
   or changes a frozen audience still differs.
@@ -401,25 +584,31 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
 
 ### Server receipts on WS
 
-A `receiver` room send over WS expects nobody when it is admitted
+A `receiver` or `leader` room send over WS expects nobody when it is admitted
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)):
-the WS server freezes the audience and answers for it. Each recipient's ACK stays addressed to the
-origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
-relay hop and counts it in
+the WS server freezes the audience and answers for it. A `leader` send is the same aggregate with
+one expected recipient, the director session, so the `admitted` receipt names the director and the
+director's ACK completes it. Each recipient's ACK stays addressed to the origin (`toPeerId` is the
+message's `senderId`); the server admits it at ingress as the aggregating relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map on the instance whose socket admitted the
-message. The server answers the origin with
-`al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
-socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
-frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
-message deadline naming whom it counted. Every receipt row expires at the message deadline plus
-`AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row whose origin has no
-session on the instance that dequeues it is not settled by its first cluster publication: its send
+held in memory on the instance whose socket admitted the message: a `LatestRepository` of at most
+`WS_QUEUE_BOX_SERVER_MAX_RECEIPT_AGGREGATES` (4 096) aggregates (D191). Its TTL is the 30 min receipt window plus
+the receipt deadline grace, strictly above every aggregate's deadline, so the deadline sweep is the one path that ends
+an aggregate by time and the repository never drops one before its `timed-out` receipt is written. An admission that
+finds the cap reached ends the oldest admitted aggregate as its deadline would, with a `timed-out` receipt naming the
+recipients confirmed so far, so sessions that leave and rejoin cannot grow the set within the window. The server answers the origin
+with `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the
+origin's socket on this instance or, through the cluster publisher, on another: `admitted` at once
+with the frozen audience, then `complete` when every expected recipient has acknowledged, or
+`timed-out` at the message deadline naming whom it counted. Every receipt row expires at the message
+deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row
+whose origin has no session on the instance that dequeues it is not settled by its first cluster
+publication: its send
 ([`WsQueueBoxServerClusterPublication`](../../services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts))
-publishes it again, each wait as long as the receipt has waited and the last one a second before the row
-expires, until the origin has a session there or the row expires, so an origin that reconnects on any
-instance up to a second before the row expires receives it; one that reconnects in that last second
-does not.
+publishes it again, each wait as long as the receipt has waited and the last one a second before the
+row expires, until the origin has a session there or the row expires, so an origin that reconnects
+on any instance up to a second before the row expires receives it; one that reconnects in that last
+second does not.
 
 The server's other controls (its ACKs, NACKs and repair requests) come from its inbound work, which any
 instance may claim. The claiming instance sends one to a socket it holds; when it holds none for the
@@ -465,13 +654,30 @@ one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`ta
 room send over one member: the router delivers it to its addressee
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
 `admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
-refusal by the trusted server is answered with a NACK, which the origin states as a trusted-server `relay-rejected`
-`unauthorized`, so a receipted send reads `rejected` at once rather than at its deadline: a unicast to a session outside
+or `membership-fenced` refusal by the trusted server is answered with a NACK, which the origin states as a
+trusted-server `relay-rejected` with that reason, so a receipted send reads `rejected` at once rather than at its
+deadline ([`resolveALOutboundRelayRejection`](./control/resolve-al-outbound-relay-rejection.ts) decides which NACK
+refuses the whole send); `membership-fenced` is a room send whose sender the server, at or beyond the send's `rosterVersion`, no
+longer finds an active member. A peer's `membership-fenced` NACK before any receipt row is a peer
+`relay-rejected` naming it only when the peer is the unicast addressee or a composition hop; an RTC room send names
+no hop, so its sender hears a peer's fence only through a tracked receipt (`receipt-exhausted`, `hop-refused`), and
+a room send with `ack: 'none'` never hears it. The `unauthorized` refusals are a unicast to a session outside
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
-a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), and any room send the room
-authorizer refuses — a sender that is not an active member, a halted transport, a scope mismatch, data before
-activation. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+a room unicast whose `route.contextId` names another room than its `groupRef`, a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), a client's `all` broadcast (D158), and any room send the room
+authorizer ([`ws-topic-room-authorizer.ts`](../../../shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts))
+refuses — a halted transport, a scope mismatch, data before activation; a sender without a live session or
+an active member is `membership-fenced` instead. A `group-leader` room send is refused at ingress with a
+`no-leader` NACK when the snapshot the room authorizer reads appoints no director present in the room, when the
+sender is the director, or when the send's exclusions, fixed list or principal leave the director out; the
+origin states it as a trusted-server `relay-rejected` with that reason and the handle reads `rejected` (D165).
+An exclusive send whose resource key another session's live exclusive claim holds is dropped at the server's
+admission with a `held-by-other` NACK, which the origin states the same way, a trusted-server `relay-rejected` with
+that reason, so a receipted send reads `rejected` and a receipt-less one names it in `relayRejection` alone (D171,
+D175; the exclusive claim itself is [the inbound README's](../inbound/README.md)). Unlike the pre-admission refusals
+it refuses the whole send whatever the receipt, and it ends the receipt as `resync-required` does: a claim the server
+retained on a conflict has its `admitted` receipt before its replay drops it.
+A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
 
@@ -482,6 +688,25 @@ and a room unicast's or a direct room row's send checks the recipient's connecti
 stored recipient scope remains only on rows that name no group: a unicast whose producer proved a scope, a principal
 target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, and a
 unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
+
+A client's broadcast audience is bound to the scope its connection authenticated (D158). A `world`
+broadcast names no group, so its row keeps that scope as `recipientScope` and the send-time
+recipient selection delivers it only to connections in that scope; the cluster's live notice of a
+`world` send carries the scope, and every other instance filters it by that scope, while the `broad`
+notice of the server's `all` stays unscoped. A `principal` broadcast must name its room's
+`groupRef`, so its row is scoped by the group like a room send; one that names no room, and a `world`
+broadcast on a `room.` topic, are refused `malformed`. A client's `all` is refused
+`unauthorized` at ingress; the router's `toAll` and the server's own state-sync, CRDT and
+client-state rows keep their paths. Under a topic router the topic's fanout alone carries a client's
+`world` broadcast: the service's inbound forwarding relays it only in the standalone composition, a
+fanout-`none` topic such as the CRDT topics sends no raw copy, and `live-only` or `outbox` sends one
+copy to each session of the scope, the outbox row as a scoped recipient per connection. A `world` live
+send that names neither an inbound nor a recipient scope, and a `world` row that captured none, are
+refused as an unscoped unicast is. A principal broadcast that names its room is a room audience on the
+cluster's live notice too: it rides the `room` notice with its narrowed sessions, so a notice of 8 000
+bytes or more falls back to the canonical inbound key as a room send does; the `principal` notice
+stays for the server's own principal rows. One predicate,
+[`isALAudienceSession`](../../al-contracts/al-audience-narrowing.ts), narrows a room on both carriers.
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
@@ -512,6 +737,28 @@ server's outbound owner feeds one bounded in-memory recorder per process
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
 sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 
+**Server-minted sequences.** A message the WS server publishes itself that names `ordering.orderingKey` (and
+an `epoch`) without a `seq` asks the server's outbound for the sequence (D150). The server's planner marks the plan
+`mintsSequence` only at admission (`phase: 'immediate'`) and only when the message's `senderId` is the server's own
+peer id; a relayed browser send that carries a key and no `seq` (an RTC room multicast and its WS fallback carry the
+group key) passes through unsequenced, as it came, and so does a row a producer wrote straight to the outbox. An
+admission of a marked plan that finds no sent row for the `msgId` reads the track's ordering-head row
+(`toALOutboundOrderingHeadKey(namespace, trackKey)`, the track named by `toALSequenceMintTrackKey`: key, sender and
+epoch, as `toALOrderingTrackKey` names it once the `seq` exists) in the session that reads the sender version, and
+stamps `head + 1` on the message; the commit writes the head `{ seq }` beside the canonical row, the sent row and the
+ordering index, fenced by the sender version every commit of the sender bumps, so two instances or two runtimes over
+one store cannot mint one sequence twice and a restart continues where the store stands. The sequence belongs to the
+attempt that commits: a commit that loses the fence retains its pending admission with the message as its sender
+asked for it (no `seq`, and the captured policy keeps `mintsSequence`), and the work queue's replay of that admission
+mints again when it commits, replacing the retained request in the canonical row by the minted message (the only
+change a pending canonical row accepts). An admission of a `msgId` that already has its sent row mints nothing and
+answers with the stored message. The head row expires as the sent row does: a durable pair keeps it
+`max(deadline, sentMessageTtlMs, controlHistoryTtlMs)` past the mint, and a receiver's ordering-track TTL defaults to
+the repository TTL (60 minutes), so a receiver remembers a track as long as its sender keeps the head. Two limits
+remain: sequences follow commit order, so under contention two publications of one track can commit out of publish order
+(a first-in-first-out mint per track is a follow-up), and a track silent for over an hour restarts at 1 on both sides.
+The browser's outbound never mints: no browser planner marks a plan.
+
 Known limitations:
 
 - An origin whose socket was half-open when its receipt was written to it never gets that receipt; a
@@ -540,8 +787,8 @@ bound is refused. A receipt writes no work and no `ack-timeout` schedule; the se
 
 Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`.
 Under `hop` and `subtree` the row counts next hops, so its peers are both the hop lists and the
-expected, confirmed and unconfirmed recipient lists. Under `receiver` the row counts the frozen logical
-audience, the handle reads `acknowledged` only once every expected recipient is confirmed, and the hop
+expected, confirmed and unconfirmed recipient lists. Under `receiver` and `leader` the row counts the frozen
+logical audience, the handle reads `acknowledged` only once every expected recipient is confirmed, and the hop
 lists are the local hop view (`OverlayTree`): the next hops the captured ack plan names
 (`nextHopPeerIds`), of which those whose own completion ACK is in the ACK history are confirmed. A relay
 in front of a recipient is therefore a confirmed hop while the recipient is a confirmed recipient. A WS
@@ -576,31 +823,98 @@ refused at the sender.
 The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
 ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts)), not for an hour. One
 budget per session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data
-admissions the session originates and receives on its volatile pairs, by message and by envelope bytes. An outbound
-admission is released at its own deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
+admissions the session originates and receives on its volatile pairs, by message and by envelope bytes, the age of
+its oldest admission and the ordering tracks of its own ordered sends. An outbound admission is released at its own
+deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
 (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6), because the inbound deadline is the sender's clock
 and choice. Controls, receipts, acknowledgements, repairs, retransmissions and relay forwards are not counted, and
-neither is a message whose sender named no deadline (RTC signalling). Over `AL_VOLATILE_SESSION_MAX_ADMISSIONS`
-(1 000) or `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) an outbound data admission is refused `capacity`: the handle ends
-`rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`, and no fallback is tried, because the
+neither is a message whose sender named no deadline (RTC signalling). An outbound data admission is refused
+`capacity` when it would pass one of four limits (D179): `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000) admissions,
+`AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) of envelopes, a deadline further than `AL_VOLATILE_SESSION_MAX_AGE_MS`
+(5 minutes) from now, or a new ordering track while `AL_VOLATILE_SESSION_MAX_TRACKS` (64) are counted. The count and
+byte limits hold two pools (D189): `own`, the admissions `tryAdmit` counts, and `inbound`, the arrivals `record`
+counts. An own admission passes the count or byte limit only when it would take both the total past the limit and
+the own pool past its share, `floor(limit * AL_VOLATILE_SESSION_OWN_SHARE)` with the share 0.5 (500 admissions,
+2 MiB at the constants); arrivals are never refused, so the total may exceed the limit. The handle
+ends `rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity', limit }`, `limit` naming the limit
+the ledger's refusal names (`'admissions'`, `'bytes'`, `'age'` or `'tracks'`; only the own pool is ever refused, so
+the name says which pool too, and the refusal carries the own pool's figures beside the totals), and no fallback is
+tried, because the
 other carrier shares the budget. The RTC circuit breaker does not count a `capacity` refusal as a failure. A counted
 send whose commit then admits nothing stays counted until its deadline: the ledger has no release call.
 
+A track is the ordering track key of a send that states an ordering key and a sequence together
+([`toALOrderingTrackKey`](../../al-contracts/al-runtime.ts): the ordering key, the sender and the epoch); a send
+that does not state both names none. A track is counted while the ledger holds
+at least one counted admission on it, so it leaves the count when the last of them reaches its deadline. A received
+message never opens a counted track. The ledger answers its state in one read, `readReport(nowMs)`
+(`ALVolatileSessionReport`: the usage, the totals of both pools, with `oldestAgeMs`, 0 when nothing is counted, and
+`tracks`; `own` and `inbound`, each pool's `admissions` and `bytes`; the limits; and `overloaded`), which the browser
+exposes as `rallar.messages.readUsage()` and the black-box `stats` result as `rallar.alm` (D180, D189).
+
 An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
-(R-S3c-ii-3): a session whose volatile traffic in and out stays above about 33 messages a second (at the 30 s default
-deadline) has its own volatile sends refused. The bound is also shared with the platform's own state sync that the
+(R-S3c-ii-3), in the inbound pool. Under one shared pool arrivals alone refused own sends: refusal began where
+`30 * inbound rate + own deadline * own rate` reached the 1 000 count, so 33 arrivals a second refused two thirds of a
+once-a-second own stream and 34 refused all of it, and 8.5 KB envelopes reached the byte limit at 16 a second. With
+the share (D189) an own send is refused only once the own pool holds its 500, so a session keeps that many counted own
+sends, about 16 a second at the 30 s default deadline, whatever arrives; arrivals holding the total at 1 000 still let
+500 own sends through and refuse the 501st. The bound is also shared with the platform's own state sync that the
 WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
 R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
 production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
-While the budget is at or over a limit the session's QoS provider reports `overloaded` for the session's own outbound
-data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound
-plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under the
-default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
+While the smallest next own send would be refused at the count or byte limit (the total and the own pool both at their
+bounds, D189) the session's QoS provider reports `overloaded` for the session's own outbound data originations only,
+so arrivals alone no longer set it: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an
+inbound plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under
+the default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
 admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
-`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. The WS outbound path does not consult
-`overloaded`; its admission bound refuses the same sends. The RTC rate limiter spends its token before the plan, so a
-refused send still spends one: a burst of refused sends can push a later send inside the bound to `rate-limited`,
-which hands it to WS, where the shared budget admits it.
+`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. That drop names no `limit`, because
+`overloaded` names none; only the ledger's own refusal does. The WS client runs the same congestion planning on its own
+new data admissions but never reads `overloaded`: its session bound refuses a send `capacity`, naming the limit, after
+the plan; a send the plan already dropped `congested` never reaches the bound. The RTC rate limiter spends its token
+before the plan, so a refused send still spends one: a burst of refused sends can push a later send inside the bound to
+`rate-limited`, which hands it to WS, where the shared budget admits it.
+
+Channel backpressure is the policy's second live input (D184). A carrier reads it only when it first plans one of the
+session's own new data admissions: the RTC overlay for a room send when the reliable channel of every ready next hop
+holds at least its `flowControl.highWatermarkBytes` buffered (`computeRtcBackpressure`), the WS client when the socket's
+`bufferedAmount` is at least `AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES` (256 KiB). A control, a receipt, a relay forward,
+a retransmission, a replan, an inbound plan, an RTC unicast and an unaddressed RTC send never read it, and a scripted
+transport fault's `backpressure` action holds a carrier backpressured for the frames it matches. The congestion policy
+applies when the live state is `overloaded` or `backpressured`, and the drop names its cause (D185): `overloaded` first,
+its drop the `capacity` refusal above; a backpressure drop is the drop code and refusal reason `congested`, which
+`AL_DELIVERY_FALLBACK_REFUSAL_REASONS` lists, so an `rtc-with-ws-fallback` send refused `congested` on RTC is handed to
+WS at admission with a refused RTC attempt row and no `carrierFallback`, and a send with no fallback ends `rejected`
+with `{ kind: 'refused', reason: 'congested' }` and no attempt. `drop-low` drops a priority-0 (or lower) send only,
+`reject` every send, `defer` none; a kept send waits at submission, where backpressure is a `not-ready` on both
+carriers. Each decision is one `congestion` diagnostic, `{ carrier, cause, action, priority, msgId }` with `action`
+`drop` (the outbound admission), `defer` (the submission, for every message the page holds there, relay forwards and
+controls included) or `hand-over` (the browser's message dispatch, which hands a congested RTC leg to WS at admission
+and names the message's own normalized congestion priority, not the one the carrier's QoS provider planned with) (D186);
+the black-box harness counts them as `ALCongestionCounters`.
+
+The age limit bounds the admissions the ledger counts, not the ordering state the pairs keep (D181): the volatile
+pairs keep an ordering track for the repository's hour (`orderingTrackTtlMs`), because a receiver that forgot a track
+would read the next sequence as a gap, and every track quiet for 5 minutes would stall on its repair. What the session
+holds per message, track or peer is bounded instead of kept for the owner's lifetime. The send controls' cancelled and
+handed-over message ids are [`LatestRepository`](../../cache/LatestRepository.ts) entries with
+`DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes) as their TTL, the durable lane's row retention, so a cancelled durable
+message a worker picks up after 5 minutes still does not send. The browser's resync recovery keeps the tracks it has
+invoked a recovery owner for in a `LatestRepository` with `AL_VOLATILE_SESSION_MAX_AGE_MS` as its TTL, renewed by
+each of the track's resynchronizations, so a track that resyncs again after that long without one invokes the owner
+again; it remembers at most `AL_INBOUND_MAX_ORDERING_TRACKS` (256) tracks, the first remembered leaving first, even
+one that resynchronized again since (D191). `WebRtcRxStreamerService` numbers every peer's
+round-trip measurements from one counter and keeps no version per peer. None of them adds a timer or a sweep of its
+own: a repository forgets an expired entry it reads, and an accept may sweep the rest, at the repository's eviction
+rate.
+
+**Limit:** the memory pairs plateau rather than empty: an idle inbound ordering track keeps two rows for the hour after
+its last message, its ordering snapshot while it is one of the store's 256 (D191, inbound README) and its delivered
+marker, which the cap leaves, and each sending origin keeps one outbound version row (`versionTtlMs`, 1 h). The long-run test
+sends on the application's own sequences, as the browser does: only the browser builds the volatile outbound pair, and
+the browser never mints. A volatile pair that did mint would drop a track's ordering head with its last sent row, after
+the deadline plus the receipt grace, while a receiver keeps the track for the hour, so a track silent for longer than
+that would restart at sequence 1.
 
 ### Grouped control sends
 
@@ -699,9 +1013,16 @@ attempt expires at the earlier of the message deadline and its durable claim lea
 An attempt lease ending before the message deadline permits another attempt with
 the same identity; it does not expire the logical message. Settlement carries factual
 per-message evidence of whether native submission was attempted. Closed or unavailable
-channels, backpressure rejection, and untouched queued siblings cleared by a channel
+channels, backpressure, and untouched queued siblings cleared by a channel
 error return readiness. A native send that throws remains an attempted failure with
 an uncertain delivery outcome.
+
+Every `not-ready` either carrier returns names `retryAfterMs`
+`AL_SUBMISSION_NOT_READY_RETRY_MS` (50 ms). Backpressure is one of them: on RTC the
+channel's synchronous `dropped` result at or above its high watermark (a lane that
+queues on overflow keeps queueing), on WS a socket at or above
+`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES`, which holds every message, controls
+included. Each such deferral states a `congestion` `defer` diagnostic.
 
 Readiness uses the existing `RETRY` and future `nextTs`: release refunds only the
 current reservation's attempt, preserving earlier failed attempts. It records neither
@@ -736,8 +1057,8 @@ states none of its own. Either way, an attempt that already stated `attempt-star
 still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
 false`) -- stated directly when the abort lands before the carrier runs (inside the
 admission-store reads `writeAttemptedSend` makes first), or by the carrier's own
-settlement when it lands during or after the send. Cancellation is held only for the
-owner's lifetime, in memory, never persisted: a row still pending when the owner is
+settlement when it lands during or after the send. Cancellation is held in memory, never
+persisted, for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181): a row still pending when the owner is
 disposed may be drained by the next owner as an ordinary send. A durable cancel fact
 -- one that survives disposal or reload -- is a named sink seam left to S3 or I2
 (D13), not part of this settlement path. `handOver(msgId)` aborts the same signal and
@@ -762,10 +1083,11 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   (`attempts >= maxAttempts`), [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) deletes
   the pending-ACK and repair-attempt rows in one commit and, once it lands, states `receipt-exhausted`
   with the row's confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical recipients
-  under `receiver`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
+  under `receiver` and `leader`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
   stated once across replays and reloads and a late ACK completes nothing. With the defaults (a 2 000 ms
   ACK timeout, three receipt retries) the budget ends about 8 s after admission.
-- **A hop that refuses for good.** An admitted `expired`, `unauthorized` or `stale` NACK removes the row;
+- **A hop that refuses for good.** An admitted `expired`, `unauthorized`, `membership-fenced` or `stale` NACK
+  removes the row;
   the commit states the incomplete acknowledgement, then `receipt-exhausted`. `resync-required` keeps its
   `relay-rejected` (D50).
 - **Completion at a re-plan.** A retry whose plan replaces the expected set (the RTC missing-recipient
@@ -790,26 +1112,28 @@ batch also cleared the receipt row; that row now waits for its own expiry, which
 reader treats a complete receipt as ended.
 
 **The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
-owner: it remembers the id for the owner's lifetime, aborts the live attempt (which still settles its own
+owner: it remembers the id for `DEFAULT_AL_REPOSITORY_TTL_MS` (60 minutes, D181), aborts the live attempt (which still settles its own
 `attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in
 one commit, and states no settlement -- the message is not cancelled. A conflict on that delete leaves an
-inert row that nothing retries before it expires in this owner's lifetime. RTC reaches it through
+inert row that nothing retries before it expires. RTC reaches it through
 `WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. The hand-over is held
 in memory like a cancellation: a durable RTC message resumed after a reload is not handed over (D64).
 
 **The declared retryable outcomes (D65)** live in
 [`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
-admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and `refused/unsupported`
-hands the send to the fallback carrier at once; an RTC room fanout in a carrier gap reads `no-route` there
-(D96). After admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3)
-consecutive `not-ready` RTC attempts across the message's send-prepared rows (reset by a `sent` attempt
-or an acknowledgement), `not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted
-`rtc-with-ws-fallback` message to WS inside its unchanged deadline. The browser's
+admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and
+`refused/unsupported` hands the send to the fallback carrier at once, while `refused/no-leader`
+hands nothing over (D165), nor does a trusted-server `held-by-other` relay rejection (D175); an RTC
+room fanout in a carrier gap reads `no-route` there (D96). After
+admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3) consecutive `not-ready` RTC attempts across the
+message's send-prepared rows (reset by a `sent` attempt or an acknowledgement),
+`not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted `rtc-with-ws-fallback` message
+to WS inside its unchanged deadline. The browser's
 [`BrowserMessageFallbackController`](../../../shared-web/browser/messages/browser-message-fallback-controller.ts)
 takes that decision from the delivery registry's `record`; this owner only hands over.
-`resolveALDeliveryFallbackTrigger` is stateless per settlement: the controller hands over once per msgId
-and only inside the deadline, so a repeated `not-yet-in-sync-exhausted` after the first hand-over, or one
-past the deadline, hands nothing over again (C7).
+`resolveALDeliveryFallbackTrigger` is stateless per settlement: the controller hands over once per
+msgId and only inside the deadline, so a repeated `not-yet-in-sync-exhausted` after the first
+hand-over, or one past the deadline, hands nothing over again (C7).
 
 **The left carrier (C3).** Once a message has handed over, the reducer's `isLeftCarrierReceipt` guard
 keeps a settlement that still arrives from the carrier it left -- an acknowledgement, `receipt-exhausted`
@@ -828,8 +1152,9 @@ can use the same `IndexedDbConnection` as admission; opening that connection rem
 an explicit storage effect.
 
 Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
-the database existed, was created, was reset, or was created again after this document
-had opened it (another context's reset after a `versionchange`, an eviction without one).
+the database existed or was genuinely absent and created. A creation after this document
+had opened it is observed as another context's reset (`other-context`) after a
+`versionchange` closed it, or as an eviction without that observation.
 A creation, reset or eviction one store of a connect found is a fact of that connect
 ([`ALStorageConnectOpenings`](../storage/al-storage-connect-openings.ts), one per connect):
 each store of the connect reports it once, though another store's open found it, and a
@@ -874,17 +1199,28 @@ QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and 
 admission decision together. Browser composition supplies its existing engine to the
 outbound runtime. Due-work inspection uses the bounded QueueBox `readWorkPage` port;
 the existing browser cleanup owner removes expired and session-owned work from the
-shared store through those bounded key ranges. That owner and a storage reset are
-IndexedDB-only; the memory pair is swept by its own lane (Store lanes, above).
+shared store through those bounded key ranges. It requires a valid current-schema database
+and never resets or rewrites it. Independent reset observations concern IndexedDB; the
+memory pair is swept by its own lane (Store lanes, above).
 
-A browser database whose stores or recorded schema identity do not match is deleted
-and recreated once, and the reset is reported through the required `onStorageReset`
-port with the previous and current schema ids; the browser composition states it as
-the `reset` event of the store on its `storage` port. An undecodable schema row is treated
-as "no schema record yet" and resets the same way. A mismatch that survives that
-single reset is a storage invariant failure and throws; a delete that stays blocked by
-another open connection throws `ALStorageResetBlockedError`. Unrelated application
-storage is preserved, and only ALM-owned databases are reset.
+The canonical opener creates stores and their initial schema record only in a genuinely
+absent database. Existing stores, key paths, indexes and recorded schema identity must
+match without a rewrite. A store/schema mismatch or a missing/different identity throws
+`ALStorageSchemaMismatchError`; an unreadable or undecodable identity throws
+`ALStorageSchemaIdentityError` with its original Error cause. Metadata inspection is an
+explicit read before pure schema validation. Every acquired handle closes on inspection,
+identity, callback or opening-initialization failure. Refusal preserves the existing
+schema and every row, including live and unselected data; it performs no delete/recreate
+attempt or deletion timeout. The exported `ALStorageResetBlockedError` class is removed.
+
+The required `onStorageReset` callback now reports an external recreation this opener
+observes after this document recorded `versionchange`: reason `other-context`, current
+schema id and `previousSchemaId: undefined`. The browser composition forwards it as the
+store's `reset` event on the `storage` port; database-wide cleanup names the database.
+Recreation without a recorded `versionchange` remains an eviction observation. Current
+external descriptor-input contracts still accept independently supplied
+`schema-id-mismatch`/`store-schema-mismatch` notifications and `reset-blocked` failure
+descriptors; those observations do not authorize the opener to perform a destructive reset.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical

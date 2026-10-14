@@ -2,10 +2,13 @@ import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.t
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type {
     BrowserTransportInitOptions,
+    BrowserTransportRuntime,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { createBrowserConnectionReservation } from '@shared-web/browser/connection/create-browser-connection-reservation.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { checkRtcCaptureCompatibility } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
@@ -15,12 +18,16 @@ import {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import type { ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
+    readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly session: AuthSession;
     readonly scope: StateScope | undefined;
     readonly operationOptions: RallarOperationOptions;
@@ -31,8 +38,9 @@ export interface RallarSessionConnectionInput {
 }
 
 export interface RallarSessionConnectionLifecycle {
-    connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware>;
+    connect(input: RallarSessionConnectionInput): Promise<BrowserTransportRuntime.Connection>;
     disconnect(): Promise<void>;
+    readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined;
 }
 
 interface PendingSessionConnection {
@@ -45,6 +53,7 @@ export namespace BrowserSessionConnectionLifecycle {
         readonly qosProvider: ALQosInputProvider | undefined;
         readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
         readonly sessionDeliveries: BrowserSessionDeliveries;
+        readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
@@ -54,7 +63,8 @@ export namespace BrowserSessionConnectionLifecycle {
 
 export class BrowserSessionConnectionLifecycle implements RallarSessionConnectionLifecycle {
     private connectionGeneration = 0;
-    private connectionPromise: Promise<ApiMiddleware> | undefined;
+    private rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration | undefined;
+    private connectionPromise: Promise<BrowserTransportRuntime.Connection> | undefined;
     private disconnectPromise: Promise<void> | undefined;
     private lifecycleIsDisconnected = false;
     private readonly input: BrowserSessionConnectionLifecycle.Input;
@@ -75,6 +85,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         this.disconnectPromise = Promise.resolve().then(() => {
             this.connectionGeneration += 1;
             this.connectionPromise = undefined;
+            this.rtcCaptureConfiguration = undefined;
             this.cleanupConnection(middleware);
         }).finally(() => {
             this.disconnectPromise = undefined;
@@ -82,62 +93,95 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         return this.disconnectPromise;
     }
 
-    public async connect(input: RallarSessionConnectionInput): Promise<ApiMiddleware> {
-        const cachedMiddleware = this.input.connectionRuntime.readMiddleware();
-        if (cachedMiddleware) {
-            return cachedMiddleware;
+    public readRtcCaptureConfiguration(): RtcSignalingDiagnostics.CaptureConfiguration | undefined {
+        return this.input.transportRuntime.readRtcCaptureConfiguration() ??
+            (this.connectionPromise ? this.rtcCaptureConfiguration : undefined);
+    }
+
+    public async connect(input: RallarSessionConnectionInput): Promise<BrowserTransportRuntime.Connection> {
+        const compatibility = checkRtcCaptureCompatibility({
+            requested: input.rtcCaptureConfiguration,
+            current: this.readRtcCaptureConfiguration(),
+            currentReceipt: this.input.transportRuntime.readRtcCaptureReceipt()
+        });
+        if (compatibility.left) {
+            return Promise.reject(compatibility.left);
+        }
+        const cachedConnection = this.input.transportRuntime.readConnection();
+        if (cachedConnection) {
+            return cachedConnection;
         }
         if (this.connectionPromise) {
             return await waitForRallarOperation(this.connectionPromise, input.operationOptions);
         }
 
+        this.rtcCaptureConfiguration = Object.freeze({ ...input.rtcCaptureConfiguration });
+        const storage = input.diagnosticsPorts.storage;
         const middlewareOptions = {
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
-            deliverySettlements: this.input.sessionDeliveries.observers
+            deliverySettlements: this.input.sessionDeliveries.observers,
+            onResyncRequired: (resync: ALInboundResyncRequired) => this.input.onResyncRequired(resync, storage)
         };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;
-        this.input.connectionRuntime.setConnectState('connecting');
         const pendingConnection = this.startConnection(input, { middlewareOptions, generation });
-        this.connectionPromise = pendingConnection;
         return await waitForRallarOperation(pendingConnection, input.operationOptions);
     }
 
     private startConnection(
         input: RallarSessionConnectionInput,
         connection: PendingSessionConnection
-    ): Promise<ApiMiddleware> {
-        const pendingConnection = this.input.transportRuntime.init(connection.middlewareOptions)
-            .then((middleware) => this.acceptConnectedMiddleware(input, middleware, connection.generation))
-            .catch(async (error) => {
-                const connectionError = error instanceof Error
-                    ? error
-                    : new Error('Rallar connection failed.');
-                if (connection.generation !== this.connectionGeneration) {
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
+    ): Promise<BrowserTransportRuntime.Connection> {
+        const reservation = createBrowserConnectionReservation();
+        this.connectionPromise = reservation.promise;
+        try {
+            this.input.connectionRuntime.setConnectState('connecting');
+            reservation.settle(
+                this.input.transportRuntime.init(connection.middlewareOptions)
+                    .then((connected) => this.acceptConnection(input, connected, connection.generation))
+                    .catch(async (error) => {
+                        const connectionError = error instanceof Error
+                            ? error
+                            : new Error('Rallar connection failed.');
+                        if (connection.generation !== this.connectionGeneration) {
+                            throw new Error('Rallar connection was cancelled because auth ended.');
+                        }
+                        this.rtcCaptureConfiguration = undefined;
+                        this.input.connectionRuntime.setConnectState('idle');
+                        await input.onAuthInvalid(connectionError);
+                        if (input.hasAuthEndInProgress()) {
+                            throw new Error('Rallar connection was cancelled because auth ended.');
+                        }
+                        throw connectionError;
+                    })
+                    .finally(() => {
+                        if (this.connectionPromise === reservation.promise) {
+                            this.connectionPromise = undefined;
+                        }
+                    })
+            );
+            return reservation.promise;
+        }
+        catch (error) {
+            if (this.connectionPromise === reservation.promise) {
+                this.connectionPromise = undefined;
+                this.rtcCaptureConfiguration = undefined;
                 this.input.connectionRuntime.setConnectState('idle');
-                await input.onAuthInvalid(connectionError);
-                if (input.hasAuthEndInProgress()) {
-                    throw new Error('Rallar connection was cancelled because auth ended.');
-                }
-                throw connectionError;
-            })
-            .finally(() => {
-                if (this.connectionPromise === pendingConnection) {
-                    this.connectionPromise = undefined;
-                }
-            });
-        return pendingConnection;
+            }
+            void reservation.promise.catch(() => undefined);
+            reservation.settle(Promise.reject(error));
+            throw error;
+        }
     }
 
-    private acceptConnectedMiddleware(
+    private acceptConnection(
         input: RallarSessionConnectionInput,
-        middleware: ApiMiddleware,
+        connected: BrowserTransportRuntime.Connection,
         generation: number
-    ): ApiMiddleware {
+    ): BrowserTransportRuntime.Connection {
+        const { middleware } = connected;
         if (
             generation !== this.connectionGeneration ||
             input.hasAuthEndInProgress() ||
@@ -152,7 +196,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         try {
             this.input.lifecycle.attach(middleware);
             this.input.lifecycle.connected();
-            return middleware;
+            return connected;
         }
         catch (error) {
             this.connectionPromise = undefined;
@@ -167,6 +211,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     }
 
     private cleanupConnection(middleware: ApiMiddleware | undefined): void {
+        this.rtcCaptureConfiguration = undefined;
         let failure: Error | undefined;
         const attempt = (cleanup: () => void): void => {
             try {
@@ -199,9 +244,13 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
 
 function toMiddlewareOptions(
     input: RallarSessionConnectionInput
-): Omit<MiddlewareInitOptions, 'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits'> {
+): Omit<
+    MiddlewareInitOptions,
+    'deliverySettlements' | 'qosProvider' | 'readVolatileSessionLimits' | 'onResyncRequired'
+> {
     return {
         ...toRallarOperationOptions(input.operationOptions),
+        rtcCaptureConfiguration: input.rtcCaptureConfiguration,
         diagnosticsPorts: input.diagnosticsPorts,
         ...(input.scope ? { scope: input.scope } : {}),
         onAuthInvalid: async (error) => {

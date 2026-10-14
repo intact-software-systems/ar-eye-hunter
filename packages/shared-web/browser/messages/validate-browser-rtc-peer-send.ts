@@ -50,14 +50,11 @@ function validateRtcPeerCarriage<T>(
             message: 'A peer-addressed RTC send names its room: its scope is room.'
         });
     }
-    if (
-        send.membershipEpoch !== undefined || send.nextHopPeerIds !== undefined ||
-        send.overlayId !== undefined || send.fanoutLimit !== undefined
-    ) {
+    if (send.nextHopPeerIds !== undefined || send.overlayId !== undefined || send.fanoutLimit !== undefined) {
         issues.push({
             path: '$.peerId',
             code: 'unsupported',
-            message: 'A peer-addressed send carries no membership fence and no overlay routing.'
+            message: 'A peer-addressed send carries no overlay routing.'
         });
     }
     return issues;

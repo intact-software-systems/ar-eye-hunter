@@ -1,4 +1,5 @@
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
@@ -49,6 +50,21 @@ function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly Cont
             validateStringField(match, key, WAIT_MATCH_PATH)
         ),
         ...validateBooleanField(match, 'exists', WAIT_MATCH_PATH),
+        ...validateWaitPayloadFields(match.payloadFields),
         ...validateIntegerField({ record: match, key: 'sinceEpochMs', path: WAIT_MATCH_PATH, minimum: 0 })
     ];
+}
+
+function validateWaitPayloadFields(payloadFields: unknown): readonly ControlCommandIssue[] {
+    if (payloadFields === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(payloadFields)) {
+        return [toControlCommandIssue('wait.match.payloadFields must be an object.')];
+    }
+    return Object.entries(payloadFields).flatMap(([path, expected]) =>
+        decodeJsonValue(expected) === undefined
+            ? [toControlCommandIssue(`wait.match.payloadFields[${JSON.stringify(path)}] must have a JSON value.`)]
+            : []
+    );
 }

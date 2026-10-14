@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { RallarBlackBoxTestWaitResultValue } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestWaitCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 const NACK_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 
 function createRuntimeWithSentMessage() {
     let now = 1_000;
-    const runtime = createRallarBlackBoxTestRuntime({
+    const runtime = createDefaultRallarBlackBoxTestRuntime({
         now: () => now,
         sleep: async (ms) => {
             now += ms;
@@ -19,15 +19,15 @@ function createRuntimeWithSentMessage() {
     return runtime;
 }
 
-function toNackEvent(targetMsgId: string) {
+function toNackEvent(targetMsgId: string): RallarBlackBoxTestRuntimeEventInput {
     return {
         kind: 'diagnostic',
         topic: NACK_TOPIC,
-        payload: { data: { kind: 'control-admission', typeId: 'al.control.nack.v1', targetMsgId, outcome: 'rejected' } }
+        payload: { data: { kind: 'control-admission', typeId: 'al.control.nack.v2', targetMsgId, outcome: 'rejected' } }
     } as const;
 }
 
-function toNackWait(commandId: string, contains: string) {
+function toNackWait(commandId: string, contains: string): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
         commandId,
@@ -63,7 +63,7 @@ describe('rallar-bb-test wait result references', () => {
         expect(early.status).toBe('failed');
         expect(early.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
         expect(pinned.status).toBe('ok');
-        expect((pinned.value as RallarBlackBoxTestWaitResultValue).match.contains).toBe('"targetMsgId":"msg-2"');
+        expect(pinned.value).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
     });
 
     it('refuses a wait whose reference names no string or number result value', async () => {
@@ -85,12 +85,12 @@ describe('rallar-bb-test wait result references', () => {
         runtime.recordEvent(toNackEvent('msg-2'));
 
         const result = await runtime.execute(
-            toNackWait('nack-literal', '{"kind":"control-admission","typeId":"al.control.nack.v1","targetMsgId":"{resultCache.send-2.value.msgId}"')
+            toNackWait('nack-literal', '{"kind":"control-admission","typeId":"al.control.nack.v2","targetMsgId":"{resultCache.send-2.value.msgId}"')
         );
 
         expect(result.status).toBe('ok');
-        expect((result.value as RallarBlackBoxTestWaitResultValue).match.contains)
-            .toBe('{"kind":"control-admission","typeId":"al.control.nack.v1","targetMsgId":"msg-2"');
+        expect(result.value)
+            .toHaveProperty('match.contains', '{"kind":"control-admission","typeId":"al.control.nack.v2","targetMsgId":"msg-2"');
     });
 
     it('refuses a wait whose reference resolves to an object', async () => {
@@ -121,7 +121,7 @@ describe('rallar-bb-test wait result references', () => {
         });
 
         expect(violated.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
-        expect((violated.value as RallarBlackBoxTestWaitResultValue).match.contains).toBe('"targetMsgId":"msg-2"');
+        expect(violated.value).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
         expect(unresolved.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_INVALID');
     });
 });

@@ -1,6 +1,6 @@
 ---
 name: rallar-ai
-description: Use when changing RallarAI shared contracts, browser/server AI providers, deterministic AI helpers, AR Eye AI director, Relic expedition AI, prompt schemas, provider governance, or AI result lifecycle behavior.
+description: Changes RallarAI contracts, providers, schemas, and result lifecycle. Use when editing shared, browser, or server AI, the AR Eye director, or Relic expedition AI.
 ---
 
 # RallarAI

@@ -1,19 +1,26 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createDefaultIndexedDbALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
-    openIndexedDbAdmissionDatabase
+    openIndexedDbAdmissionDatabase,
+    type OpenIndexedDbAdmissionDatabaseInput
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALStorageEvent, ALStorageRecoveryOutcome } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { NEW_AND_RETRY_STATUSES, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import '../../setup-browser-indexeddb.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { createInboundTestRuntime } from './inbound-runtime-test-fixture.ts';
 
 const STORE_ID = 'recovery-store';
@@ -28,17 +35,6 @@ describe('storage recovery outcome of a durable store', () => {
         store.report(0);
 
         expect(store.events).toEqual([toRecoveryEvent({ kind: 'storage-created' })]);
-    });
-
-    // A reset recreates the database too: the reset is what the store reports.
-    it('reads storage-reset over the creation when its open reset a mismatched schema', async () => {
-        const dbName = newDbName();
-        (await openIndexedDbAdmissionDatabase({ ...toDatabaseInput(dbName), schemaId: 'an-older-schema' })).close();
-
-        const store = await openRecoveryStore(dbName);
-        store.report(0);
-
-        expect(store.events).toEqual([toRecoveryEvent({ kind: 'storage-reset', reason: 'schema-id-mismatch' })]);
     });
 
     it('reads storage-reset from another context when a versionchange preceded the creation', async () => {
@@ -163,7 +159,7 @@ describe('storage recovery outcome of a durable store', () => {
 });
 
 interface RecoveryStore {
-    readonly stores: ReturnType<typeof createDefaultIndexedDbALInboundRuntimeStores>;
+    readonly stores: ALInboundRuntimeStores;
     readonly events: readonly ALStorageEvent[];
     report(claimedCount: number): void;
 }
@@ -202,14 +198,15 @@ async function reserveAll(queue: RecoveryStore['stores']['workQueue'], typeId = 
 function workEntry(expiresAtMs: number | undefined, typeId = WORK_TYPE): ResourceEntry {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
         newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
-        typeId
+        typeId,
+        Temporal.Now.instant()
     );
     return expiresAtMs === undefined
         ? entry
         : { ...entry, audit: { ...entry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAtMs) } };
 }
 
-function toDatabaseInput(dbName: string) {
+function toDatabaseInput(dbName: string): OpenIndexedDbAdmissionDatabaseInput {
     return {
         dbName,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,

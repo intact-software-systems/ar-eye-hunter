@@ -9,7 +9,7 @@ import {
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -71,7 +71,7 @@ describe('RallarServerWsRouter', () => {
             delivered.push(message.raw.id.msgId);
         });
         fixture.router.install();
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'world'), 'world', 'app.deadline.v1', {});
 
         await fixture.socket.receive(message);
         const keys = await stores.workQueue.getAllKeys();
@@ -121,7 +121,7 @@ describe('RallarServerWsRouter', () => {
                 }
             });
         }
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'all'), 'all', 'app.retry.v1', {});
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'world'), 'world', 'app.retry.v1', {});
 
         await fixture.socket.receive(message);
 
@@ -498,38 +498,39 @@ describe('RallarServerWsRouter', () => {
         ).toThrow('Rallar user WS topic must start with app. or room.');
     });
 
-    it('passes room broadcast target groupRef into room authorization context', async () => {
-        const authorizeRoomMessage = vi.fn(() => true);
-        const { router } = createRouter({
-            authorizeRoomMessage
-        });
-        const group = createGroupSnapshot('room-1', ['peer-1'], 4).group;
-        const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('room.chat', 'room-1', 'msg-1'),
-            'room',
-            'chat.message.v1',
-            { text: 'after join' },
-            {
-                groupRef: group,
-                minSnapshotVersion: 4
-            }
-        );
+    it.each(['multicast', 'broadcast'] as const)(
+        'passes the %s target groupRef and both floors into room authorization context',
+        async (mode) => {
+            const authorizeRoomMessage = vi.fn(() => true);
+            const { router } = createRouter({
+                authorizeRoomMessage
+            });
+            const group = createGroupSnapshot('room-1', ['peer-1'], 4).group;
+            const route = newALRoute('room.chat', 'room-1', 'msg-1');
+            const floors = { minSnapshotVersion: 4, rosterVersion: 2 };
+            const message = mode === 'multicast'
+                ? newALMulticastMessage('peer-1', route, group, 'chat.message.v1', { text: 'after join' }, floors)
+                : newALBroadcastMessage('peer-1', route, 'room', 'chat.message.v1', { text: 'after join' }, {
+                    groupRef: group,
+                    ...floors
+                });
 
-        await router.route(message);
+            await router.route(message);
 
-        expect(authorizeRoomMessage).toHaveBeenCalledWith(
-            expect.objectContaining({
-                roomId: 'room-1',
-                roomRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-1'
-                },
-                minSnapshotVersion: 4
-            })
-        );
-    });
+            expect(authorizeRoomMessage).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    roomId: 'room-1',
+                    roomRef: {
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'room-1'
+                    },
+                    minSnapshotVersion: 4,
+                    rosterVersion: 2
+                })
+            );
+        }
+    );
 
     it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -774,7 +775,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2', 'peer-3']);
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
@@ -788,7 +790,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
         ]);
@@ -885,7 +888,8 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        // A client's room broadcast reaches its admitted audience but never its own origin session.
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'peer-1', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['peer-2'], ackedPeerIds: [] });
         expect(fixture.sockets['peer-4']!.sent.filter((sent) => sent.payload.typeId === 'chat.message.v1')).toEqual([]);
@@ -902,7 +906,7 @@ describe('RallarServerWsRouter', () => {
         const fixture = createLargeOutboxRoom(sessionIds);
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('large-room'),
-            id: { v: 2, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            id: { v: 3, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
             delivery,
             qos
         };
@@ -914,8 +918,9 @@ describe('RallarServerWsRouter', () => {
             groupRecipientPeerIds: sessionIds
         });
 
+        // Every admitted session but the sender's own origin session receives it.
         await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
-            sessionIds.length
+            sessionIds.length - 1
         );
         const delivered = Object.values(fixture.sockets).flatMap((socket) => socket.sent.filter((sent) => sent.id.msgId === 'large-room-1'));
         expect(delivered.every((sent) => sent.targets?.mode === 'broadcast' && sent.targets.recipientPeerIds === undefined)).toBe(true);

@@ -11,7 +11,11 @@ import {
 } from './al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
-import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
+import { DEFAULT_AL_REPOSITORY_TTL_MS, normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
+import type { ALCheckpointWriter } from './checkpoint/al-checkpoint-writer.ts';
+import { ALCheckpoint, type ALCheckpointStorage } from './checkpoint/al-checkpoint.ts';
+import type { ALInboundOrderingTracksReport } from './inbound/admission/evict-al-inbound-ordering-tracks-past-cap.ts';
+import { evictTerminalVolatileInboundMessages } from './inbound/admission/evict-terminal-volatile-inbound-messages.ts';
 import {
     createALInboundAdmissionStore,
     createVolatileALInboundAdmissionStore,
@@ -36,24 +40,28 @@ import {
     type CreateALOutboundAdmissionStoreInput
 } from './outbound/admission/al-outbound-admission-store.ts';
 import type {
+    ALCheckpointOutboundRuntimeStores,
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
 import type { ALStorageConnectOpenings } from './storage/al-storage-connect-openings.ts';
-import type { ALStorageHealth } from './storage/al-storage-health.ts';
+import { createPassThroughALStorageEventSink } from './storage/al-storage-event.ts';
+import { ALStorageHealth } from './storage/al-storage-health.ts';
 import {
     createALStorageRecoveryReporter,
     type ALStorageRecoveryLane,
     type ALStorageRecoveryReporter
 } from './storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from './work/al-durable-work-ownership.ts';
 
 /**
- * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`) or the session's memory
- * pair (`volatile`). A lane names it on every diagnostic it states, so a reader of storage timings can keep
- * the two apart; the WS server's single-lane runtime is always `durable`.
+ * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`), the session's memory
+ * pair (`volatile`), or a memory pair whose rows a checkpoint copies to IndexedDB (`checkpoint`). A lane
+ * names it on every diagnostic it states, so a reader of storage timings can keep them apart; the WS
+ * server's single-lane runtime is always `durable`.
  */
-export type ALStoreDurability = 'volatile' | 'durable';
+export type ALStoreDurability = 'volatile' | 'checkpoint' | 'durable';
 
 export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;
@@ -65,6 +73,10 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: ALRuntimeStoreRetentionConfig | undefined;
+    /** The most ordering snapshots an inbound pair keeps (D191); `undefined` keeps every track until its TTL. */
+    readonly maxOrderingTracks: number | undefined;
+    /** Where an inbound pair states its ordering snapshots (D191); absent where nothing reads the count. */
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
 export interface CreateInMemoryALOutboundRuntimeStoresInput<TPrepared> extends CreateInMemoryALRuntimeStoresInput {
@@ -106,6 +118,9 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
     readonly storageHealth?: ALStorageHealth;
     readonly connectOpenings?: ALStorageConnectOpenings;
+    /** Absent, an inbound pair keeps every track until its TTL; only the browser's pairs pass a cap (D191). */
+    readonly maxOrderingTracks?: number;
+    readonly reportOrderingTracks?: ALInboundOrderingTracksReport;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -222,7 +237,9 @@ function toIndexedDbALInboundRuntimeStores(
             backend,
             orderingTrackTtlMs: input.orderingTrackTtlMs,
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
+            retention: normalizeALRuntimeStoreRetention(input.retention),
+            maxOrderingTracks: input.maxOrderingTracks,
+            reportOrderingTracks: input.reportOrderingTracks
         }),
         workQueue: backend.workQueue
     };
@@ -278,10 +295,71 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
     const backend = createVolatileALAdmissionBackend(input.nowMs);
     return {
-        admissionStore: createVolatileALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
+        admissionStore: createVolatileALOutboundAdmissionStore(
+            toInMemoryALOutboundAdmissionStoreInput(input, backend),
+            'volatile'
+        ),
         workQueue: backend.workQueue,
         evictExpired: () => backend.evictExpired(),
         budget
+    };
+}
+
+export interface CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>
+    extends CreateDefaultALOutboundRuntimeStoresInput<TPrepared>, ALCheckpointWriter.Settings {
+    /** The connect's claim: only the runtime that owns the session's durable work saves and restores. */
+    readonly ownership: ALDurableWorkOwnership;
+    readonly timers: ALCheckpointWriter.Timers;
+}
+
+/**
+ * The memory pair a browser carrier routes checkpointed admissions to, and its checkpoint: the rows a
+ * durable pair writes, saved under this pair's own namespace, which is also its canonical scope (two
+ * memory pairs never save one row), in the session's database. Built once per connect, under its claim.
+ */
+export function createCheckpointALOutboundRuntimeStores<TPrepared>(
+    options: CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>
+): ALCheckpointOutboundRuntimeStores<TPrepared> {
+    const defaults = toDefaultInMemoryInput(options);
+    const input = { ...defaults, canonicalScope: defaults.namespace, decodePrepared: options.decodePrepared };
+    const memory = createVolatileALAdmissionBackend(input.nowMs);
+    const admissionStore = createVolatileALOutboundAdmissionStore(
+        toInMemoryALOutboundAdmissionStoreInput(input, memory),
+        'checkpoint'
+    );
+    const checkpoint = new ALCheckpoint({
+        storage: toALCheckpointStorage(options, memory, admissionStore.namespace),
+        ownership: options.ownership,
+        nowMs: input.nowMs
+    });
+    return {
+        admissionStore,
+        workQueue: memory.workQueue,
+        storageRecovery: checkpoint,
+        evictExpired: () => memory.evictExpired(),
+        checkpoint
+    };
+}
+
+function toALCheckpointStorage<TPrepared>(
+    options: CreateCheckpointALOutboundRuntimeStoresInput<TPrepared>,
+    memory: InMemoryAdmissionBackend,
+    workNamespace: string
+): ALCheckpointStorage {
+    const indexedDb = toDefaultIndexedDbInput(options);
+    const { namespace } = indexedDb;
+    return {
+        memory,
+        saved: createIndexedDbAdmissionBackend(indexedDb, `${namespace}:checkpoint`, indexedDb.onStorageReset),
+        selection: {
+            keyPrefix: `${namespace}:`,
+            workRanges: { namespacePrefixes: [workNamespace], canonicalScopes: [namespace] }
+        },
+        health: options.storageHealth ??
+            new ALStorageHealth({ storeId: namespace, storage: createPassThroughALStorageEventSink() }),
+        settings: { intervalMs: options.intervalMs, lagBoundMs: options.lagBoundMs },
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        timers: options.timers
     };
 }
 
@@ -292,10 +370,16 @@ export function createVolatileALInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const admissionStore = createVolatileALInboundAdmissionStore(
+        toInMemoryALInboundAdmissionStoreInput(input, backend)
+    );
     return {
-        admissionStore: createVolatileALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
+        admissionStore,
         workQueue: backend.workQueue,
-        evictExpired: () => backend.evictExpired(),
+        evictExpired: () => {
+            backend.evictExpired();
+            evictTerminalVolatileInboundMessages(backend, admissionStore.namespace);
+        },
         budget
     };
 }
@@ -334,7 +418,9 @@ function toInMemoryALInboundAdmissionStoreInput(
         backend,
         orderingTrackTtlMs: input.orderingTrackTtlMs,
         supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-        retention: normalizeALRuntimeStoreRetention(input.retention)
+        retention: normalizeALRuntimeStoreRetention(input.retention),
+        maxOrderingTracks: input.maxOrderingTracks,
+        reportOrderingTracks: input.reportOrderingTracks
     };
 }
 
@@ -353,10 +439,6 @@ export function createDefaultIndexedDbALOutboundRuntimeStores<TPrepared>(
     });
 }
 
-export function isIndexedDbALRuntimeStoreSupported(): boolean {
-    return IndexedDbStringPersistenceProvider.isSupported();
-}
-
 function toDefaultInMemoryInput(
     options: CreateDefaultALRuntimeStoresInput
 ): CreateInMemoryALRuntimeStoresInput {
@@ -366,9 +448,13 @@ function toDefaultInMemoryInput(
         canonicalScope: options.canonicalScope,
         inboundBackend: options.inboundBackend,
         outboundBackend: options.outboundBackend,
-        orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
+        // A receiver remembers a track at least as long as its sender keeps the head, or a silence past it reads as
+        // a gap the sender can no longer repair.
+        orderingTrackTtlMs: options.orderingTrackTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
-        retention: options.retention
+        retention: options.retention,
+        maxOrderingTracks: options.maxOrderingTracks,
+        reportOrderingTracks: options.reportOrderingTracks
     };
 }
 

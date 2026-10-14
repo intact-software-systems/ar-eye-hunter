@@ -10,6 +10,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type {
+    ALOutboundMessageRuntime,
     ALOutboundRuntimeDiagnosticsEvent,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
@@ -21,8 +22,8 @@ import {
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import {
@@ -49,7 +50,7 @@ it('commits initial control ownership without waiting for outbound serialization
     const message = createControlMessage('control-handoff');
     const browserLocks = stubImmediateBrowserLock();
     const observer = createCountingIndexedDbOperationObserver();
-    const stores = createControlStores({ label: 'control-handoff', observer });
+    const stores = createDefaultControlStores({ label: 'control-handoff', observer });
     await stores.admissionStore.ready();
     observer.reset();
     const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
@@ -59,7 +60,7 @@ it('commits initial control ownership without waiting for outbound serialization
         return await commitBundle(bundle);
     });
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const runtime = createControlRuntime(stores, (event) => diagnostics.push(event));
+    const runtime = createDefaultControlRuntime({ stores: stores, diagnostics: (event) => diagnostics.push(event) });
 
     const result = await runtime.enqueueIfAbsent(message);
 
@@ -85,18 +86,19 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     const message = createControlMessage('concurrent-handoff');
     const browserLocks = stubImmediateBrowserLock();
     const dbName = `outbound-control-concurrent-handoff-${crypto.randomUUID()}`;
-    const firstStores = createControlStores({ label: 'concurrent-handoff', dbName });
-    const secondStores = createControlStores({ label: 'concurrent-handoff', dbName });
+    const firstStores = createDefaultControlStores({ label: 'concurrent-handoff', dbName });
+    const secondStores = createDefaultControlStores({ label: 'concurrent-handoff', dbName });
     await Promise.all([firstStores.admissionStore.ready(), secondStores.admissionStore.ready()]);
     vi.spyOn(firstStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
     vi.spyOn(secondStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
     expect(firstStores.admissionStore).not.toBe(secondStores.admissionStore);
     expect(firstStores.workQueue).not.toBe(secondStores.workQueue);
     let transportCount = 0;
-    const first = createControlRuntime(firstStores, undefined, () => transportCount += 1);
-    const second = createControlRuntime(secondStores, undefined, () => transportCount += 1);
+    const first = createDefaultControlRuntime({ stores: firstStores, diagnostics: undefined, sendPreparedMessage: () => transportCount += 1 });
+    const second = createDefaultControlRuntime({ stores: secondStores, diagnostics: undefined, sendPreparedMessage: () => transportCount += 1 });
     // The commits' own batches claim nothing, so the counts below are the hand-off's alone.
-    const heldClaims = [holdOutboundClaims(firstStores), holdOutboundClaims(secondStores)];
+    const firstHeldClaims = holdOutboundClaims(firstStores);
+    const secondHeldClaims = holdOutboundClaims(secondStores);
 
     const results = await Promise.all([
         first.enqueueIfAbsent(message),
@@ -104,12 +106,12 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     ]);
 
     expect(results.map((result) => result.verdict.kind)).toEqual(['pending', 'pending']);
-    const retained = await readControlRows(firstStores);
+    const retained = await readAllRows(firstStores.workQueue);
     expect(retained.filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'))).toHaveLength(1);
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     expect(browserLocks.requestCount()).toBe(0);
-    await Promise.all(heldClaims.map((held) => held.release()));
+    await Promise.all([firstHeldClaims.release(first), secondHeldClaims.release(second)]);
 
     for (let pass = 0; pass < 3; pass += 1) {
         await runOutboundWorkTask(first);
@@ -132,7 +134,7 @@ it.each(
 )('does not duplicate a $state control handoff owner', async ({ state, expectedStatus }) => {
     const message = createControlMessage(`repeated-${state.toLowerCase()}`);
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores({ label: `repeated-${state.toLowerCase()}` });
+    const stores = createDefaultControlStores({ label: `repeated-${state.toLowerCase()}` });
     await stores.admissionStore.ready();
     vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
@@ -141,12 +143,12 @@ it.each(
         retentionCount += 1;
         return await retainPendingAdmission(input);
     });
-    const runtime = createControlRuntime(stores);
+    const runtime = createDefaultControlRuntime({ stores: stores });
     // The pending row's own batch must not race the claim this case makes in its place.
     const heldClaims = holdOutboundClaims(stores);
 
     expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
-    await heldClaims.release();
+    await heldClaims.release(runtime);
     if (state !== 'NEW') {
         const [claim] = await claimOutboundTestWork(stores, 1);
         expect(claim).toBeDefined();
@@ -161,7 +163,7 @@ it.each(
     expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe(expectedStatus);
     expect(retentionCount).toBe(1);
     expect(browserLocks.requestCount()).toBe(0);
-    const retained = await readControlRows(stores);
+    const retained = await readAllRows(stores.workQueue);
     expect(retained.filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'))).toHaveLength(1);
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -181,10 +183,10 @@ it.each([
     }
 ])('keeps $case on the serialized admission path', async ({ message }) => {
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores({ label: `serialized-${message.id.msgId}` });
+    const stores = createDefaultControlStores({ label: `serialized-${message.id.msgId}` });
     await stores.admissionStore.ready();
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
-    const runtime = createControlRuntime(stores, (event) => diagnostics.push(event));
+    const runtime = createDefaultControlRuntime({ stores: stores, diagnostics: (event) => diagnostics.push(event) });
 
     const result = await runtime.enqueueIfAbsent(message);
 
@@ -199,7 +201,7 @@ it.each([
 it('surfaces a real terminal retention race as a retryable control handoff conflict', async () => {
     const message = createControlMessage('retention-race');
     const browserLocks = stubImmediateBrowserLock();
-    const stores = createControlStores({ label: 'retention-race' });
+    const stores = createDefaultControlStores({ label: 'retention-race' });
     await stores.admissionStore.ready();
     vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
     const retainPendingAdmission = stores.admissionStore.retainPendingAdmission.bind(stores.admissionStore);
@@ -210,17 +212,17 @@ it('surfaces a real terminal retention race as a retryable control handoff confl
         await releaseOutboundTestWork(stores, claim.entry, { status: 'completed' });
         return await retainPendingAdmission(input);
     });
-    const runtime = createControlRuntime(stores);
+    const runtime = createDefaultControlRuntime({ stores: stores });
 
     await expect(runtime.enqueueIfAbsent(message)).rejects.toBeInstanceOf(RetryableConflictError);
 
     expect(browserLocks.requestCount()).toBe(0);
-    const [owner] = (await readControlRows(stores)).filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'));
+    const [owner] = (await readAllRows(stores.workQueue)).filter((entry) => entry.typeId.startsWith('AL_OUTBOUND:'));
     expect(owner?.status).toBe('COMPLETED');
 });
 
 it('settles every control handoff before rejecting a batch and wakes its late retained member', async () => {
-    const stores = createControlStores({ label: 'batch-settlement' });
+    const stores = createDefaultControlStores({ label: 'batch-settlement' });
     await stores.admissionStore.ready();
     vi.spyOn(stores.admissionStore, 'commitBundles').mockResolvedValueOnce('conflict');
     vi.spyOn(stores.admissionStore, 'commitBundle')
@@ -241,7 +243,7 @@ it('settles every control handoff before rejecting a batch and wakes its late re
     });
     let transports = 0;
     const engine = new InboxOutboxEngine();
-    const runtime = createControlRuntime(stores, undefined, () => transports += 1, engine);
+    const runtime = createDefaultControlRuntime({ stores: stores, diagnostics: undefined, sendPreparedMessage: () => transports += 1, queueEngine: engine });
     await runtime.ready();
     engine.start();
     onTestFinished(() => engine.stop());
@@ -265,7 +267,7 @@ it('settles every control handoff before rejecting a batch and wakes its late re
 function createControlMessage(msgId: string): ALMessage {
     return {
         ...newALAckControlMessage(
-            { v: 2, senderId: 'self', msgId, ts: TEST_NOW_MS },
+            { v: 3, senderId: 'self', msgId, ts: TEST_NOW_MS },
             {
                 ackedMsgId: 'inbound-message',
                 fromPeerId: 'self',
@@ -292,13 +294,13 @@ function createReliableControlMessage(msgId: string): ALMessage {
     };
 }
 
-interface CreateControlStoresInput {
+interface CreateDefaultControlStoresInput {
     readonly label: string;
     readonly dbName?: string;
     readonly observer?: IndexedDbOperationObserver;
 }
 
-function createControlStores(input: CreateControlStoresInput): ALOutboundRuntimeStores<OutboundTestPayload> {
+function createDefaultControlStores(input: CreateDefaultControlStoresInput): ALOutboundRuntimeStores<OutboundTestPayload> {
     return createDefaultIndexedDbALOutboundRuntimeStores({
         dbName: input.dbName ?? `outbound-control-${input.label}-${crypto.randomUUID()}`,
         namespace: input.label,
@@ -308,24 +310,29 @@ function createControlStores(input: CreateControlStoresInput): ALOutboundRuntime
     });
 }
 
-function createControlRuntime(
-    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
-    diagnostics?: ALOutboundRuntimeDiagnosticsSink,
-    sendPreparedMessage: () => void = () => {
+interface CreateDefaultControlRuntimeInput {
+    readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
+    readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    readonly sendPreparedMessage?: () => void;
+    readonly queueEngine?: InboxOutboxEngine;
+}
+
+function createDefaultControlRuntime(
+    input: CreateDefaultControlRuntimeInput
+): ALOutboundMessageRuntime<OutboundTestPayload> {
+    const sendPreparedMessage = input.sendPreparedMessage ?? (() => {
         throw new Error('Unexpected outbound transport');
-    },
-    queueEngine = new InboxOutboxEngine()
-) {
+    });
     return createOutboundTestRuntimeFor({
-        stores,
-        queueEngine,
+        stores: input.stores,
+        queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         decodePreparedMessage: decodeOutboundTestPayload,
         nowMs: () => TEST_NOW_MS,
-        diagnostics,
+        diagnostics: input.diagnostics,
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ transport: 'ws' }]
         }),
         sendPreparedMessage: async () => {
@@ -351,12 +358,6 @@ function stubImmediateBrowserLock(): BrowserLockTrace {
     };
     vi.stubGlobal('navigator', { locks: { request } });
     return { requestCount: () => requestCount };
-}
-
-async function readControlRows(
-    stores: ALOutboundRuntimeStores<OutboundTestPayload>
-): Promise<readonly ResourceEntry[]> {
-    return await readAllRows(stores.workQueue);
 }
 
 async function readAllRows(

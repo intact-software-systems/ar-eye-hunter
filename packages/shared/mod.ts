@@ -50,7 +50,7 @@ export * from './resilience/ComputeAsyncTask.ts';
 export * from './resilience/Either.ts';
 export * from './resilience/PartitionRange.ts';
 export * from './resilience/Resilience.ts';
-export * from './resilience/TryWith.ts';
+export * from './resilience/try-with-policy.ts';
 
 export * from './websocket/json-web-socket-client.ts';
 export * from './websocket/json-web-socket-server.ts';
@@ -77,8 +77,8 @@ export * from './alm/outbound/al-outbound-message-runtime.ts';
 export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
 export * from './alm/storage/al-browser-locks.ts';
 export * from './alm/work/al-durable-work-ownership.ts';
+export * from './services/inbox-outbox-engine.ts';
 export * from './services/inbox-queue-reader.ts';
-export * from './services/InboxOutboxEngine.ts';
 export * from './services/outbox-queue-reader.ts';
 export * from './services/queue-box-utilities.ts';
 export * from './services/queue-message-callbacks.ts';

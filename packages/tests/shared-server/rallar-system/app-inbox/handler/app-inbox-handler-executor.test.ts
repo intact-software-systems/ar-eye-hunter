@@ -1,29 +1,40 @@
-import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-
-import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+
+import {
+    AppInboxReservationConflictError,
+    AppInboxType,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
 import {
     createRegisteredHandlerHarness,
     createResilience,
     toRegisteredHandlerIdentityResource,
     waitForRegisteredHandlerEntry
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
+import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('redelivers a message with captured authority after a later conditional write conflicts', async () => {
         const timing: RallarTimingEvent[] = [];
-        const harness = createRegisteredHandlerHarness({ timing: (event) => timing.push(event) });
-        const reservations = new AppInboxReservationClient({ repository: harness.queue }, { serviceId: 'server-1' });
+        let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
+        const harness = createRegisteredHandlerHarness({ timing: (event) => timing.push(event), now: () => now });
+        const reservations = new AppInboxReservationClient({
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture,
+            repository: harness.queue
+        }, { serviceId: 'server-1' });
         const facts = { eventId: 'stable-event', observedAtEpochMs: 1234 };
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             if (context.entry.dequeueAudit.attempts === 1) {
@@ -39,6 +50,14 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
 
         const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        const retry = await harness.readEntry();
+        expect(retry).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
+        expect(retry?.dequeueAudit.startTs?.epochMilliseconds).toBe(now.epochMilliseconds);
+        const nextTs = retry?.dequeueAudit.nextTs;
+        if (nextTs === undefined) {
+            throw new Error('A retry must persist its next eligible time');
+        }
+        now = nextTs;
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({ right: facts });
@@ -50,7 +69,11 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
 
     it('preserves terminal rejection classification after authority is persisted', async () => {
         const harness = createRegisteredHandlerHarness();
-        const reservations = new AppInboxReservationClient({ repository: harness.queue }, { serviceId: 'server-1' });
+        const reservations = new AppInboxReservationClient({
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture,
+            repository: harness.queue
+        }, { serviceId: 'server-1' });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             const entry = await reservations.persistAuthority(context, { eventId: 'stable-event' });
             throw new ResourceInboxHandlerEntryError(entry, new TypeError('Malformed domain value'));
@@ -315,7 +338,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
                 topicId
             });
             let acceptedMutationExecutions = 0;
-            const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+            const handler = async (_data: JsonWireValue, context: AppInboxMessageContext<JsonWireValue>) =>
                 await harness.service.commit(context, { status: 'accepted' }, async () => {
                     acceptedMutationExecutions += 1;
                 });
@@ -367,7 +390,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
     it('keeps mismatched identity out of the transaction mutation callback', async () => {
         const harness = createRegisteredHandlerHarness();
         let mutationCommitted = false;
-        const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+        const handler = async (_data: JsonWireValue, context: AppInboxMessageContext<JsonWireValue>) =>
             await harness.service.commit(context, { status: 'accepted' }, async () => {
                 mutationCommitted = true;
             });

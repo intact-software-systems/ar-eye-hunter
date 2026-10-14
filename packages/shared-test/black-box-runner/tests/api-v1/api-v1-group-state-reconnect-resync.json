@@ -645,22 +645,16 @@
         "body": {
           "group": {
             "groupId": "{groupId}"
-          },
-          "onlineMemberCount": 2
+          }
         }
       }
     },
     {
       "name": "theAuthoritativeTopologyIncludesBothSessionsBeforeReconnect",
-      "type": "http",
-      "connection": "api",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
-        "headers": {
-          "Authorization": "{alphaAuthHeader}",
-          "x-client-id": "{alphaClientId}"
-        },
         "poll": {
           "maxAttempts": 20,
           "maxDurationMs": 15000,
@@ -668,19 +662,76 @@
           "backoffMultiplier": 1.3
         }
       },
-      "expect": {
-        "status": 200,
-        "comparison": "compatible-complete",
-        "body": {
-          "snapshot": {
-            "state": "active",
-            "activeSessionIds": [
-              "{alphaSessionId}",
-              "{betaSessionId}"
-            ]
-          }
+      "groups": [
+        {
+          "name": "theAuthoritativeTopologyIncludesBothSessionsBeforeReconnectObservation",
+          "steps": [
+            {
+              "name": "bothExactGenerationsAreVisibleBeforeReconnect",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{alphaAuthHeader}",
+                  "x-client-id": "{alphaClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}"
+                  },
+                  "onlineMemberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{alphaSessionId}",
+                      "principalId": "{alphaClientId}",
+                      "generationId": "generation-reconnect-alpha-second-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{betaSessionId}",
+                      "principalId": "{betaClientId}",
+                      "generationId": "generation-reconnect-beta-{runId}",
+                      "status": "active"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "readBothSessionsTopologyBeforeReconnect",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+                "headers": {
+                  "Authorization": "{alphaAuthHeader}",
+                  "x-client-id": "{alphaClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "snapshot": {
+                    "state": "active",
+                    "activeSessionIds": [
+                      "{alphaSessionId}",
+                      "{betaSessionId}"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
         }
-      }
+      ]
     },
     {
       "name": "createAlphaWsTicketSecond",

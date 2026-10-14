@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import {
     cleanupRallarPage,
     expectFullStackApiReady,
@@ -23,7 +24,10 @@ test.describe('exhaustive Rallar Server REST workbench', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-server-session`,
                 tab: 'rallar-server'
@@ -78,7 +82,10 @@ test.describe('exhaustive Rallar Server REST workbench', () => {
         const groupId = uniqueGroupId(testInfo);
 
         try {
-            await loginUser(page, config, config.userA, {
+            await loginUser({
+                page,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${groupId}-collection-session`,
                 tab: 'rallar-server'

@@ -1,5 +1,7 @@
-import type { ApiV1DatabaseLifecycle } from '../../src/db/api-v1-database-lifecycle.ts';
-import { createApiV1DatabaseLifecycle } from '../../src/db/api-v1-database-lifecycle.ts';
+import {
+    createDefaultApiV1DatabaseLifecycle,
+    type ApiV1DatabaseLifecycle
+} from '../../src/db/api-v1-database-lifecycle.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
 export interface ApiV1TestPGliteDatabaseLifecycle extends ApiV1DatabaseLifecycle {
@@ -7,7 +9,7 @@ export interface ApiV1TestPGliteDatabaseLifecycle extends ApiV1DatabaseLifecycle
 }
 
 export async function createApiV1TestPGliteDatabaseLifecycle(): Promise<ApiV1TestPGliteDatabaseLifecycle> {
-    const lifecycle = await createApiV1DatabaseLifecycle({
+    const lifecycle = await createDefaultApiV1DatabaseLifecycle({
         database: {
             mode: 'pglite-memory',
             dataDirectory: 'memory://',

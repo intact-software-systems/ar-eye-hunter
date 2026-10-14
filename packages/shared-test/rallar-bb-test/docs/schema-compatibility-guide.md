@@ -762,3 +762,144 @@ schema-and-capabilities.md describes the field in its lane-only section.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
 ```
+
+```text
+Title: rtc.connect may lower the age and track limits of the volatile bound
+Date: 2026-10-08
+Owner: ALM V1a
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- Other: none; rallar is a free record in the recipe schema and the control validator
+
+Old shape:
+rtc.connect.rallar.almVolatileLimits named maxAdmissions and maxBytes, each a positive integer, and nothing else.
+
+New shape:
+rtc.connect.rallar.almVolatileLimits names maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a
+positive integer, and nothing else. The page reads an age or track limit the field leaves out as its constant. Any
+other shape fails that rtc.connect with a typed command failure, not at recipe validation: "rallar.almVolatileLimits
+must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, each a positive integer."
+
+Migration:
+None: a two-field value reads as before, with the age and track limits at their constants.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the four limits in its lane-only section and the capacity-age and
+capacity-tracks cells beside capacity.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
+```
+
+```text
+Title: fault.inject may hold a transport carrier backpressured; stats and observations name congestion
+Date: 2026-10-08
+Owner: ALM V1b-i
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (fault.inject branch)
+- validateRallarBlackBoxTestCommand fault.inject action
+
+Old shape:
+A transport fault.inject named action "drop", "not-ready" (ws only) or { delayMs }. A stats result carried rallar.alm
+and no congestion block; a delivery observation named no refusal reason per attempt.
+
+New shape:
+A transport fault.inject may also name action "backpressure" on either carrier: the carrier reads its channel at its
+high watermark for each matching origination it plans and each matching frame it submits, and each such read
+consumes one of remaining. A browser
+agent's stats result carries rallar.congestion { dropped, deferred, handedOver } beside rallar.alm while the page is
+connected, and a delivery observation carries attemptRefusalReasons, the reason of every refused attempt row.
+
+Migration:
+None: existing recipes validate and read as before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the action, the stats block, the observation field and the congestion cells.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-conformance-congestion.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```
+
+```text
+Title: assert matches tests every member of a string array
+Date: 2026-10-08
+Owner: ALM V1b-i
+
+Change type:
+- Compatible widening of one operator's evaluation
+
+Affected schemas:
+- None: the assert operator enum is unchanged; assert/assert-value-operators.ts evaluates it
+
+Old shape:
+matches tested a string value; any other value, an array included, failed the assert.
+
+New shape:
+matches on an array passes when the array is non-empty and the pattern matches every member, each a string; a
+string reads as before, and anything else still fails.
+
+Migration:
+None: an assert that matched an array always failed before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md and ai-recipe-prompt-guide.md describe the array form.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts
+```
+
+```text
+Title: stats.rallar.alm names its two pools and the ordering snapshots; the observation folds them
+Date: 2026-10-08
+Owner: ALM V1b-ii
+
+Change type:
+- Compatible addition to a result value; a stricter decode of recorded stats and drains
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the stats result value, its decoder and the
+  observation snapshot decoder change
+
+Old shape:
+stats.rallar.alm was { usage, limits, overloaded }, overloaded true at or over the count or byte limit. The
+observation's ledger readings were { atEpochMs, agentId, usage, overloaded } and an inbound effect-drain named no
+promoted count.
+
+New shape:
+stats.rallar.alm is { usage, own, inbound, limits, overloaded, orderingTracks }: own and inbound are the ledger's two
+pools (D189), overloaded is true when the smallest next own send would be refused at the count or byte limit, and
+orderingTracks is the sum of the latest ordering-tracks count each inbound store stated since the page's last close
+(D191). A page answer missing any of them fails the stats command, naming each bad field. The observation's ledger
+readings carry own, inbound and orderingTracks, its ledger fold maxInboundAdmissions, maxInboundBytes and
+maxOrderingTracks, and each inbound direction promotedReleases, the sum of the drains' required promoted (D190).
+
+Migration:
+None for recipes. A recorded stats event or effect-drain from before this change no longer decodes and is skipped,
+so re-reading an older artifact reports no-readings for its ledger and leaves its drains out.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the stats block and the fairness cells; alm-observation-artifact.md the folds;
+runtime-diagnostic-contract.md the ordering-tracks storage event.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-conformance-fairness.test.ts packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/alm-observation-ledger.test.ts packages/tests/shared-test/alm-observation-regime.test.ts
+```

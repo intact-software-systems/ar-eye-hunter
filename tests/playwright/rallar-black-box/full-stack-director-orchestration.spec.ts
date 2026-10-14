@@ -7,12 +7,17 @@ import {
     type Page,
     type TestInfo
 } from '@playwright/test';
+
+import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
 import {
     cleanupRallarPage,
     enqueueControlCommand,
     exportControlRunArtifacts,
-    fetchControlRun,
     openBrowserControlAgent,
+    readControlRun,
     readFullStackConfig,
     uniqueAgentId,
     uniqueGroupId,
@@ -21,339 +26,75 @@ import {
 
 type AgentPrefix = 'A' | 'B' | 'C';
 
-type AgentHandle = Readonly<{
+interface AgentHandle {
     context: BrowserContext;
     page: Page;
     prefix: AgentPrefix;
     agentId: string;
     actor: string;
-    connection: string;
-}>;
+    readonly connection: string;
+}
 
-type ControlResult = Readonly<{
-    agentId?: string;
-    commandId?: string;
-    ok?: boolean;
-    result?: Readonly<{
-        value?: unknown;
-    }>;
-    error?: unknown;
-}>;
+interface WaitForCommandResultInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly commandId: string;
+    readonly timeout?: number;
+}
 
-type ControlEvent = Readonly<{
-    kind?: string;
-    agentId?: string;
-    commandId?: string;
-    payload?: unknown;
-}>;
+interface ExecuteCommandInput extends WaitForCommandResultInput {
+    readonly agentId: string;
+    readonly command: RallarBlackBoxTestCommand;
+}
+
+interface OpenAgentsInput {
+    readonly browser: Browser;
+    readonly runId: string;
+    readonly groupId: string;
+    readonly testInfo: TestInfo;
+}
+
+interface DirectorConnection {
+    readonly commandId: string;
+    readonly sessionId: string;
+}
+
+interface ConnectAgentInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly agent: AgentHandle;
+    readonly groupId: string;
+}
+
+interface WaitForPeerReadinessInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly agent: AgentHandle;
+    readonly expectedPeerIds: readonly string[];
+}
+
+interface GroupMembershipInput {
+    readonly owner: AgentHandle;
+    readonly members: readonly AgentHandle[];
+    readonly groupId: string;
+}
+
+interface DirectorEventExpectation {
+    readonly agentId: string;
+    readonly topic: string;
+    readonly contains: readonly string[];
+}
+
+interface DirectorRoomFields {
+    readonly roomId: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly roomRef: import('@shared/api/group-types.ts').GroupRef;
+}
 
 const config = readFullStackConfig();
 const directorEnabled = booleanEnv('RALLAR_BLACK_BOX_DIRECTOR');
 const hasDirectorConfig = config.enabled && directorEnabled;
-
-function booleanEnv(key: string): boolean {
-    const normalized = process.env[key]?.trim().toLowerCase();
-    return normalized === '1' ||
-        normalized === 'true' ||
-        normalized === 'yes' ||
-        normalized === 'on';
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
-}
-
-function stringValue(value: unknown): string | undefined {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function stringArrayValue(value: unknown): readonly string[] {
-    return Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === 'string')
-        : [];
-}
-
-function pathSegment(value: string): string {
-    return encodeURIComponent(value);
-}
-
-function resultValue(result: ControlResult): Record<string, unknown> {
-    return asRecord(result.result?.value);
-}
-
-function directorStatusValue(result: ControlResult): Record<string, unknown> {
-    return asRecord(resultValue(result).directorStatus);
-}
-
-function eventPayload(event: ControlEvent): Record<string, unknown> {
-    return asRecord(event.payload);
-}
-
-function runtimeEventPayload(event: ControlEvent): Record<string, unknown> {
-    const payload = eventPayload(event);
-    return typeof payload.kind === 'string'
-        ? payload
-        : asRecord(payload.payload ?? payload);
-}
-
-function runtimeEventText(event: ControlEvent): string {
-    return JSON.stringify(runtimeEventPayload(event));
-}
-
-async function waitForCommandResult(
-    request: APIRequestContext,
-    runId: string,
-    commandId: string,
-    timeout = 45_000
-): Promise<ControlResult> {
-    let latest: ControlResult | undefined;
-    await expect.poll(async () => {
-        const run = await fetchControlRun(request, runId) as {
-            results?: readonly ControlResult[];
-        };
-        latest = run.results?.find((result) => result.commandId === commandId);
-        return Boolean(latest);
-    }, {
-        timeout
-    }).toBe(true);
-
-    if (!latest) {
-        throw new Error(`Command ${commandId} did not return a result.`);
-    }
-    return latest;
-}
-
-async function executeResult(
-    request: APIRequestContext,
-    runId: string,
-    agentId: string,
-    commandId: string,
-    command: unknown,
-    timeout?: number
-): Promise<ControlResult> {
-    await enqueueControlCommand(request, runId, agentId, commandId, command);
-    return await waitForCommandResult(request, runId, commandId, timeout);
-}
-
-async function executeOk(
-    request: APIRequestContext,
-    runId: string,
-    agentId: string,
-    commandId: string,
-    command: unknown,
-    timeout?: number
-): Promise<ControlResult> {
-    const result = await executeResult(request, runId, agentId, commandId, command, timeout);
-    expect(result.ok, JSON.stringify(result.error ?? result)).toBe(true);
-    return result;
-}
-
-async function waitForDirectorEvent(
-    request: APIRequestContext,
-    runId: string,
-    input: Readonly<{
-        agentId: string;
-        topic: string;
-        contains: readonly string[];
-    }>
-): Promise<void> {
-    await expect.poll(async () => {
-        const run = await fetchControlRun(request, runId) as {
-            events?: readonly ControlEvent[];
-        };
-        return run.events?.some((event) => {
-            const payload = runtimeEventPayload(event);
-            const text = runtimeEventText(event);
-            return event.agentId === input.agentId &&
-                payload.topic === input.topic &&
-                input.contains.every((fragment) => text.includes(fragment));
-        }) ?? false;
-    }, {
-        timeout: 60_000
-    }).toBe(true);
-}
-
-async function openAgents(
-    browser: Browser,
-    runId: string,
-    groupId: string,
-    testInfo: TestInfo
-): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> {
-    const users = {
-        A: config.userA,
-        B: config.userB,
-        C: config.userC
-    } as const;
-    const handles: AgentHandle[] = [];
-    for (const prefix of ['A', 'B', 'C'] as const) {
-        const agentId = uniqueAgentId(testInfo, `director-${prefix.toLowerCase()}`);
-        const opened = await openBrowserControlAgent(browser, config, users[prefix], {
-            runId,
-            agentId,
-            groupId,
-            connection: `${agentId}-rtc`
-        });
-        handles.push({
-            context: opened.context,
-            page: opened.page,
-            prefix,
-            agentId,
-            actor: users[prefix].actor,
-            connection: `${agentId}-director`
-        });
-    }
-    return handles as [AgentHandle, AgentHandle, AgentHandle];
-}
-
-async function closeAgents(agents: readonly AgentHandle[]): Promise<void> {
-    await Promise.all(agents.map(async (agent) => {
-        await cleanupRallarPage(agent.page).catch(() => undefined);
-        await agent.context.close().catch(() => undefined);
-    }));
-}
-
-async function setupGroupMembership(
-    request: APIRequestContext,
-    runId: string,
-    input: Readonly<{
-        owner: AgentHandle;
-        members: readonly AgentHandle[];
-        groupId: string;
-    }>
-): Promise<void> {
-    const statePrefix = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-        pathSegment(config.workspaceId)
-    }`;
-    // Group-state mutations are idempotent per requestId (20 to 128 characters), so each run names its own.
-    const requestPrefix = `director-${crypto.randomUUID()}`;
-    await executeOk(request, runId, input.owner.agentId, 'director-group-create', {
-        kind: 'http.request',
-        request: {
-            path: `${statePrefix}/groups/requests/${requestPrefix}-group`,
-            method: 'POST',
-            body: {
-                groupId: input.groupId,
-                displayName: input.groupId,
-                kind: 'room',
-                joinMode: 'open'
-            }
-        },
-        response: {
-            body: 'json',
-            acceptedStatusCodes: [200, 201]
-        },
-        timeoutMs: 10_000
-    });
-
-    for (const member of input.members) {
-        const memberPath = `${statePrefix}/groups/${pathSegment(input.groupId)}/members/{auth.clientId}`;
-        await executeOk(request, runId, member.agentId, `director-group-join-${member.prefix.toLowerCase()}`, {
-            kind: 'http.request',
-            request: {
-                path: `${memberPath}/requests/${requestPrefix}-member-${member.prefix.toLowerCase()}`,
-                method: 'PUT',
-                body: {
-                    status: 'active'
-                }
-            },
-            response: {
-                body: 'json',
-                acceptedStatusCodes: [200, 201]
-            },
-            timeoutMs: 10_000
-        });
-    }
-}
-
-async function connectAgent(
-    request: APIRequestContext,
-    runId: string,
-    agent: AgentHandle,
-    groupId: string
-): Promise<Readonly<{ commandId: string; sessionId: string; }>> {
-    const commandId = `director-connect-${agent.prefix.toLowerCase()}`;
-    const result = await executeOk(request, runId, agent.agentId, commandId, {
-        kind: 'rtc.connect',
-        connection: agent.connection,
-        actor: agent.actor,
-        roomId: groupId,
-        applicationId: config.applicationId,
-        workspaceId: config.workspaceId,
-        roomRef: {
-            applicationId: config.applicationId,
-            workspaceId: config.workspaceId,
-            groupId
-        },
-        transport: 'realtime',
-        rallar: {
-            apiBaseUrl: config.apiBaseUrl,
-            restoreSession: true,
-            logoutOnClose: false,
-            leaveRoomOnClose: false,
-            applicationId: config.applicationId,
-            workspaceId: config.workspaceId,
-            transport: 'realtime'
-        },
-        timeoutMs: 45_000
-    }, 60_000);
-    const sessionId = stringValue(resultValue(result).sessionId);
-    if (!sessionId) {
-        throw new Error(`Connect result ${commandId} did not include a sessionId.`);
-    }
-    return { commandId, sessionId };
-}
-
-async function waitForPeerReadiness(
-    request: APIRequestContext,
-    runId: string,
-    agent: AgentHandle,
-    expectedPeerIds: readonly string[]
-): Promise<void> {
-    let attempt = 0;
-    await expect.poll(async () => {
-        const result = await executeResult(
-            request,
-            runId,
-            agent.agentId,
-            `director-health-${agent.prefix.toLowerCase()}-${attempt++}`,
-            { kind: 'health' },
-            15_000
-        ).catch(() => undefined);
-        if (!result?.ok) {
-            return [];
-        }
-        return stringArrayValue(
-            asRecord(asRecord(resultValue(result).rallar).rtcStatus).readyPeerIds
-        );
-    }, {
-        timeout: 60_000
-    }).toEqual(expect.arrayContaining(expectedPeerIds));
-}
-
-function directorRoomFields(groupId: string): Record<string, unknown> {
-    return {
-        roomId: groupId,
-        applicationId: config.applicationId,
-        workspaceId: config.workspaceId,
-        roomRef: {
-            applicationId: config.applicationId,
-            workspaceId: config.workspaceId,
-            groupId
-        }
-    };
-}
-
-function expectDirectorConfirmed(result: ControlResult): void {
-    const sendResult = asRecord(resultValue(result).sendResult);
-    expect(sendResult, JSON.stringify(sendResult)).toMatchObject({
-        status: 'sent',
-        receipt: { msgId: expect.any(String) }
-    });
-    expect(sendResult).not.toHaveProperty('rtc');
-    expect(sendResult).not.toHaveProperty('ws');
-}
 
 test.describe('full-stack SPA-appointed director orchestration', () => {
     test.skip(
@@ -375,7 +116,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
         const relayHandle = 'director-relay';
         const intentB = `intent-b-${Date.now()}`;
         const intentC = `intent-c-${Date.now()}`;
-        const agents = await openAgents(browser, runId, groupId, testInfo);
+        const agents = await openAgents({ browser, runId, groupId, testInfo });
         const [agentA, agentB, agentC] = agents;
 
         try {
@@ -386,7 +127,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
             });
 
             const connectResults = await Promise.all(
-                agents.map((agent) => connectAgent(request, runId, agent, groupId))
+                agents.map((agent) => connectAgent({ request, runId, agent, groupId }))
             );
             const sessions = {
                 A: connectResults[0].sessionId,
@@ -395,83 +136,128 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
             };
 
             await Promise.all([
-                waitForPeerReadiness(request, runId, agentA, [sessions.B, sessions.C]),
-                waitForPeerReadiness(request, runId, agentB, [sessions.A, sessions.C]),
-                waitForPeerReadiness(request, runId, agentC, [sessions.A, sessions.B])
+                waitForPeerReadiness({ request, runId, agent: agentA, expectedPeerIds: [sessions.B, sessions.C] }),
+                waitForPeerReadiness({ request, runId, agent: agentB, expectedPeerIds: [sessions.A, sessions.C] }),
+                waitForPeerReadiness({ request, runId, agent: agentC, expectedPeerIds: [sessions.A, sessions.B] })
             ]);
 
-            const appoint = await executeOk(request, runId, agentA.agentId, 'director-appoint-a', {
-                kind: 'director.appoint',
-                ...directorRoomFields(groupId),
-                heartbeatTtlMs: 1_200,
-                timeoutMs: 20_000
-            }, 30_000);
+            const appoint = await executeOk({
+                request,
+                runId,
+                agentId: agentA.agentId,
+                commandId: 'director-appoint-a',
+                command: {
+                    kind: 'director.appoint',
+                    ...directorRoomFields(groupId),
+                    heartbeatTtlMs: 1_200,
+                    timeoutMs: 20_000
+                },
+                timeout: 30_000
+            });
             expect(directorStatusValue(appoint)).toMatchObject({
                 role: 'director',
                 state: 'fresh',
                 isDirector: true
             });
 
-            const statusA = await executeOk(request, runId, agentA.agentId, 'director-status-a', {
-                kind: 'director.status',
-                ...directorRoomFields(groupId),
-                refresh: true
+            const statusA = await executeOk({
+                request,
+                runId,
+                agentId: agentA.agentId,
+                commandId: 'director-status-a',
+                command: {
+                    kind: 'director.status',
+                    ...directorRoomFields(groupId),
+                    refresh: true
+                }
             });
-            const statusB = await executeOk(request, runId, agentB.agentId, 'director-status-b', {
-                kind: 'director.status',
-                ...directorRoomFields(groupId),
-                refresh: true
+            const statusB = await executeOk({
+                request,
+                runId,
+                agentId: agentB.agentId,
+                commandId: 'director-status-b',
+                command: {
+                    kind: 'director.status',
+                    ...directorRoomFields(groupId),
+                    refresh: true
+                }
             });
-            const statusC = await executeOk(request, runId, agentC.agentId, 'director-status-c', {
-                kind: 'director.status',
-                ...directorRoomFields(groupId),
-                refresh: true
+            const statusC = await executeOk({
+                request,
+                runId,
+                agentId: agentC.agentId,
+                commandId: 'director-status-c',
+                command: {
+                    kind: 'director.status',
+                    ...directorRoomFields(groupId),
+                    refresh: true
+                }
             });
-            const epoch = asRecord(directorStatusValue(statusA).appointment).epoch;
+            const epoch = requireRecord(directorStatusValue(statusA).appointment).epoch;
             expect(directorStatusValue(statusA)).toMatchObject({ role: 'director', isDirector: true });
             expect(directorStatusValue(statusB)).toMatchObject({ role: 'client', isDirector: false });
             expect(directorStatusValue(statusC)).toMatchObject({ role: 'client', isDirector: false });
-            expect(asRecord(directorStatusValue(statusB).appointment)).toMatchObject({
+            expect(requireRecord(directorStatusValue(statusB).appointment)).toMatchObject({
                 sessionId: sessions.A,
                 epoch
             });
-            expect(asRecord(directorStatusValue(statusC).appointment)).toMatchObject({
+            expect(requireRecord(directorStatusValue(statusC).appointment)).toMatchObject({
                 sessionId: sessions.A,
                 epoch
             });
 
             for (const agent of agents) {
-                await executeOk(request, runId, agent.agentId, `director-relay-start-${agent.prefix.toLowerCase()}`, {
-                    kind: 'director.relay.start',
-                    handle: relayHandle,
-                    ...directorRoomFields(groupId),
-                    topicId,
-                    intentTypeId,
-                    outputTypeId,
-                    heartbeatIntervalMs: 300,
-                    snapshotIntervalMs: 500,
-                    timeoutMs: 20_000
+                await executeOk({
+                    request,
+                    runId,
+                    agentId: agent.agentId,
+                    commandId: `director-relay-start-${agent.prefix.toLowerCase()}`,
+                    command: {
+                        kind: 'director.relay.start',
+                        handle: relayHandle,
+                        ...directorRoomFields(groupId),
+                        topicId,
+                        intentTypeId,
+                        outputTypeId,
+                        heartbeatIntervalMs: 300,
+                        snapshotIntervalMs: 500,
+                        timeoutMs: 20_000
+                    }
                 });
             }
 
-            const sentB = await executeOk(request, runId, agentB.agentId, 'director-intent-b', {
-                kind: 'director.intent',
-                handle: relayHandle,
-                intent: {
-                    intentId: intentB,
-                    actor: agentB.actor,
-                    action: 'pose'
-                }
-            }, 30_000);
-            const sentC = await executeOk(request, runId, agentC.agentId, 'director-intent-c', {
-                kind: 'director.intent',
-                handle: relayHandle,
-                intent: {
-                    intentId: intentC,
-                    actor: agentC.actor,
-                    action: 'shot'
-                }
-            }, 30_000);
+            const sentB = await executeOk({
+                request,
+                runId,
+                agentId: agentB.agentId,
+                commandId: 'director-intent-b',
+                command: {
+                    kind: 'director.intent',
+                    handle: relayHandle,
+                    intent: {
+                        intentId: intentB,
+                        actor: agentB.actor,
+                        action: 'pose'
+                    }
+                },
+                timeout: 30_000
+            });
+            const sentC = await executeOk({
+                request,
+                runId,
+                agentId: agentC.agentId,
+                commandId: 'director-intent-c',
+                command: {
+                    kind: 'director.intent',
+                    handle: relayHandle,
+                    intent: {
+                        intentId: intentC,
+                        actor: agentC.actor,
+                        action: 'shot'
+                    }
+                },
+                timeout: 30_000
+            });
             // A relay command reports sent only once the director's receipt arrives; it carries its one handle.
             expectDirectorConfirmed(sentB);
             expectDirectorConfirmed(sentC);
@@ -509,18 +295,30 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                 })
             ]);
 
-            const syncB = await executeOk(request, runId, agentB.agentId, 'director-sync-b', {
-                kind: 'director.sync.request',
-                handle: relayHandle,
-                payload: {
-                    reason: 'black-box-b'
+            const syncB = await executeOk({
+                request,
+                runId,
+                agentId: agentB.agentId,
+                commandId: 'director-sync-b',
+                command: {
+                    kind: 'director.sync.request',
+                    handle: relayHandle,
+                    payload: {
+                        reason: 'black-box-b'
+                    }
                 }
             });
-            const syncC = await executeOk(request, runId, agentC.agentId, 'director-sync-c', {
-                kind: 'director.sync.request',
-                handle: relayHandle,
-                payload: {
-                    reason: 'black-box-c'
+            const syncC = await executeOk({
+                request,
+                runId,
+                agentId: agentC.agentId,
+                commandId: 'director-sync-c',
+                command: {
+                    kind: 'director.sync.request',
+                    handle: relayHandle,
+                    payload: {
+                        reason: 'black-box-c'
+                    }
                 }
             });
             expectDirectorConfirmed(syncB);
@@ -538,21 +336,39 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                 })
             ]);
 
-            await executeOk(request, runId, agentA.agentId, 'director-relay-stop-a', {
-                kind: 'director.relay.stop',
-                handle: relayHandle
+            await executeOk({
+                request,
+                runId,
+                agentId: agentA.agentId,
+                commandId: 'director-relay-stop-a',
+                command: {
+                    kind: 'director.relay.stop',
+                    handle: relayHandle
+                }
             });
             await agentA.page.waitForTimeout(1_900);
 
-            const staleB = await executeOk(request, runId, agentB.agentId, 'director-status-b-stale', {
-                kind: 'director.status',
-                ...directorRoomFields(groupId),
-                refresh: true
+            const staleB = await executeOk({
+                request,
+                runId,
+                agentId: agentB.agentId,
+                commandId: 'director-status-b-stale',
+                command: {
+                    kind: 'director.status',
+                    ...directorRoomFields(groupId),
+                    refresh: true
+                }
             });
-            const staleC = await executeOk(request, runId, agentC.agentId, 'director-status-c-stale', {
-                kind: 'director.status',
-                ...directorRoomFields(groupId),
-                refresh: true
+            const staleC = await executeOk({
+                request,
+                runId,
+                agentId: agentC.agentId,
+                commandId: 'director-status-c-stale',
+                command: {
+                    kind: 'director.status',
+                    ...directorRoomFields(groupId),
+                    refresh: true
+                }
             });
             expect(directorStatusValue(staleB)).toMatchObject({
                 role: 'client',
@@ -564,28 +380,38 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                 state: 'stale',
                 isDirector: false
             });
-            expect(asRecord(directorStatusValue(staleB).appointment)).toMatchObject({
+            expect(requireRecord(directorStatusValue(staleB).appointment)).toMatchObject({
                 sessionId: sessions.A,
                 epoch
             });
-            expect(asRecord(directorStatusValue(staleC).appointment)).toMatchObject({
+            expect(requireRecord(directorStatusValue(staleC).appointment)).toMatchObject({
                 sessionId: sessions.A,
                 epoch
             });
 
-            await executeOk(request, runId, agentB.agentId, 'director-relay-stop-b', {
-                kind: 'director.relay.stop',
-                handle: relayHandle
+            await executeOk({
+                request,
+                runId,
+                agentId: agentB.agentId,
+                commandId: 'director-relay-stop-b',
+                command: {
+                    kind: 'director.relay.stop',
+                    handle: relayHandle
+                }
             });
-            await executeOk(request, runId, agentC.agentId, 'director-relay-stop-c', {
-                kind: 'director.relay.stop',
-                handle: relayHandle
+            await executeOk({
+                request,
+                runId,
+                agentId: agentC.agentId,
+                commandId: 'director-relay-stop-c',
+                command: {
+                    kind: 'director.relay.stop',
+                    handle: relayHandle
+                }
             });
 
-            const run = await fetchControlRun(request, runId) as {
-                events?: readonly ControlEvent[];
-            };
-            const appointEvents = (run.events ?? []).filter((event) =>
+            const run = await readControlRun(request, runId);
+            const appointEvents = run.events.filter((event) =>
                 runtimeEventPayload(event).topic === 'rallar.browser.director.appointed'
             );
             expect(appointEvents.map((event) => event.agentId)).toEqual([agentA.agentId]);
@@ -601,3 +427,315 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
         }
     });
 });
+
+function booleanEnv(key: string): boolean {
+    const normalized = process.env[key]?.trim().toLowerCase();
+    return normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on';
+}
+
+function requireRecord(value: unknown): Record<string, unknown> {
+    if (!isJsonRecordValue(value)) {
+        throw new Error('Expected a JSON object in the control result/event.');
+    }
+    return value;
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): readonly string[] {
+    if (!Array.isArray(value) || !value.every((entry): entry is string => typeof entry === 'string')) {
+        throw new Error('Expected string peer IDs.');
+    }
+    return value;
+}
+
+function resultValue(result: ControlResultEnvelope): Record<string, unknown> {
+    return requireRecord(result.result?.value);
+}
+
+function directorStatusValue(result: ControlResultEnvelope): Record<string, unknown> {
+    return requireRecord(resultValue(result).directorStatus);
+}
+
+function eventPayload(event: ControlEventEnvelope): Record<string, unknown> {
+    return requireRecord(event.payload);
+}
+
+function runtimeEventPayload(event: ControlEventEnvelope): Record<string, unknown> {
+    const payload = eventPayload(event);
+    return typeof payload.kind === 'string'
+        ? payload
+        : requireRecord(payload.payload ?? payload);
+}
+
+function runtimeEventText(event: ControlEventEnvelope): string {
+    return JSON.stringify(runtimeEventPayload(event));
+}
+
+function directorRoomFields(groupId: string): DirectorRoomFields {
+    return {
+        roomId: groupId,
+        applicationId: config.applicationId,
+        workspaceId: config.workspaceId,
+        roomRef: {
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            groupId
+        }
+    };
+}
+
+function toDirectorGroupCreateCommand(
+    statePrefix: string,
+    requestPrefix: string,
+    groupId: string
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'http.request',
+        request: {
+            path: `${statePrefix}/groups/requests/${requestPrefix}-group`,
+            method: 'POST',
+            body: {
+                groupId: groupId,
+                displayName: groupId,
+                kind: 'room',
+                joinMode: 'open'
+            }
+        },
+        response: {
+            body: 'json',
+            acceptedStatusCodes: [200, 201]
+        },
+        timeoutMs: 10_000
+    };
+}
+
+async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
+    const { request, runId, commandId, timeout = 45_000 } = input;
+    let latest: ControlResultEnvelope | undefined;
+    await expect.poll(async () => {
+        const run = await readControlRun(request, runId);
+        latest = run.results.find((result) => result.commandId === commandId);
+        return Boolean(latest);
+    }, {
+        timeout
+    }).toBe(true);
+
+    if (!latest) {
+        throw new Error(`Command ${commandId} did not return a result.`);
+    }
+    return latest;
+}
+
+async function executeResult(input: ExecuteCommandInput): Promise<ControlResultEnvelope> {
+    const { request, runId, agentId, commandId, command, timeout } = input;
+    await enqueueControlCommand({ request, runId, agentId, commandId, command });
+    return await waitForCommandResult({ request, runId, commandId, timeout });
+}
+
+async function executeOk(input: ExecuteCommandInput): Promise<ControlResultEnvelope> {
+    const { request, runId, agentId, commandId, command, timeout } = input;
+    const result = await executeResult({ request, runId, agentId, commandId, command, timeout });
+    expect(result.ok, JSON.stringify(result.error ?? result)).toBe(true);
+    return result;
+}
+
+async function waitForDirectorEvent(
+    request: APIRequestContext,
+    runId: string,
+    input: DirectorEventExpectation
+): Promise<void> {
+    await expect.poll(async () => {
+        const run = await readControlRun(request, runId);
+        return run.events.some((event) => {
+            const payload = runtimeEventPayload(event);
+            const text = runtimeEventText(event);
+            return event.agentId === input.agentId &&
+                payload.topic === input.topic &&
+                input.contains.every((fragment) => text.includes(fragment));
+        });
+    }, {
+        timeout: 60_000
+    }).toBe(true);
+}
+
+async function openAgents(input: OpenAgentsInput): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> {
+    const { browser, runId, groupId, testInfo } = input;
+    const users = {
+        A: config.userA,
+        B: config.userB,
+        C: config.userC
+    } as const;
+    const handles: AgentHandle[] = [];
+    try {
+        for (const prefix of ['A', 'B', 'C'] as const) {
+            const agentId = uniqueAgentId(testInfo, `director-${prefix.toLowerCase()}`);
+            const opened = await openBrowserControlAgent({
+                browser,
+                config,
+                user: users[prefix],
+                runId,
+                agentId,
+                groupId
+            });
+            handles.push({
+                context: opened.context,
+                page: opened.page,
+                prefix,
+                agentId,
+                actor: users[prefix].actor,
+                connection: `${agentId}-director`
+            });
+        }
+        const [first, second, third] = handles;
+        if (!first || !second || !third) {
+            throw new Error('The director scenario requires three agents.');
+        }
+        return [first, second, third];
+    }
+    catch (error) {
+        try {
+            await closeAgents(handles);
+        }
+        catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'Director acquisition and cleanup failed.', {
+                cause: error
+            });
+        }
+        throw error;
+    }
+}
+
+async function closeAgents(agents: readonly AgentHandle[]): Promise<void> {
+    await Promise.all(agents.map(async (agent) => {
+        try {
+            await cleanupRallarPage(agent.page);
+        }
+        finally {
+            await agent.context.close();
+        }
+    }));
+}
+
+async function setupGroupMembership(
+    request: APIRequestContext,
+    runId: string,
+    input: GroupMembershipInput
+): Promise<void> {
+    const statePrefix = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
+        encodeURIComponent(config.workspaceId)
+    }`;
+    // Group-state mutations are idempotent per requestId (20 to 128 characters), so each run names its own.
+    const requestPrefix = `director-${crypto.randomUUID()}`;
+    await executeOk({
+        request,
+        runId,
+        agentId: input.owner.agentId,
+        commandId: 'director-group-create',
+        command: toDirectorGroupCreateCommand(statePrefix, requestPrefix, input.groupId)
+    });
+
+    for (const member of input.members) {
+        const memberPath = `${statePrefix}/groups/${encodeURIComponent(input.groupId)}/members/{auth.clientId}`;
+        await executeOk({
+            request,
+            runId,
+            agentId: member.agentId,
+            commandId: `director-group-join-${member.prefix.toLowerCase()}`,
+            command: {
+                kind: 'http.request',
+                request: {
+                    path: `${memberPath}/requests/${requestPrefix}-member-${member.prefix.toLowerCase()}`,
+                    method: 'PUT',
+                    body: {
+                        status: 'active'
+                    }
+                },
+                response: {
+                    body: 'json',
+                    acceptedStatusCodes: [200, 201]
+                },
+                timeoutMs: 10_000
+            }
+        });
+    }
+}
+
+async function connectAgent(input: ConnectAgentInput): Promise<DirectorConnection> {
+    const { request, runId, agent, groupId } = input;
+    const commandId = `director-connect-${agent.prefix.toLowerCase()}`;
+    const result = await executeOk({
+        request,
+        runId,
+        agentId: agent.agentId,
+        commandId,
+        command: {
+            kind: 'rtc.connect',
+            connection: agent.connection,
+            actor: agent.actor,
+            roomId: groupId,
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            roomRef: {
+                applicationId: config.applicationId,
+                workspaceId: config.workspaceId,
+                groupId
+            },
+            transport: 'realtime',
+            rallar: {
+                apiBaseUrl: config.apiBaseUrl,
+                restoreSession: true,
+                logoutOnClose: false,
+                leaveRoomOnClose: false,
+                applicationId: config.applicationId,
+                workspaceId: config.workspaceId,
+                transport: 'realtime'
+            },
+            timeoutMs: 45_000
+        },
+        timeout: 60_000
+    });
+    const sessionId = stringValue(resultValue(result).sessionId);
+    if (!sessionId) {
+        throw new Error(`Connect result ${commandId} did not include a sessionId.`);
+    }
+    return { commandId, sessionId };
+}
+
+async function waitForPeerReadiness(input: WaitForPeerReadinessInput): Promise<void> {
+    const { request, runId, agent, expectedPeerIds } = input;
+    let attempt = 0;
+    await expect.poll(async () => {
+        const result = await executeResult({
+            request,
+            runId,
+            agentId: agent.agentId,
+            commandId: `director-health-${agent.prefix.toLowerCase()}-${attempt++}`,
+            command: { kind: 'health' },
+            timeout: 15_000
+        }).catch(() => undefined);
+        if (!result?.ok) {
+            return [];
+        }
+        return stringArrayValue(
+            requireRecord(requireRecord(resultValue(result).rallar).rtcStatus).readyPeerIds
+        );
+    }, {
+        timeout: 60_000
+    }).toEqual(expect.arrayContaining([...expectedPeerIds]));
+}
+
+function expectDirectorConfirmed(result: ControlResultEnvelope): void {
+    const sendResult = requireRecord(resultValue(result).sendResult);
+    expect(sendResult, JSON.stringify(sendResult)).toMatchObject({
+        status: 'sent',
+        receipt: { msgId: expect.any(String) }
+    });
+    expect(sendResult).not.toHaveProperty('rtc');
+    expect(sendResult).not.toHaveProperty('ws');
+}

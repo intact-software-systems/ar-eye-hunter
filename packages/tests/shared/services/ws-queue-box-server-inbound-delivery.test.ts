@@ -177,30 +177,34 @@ describe('WS server inbound delivery and relay', () => {
         expect(recipient.sent).toEqual([]);
     });
 
-    it('rechecks room authority before delivering already queued messages', async () => {
-        const fixture = await createServerIngressFixture();
-        const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
-        let authorized = true;
-        fixture.service.authorizeInboundMessagesWith({
-            sendNacks: false,
-            authorize: async () =>
-                authorized
-                    ? { authorized: true }
-                    : { authorized: false, reason: 'unauthorized', logMessage: 'Membership removed', sendNack: false }
-        });
-        const message: ALMessage = { ...createRoomMessage(), qos: { durability: { algo: 'local-inbox' } } };
-        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
-        expect(await fixture.admission.workQueue.getAllKeys()).toHaveLength(1);
-        expect(fixture.delivered).toEqual([]);
-        authorized = false;
+    it.each(['unauthorized', 'membership-fenced'] as const)(
+        'completes already queued messages without delivery or a NACK when current room authority is %s',
+        async (reason) => {
+            const fixture = await createServerIngressFixture();
+            const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
+            let authorized = true;
+            fixture.service.authorizeInboundMessagesWith({
+                sendNacks: true,
+                authorize: async () =>
+                    authorized
+                        ? { authorized: true }
+                        : { authorized: false, reason, logMessage: 'Membership removed', sendNack: true }
+            });
+            const message: ALMessage = { ...createRoomMessage(), qos: { durability: { algo: 'local-inbox' } } };
+            expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
+            expect(await fixture.admission.workQueue.getAllKeys()).toHaveLength(1);
+            expect(fixture.delivered).toEqual([]);
+            authorized = false;
 
-        claim.mockRestore();
-        await expect.poll(async () => {
-            const keys = await fixture.admission.workQueue.getAllKeys();
-            return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
-        }).toBe('COMPLETED');
-        expect(fixture.delivered).toEqual([]);
-    });
+            claim.mockRestore();
+            await expect.poll(async () => {
+                const keys = await fixture.admission.workQueue.getAllKeys();
+                return (await fixture.admission.workQueue.getItem(keys[0]))?.status;
+            }).toBe('COMPLETED');
+            expect(fixture.delivered).toEqual([]);
+            expect(fixture.socket.sent).toEqual([]);
+        }
+    );
 
     it('leaves queued delivery retryable while current room evidence catches up', async () => {
         const fixture = await createServerIngressFixture();

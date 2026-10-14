@@ -1,12 +1,13 @@
 import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
 import type { LoopsTaskDto } from '../../resilience/ComputeAsyncTask.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
 import type { ALWorkCommittedRows } from './al-work-readiness-memory.ts';
 
 export namespace ALWorkEngineMembership {
     export interface Input {
         readonly queueEngine: InboxOutboxEngine;
+        readonly ownsQueueEngine: boolean;
         readonly workerId: string;
         readonly task: LoopsTaskDto;
         readonly onExternalWake: () => void;
@@ -20,7 +21,8 @@ export namespace ALWorkEngineMembership {
 /**
  * A work owner's task on the engine, which follows its session's ownership. An owner's task joins at
  * construction; a runtime that does not own the work keeps it out, announces each commit to the owner
- * instead, and joins when ownership turns true. A row the previous owner held under its lease is left
+ * instead, and joins when ownership turns true. Bootstrap starts an engine this handler owns; shutdown
+ * stops that engine, while a borrowed engine remains with its owner. A row the previous owner held under its lease is left
  * to the lease sweep of a later batch: a released ownership proves nothing about a batch still running.
  */
 export class ALWorkEngineMembership {
@@ -41,6 +43,18 @@ export class ALWorkEngineMembership {
 
     isOwned(): boolean {
         return this.input.durableOwnership?.ownership.isOwned() ?? true;
+    }
+
+    /** Bootstrap may finish after disposal, which permanently closes this handler's engine startup. */
+    startOwnedEngine(): void {
+        if (!this.disposed && this.input.ownsQueueEngine) {
+            this.input.queueEngine.start();
+        }
+    }
+
+    /** The handler joins this stop alongside its batch; a shared engine stays with its owning runtime. */
+    stopOwnedEngine(): Promise<void> | undefined {
+        return this.input.ownsQueueEngine ? this.input.queueEngine.stop() : undefined;
     }
 
     /** Whether the commit went to the owner; false when this runtime owns the work and runs it itself. */

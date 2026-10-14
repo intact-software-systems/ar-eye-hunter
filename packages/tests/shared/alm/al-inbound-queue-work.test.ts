@@ -15,12 +15,11 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry, type ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
@@ -52,10 +51,11 @@ it('terminalizes a malformed reservation without starving independent timeout re
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     let available = false;
     const delivered: string[] = [];
@@ -109,10 +109,11 @@ it('retries durable local delivery after restart with a single admission work ow
         vi.useRealTimers();
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     const attempts: string[] = [];
     const createRuntime = () =>
@@ -146,7 +147,7 @@ it('retries durable local delivery after restart with a single admission work ow
     expect(keys).toHaveLength(1);
     const owner = (await resources.workQueue.getItem(keys[0]))!;
     expect(owner).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-    first.dispose();
+    await first.dispose();
 
     vi.setSystemTime(owner.dequeueAudit.nextTs!.epochMilliseconds);
     const restarted = createRuntime();
@@ -169,10 +170,11 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         });
         vi.spyOn(resources.workQueue, 'releaseEntries').mockRejectedValueOnce(
             new Error('Queue finalization temporarily unavailable')
@@ -204,7 +206,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         expect(keys).toHaveLength(1);
         const owner = (await resources.workQueue.getItem(keys[0]))!;
         expect(owner).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
-        initial.dispose();
+        await initial.dispose();
 
         vi.setSystemTime(Number(owner.dequeueAudit.startTs!.epochMilliseconds) + 10_001);
         const resumed = createRuntime();
@@ -241,7 +243,7 @@ it.each([
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
     });
     const reserve = resources.workQueue.reserveEntries.bind(resources.workQueue);
     vi.spyOn(resources.workQueue, 'reserveEntries').mockImplementation(async (request) => {
@@ -300,9 +302,11 @@ it('retains predecessor completion through the longest admitted deadline across 
         backend,
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
-        retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 })
+        retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 }),
+        maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const delivered: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
@@ -311,7 +315,7 @@ it('retains predecessor completion through the longest admitted deadline across 
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+                toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
             }),
             planIncomingMessage: (incoming, _source, observations) =>
                 planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -332,7 +336,7 @@ it('retains predecessor completion through the longest admitted deadline across 
         peerId: 'sender'
     });
     await initial.admitIncomingMessage(createOrderedMessage(3), { kind: 'rtc-peer', peerId: 'sender' });
-    initial.dispose();
+    await initial.dispose();
     paused.mockRestore();
     nowMs = admittedAt + 1_000;
     const resumed = createRuntime();
@@ -358,9 +362,11 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         backend,
         orderingTrackTtlMs: 100,
         supersedenceTrackTtlMs: 100,
-        retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 })
+        retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 }),
+        maxOrderingTracks: undefined
     });
     const engine = new InboxOutboxEngine();
+    onTestFinished(() => engine.stop());
     const trackKey = toALOrderingTrackKey(createOrderedMessage(1))!;
     const progressKey = `${store.namespace}:delivered:${trackKey}`;
     let available = false;
@@ -372,7 +378,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
             queueEngine: engine,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         }),
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -418,12 +424,12 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const delivered: string[] = [];
     const failedAttemptReleased = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    onTestFinished(() => resume.resolve());
     const release = backend.workQueue.releaseEntries.bind(backend.workQueue);
     vi.spyOn(backend.workQueue, 'releaseEntries').mockImplementation(async (releases) => {
         const released = await release(releases);
@@ -439,7 +445,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
+            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox', Temporal.Now.instant())
         }),
 
         planIncomingMessage: (incoming, source, observations) =>
@@ -458,6 +464,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
+    onTestFinished(() => resume.resolve());
     const second: ALMessage = { ...createOrderedMessage(2), qos: { durability: { algo: durability } } };
     await runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
     const admittedFirst = runtime.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' });
@@ -498,9 +505,11 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             backend,
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
+            retention: normalizeALRuntimeStoreRetention(),
+            maxOrderingTracks: undefined
         });
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const controls: ALMessage[] = [];
         const delivered: string[] = [];
         let available = false;
@@ -510,7 +519,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: backend.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
             }),
 
             planIncomingMessage: (message, source, observations) =>
@@ -567,7 +576,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             return controls.map((control) => decodeALControlMessage(control).right);
         }).toContainEqual(expect.objectContaining({
             type: 'nack',
-            payload: expect.objectContaining({ msgId: 'message-2', reason: 'resync-required', missingSeqs: [] })
+            payload: expect.objectContaining({ msgId: 'message-2', reason: 'resync-required', missingRanges: [] })
         }));
         await expect.poll(async () => {
             await engine.executeOnce();
@@ -589,19 +598,21 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     });
     const delivered: number[] = [];
     let unavailable = true;
     const createRuntime = (): OrderedRestartFixture => {
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const runtime = new ALInboundMessageRuntime({
             carrier: 'rtc',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },
                 queueEngine: engine,
-                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+                toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
             }),
 
             planIncomingMessage: (message, source, observations) =>
@@ -645,7 +656,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     }
     expect(waiting.length).toBeGreaterThanOrEqual(255);
     expect(waiting.every((entry) => entry.dequeueAudit.attempts === 0)).toBe(true);
-    first.runtime.dispose();
+    await first.runtime.dispose();
 
     unavailable = false;
     vi.setSystemTime(Date.now() + 10_001);
@@ -658,7 +669,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     await expect.poll(async () => {
         return (await store.readOrderedDelivery(toALOrderingTrackKey(createOrderedMessage(1))!, 257)).completedThrough;
     }).toBe(256);
-    restarted.runtime.dispose();
+    await restarted.runtime.dispose();
     backend.workQueue.cleanup();
 
     const afterCleanup = createRuntime();
@@ -687,7 +698,7 @@ async function readMessageWork(input: ReadMessageWorkInput): Promise<ALPersisted
 
 function createOrderedMessage(sequence: number): ALMessage {
     return {
-        id: { v: 2, msgId: `message-${sequence}`, senderId: 'sender', ts: Date.now() },
+        id: { v: 3, msgId: `message-${sequence}`, senderId: 'sender', ts: Date.now() },
         route: { topicId: 'ordered-chat', resourceId: `message-${sequence}`, contextId: 'room' },
         targets: { mode: 'unicast', toPeerId: 'receiver' },
         ordering: { orderingKey: 'ordered-chat', seq: sequence },

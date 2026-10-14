@@ -23,13 +23,17 @@ import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runt
 import { createRoomTransportFixture, type RoomTransportFixture } from './realtime/create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './realtime/native-realtime-lane-fixture.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('./rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
     const context = createDefaultApiMiddlewareTestDouble();
     return {
         context,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
-        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() => Promise.resolve(context.middleware)),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() =>
+            Promise.resolve({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] })
+        ),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         readSession: vi.fn<typeof AuthModule.readSession>(() => context.session),
         refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(
@@ -115,7 +119,7 @@ describe('Rallar facade default scope behavior', () => {
         mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.findAcceptedOverlayById.mockReturnValue(undefined);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.context.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.context.middleware, rtcCaptureReceipt, checkpoints: [] });
         mocks.readSession.mockReturnValue(mocks.context.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         connection.ensurePeerLaneOpen.mockReset().mockImplementation(async (peerId, laneId = 'reliable') => ({
@@ -279,15 +283,18 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             {
+                rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
                 qosProvider: undefined,
                 readVolatileSessionLimits: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
+                onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
-                    transportFaultPort: { decideSend: expect.any(Function) },
+                    transportFaultPort: { decideSend: expect.any(Function), decideBackpressure: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
+                    signalingDiagnostics: undefined,
                     storage: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
@@ -334,6 +341,7 @@ describe('Rallar facade default scope behavior', () => {
             expect.objectContaining({
                 qosProvider: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
+                onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: transportFaultPort,
                     transportFaultPort,

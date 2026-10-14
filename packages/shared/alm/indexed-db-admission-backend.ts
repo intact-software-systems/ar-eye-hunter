@@ -48,12 +48,30 @@ import {
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
 import type { ALStorageConnectStoreOpening } from './storage/al-storage-connect-openings.ts';
+import { readALWorkRowsInRanges, type ALWorkKeyRangesInput } from './storage/read-al-work-rows-in-ranges.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from './write-indexed-db-admission-mutations.ts';
 
 export namespace IndexedDbAdmissionBackend {
+    /** Every row one store namespace owns: its admission rows under one key prefix and its work rows in ranges. */
+    export interface NamespaceSelection {
+        readonly keyPrefix: string;
+        readonly workRanges: ALWorkKeyRangesInput;
+    }
+
+    export interface NamespaceRows {
+        readonly rows: readonly IndexedDbAdmissionStoredRow[];
+        readonly workRows: readonly StoredResourceEntry[];
+    }
+
+    /** Row mutations a sole writer applies over whatever the rows hold: no fence, one readwrite. */
+    export interface UnfencedMutations {
+        readonly mutations: readonly IndexedDbAdmissionMutation[];
+        readonly queueMutations: readonly ComputedIndexedDbQueueMutation[];
+    }
+
     export interface Input {
         readonly dbName: string;
         readonly storeName: string;
@@ -227,6 +245,39 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             throw new ALAdmissionBackendConflictError('IndexedDB AL admission write conflicted');
         }
         return fenced.result;
+    }
+
+    /** One list operation, read as stored: every row with its expiry, the expired ones too. */
+    async readNamespaceRows(
+        selection: IndexedDbAdmissionBackend.NamespaceSelection
+    ): Promise<IndexedDbAdmissionBackend.NamespaceRows> {
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
+        const db = await this.#connection.open();
+        const rows = await readIndexedDbAdmissionSnapshot(
+            db,
+            this.#storeName,
+            { kind: 'prefixes', prefixes: [selection.keyPrefix] }
+        );
+        return { rows, workRows: await readALWorkRowsInRanges(db, selection.workRanges) };
+    }
+
+    /** One write operation: a single readwrite over both stores, which lands every mutation or none. */
+    async writeUnfencedMutations(input: IndexedDbAdmissionBackend.UnfencedMutations): Promise<boolean> {
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
+        const db = await this.#connection.open();
+        return await writeIndexedDbAdmissionMutations({
+            db,
+            storeName: this.#storeName,
+            fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
+            mutations: input.mutations,
+            queueMutations: input.queueMutations
+        });
     }
 
     /**

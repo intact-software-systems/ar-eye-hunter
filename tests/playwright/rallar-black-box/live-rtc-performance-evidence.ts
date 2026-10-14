@@ -45,6 +45,7 @@ import {
     decodeAgentDiagnostics,
     type LiveRtcAgentDiagnostics
 } from './live-rtc-agent-diagnostics.ts';
+import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     isFiniteNonnegativeNumber,
     jsonRecord,
@@ -206,7 +207,31 @@ export interface LiveRtcNackFailureDiagnostic {
     readonly recentEvents: readonly LiveRtcNackEventClassification[];
 }
 
+export interface LiveRtcNativeAcquisitionFailureDiagnostic {
+    readonly reason: LiveRtcControlClient.NativeAcquisitionFailure['reason'];
+    readonly connection: LiveRtcControlClient.CapturedConnection;
+    readonly source: LiveRtcControlClient.NativeAcquisitionProof['source'] | null;
+    readonly failure: {
+        readonly name: 'native-acquisition-refused';
+        readonly message: 'RTC Native acquisition refused.';
+    };
+}
+
+export function toLiveRtcNativeAcquisitionFailureDiagnostic(
+    failure: LiveRtcControlClient.NativeAcquisitionFailure
+): LiveRtcNativeAcquisitionFailureDiagnostic {
+    return {
+        reason: failure.reason,
+        connection: failure.connection,
+        source: failure.source,
+        failure: { name: 'native-acquisition-refused', message: 'RTC Native acquisition refused.' }
+    };
+}
+
 export interface LiveRtcPerformanceRawEvidence {
+    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
+    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly nativeAcquisitionFailures: readonly LiveRtcNativeAcquisitionFailureDiagnostic[];
     identity: LiveRtcPerformanceIdentity;
     producer: LiveRtcPerformanceProducer;
     runtime: LiveRtcPerformanceRuntime;

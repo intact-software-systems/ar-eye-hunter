@@ -19,11 +19,11 @@ const route = { topicId: 'chat', contextId: 'room', resourceId: 'message' };
 
 describe('carrier capabilities', () => {
     it.each([AL_WS_CLIENT_CAPABILITIES, AL_RTC_OVERLAY_CAPABILITIES, AL_WS_SERVER_CAPABILITIES])(
-        'declares receiver on $name beside the default algorithms',
+        'declares receiver and leader on $name beside the default algorithms',
         (capabilities) => {
             expect(capabilities.qos).toEqual({
                 ...DEFAULT_AL_QOS_CAPABILITIES,
-                supportedAck: ['none', 'hop', 'subtree', 'receiver']
+                supportedAck: ['none', 'hop', 'subtree', 'receiver', 'leader']
             });
         }
     );
@@ -69,7 +69,7 @@ describe('carrier capabilities', () => {
         });
     });
 
-    // The WS client inbound path reads its carrier capabilities too: declaring receiver moves no effective policy.
+    // The WS client inbound path reads its carrier capabilities too: declaring receiver and leader moves no effective policy.
     it.each(
         [
             { request: 'no ack', options: {} },

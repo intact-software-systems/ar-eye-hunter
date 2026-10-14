@@ -16,7 +16,7 @@ import type {
     RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT } from '@shared-test/rallar-bb-test/recipe/run-recipe-commands.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -107,7 +107,7 @@ describe('recipe barrier command', () => {
     });
 
     it('reports its arrival and completes on the released resolution', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const { result } = await arriveAt(runtime, BARRIER);
         runtime.recordEvent(
             toBarrierResolvedEvent(toResolution({ outcome: 'released', arrivedAgentIds: ['agent-1', 'agent-2'] }))
@@ -123,7 +123,7 @@ describe('recipe barrier command', () => {
     });
 
     it('fails typed with the reason and the missing agents the control server names', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const { result } = await arriveAt(runtime, BARRIER);
         runtime.recordEvent(toBarrierResolvedEvent(toResolution({
             outcome: 'failed',
@@ -143,7 +143,7 @@ describe('recipe barrier command', () => {
 
     it('fails typed on its own once the window and the grace pass without a resolution', async () => {
         vi.useFakeTimers();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const { result } = await arriveAt(runtime, { ...BARRIER, timeoutMs: 1_000 });
         await vi.advanceTimersByTimeAsync(1_000 + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS);
 
@@ -164,7 +164,7 @@ describe('recipe barrier command', () => {
 
     it('reports the recipe deadline, not a silent control server, when the deadline ends the wait first', async () => {
         vi.useFakeTimers();
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const deadlineEpochMs = Date.now() + 1_000;
         const { result } = await arriveAt(runtime, { ...BARRIER, deadlineEpochMs });
         await vi.advanceTimersByTimeAsync(1_000);
@@ -179,7 +179,7 @@ describe('recipe barrier command', () => {
     });
 
     it('ends cancelled, not timed out, when the recipe is cancelled while it waits', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const { result } = await arriveAt(runtime, BARRIER);
         await runtime.execute({ kind: 'recipe.cancel', commandId: 'cancel-barrier', reason: 'operator stop' });
 
@@ -201,7 +201,7 @@ describe('recipe barrier command', () => {
     });
 
     it('refuses a second arrival at the same barrier id on one page', async () => {
-        const runtime = createRallarBlackBoxTestRuntime();
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
         const first = await arriveAt(runtime, BARRIER);
         runtime.recordEvent(toBarrierResolvedEvent(toResolution({ outcome: 'released', arrivedAgentIds: ['agent-1'] })));
         await first.result;

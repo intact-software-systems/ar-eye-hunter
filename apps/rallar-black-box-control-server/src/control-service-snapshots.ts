@@ -1,3 +1,4 @@
+import { toRetainedControlResultEnvelope } from '@shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRetentionRunSafety } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
@@ -8,6 +9,7 @@ import type {
     ControlRunSnapshotBounds,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -63,6 +65,9 @@ export function toControlRunSnapshot(
     for (const commandId of toPendingReloadEvidenceIds(run.commands.values())) {
         protectedIds.add(commandId);
     }
+    const retainedCommands = toBoundedProtectedCommands(commands, bounds.commands, protectedIds);
+    const retainedResults = toBoundedProtectedResults(results, bounds.results, protectedIds)
+        .map((result) => toRetainedControlResultEnvelope(result, retainedCommands));
     return {
         runId: run.runId,
         createdAtEpochMs: run.createdAtEpochMs,
@@ -84,8 +89,8 @@ export function toControlRunSnapshot(
             completedCommandIds: Array.from(agent.completedCommandIds),
             resumeCompletedCommandIds: Array.from(agent.resumeCompletedCommandIds)
         })),
-        commands: toBoundedProtectedCommands(commands, bounds.commands, protectedIds),
-        results: toBoundedProtectedResults(results, bounds.results, protectedIds),
+        commands: retainedCommands,
+        results: retainedResults,
         events: toBoundedTail(run.events, bounds.events),
         stats: toBoundedTail(run.stats, bounds.stats),
         reports: toBoundedTail(run.reports, bounds.reports),
@@ -146,10 +151,18 @@ export function toRestoredControlSnapshot(
     snapshot: ControlServerSnapshot,
     redaction: RallarBlackBoxTestRedactionOptions | undefined
 ): RestoredControlSnapshot {
+    const runs = snapshot.runs.map((run) =>
+        decodeControlRunSnapshot(run).fold(
+            (issue) => {
+                throw new Error(issue);
+            },
+            (decoded) => decoded
+        )
+    );
     const evidenceCommandKeys = toDistributedAssessmentEvidenceKeys(snapshot);
     return {
         runs: new Map(
-            snapshot.runs.map(
+            runs.map(
                 (run) => [run.runId, toRestoredControlRun({ runSnapshot: run, evidenceCommandKeys, redaction })]
             )
         ),

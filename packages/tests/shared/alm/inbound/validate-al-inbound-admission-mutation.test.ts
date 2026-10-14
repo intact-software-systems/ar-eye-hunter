@@ -16,6 +16,7 @@ function toBundle(): ALInboundCommitBundle {
         senderId: SENDER_ID,
         messageOwner: undefined,
         dedup: undefined,
+        claim: undefined,
         ordering: undefined,
         buffered: undefined,
         deliveryProgress: undefined,
@@ -106,5 +107,35 @@ describe('validateALInboundAdmissionMutation invalid control value', () => {
         const issues = validateALInboundAdmissionMutation(mutation, toBundle());
 
         expect(issues).toEqual(['Inbound admission candidate has an invalid control value']);
+    });
+});
+
+describe('validateALInboundAdmissionMutation claim', () => {
+    it('refuses a claim on a key the admission did not observe', () => {
+        const mutation: ALInboundAdmissionMutation = {
+            kind: 'set-claim',
+            claimKey: 'app/workspace/room-1/arena.intent/room/pickup-1',
+            holderPeerId: SENDER_ID,
+            expireAtTimestamp: 1_000
+        };
+
+        expect(validateALInboundAdmissionMutation(mutation, toBundle()))
+            .toEqual(['Inbound admission candidate writes outside its original observations']);
+    });
+
+    it('accepts a claim on the key the admission observed', () => {
+        const claimKey = 'app/workspace/room-1/arena.intent/room/pickup-1';
+        const bundle = toBundle();
+        const observed = {
+            ...bundle,
+            observations: { ...bundle.observations, claim: { key: claimKey, holderPeerId: undefined } }
+        };
+
+        expect(
+            validateALInboundAdmissionMutation(
+                { kind: 'set-claim', claimKey, holderPeerId: SENDER_ID, expireAtTimestamp: 1_000 },
+                observed
+            )
+        ).toEqual([]);
     });
 });

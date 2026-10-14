@@ -78,7 +78,8 @@ records what the runner was doing while the cell ran:
   [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
   `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only `send`-origin commits count, because a
   drain's commit measures a different read chain than a caller's own admission.
-  - Only commits whose `lane` is `durable` count (R-S3a-15). The 30 / 35 ms thresholds were
+  - Only commits whose `lane` is `durable` count (R-S3a-15); a `checkpoint` lane commits to its memory
+    pair, as `volatile` does, and is left out with it. The 30 / 35 ms thresholds were
     calibrated on IndexedDB read chains; a memory lane's commit reads no IndexedDB, and its cost is
     the page's event-loop contention instead: 0–5 ms per operation for a send and up to 39 ms for a
     repair on a local run, figures that say nothing about the runner's storage. An event recorded
@@ -106,7 +107,10 @@ records what the runner was doing while the cell ran:
   sampleCount, regime: 'unclassified' }` below `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples;
   otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`. Only probes whose
   `lane` is `durable` count: a memory lane's `…/volatile` owner probes at 0 ms and would pull the
-  median of a slow page toward `normal`.
+  median of a slow page toward `normal`. A snapshot that holds the control server's default event
+  bound (`ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS`, 2 000) reads `{ outcome: 'unmeasured', sampleCount: 0,
+  regime: 'unclassified' }`: the server drops a run's oldest events past that bound, so the earliest
+  event it kept may be from mid-run and the window measured from it is not the run's opening one.
 - `peerReadiness` — per lifecycle stream and peer, the time from first known to first ready, or
   `never-ready` with how long the peer was observed.
 - `scenarioSends` — each recipe run's wall clock, or, for a run that failed, the failing step's
@@ -127,10 +131,9 @@ records what the runner was doing while the cell ran:
   `msgId`, `carrier` and `reason` beside its `outcome`, so one message arriving over both carriers
   reads as two outcomes for one `msgId`. In the `cross-carrier-duplicate` scenario, both orders show
   one `committed`/`admitted` and one `not-handled`/`duplicate` for the pair's `msgId`; in
-  `rtc-then-ws` the refused copy is the one on carrier `ws`. In `not-yet-in-sync`, the receiver's
-  refusal reads `rejected` over `rtc` with a reason starting `not-yet-in-sync`;
-  `delivered-after-refresh` reads red at `received-1`, because no plain-member write advances the
-  snapshot version. A measured direction carries:
+  `rtc-then-ws` the refused copy is the one on carrier `ws`. In `not-yet-in-sync`, and in
+  `fenced-catch-up` over `rtc` before the roster moves, the receiver's refusal reads `rejected` over
+  `rtc` with a reason starting `not-yet-in-sync`. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
@@ -162,6 +165,13 @@ records what the runner was doing while the cell ran:
     the reserved entry, and a reservation clears a retried row's retry stamp, so a claim of a row that
     had been retried reports its wait from when the row was written, not from its latest retry due
     time; a `reservationWaitMedianMs` over retried rows is an upper bound.
+  - `promotedReleases` — the sum of `promoted` over every `effect-drain` of that direction, on both
+    lanes (a volatile track is released on the memory lane): the buffered releases its batches ran
+    right after their predecessor (D190). An `effect-drain` that states no `promoted` (one recorded
+    before D190) is skipped, as a drain missing any other field is. **Caveat:** under the control
+    server's default bound of 2 000 retained events a long fast run drops its early drains, so
+    `promotedReleases` can read `0` and `pageRegime` `unmeasured` although the fairness cells' own
+    witnesses passed; the lane's scripts retain every event for that reason.
 - `cellOutcome` — `passed` or `failed`, including a soft-assertion failure.
 - `pageDiagnostics` — the lane's `pageerror`/console capture, folded from the cell's
   `-page-diagnostics.json` file. It captures page-level errors only and does not by itself prove
@@ -173,7 +183,33 @@ records what the runner was doing while the cell ran:
   `dropped` is how many more the lane's 200-per-page cap discarded; `first` is the earliest 20 records
   across the agent pages, each `{ agentId, role, atMs, kind, message, stack? }` with `atMs` relative
   to the cell's first control event when the snapshot decoded, else the earlier page's own creation.
+- `ledger` — the session ledgers' fullest reading (D180), from the `rallar.alm` block of each `stats`
+  command's result: every ALM recipe ends with one, so each page reads its ledger once per cell. The
+  decoded snapshot keeps each reading as `ledgerReadings`, `{ atEpochMs, agentId, usage, own, inbound,
+  overloaded, orderingTracks }` per agent; the control client's periodic stats read no page, carry no
+  `alm`, and are skipped, as is a reading whose block does not decode (one without its pools or its
+  `orderingTracks` included). `{ outcome: 'measured', readingCount, maxAdmissions, maxBytes,
+  maxOldestAgeMs, maxTracks, maxInboundAdmissions, maxInboundBytes, maxOrderingTracks,
+  overloadedReadings }`: each maximum is the most any one page held at one reading, not a sum across
+  pages — `maxInboundAdmissions` and `maxInboundBytes` of its inbound pool (D189), `maxOrderingTracks`
+  of the ordering snapshots its inbound stores stated (D191) — and `overloadedReadings` counts the
+  readings that found their page refusing its next own send at the count or byte bound. `{ outcome: 'no-readings' }` when no agent read a
+  ledger: an artifact from before the block existed, or a cell whose recipes stopped before their
+  `stats` step. No threshold reads it; the observation stays non-blocking.
+- `congestion` — the congestion decisions the cell's pages counted (D186), from the `rallar.congestion` block of
+  each `stats` command's result; the decoded snapshot keeps each reading as `congestionReadings`,
+  `{ atEpochMs, agentId, counters }`. A page's counters only grow until its next `close`, so each page contributes its
+  largest reading of each count and the cell sums its pages: `{ outcome: 'measured', readingCount, dropped, deferred,
+  handedOver }`. The sum is a lower bound for a page that reconnects inside the cell: the counts of its earlier
+  connection end at that `close`. A send handed over at admission counts in both `dropped` and `handedOver`.
+  `{ outcome: 'no-readings' }` when no agent read the counters: an artifact from before the block existed, not an
+  uncongested cell. No threshold reads it.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
+
+Every fold reads only the events and results the control server retained for the run. The ALM lane's
+scripts set `RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS` and `RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS` to
+`unbounded`, so the server keeps the whole run; a control server started without them, or one the lane
+reused because it was already running, keeps the defaults.
 
 ## Reading a red
 

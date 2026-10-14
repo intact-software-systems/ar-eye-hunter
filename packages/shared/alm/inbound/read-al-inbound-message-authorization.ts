@@ -1,0 +1,103 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    decodeALControlMessage,
+    toALControlRecipientPeerId,
+    type ALAckPayload
+} from '../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import { Either } from '../../resilience/Either.ts';
+import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
+
+/** Who an inbound runtime receives for: itself, and the origins whose receiver ACKs it aggregates. */
+export interface ALInboundReceiver {
+    readonly selfPeerId: string;
+    /**
+     * Why a receiver's ACK addressed to its origin may not be admitted here as that origin's aggregating
+     * relay hop; undefined admits it. The WS server answers for the broadcasts it aggregates.
+     */
+    readonly readRelayedAckRejection: (
+        ack: ALAckPayload,
+        controlIdentity?: ALMessage['id']
+    ) => ALMessageRejection | undefined;
+}
+
+const NOT_THIS_RECEIVER: ALMessageRejection = {
+    code: 'unauthorized',
+    message: 'Control is addressed to another local receiver'
+};
+
+export function toALInboundReceiver(
+    selfPeerId: string,
+    readRelayedAckRejection: ALInboundReceiver['readRelayedAckRejection'] | undefined
+): ALInboundReceiver {
+    return { selfPeerId, readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER) };
+}
+
+export function readALInboundMessageAuthorization(
+    msg: ALMessage,
+    source: ALInboundMessageRuntime.Source,
+    receiver: ALInboundReceiver
+): Either<ALMessageRejection, ALMessage> {
+    if (
+        source.kind !== 'trusted-server' &&
+        (source.kind === 'ws-client' || msg.targets?.mode === 'unicast') &&
+        msg.id.senderId !== source.peerId
+    ) {
+        return Either.ofLeft({ code: 'unauthorized', message: 'AL origin does not match the authenticated peer' });
+    }
+    if (source.kind === 'rtc-peer' && msg.targets?.mode === 'unicast' && msg.targets.toPeerId !== receiver.selfPeerId) {
+        return Either.ofLeft({
+            code: 'unauthorized',
+            message: 'Direct RTC envelope is addressed to another recipient'
+        });
+    }
+    if (
+        source.kind === 'rtc-peer' && msg.targets?.mode === 'multicast' &&
+        !resolveALFrozenMulticastAudience(msg.targets)
+    ) {
+        return Either.ofLeft({ code: 'malformed', message: 'RTC room multicast carries no frozen audience' });
+    }
+    if (msg.payload.typeId.startsWith('al.control.')) {
+        const rejection = readALInboundControlRejection(msg, source, receiver);
+        if (rejection) {
+            return Either.ofLeft(rejection);
+        }
+    }
+    return Either.ofRight(msg);
+}
+
+/**
+ * A receipt is the server's word, so only the trusted server speaks one. A WS session never relays, so
+ * its ACK speaks only for itself, whoever it is addressed to. Any other control is for this receiver,
+ * or a receiver ACK a relaying WS server admits for the origin it names.
+ */
+function readALInboundControlRejection(
+    msg: ALMessage,
+    source: ALInboundMessageRuntime.Source,
+    receiver: ALInboundReceiver
+): ALMessageRejection | undefined {
+    const decoded = decodeALControlMessage(msg);
+    if (decoded.left) {
+        return decoded.left;
+    }
+    const control = decoded.right!;
+    if (control.type === 'receipt' && source.kind !== 'trusted-server') {
+        return { code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' };
+    }
+    if (
+        control.type === 'ack' && source.kind === 'ws-client' &&
+        control.payload.fromPeerId !== control.payload.logicalRecipientPeerId
+    ) {
+        return {
+            code: 'unauthorized',
+            message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
+        };
+    }
+    if (toALControlRecipientPeerId(control) === receiver.selfPeerId) {
+        return undefined;
+    }
+    return control.type === 'ack' && source.kind === 'ws-client'
+        ? receiver.readRelayedAckRejection(control.payload, msg.id)
+        : NOT_THIS_RECEIVER;
+}

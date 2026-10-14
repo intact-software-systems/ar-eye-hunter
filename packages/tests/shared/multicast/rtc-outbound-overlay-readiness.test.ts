@@ -1,5 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
@@ -7,7 +7,6 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
@@ -37,8 +36,10 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { computeOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
+import { readOutboundTestAdmission } from '../alm/outbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
+import { toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
@@ -56,13 +57,12 @@ interface OverlayFixture {
 beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
+    onTestFinished(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
     native = installNativeRtcRuntime();
-});
-
-afterEach(() => {
-    native.dispose();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
+    onTestFinished(() => native.dispose());
 });
 
 describe('RTC durable accepted-overlay readiness', () => {
@@ -272,7 +272,7 @@ describe('RTC durable accepted-overlay readiness', () => {
                 deadlineAtMs: 2_501
             });
             await fixture.manager.acceptControlMessage(newALAckControlMessage(
-                { v: 2, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2' },
+                { v: 3, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2' },
                 {
                     ackedMsgId: message.id.msgId,
                     fromPeerId: 'peer-2',
@@ -293,7 +293,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[1].channels[0].sent).toHaveLength(1);
     });
 
-    it.each(['volatile', 'best-effort', 'fixed-audience', 'nonlocal', 'excluded', 'visited', 'hinted-away'] as const)(
+    it.each(['volatile', 'best-effort', 'nonlocal', 'excluded', 'visited', 'hinted-away'] as const)(
         'does not acquire durable absent-cache work for %s',
         async (denial) => {
             const fixture = await createFixture();
@@ -311,7 +311,7 @@ describe('RTC durable accepted-overlay readiness', () => {
     )('holds a durable send admitted in an initial %s carrier gap without sending it', async (gap) => {
         const fixture = await createFixture();
         fixture.groups.delete('room');
-        const snapshot = toAuthoritySnapshot(gap);
+        const snapshot = createAuthoritySnapshot(gap);
         if (snapshot) {
             fixture.groups.accept('room', snapshot);
         }
@@ -328,7 +328,7 @@ describe('RTC durable accepted-overlay readiness', () => {
     )('hands an initial %s carrier gap to the fallback carrier as no-route', async (gap) => {
         const fixture = await createFixture();
         fixture.groups.delete('room');
-        const snapshot = toAuthoritySnapshot(gap);
+        const snapshot = createAuthoritySnapshot(gap);
         if (snapshot) {
             fixture.groups.accept('room', snapshot);
         }
@@ -340,7 +340,7 @@ describe('RTC durable accepted-overlay readiness', () => {
 
     it.each(['room-inactive', 'self-only'] as const)('does not hold initial %s authority', async (denial) => {
         const fixture = await createFixture();
-        fixture.groups.accept('room', toAuthoritySnapshot(denial)!);
+        fixture.groups.accept('room', createAuthoritySnapshot(denial)!);
         const result = await fixture.manager.enqueueIfAbsent(createMessage('broadcast'));
         expect(result.verdict.kind, result.reason).toBe(denial === 'room-inactive' ? 'refused' : 'unroutable');
         expect(result.entries).toEqual([]);
@@ -352,7 +352,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         async (denial) => {
             const fixture = await createFixture();
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-            fixture.overlays.accept('explicit', toExplicitOverlay(denial));
+            fixture.overlays.accept('explicit', createExplicitOverlay(denial));
             const original = createMessage('broadcast');
             const held = await fixture.manager.enqueueIfAbsent({ ...original, forwarding: { overlayId: 'explicit' } });
             const handedOver = await fixture.manager.enqueueLegIfAbsent(
@@ -371,7 +371,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         async (gap) => {
             const fixture = await createFixture();
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-            fixture.overlays.accept('explicit', toExplicitOverlay(gap));
+            fixture.overlays.accept('explicit', createExplicitOverlay(gap));
             const original = createMessage('broadcast');
             const result = await fixture.manager.enqueueIfAbsent({ ...original, forwarding: { overlayId: 'explicit' } });
             expect(result.verdict.kind, result.reason).toBe('admitted');
@@ -380,19 +380,24 @@ describe('RTC durable accepted-overlay readiness', () => {
         }
     );
 
-    it('preserves fixed-audience broadcast dispatch on exact active topology', async () => {
+    it('sends a listed room broadcast on exact active topology as the room multicast frozen to its list', async () => {
         const fixture = await createFixture();
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-        const result = await fixture.manager.enqueueIfAbsent(toIneligibleMessage(createMessage('broadcast'), 'fixed-audience'));
+        const original = createMessage('broadcast');
+        const listed = original.targets?.mode === 'broadcast'
+            ? { ...original, targets: { ...original.targets, recipientPeerIds: ['peer-1'] } }
+            : original;
+        const result = await fixture.manager.enqueueIfAbsent(listed);
         expect(result.verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(0);
-        expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
+        const sent = native.createdConnections[0].channels[0].sent.map((value) => JSON.parse(String(value)));
+        expect(sent.map((message) => message.targets)).toEqual([toOriginFrozenTargets(['peer-1'], 1)]);
     });
 
     it('holds a durable send while transport authority is halted and sends it after resume', async () => {
         const fixture = await createFixture();
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-        fixture.groups.accept('room', toAuthoritySnapshot('halted')!);
+        fixture.groups.accept('room', createAuthoritySnapshot('halted')!);
         expect((await fixture.manager.enqueueIfAbsent(createMessage('broadcast'))).verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(100);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
@@ -422,7 +427,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             const result = await fixture.manager.enqueueIfAbsent(createMessage('multicast'));
             expect(result.verdict.kind).toBe('admitted');
             fixture.groups.delete('room');
-            const snapshot = toAuthoritySnapshot(pending);
+            const snapshot = createAuthoritySnapshot(pending);
             if (snapshot) {
                 fixture.groups.accept('room', snapshot);
             }
@@ -444,7 +449,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         const admitted = await fixture.manager.enqueueIfAbsent(message);
         expect(admitted.verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(200);
-        fixture.manager.dispose();
+        await fixture.manager.dispose();
         const restarted = createManager({
             ...fixture,
             resources: createDefaultALOutboundRuntimeResources({
@@ -463,7 +468,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         const fixture = await createFixture();
         expect((await fixture.manager.enqueueIfAbsent(createMessage('broadcast'))).verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(100);
-        fixture.manager.dispose();
+        await fixture.manager.dispose();
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
         await vi.advanceTimersByTimeAsync(500);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
@@ -477,16 +482,21 @@ describe('RTC durable accepted-overlay readiness', () => {
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
         await vi.advanceTimersByTimeAsync(1);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
-        fixture.manager.dispose();
+        await fixture.manager.dispose();
         await vi.advanceTimersByTimeAsync(100);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
     });
 
     it('keeps a zero-copy optimistic admission conflict waiting through a halted carrier gap and admits it on resume', async () => {
         const fixture = await createFixture();
-        const competitor = await computeOutboundTestAdmission(fixture.resources.admissionStore, {
-            ...createMessage('broadcast'),
-            route: { topicId: 'chat', resourceId: 'competitor', contextId: 'room' }
+        const competitor = await readOutboundTestAdmission({
+            store: fixture.resources.admissionStore,
+            message: {
+                ...createMessage('broadcast'),
+                route: { topicId: 'chat', resourceId: 'competitor', contextId: 'room' }
+            },
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
         });
         const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
         vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
@@ -554,7 +564,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             expectedPeerIds: ['peer-2']
         });
         await fixture.manager.acceptControlMessage(newALAckControlMessage(
-            { v: 2, msgId: 'recovered-ack', ts: Date.now(), senderId: 'peer-2' },
+            { v: 3, msgId: 'recovered-ack', ts: Date.now(), senderId: 'peer-2' },
             {
                 ackedMsgId: message.id.msgId,
                 fromPeerId: 'peer-2',
@@ -639,7 +649,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             expect(admitted.verdict.kind).toBe('admitted');
             await vi.advanceTimersByTimeAsync(50);
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-            fixture.groups.accept('room', toAuthoritySnapshot(gap)!);
+            fixture.groups.accept('room', createAuthoritySnapshot(gap)!);
             await vi.advanceTimersByTimeAsync(100);
             expect(await fixture.resources.workQueue.getItem(admitted.entries[0].key)).toMatchObject({ status: EntityStatus.RESERVED });
             expect(native.createdConnections[0].channels[0].sent).toEqual([]);
@@ -664,8 +674,6 @@ function toIneligibleMessage(message: ALMessage, denial: string): ALMessage {
                 qos: { delivery: { algo: 'best-effort' }, durability: { algo: 'volatile' } },
                 delivery: { reliability: 'best-effort', ack: 'none' }
             };
-        case 'fixed-audience':
-            return { ...message, targets: { ...message.targets, recipientPeerIds: ['peer-1'] } };
         case 'nonlocal':
             return { ...message, id: { ...message.id, senderId: 'peer-1' } };
         case 'excluded':
@@ -679,7 +687,7 @@ function toIneligibleMessage(message: ALMessage, denial: string): ALMessage {
     }
 }
 
-function toAuthoritySnapshot(denial: string): GroupSnapshot | undefined {
+function createAuthoritySnapshot(denial: string): GroupSnapshot | undefined {
     const snapshot = createSnapshot();
     switch (denial) {
         case 'unknown':
@@ -727,7 +735,7 @@ async function admitThenRevoke(revocation: ReconfigurationRevocation): Promise<O
     const fixture = await createFixture();
     const overlay = createOverlay(['peer-1']);
     fixture.overlays.accept(overlayId, overlay);
-    const revoked = toRevokedReconfiguration(revocation);
+    const revoked = createRevokedReconfiguration(revocation);
     const commit = fixture.resources.admissionStore.commitBundle.bind(
         fixture.resources.admissionStore
     );
@@ -755,7 +763,7 @@ async function admitThenRevoke(revocation: ReconfigurationRevocation): Promise<O
     return fixture;
 }
 
-function toRevokedReconfiguration(revocation: ReconfigurationRevocation): GroupSnapshot {
+function createRevokedReconfiguration(revocation: ReconfigurationRevocation): GroupSnapshot {
     const snapshot = createFlowingReconfiguration();
     return {
         ...snapshot,
@@ -790,7 +798,7 @@ function toRevokedReconfiguration(revocation: ReconfigurationRevocation): GroupS
     };
 }
 
-function toExplicitOverlay(kind: 'removed' | 'foreign' | 'planned' | 'wrong-version'): OverlayInfo {
+function createExplicitOverlay(kind: 'removed' | 'foreign' | 'planned' | 'wrong-version'): OverlayInfo {
     return {
         ...createOverlay(['peer-2']),
         overlayId: 'explicit',
@@ -808,7 +816,12 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'alm',
         rtcSignalingTopicId: 'rtc'
-    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId, nowEpochMs: () => Date.now() });
+    onTestFinished(() => {
+        for (const peerId of connection.knownPeerIds()) {
+            connection.removePeerIfPresent(peerId);
+        }
+    });
     for (const peerId of ['peer-1', 'peer-2']) {
         connection.ensurePeerConnectionStarted(peerId, true);
     }
@@ -816,13 +829,10 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         peer.setConnected();
         await peer.channels[0].open();
     }
-    onTestFinished(() => {
-        for (const peerId of connection.knownPeerIds()) {
-            connection.removePeerIfPresent(peerId);
-        }
-    });
     const groups = new LatestRepository<string, GroupSnapshot>();
+    onTestFinished(() => groups.dispose());
     const overlays = new LatestRepository<string, OverlayInfo>();
+    onTestFinished(() => overlays.dispose());
     groups.accept('room', createSnapshot());
     const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, random: () => 0.5 });
     const carrierQosProvider = toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, qosProvider);
@@ -832,6 +842,8 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
 
 function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayMulticastManager {
     const manager = new WebRtcOverlayMulticastManager({
+        quotaNow: Date.now,
+        creationNow: Temporal.Now.instant,
         connectionService: fixture.connection,
         groupCache: fixture.groups,
         overlayCache: fixture.overlays,
@@ -842,6 +854,7 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
         outboundRuntime: fixture.resources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
+        faultPort: createPassThroughTransportFaultPort(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
     onTestFinished(() => manager.dispose());

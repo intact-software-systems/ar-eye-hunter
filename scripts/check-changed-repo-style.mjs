@@ -33,6 +33,11 @@ const scanOptions = Object.freeze({
     cognitiveMetrics: true
 });
 
+const touchedEnforcedRuleIds = new Set([
+    'boundary.unknown',
+    'construction.forward-capture'
+]);
+
 async function main() {
     if (baseReference === undefined) {
         failUsage('A base reference is required.');
@@ -40,12 +45,12 @@ async function main() {
     }
 
     const repoRoot = runGit(['rev-parse', '--show-toplevel']).trim();
-    const baseCommit = resolveCommit(baseReference, 'base');
+    const baseCommit = readCommit(baseReference, 'base');
     if (baseCommit === undefined) {
         return;
     }
     const headCommit = runGit(['rev-parse', 'HEAD']).trim();
-    const targetCommit = targetReference === worktreeTarget ? headCommit : resolveCommit(targetReference, 'target');
+    const targetCommit = targetReference === worktreeTarget ? headCommit : readCommit(targetReference, 'target');
     if (targetCommit === undefined) {
         return;
     }
@@ -55,24 +60,28 @@ async function main() {
     }
 
     const mergeBase = runGit(['merge-base', baseCommit, targetCommit]).trim();
-    const changes = readChanges(mergeBase, targetReference, repoRoot);
-    const renameByTargetPath = toRenameMap(changes);
-    const structuralLineageByTargetPath = readStructuralLineageMap({
+    const comparisonSources = await readComparisonSources({
         repoRoot,
         mergeBase,
         targetReference,
-        targetCommit,
-        renameByTargetPath
+        targetCommit
     });
-    const governedTargetSources = targetReference === worktreeTarget
-        ? await collectProductionSources([repoRoot], { includeTests: true })
-        : readRevisionProductionSources(repoRoot, targetCommit);
-    const baseSources = toBaseSources({
+    printChangedFindings({
         repoRoot,
         mergeBase,
-        targetSources: governedTargetSources,
-        changes
+        targetReference,
+        newFindings: computeChangedFindings(repoRoot, comparisonSources)
     });
+}
+
+function computeChangedFindings(repoRoot, comparisonSources) {
+    const {
+        changes,
+        renameByTargetPath,
+        structuralLineageByTargetPath,
+        governedTargetSources,
+        baseSources
+    } = comparisonSources;
     const navigationProductChanged = changes.some((change) =>
         [change.source, change.target]
             .filter(Boolean)
@@ -111,12 +120,20 @@ async function main() {
         })
     });
 
-    printChangedFindings({
-        repoRoot,
-        mergeBase,
-        targetReference,
-        newFindings: newFindings.filter((finding) => !isReviewedDisposition(repoRoot, finding))
-    });
+    return newFindings.filter((finding) => isUnreviewedFinding(repoRoot, finding, targetFindings));
+}
+
+function isUnreviewedFinding(repoRoot, finding, targetFindings) {
+    if (finding.ruleId !== 'boundary.unknown') {
+        return !isReviewedDisposition(repoRoot, finding);
+    }
+    const ownerTotal = targetFindings
+        .filter((target) =>
+            target.ruleId === finding.ruleId && target.file === finding.file &&
+            target.symbol === finding.symbol
+        )
+        .reduce((count, target) => count + boundaryUnknownMagnitude(target), 0);
+    return !isReviewedDisposition(repoRoot, { ...finding, affectedCount: ownerTotal });
 }
 
 const isGovernedSourceFile = (file) => isProductionCodeFile(file) || isTestSourceFile(file);
@@ -138,46 +155,6 @@ function isNavigationProductSource(repoRoot, file) {
         (relativeFile.startsWith('apps/') || relativeFile.startsWith('packages/'));
 }
 
-function printChangedFindings(result) {
-    if (result.newFindings.length === 0) {
-        console.log(
-            `PASS: no new repository style findings ` +
-                `(${result.mergeBase} -> ${result.targetReference}).`
-        );
-        return;
-    }
-
-    console.log(
-        `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
-            `${result.newFindings.length === 1 ? '' : 's'} ` +
-            `(${result.mergeBase} -> ${result.targetReference}):`
-    );
-    for (const finding of result.newFindings) {
-        console.log(`${toRelativePath(result.repoRoot, finding.file)} [${finding.ruleId}]`);
-        console.log(`  ${finding.message}`);
-    }
-    process.exitCode = 1;
-}
-
-function readChanges(mergeBase, targetReference, repoRoot) {
-    const args = ['diff', '--name-status', '--find-renames', mergeBase];
-    if (targetReference !== worktreeTarget) {
-        args.push(targetReference);
-    }
-    const changes = parseNameStatus(runGit(args));
-    if (targetReference === worktreeTarget) {
-        const untracked = runGit(['ls-files', '--others', '--exclude-standard'])
-            .split('\n')
-            .filter(Boolean);
-        changes.push(...untracked.map((file) => ({ kind: 'A', source: undefined, target: file })));
-    }
-    return changes.filter((change) =>
-        [change.source, change.target]
-            .filter(Boolean)
-            .some((file) => isGovernedSourceFile(path.join(repoRoot, file)))
-    );
-}
-
 function parseNameStatus(source) {
     return source
         .split('\n')
@@ -196,62 +173,9 @@ function parseNameStatus(source) {
         });
 }
 
-function toBaseSources(input) {
-    const sourceByPath = new Map(
-        input.targetSources.map((source) => [toRelativePath(input.repoRoot, source.file), source])
-    );
-    for (const change of input.changes) {
-        if (change.target !== undefined && change.kind !== 'M' && change.kind !== 'T') {
-            sourceByPath.delete(change.target);
-        }
-        if (change.source === undefined) {
-            continue;
-        }
-        const baseSource = readRevisionFile(input.mergeBase, change.source);
-        if (
-            baseSource !== undefined &&
-            isGovernedSourceFile(path.join(input.repoRoot, change.source))
-        ) {
-            sourceByPath.set(change.source, {
-                file: path.join(input.repoRoot, change.source),
-                raw: baseSource
-            });
-        }
-    }
-    return [...sourceByPath.values()].sort((left, right) => left.file.localeCompare(right.file));
-}
-
 function subtractExistingFindings(input) {
-    const newFindingSet = new Set();
-    const baseBoundaryCapacityByPath = groupStructuralBoundaryCapacity({
-        repoRoot: input.repoRoot,
-        findings: input.baseFindings,
-        structuralLineageSourcePaths: input.structuralLineageSourcePaths,
-        logicalSourceByTargetPath: new Map()
-    });
-    const regularTargetFindings = [];
-    for (const finding of input.targetFindings) {
-        const logicalPath = findingLogicalPath(
-            input.repoRoot,
-            finding,
-            input.logicalSourceByTargetPath
-        );
-        if (
-            finding.ruleId !== 'boundary.unknown' ||
-            !input.structuralLineageSourcePaths.has(logicalPath)
-        ) {
-            regularTargetFindings.push(finding);
-            continue;
-        }
-        const targetMagnitude = boundaryUnknownMagnitude(finding);
-        const baseCapacity = baseBoundaryCapacityByPath.get(logicalPath) ?? 0;
-        if (baseCapacity < targetMagnitude) {
-            newFindingSet.add(finding);
-            continue;
-        }
-        baseBoundaryCapacityByPath.set(logicalPath, baseCapacity - targetMagnitude);
-    }
-
+    const { newFindings, regularTargetFindings } = computeStructuralBoundaryFindings(input);
+    const newFindingSet = new Set(newFindings);
     const baseMagnitudesByKey = groupFindingMagnitudes(input.repoRoot, input.baseFindings, new Map());
     const baseUnknownTotals = boundaryUnknownTotalByPath(
         input.repoRoot,
@@ -294,6 +218,40 @@ function subtractExistingFindings(input) {
         }
     }
     return input.targetFindings.filter((finding) => newFindingSet.has(finding));
+}
+
+function computeStructuralBoundaryFindings(input) {
+    const newFindings = [];
+    const baseBoundaryCapacityByPath = groupStructuralBoundaryCapacity({
+        repoRoot: input.repoRoot,
+        findings: input.baseFindings,
+        structuralLineageSourcePaths: input.structuralLineageSourcePaths,
+        logicalSourceByTargetPath: new Map()
+    });
+    const regularTargetFindings = [];
+    for (const finding of input.targetFindings) {
+        const logicalPath = findingLogicalPath(
+            input.repoRoot,
+            finding,
+            input.logicalSourceByTargetPath
+        );
+        if (
+            finding.ruleId !== 'boundary.unknown' ||
+            !input.structuralLineageSourcePaths.has(logicalPath)
+        ) {
+            regularTargetFindings.push(finding);
+            continue;
+        }
+        const targetMagnitude = boundaryUnknownMagnitude(finding);
+        const baseCapacity = baseBoundaryCapacityByPath.get(logicalPath) ?? 0;
+        if (baseCapacity < targetMagnitude) {
+            newFindings.push(finding);
+            continue;
+        }
+        baseBoundaryCapacityByPath.set(logicalPath, baseCapacity - targetMagnitude);
+    }
+
+    return { newFindings, regularTargetFindings };
 }
 
 function groupStructuralBoundaryCapacity(input) {
@@ -362,11 +320,6 @@ function findingVariant(finding) {
     return finding.message.startsWith('... and ') ? 'summary' : 'detail';
 }
 
-const touchedEnforcedRuleIds = new Set([
-    'boundary.unknown',
-    'construction.forward-capture'
-]);
-
 function retainTouchedEnforcedFindings(input) {
     const touchedPaths = new Set(
         input.changes.map((change) => change.target).filter((target) => target !== undefined)
@@ -413,10 +366,86 @@ function boundaryUnknownStayedWithinBase(input) {
     return targetTotal <= baseTotal;
 }
 
+function toRelativePath(repoRoot, file) {
+    return path.relative(repoRoot, file).split(path.sep).join('/');
+}
+
 function toRenameMap(changes) {
     return new Map(
         changes.filter((change) => change.kind === 'R').map((change) => [change.target, change.source])
     );
+}
+
+async function readComparisonSources({ repoRoot, mergeBase, targetReference, targetCommit }) {
+    const changes = readChanges(mergeBase, targetReference, repoRoot);
+    const renameByTargetPath = toRenameMap(changes);
+    const structuralLineageByTargetPath = readStructuralLineageMap({
+        repoRoot,
+        mergeBase,
+        targetReference,
+        targetCommit,
+        renameByTargetPath
+    });
+    const governedTargetSources = targetReference === worktreeTarget
+        ? await collectProductionSources([repoRoot], { includeTests: true })
+        : readRevisionProductionSources(repoRoot, targetCommit);
+    const baseSources = readBaseSources({
+        repoRoot,
+        mergeBase,
+        targetSources: governedTargetSources,
+        changes
+    });
+    return {
+        changes,
+        renameByTargetPath,
+        structuralLineageByTargetPath,
+        governedTargetSources,
+        baseSources
+    };
+}
+
+function readChanges(mergeBase, targetReference, repoRoot) {
+    const args = ['diff', '--name-status', '--find-renames', mergeBase];
+    if (targetReference !== worktreeTarget) {
+        args.push(targetReference);
+    }
+    const changes = parseNameStatus(runGit(args));
+    if (targetReference === worktreeTarget) {
+        const untracked = runGit(['ls-files', '--others', '--exclude-standard'])
+            .split('\n')
+            .filter(Boolean);
+        changes.push(...untracked.map((file) => ({ kind: 'A', source: undefined, target: file })));
+    }
+    return changes.filter((change) =>
+        [change.source, change.target]
+            .filter(Boolean)
+            .some((file) => isGovernedSourceFile(path.join(repoRoot, file)))
+    );
+}
+
+function readBaseSources(input) {
+    const sourceByPath = new Map(
+        input.targetSources.map((source) => [toRelativePath(input.repoRoot, source.file), source])
+    );
+    for (const change of input.changes) {
+        if (change.target !== undefined && change.kind !== 'M' && change.kind !== 'T') {
+            sourceByPath.delete(change.target);
+        }
+        if (change.source === undefined) {
+            continue;
+        }
+        const baseSource = readRevisionFile(input.mergeBase, change.source);
+        if (
+            baseSource !== undefined &&
+            isGovernedSourceFile(path.join(input.repoRoot, change.source))
+        ) {
+            sourceByPath.set(change.source, {
+                file: path.join(input.repoRoot, change.source),
+                raw: baseSource
+            });
+        }
+    }
+    return [...sourceByPath.values()].sort((left, right) => left.file.localeCompare(right.file));
 }
 
 function readRevisionProductionSources(repoRoot, revision) {
@@ -436,7 +465,7 @@ function readRevisionFile(revision, file) {
     return result.status === 0 ? result.stdout : undefined;
 }
 
-function resolveCommit(reference, role) {
+function readCommit(reference, role) {
     const result = runGitResult(['rev-parse', '--verify', `${reference}^{commit}`]);
     if (result.status === 0) {
         return result.stdout.trim();
@@ -458,8 +487,25 @@ function runGitResult(args) {
     return spawnSync('git', args, { encoding: 'utf8' });
 }
 
-function toRelativePath(repoRoot, file) {
-    return path.relative(repoRoot, file).split(path.sep).join('/');
+function printChangedFindings(result) {
+    if (result.newFindings.length === 0) {
+        console.log(
+            `PASS: no new repository style findings ` +
+                `(${result.mergeBase} -> ${result.targetReference}).`
+        );
+        return;
+    }
+
+    console.log(
+        `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
+            `${result.newFindings.length === 1 ? '' : 's'} ` +
+            `(${result.mergeBase} -> ${result.targetReference}):`
+    );
+    for (const finding of result.newFindings) {
+        console.log(`${toRelativePath(result.repoRoot, finding.file)} [${finding.ruleId}]`);
+        console.log(`  ${finding.message}`);
+    }
+    process.exitCode = 1;
 }
 
 function failUsage(message) {

@@ -13,6 +13,53 @@ import {
 import { ConnectionContext, type WebSocketServerCallbacks } from '@shared/websocket/json-web-socket-server.ts';
 
 describe('ws lifecycle service', () => {
+    it.each([false, true])('joins both started close enqueues when one fails: %s', async (fails) => {
+        const callbacks = new Map<string, WebSocketServerCallbacks>();
+        const client = Promise.withResolvers<void>();
+        const group = Promise.withResolvers<void>();
+        const scheduled: Array<() => Promise<void>> = [];
+        const released: string[] = [];
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const runtime = initWsLifecycle(createLifecycleSocketService(callbacks), {
+            now: () => 2_000,
+            enqueueClientSessionDisconnect: () => client.promise,
+            enqueueGroupSessionCleanup: () => group.promise,
+            hasCloseFacts: () => true,
+            releaseCloseFacts: (input) => released.push(input.sessionId),
+            retry: retryConfig(scheduled)
+        });
+        callbacks.get('handle-ws-lifecycle')?.onClose?.(
+            createConnection('session-1', 'generation-1', 1_000),
+            new CloseEvent('close')
+        );
+        let completed = false;
+        const stopping = Promise.resolve(runtime.stop()).then(() => {
+            completed = true;
+        });
+        try {
+            expect(callbacks.has('handle-ws-lifecycle')).toBe(false);
+            if (fails) {
+                client.reject(new Error('client enqueue failed'));
+            }
+            else {
+                client.resolve();
+            }
+            await flushLifecycle();
+            expect(completed, 'producer stop completed while group enqueue was still running').toBe(false);
+            group.resolve();
+            await stopping;
+            expect(completed).toBe(true);
+            expect(scheduled).toEqual([]);
+            expect(released).toContain('session-1');
+        }
+        finally {
+            client.resolve();
+            group.resolve();
+            await stopping;
+            errors.mockRestore();
+        }
+    });
+
     it('disconnects client and group session state when the websocket closes', async () => {
         const callbacks = new Map<string, WebSocketServerCallbacks>();
         const wsQBoxServerService = createLifecycleSocketService(callbacks);

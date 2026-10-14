@@ -12,12 +12,20 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status. ' +
             'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
-            'the product as given. durability (volatile, local-outbox, local-inbox) declares the typed channel\'s ' +
+            'the product as given. durability (volatile, local-checkpoint, local-outbox, local-inbox) declares the ' +
+            'typed channel\'s ' +
             'durability; absent, the send is volatile. onStorageUnavailable (refuse, volatile) declares what the ' +
             'channel does when its durable storage is unavailable; absent, it refuses. ' +
             'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
             'the WS server\'s peer id or to the one other live session of the room; a role it cannot resolve fails ' +
-            'the send and opens no handle. ' +
+            'the send and opens no handle. scope (room, world, principal) names the audience; with principal, ' +
+            'principalId names the principal whose live sessions in the room it reaches. recipientPeer (receiver, ' +
+            'recipient-b) names a fixed audience of one inside the room by lane role, which the page resolves at send ' +
+            'time among the room\'s other live sessions whose principal is not the sender\'s: receiver to the one such ' +
+            'session, recipient-b to the one that is not the room\'s leader; a role it cannot resolve fails the send ' +
+            'and opens no handle. ownership (shared, exclusive) passes the send\'s ownership to the product as given; ' +
+            'resourceId names the route\'s resource, which an exclusive send claims for the sending session; absent, ' +
+            'the product mints a fresh resource per send. ' +
             'A replay names only replayOnCarrier (and connection): a ' +
             'harness capability the product never exercises, it re-admits the envelope an earlier handle\'s first ' +
             'carrier captured on the other carrier, opens no handle, and returns that admission verdict.',
@@ -42,8 +50,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Observe ALM Send',
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
-            'The in-page handle projects admission, carrier attempts with their attemptOutcomes and attemptCarriers, a relayRejection, a carrierFallback, ' +
-            'the typed failure of a send that ended rejected, failed or expired, and the ' +
+            'The in-page handle projects admission, carrier attempts with their attemptOutcomes, attemptCarriers and attemptRefusalReasons, a relayRejection, ' +
+            'a carrierFallback, the typed failure of a send that ended rejected, failed or expired, and the ' +
             'latest receipt: its receiptMode, the hop lists, and expectedRecipientPeerIds, confirmedRecipientPeerIds and ' +
             'unconfirmedRecipientPeerIds beside them; a lost handle is unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
@@ -96,8 +104,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Read ALM Receipts',
         description: 'Reads the in-page lifecycle observation for a messages.send handle, including receiptMode, ' +
             'confirmedHopPeerIds, unconfirmedHopPeerIds, expectedRecipientPeerIds, confirmedRecipientPeerIds, ' +
-            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, relayRejection, carrierFallback, failure, submission facts and reason. ' +
-            'Unknown handles are unobservable.',
+            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, attemptRefusalReasons, relayRejection, carrierFallback, failure, ' +
+            'submission facts and reason. Unknown handles are unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -131,6 +139,11 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'fault.inject',
         title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'backpressure, on either carrier, makes the carrier read its channel as at its high watermark when it ' +
+            'plans each matching origination, so the send meets its congestion policy: a best-effort send is refused ' +
+            'congested or handed to WS under rtc-with-ws-fallback, an at-least-once send settles not-ready and retries. ' +
+            'match.msgId may name a {resultCache.<commandId>.<path>} token, such as the msgId an earlier ' +
+            'messages.send returned, so one message is held while every other frame of its type passes. ' +
             'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
             'optionally match.kind: fail, quota (writes only) or a delay. ' +
             'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it.',

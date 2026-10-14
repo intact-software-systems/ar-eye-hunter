@@ -608,6 +608,41 @@ describe('logical recipient evidence', () => {
         expect(claimed.state).toBe('queued');
     });
 
+    it('reads acknowledged under leader only when its one expected leader confirmed, a hop completion confirming nothing', () => {
+        const leaderReceipt = (confirmed: readonly string[]) => ({
+            ...toReceiverReceipt([], true),
+            mode: 'leader' as const,
+            confirmedHopPeerIds: ['b'],
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['d'],
+            confirmedRecipientPeerIds: confirmed,
+            unconfirmedRecipientPeerIds: ['d'].filter((peerId) => !confirmed.includes(peerId))
+        });
+
+        const confirmed = computeALDeliveryLifecycle(toQueuedLifecycle('group-leader'), leaderReceipt(['d']));
+        const hopOnly = computeALDeliveryLifecycle(toQueuedLifecycle('group-leader'), leaderReceipt([]));
+
+        expect(confirmed.state).toBe('acknowledged');
+        expect(confirmed.evidence).toMatchObject({
+            receiptMode: 'leader',
+            expectedRecipientPeerIds: ['d'],
+            confirmedRecipientPeerIds: ['d'],
+            confirmedHopPeerIds: ['b']
+        });
+        expect(hopOnly.state).toBe('queued');
+    });
+
+    it('ends a send its carrier refused for no leader rejected with the typed failure', () => {
+        const previous = createLifecycle('group-leader');
+        const next = computeALDeliveryLifecycle(
+            previous,
+            toAdmissionSettlement(previous, { kind: 'refused', reason: 'no-leader', detail: 'no-leader' }, 'none')
+        );
+
+        expect(next.state).toBe('rejected');
+        expect(next.evidence.failure).toEqual({ kind: 'refused', reason: 'no-leader' });
+    });
+
     it('reads an empty receiver audience as acknowledged by all of its zero recipients', () => {
         const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
             ...toReceiverReceipt([], true),
@@ -639,22 +674,51 @@ describe('relay rejection (D50)', () => {
     it.each(
         [
             { relay: 'peer', peerId: 'relay-1', reason: 'resync-required' },
-            { relay: 'trusted-server', reason: 'resync-required' }
+            { relay: 'trusted-server', reason: 'resync-required' },
+            { relay: 'peer', peerId: 'relay-1', reason: 'membership-fenced' },
+            { relay: 'trusted-server', reason: 'membership-fenced' }
         ] as const
-    )('settles a queued send as rejected by a $relay relay, with that relay as its evidence', (relayRejection) => {
+    )('settles a queued send as rejected by a $relay relay ($reason), with that relay as its evidence', (relayRejection) => {
+        const detail = `The relay refused the message: ${relayRejection.reason}.`;
         const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
             kind: 'relay-rejected',
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS,
             relayRejection,
-            detail: 'The relay refused the message: resync-required.'
+            detail
         });
 
         expect(next.state).toBe('rejected');
         expect(isALDeliveryTerminal(next)).toBe(true);
         expect(next.evidence.relayRejection).toEqual(relayRejection);
-        expect(next.evidence.reason).toBe('The relay refused the message: resync-required.');
+        expect(next.evidence.failure).toEqual({ kind: 'relay-rejected', rejection: relayRejection });
+        expect(next.evidence.reason).toBe(detail);
+    });
+
+    it('fails a receipted send whose hop refused it membership-fenced, naming the hop and the reason', () => {
+        const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
+            kind: 'receipt-exhausted',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS,
+            mode: 'hop',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['relay-1'],
+            cause: 'hop-refused',
+            hopPeerId: 'relay-1',
+            nackReason: 'membership-fenced',
+            detail: 'Hop relay-1 refused the message: membership-fenced.'
+        });
+
+        expect(next.state).toBe('failed');
+        expect(next.evidence.failure).toEqual({
+            kind: 'receipt-exhausted',
+            cause: 'hop-refused',
+            hopPeerId: 'relay-1',
+            nackReason: 'membership-fenced'
+        });
+        expect(next.evidence.relayRejection).toBeUndefined();
     });
 });
 
@@ -1193,10 +1257,17 @@ function createLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         msgId: MSG_ID,
         typeId: 'chat.private-text.v1',
         ackMode,
-        receiptAlgo: ackMode === 'none' ? 'none' : 'receiver',
+        receiptAlgo: toReceiptAlgo(ackMode),
         expiresAtMs: undefined,
         submittedAtMs: SUBMITTED_AT_MS
     });
+}
+
+function toReceiptAlgo(ackMode: ALAckMode): ALAckAlgo {
+    if (ackMode === 'none') {
+        return 'none';
+    }
+    return ackMode === 'group-leader' ? 'leader' : 'receiver';
 }
 
 function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
