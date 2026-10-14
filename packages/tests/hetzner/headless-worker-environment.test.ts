@@ -85,6 +85,8 @@ interface HeadlessRenameRecord {
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
+const operatorUsername = 'synthetic workflow user';
+const operatorPassword = 'synthetic "password" $HOME `literal` $(literal) \\';
 const writerPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-headless-worker-env.sh');
 const osEnvironment = { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' };
 const workflowPorts = [
@@ -141,7 +143,7 @@ const existingWorkerValues = {
     RALLAR_BLACK_BOX_APPLICATION_ID: 'worker-application',
     RALLAR_WORKSPACE_ID: 'base-workspace',
     RALLAR_BLACK_BOX_WORKSPACE_ID: 'worker-workspace',
-    RALLAR_BLACK_BOX_REGISTER: 'true',
+    RALLAR_BLACK_BOX_REGISTER: 'false',
     RALLAR_BLACK_BOX_RESTORE_SESSION: 'false',
     RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE: 'true',
     RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE: 'true',
@@ -282,6 +284,19 @@ describe('headless worker EnvironmentFile', () => {
         expect.soft(await readdir(path.dirname(fixture.destination))).toEqual(prior ? ['worker.env'] : []);
     });
 
+    it('refuses registered agents without the shared password before writing the destination', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const result = await writeWorkerEnvironment(context, fixture, {
+            ...existingWorkerValues,
+            RALLAR_BLACK_BOX_REGISTER: 'true',
+            RALLAR_BLACK_BOX_PASSWORD: ''
+        });
+
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('RALLAR_BLACK_BOX_PASSWORD');
+        expect(await readdir(path.dirname(fixture.destination))).toEqual([]);
+    });
+
     it('preserves the destination on pre-rename filesystem refusal, cleans its private temp and preserves caller traps', async (context) => {
         const fixture = await createHeadlessEnvironmentFixture(context);
         await writeFile(fixture.destination, 'prior sentinel\n');
@@ -358,8 +373,8 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
         const remotePath = path.join(fixture.runnerDirectory, output);
         const values = await readEnvironmentFile(context, remotePath);
         expect(values).toMatchObject({
-            RALLAR_BLACK_BOX_USERNAME: 'synthetic workflow user',
-            RALLAR_BLACK_BOX_PASSWORD: 'synthetic "password" $HOME `literal` $(literal) \\',
+            RALLAR_BLACK_BOX_USERNAME: operatorUsername,
+            RALLAR_BLACK_BOX_PASSWORD: operatorPassword,
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
             RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.synthetic.invalid/control',
             RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: 'debug',
@@ -398,13 +413,50 @@ describe.each(workflowPorts)('$step Actions transport', ({ file, step, output })
         }
         expect((await writeRemoteWorkerEnvironment(context, fixture, remotePath)).status).toBe(0);
         expect(await readEnvironmentFile(context, fixture.destination)).toMatchObject({
-            RALLAR_BLACK_BOX_USERNAME: 'synthetic workflow user',
-            RALLAR_BLACK_BOX_PASSWORD: 'synthetic "password" $HOME `literal` $(literal) \\',
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: file === 'hetzner-distributed-recipe-runner.yml' ? 'actions-agent-01' : 'actions-agent-08',
+            RALLAR_BLACK_BOX_AGENT_1_PASSWORD: operatorPassword,
             RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.synthetic.invalid/control',
             RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: 'debug',
             RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: 'synthetic-control-token',
             RALLAR_BLACK_BOX_ROOM_ID: file === 'hetzner-distributed-recipe-runner.yml' ? 'materialized-room' : 'input-room'
         });
+    });
+});
+
+describe('Hetzner runner headless agent principals', () => {
+    it('signs each registered agent in as its own controller-NN user while the remote env keeps the operator credential', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const remotePath = await renderRunnerControllerAgents(context, fixture, 'true');
+
+        expect(await readEnvironmentFile(context, remotePath)).toMatchObject({
+            RALLAR_BLACK_BOX_USERNAME: operatorUsername,
+            RALLAR_BLACK_BOX_PASSWORD: operatorPassword
+        });
+        expect((await writeRemoteWorkerEnvironment(context, fixture, remotePath)).status).toBe(0);
+        const worker = await readEnvironmentFile(context, fixture.destination);
+        expect(toAgentCredentials(worker)).toEqual({
+            RALLAR_BLACK_BOX_AGENT_1_PASSWORD: operatorPassword,
+            RALLAR_BLACK_BOX_AGENT_1_USERNAME: 'controller-01',
+            RALLAR_BLACK_BOX_AGENT_2_PASSWORD: operatorPassword,
+            RALLAR_BLACK_BOX_AGENT_2_USERNAME: 'controller-02',
+            RALLAR_BLACK_BOX_AGENT_3_PASSWORD: operatorPassword,
+            RALLAR_BLACK_BOX_AGENT_3_USERNAME: 'controller-03'
+        });
+        expect(worker).not.toHaveProperty('RALLAR_BLACK_BOX_USERNAME');
+        expect(worker).not.toHaveProperty('RALLAR_BLACK_BOX_PASSWORD');
+    });
+
+    it('signs every agent in as the shared operator user when registration is off', async (context) => {
+        const fixture = await createHeadlessEnvironmentFixture(context);
+        const remotePath = await renderRunnerControllerAgents(context, fixture, 'false');
+
+        expect((await writeRemoteWorkerEnvironment(context, fixture, remotePath)).status).toBe(0);
+        const worker = await readEnvironmentFile(context, fixture.destination);
+        expect(worker).toMatchObject({
+            RALLAR_BLACK_BOX_USERNAME: operatorUsername,
+            RALLAR_BLACK_BOX_PASSWORD: operatorPassword
+        });
+        expect(toAgentCredentials(worker)).toEqual({});
     });
 });
 
@@ -645,6 +697,24 @@ function toActionsStepEnvironment(step: HeadlessEnvironmentStep, actionsContext:
             })
         ])
     );
+}
+
+async function renderRunnerControllerAgents(context: TestContext, fixture: HeadlessEnvironmentFixture, register: string): Promise<string> {
+    await writeSyntheticCredentials(fixture);
+    const step = await readHeadlessEnvironmentStep('hetzner-distributed-recipe-runner.yml', 'Render remote run env');
+    const actionsContext = {
+        ...toSyntheticActionsContext(undefined),
+        'inputs.agent_prefix': 'controller',
+        'inputs.register_before_login': register,
+        'steps.manifest_defaults.outputs.agent_count': '3'
+    };
+    const result = await runWorkflowStep(context, { fixture, step, actionsContext, portEnvironment: {} });
+    expect(result).toEqual({ status: 0, stdout: '', stderr: '' });
+    return path.join(fixture.runnerDirectory, 'rallar-distributed-recipe.env');
+}
+
+function toAgentCredentials(values: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+    return Object.fromEntries(Object.entries(values).filter(([key]) => /^RALLAR_BLACK_BOX_AGENT_\d+_(?:USERNAME|PASSWORD)$/u.test(key)));
 }
 
 async function runHeadlessEnvironmentProcess(context: TestContext, input: HeadlessEnvironmentProcessInput): Promise<HeadlessEnvironmentProcessResult> {

@@ -370,10 +370,14 @@ service logs.
 
 Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
 `register_before_login` input, when the target API is memory-backed and has just
-been redeployed so the disposable test user must be created before login. Leave
-it disabled for pre-provisioned or persistent auth users. When registration
-reports that the user already exists, the black-box auth flow falls back to a
-normal login with the same credentials.
+been redeployed so the disposable test users must be created before login. With
+it enabled, the worker env file gives each agent its own user named after its
+agent id (`<prefix>-NN`) with the shared `RALLAR_BLACK_BOX_PASSWORD`, and
+`RALLAR_BLACK_BOX_USERNAME` stays an operator-only credential. Leave it
+disabled for pre-provisioned or persistent auth users; every agent then signs in
+with `RALLAR_BLACK_BOX_USERNAME` or its `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME`.
+When registration reports that the user already exists, the black-box auth flow
+falls back to a normal login with the same credentials.
 
 The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
 `register_before_login=true` for Hetzner runs because the current controller API

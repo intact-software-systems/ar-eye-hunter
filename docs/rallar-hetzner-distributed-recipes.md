@@ -27,7 +27,7 @@ control_http_url: https://control.rallar.intactss.com
 manifest_path: path/to/distributed-manifest.json
 application_id: rallar-server
 workspace_id: default
-register_before_login: false
+register_before_login: true
 browser_log_level: warning         # warning | info | debug
 headless_entry: headless           # operator-spa keeps the rollback route
 browser_engine: chromium           # chromium | firefox | webkit
@@ -138,11 +138,21 @@ scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   --ref main
 ```
 
-The dispatch helper sends `register_before_login=true` by default because the
-Hetzner controller currently uses a memory-backed API and a full rollout clears
-the disposable test user. Override with `--register-before-login false` only
-when the target API already has persistent pre-provisioned users. The raw
-workflow input still defaults to `false` for manual compatibility.
+The workflow input and the dispatch helper both default
+`register_before_login=true` because the Hetzner controller currently uses a
+memory-backed API and a full rollout clears its users; a direct
+`gh workflow run` that left the input at its former `false` default failed with
+a 401 at the first login. Override with `--register-before-login false` (or
+`-f register_before_login=false`) only when the target API already has
+persistent pre-provisioned users; those runs keep signing every agent in as the
+shared `RALLAR_BLACK_BOX_USERNAME`. With registration on, each hosted agent
+registers and signs in as its own user named after its agent id
+(`controller-01`, `controller-02`, ...) with the shared password, matching the
+all-local lifecycle and the GitHub Free job, because every WebSocket connect of
+one shared principal fans out a full snapshot to all of that principal's
+sessions on the serial AppInbox and stalls a 15-agent room join. The
+`RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
+controller smoke and other operator phases.
 
 Headless agents on the controller VM register and log in from one IP. The API
 default of 20 registrations and 30 logins per IP per minute refuses cohorts
