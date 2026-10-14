@@ -311,7 +311,7 @@ describe('released ResourceInbox outcomes', () => {
 });
 
 describe('handler-finalized ResourceInbox success', () => {
-    it('completes with the entry its handler committed and leaves that entry as the handler wrote it', async () => {
+    it('completes with the entry its handler committed, leaves that entry as the handler wrote it and announces it only once, from its committer', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
         const queue = new InMemoryQueueBox();
@@ -319,6 +319,12 @@ describe('handler-finalized ResourceInbox success', () => {
         await queue.enqueue(enqueued);
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const completion = completionNotifications.subscribe(enqueued.key);
+        const announced: string[] = [];
+        const publish = completionNotifications.publish.bind(completionNotifications);
+        completionNotifications.publish = (key) => {
+            announced.push(key.resourceId);
+            publish(key);
+        };
         let committed: ResourceEntry | undefined;
 
         const results = await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess>({
@@ -332,6 +338,7 @@ describe('handler-finalized ResourceInbox success', () => {
             .dequeueForCompute(async (_key, attempt) => {
                 committed = { ...attempt.entry, status: EntityStatus.COMPLETED };
                 expect(await queue.replaceIfObserved(attempt.entry, committed)).not.toBeNull();
+                completionNotifications.publish(committed.key);
                 return new ResourceInboxHandlerFinalizedSuccess(committed);
             });
 
@@ -340,6 +347,7 @@ describe('handler-finalized ResourceInbox success', () => {
         expect(outcome?.right?.value.entry).toEqual(committed);
         expect(await queue.getItem(enqueued.key)).toEqual(committed);
         await expect(completion.wait(1_000)).resolves.toBeUndefined();
+        expect(announced).toEqual(['handler-finalized']);
     });
 });
 

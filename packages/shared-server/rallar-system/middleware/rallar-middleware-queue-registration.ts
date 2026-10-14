@@ -130,8 +130,9 @@ export function registerApplicationQueueReaderTasks(
 
 /**
  * A batch that claimed work wakes the engine, so the next claim does not wait out the idle backoff.
- * An open circuit or a failed batch advertises no work and wakes the task when it may run again,
- * so neither probes storage on every pass nor holds the task's only slot while it waits.
+ * An open circuit, a failed readiness probe or a failed batch advertises no work and wakes the task
+ * when it may run again, so none of them probes storage on every pass nor holds the task's only slot
+ * while it waits. A failed probe still rethrows, so the engine reports it once for that pass.
  */
 function includeQueueReaderTask(
     input: RegisterApplicationQueueReaderTasksInput,
@@ -143,14 +144,18 @@ function includeQueueReaderTask(
         maxConcurrency: () => 1,
         isWork: async () => {
             const nowMs = input.nowEpochMs();
-            const deferredUntilMs = task.resilience.isNotAllowedThroughToDequeue()
-                ? nowMs + task.resilience.toCircuitOpenBackoffMs()
-                : failureBackoff.getRetryAtMs(nowMs);
+            const deferredUntilMs = task.resilience.getDequeueReopenAtMs(nowMs) ?? failureBackoff.getRetryAtMs(nowMs);
             if (deferredUntilMs !== undefined) {
                 input.engine.wakeAt(task.taskId, deferredUntilMs);
                 return false;
             }
-            return await task.readIsWork();
+            try {
+                return await task.readIsWork();
+            }
+            catch (error) {
+                input.engine.wakeAt(task.taskId, failureBackoff.recordFailure(input.nowEpochMs()));
+                throw error;
+            }
         },
         runnable: async () => {
             let claimedCount: number;
@@ -170,7 +175,7 @@ function includeQueueReaderTask(
     });
 }
 
-/** Consecutive failed batches wait 1, 2, 4, 8 and then 16 seconds before the task advertises work again. */
+/** Consecutive failed probes or batches wait 1, 2, 4, 8 and then 16 seconds before the task advertises work again. */
 class QueueReaderFailureBackoff {
     static readonly BASE_DELAY_MS = 1_000;
     static readonly MAX_DELAY_MS = 16_000;

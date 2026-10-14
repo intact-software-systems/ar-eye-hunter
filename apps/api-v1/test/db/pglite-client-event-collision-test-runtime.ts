@@ -16,10 +16,10 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -123,7 +123,7 @@ async function preparePGliteClientEvent(
     );
     const read = await service.read(command);
     const computed = computeClientMutation({ command, read });
-    assertClientMutation({ command, read, computed });
+    assertClientMutationMatchesRecompute({ command, read, computed });
     assert.deepEqual(validateClientMutationAuthorityPolicy(command, read), []);
     assert.equal(computed.outcome, 'write');
     if (computed.outcome !== 'write') {

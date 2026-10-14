@@ -58,7 +58,7 @@ describe('middleware pre-admission', () => {
                 concurrencyIncreaseStep: 1,
                 concurrencyReduceStep: 1
             });
-            const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+            const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
             const signalingBackend = new InMemoryAdmissionBackend(admission, Date.now);
             const runtime = createRallarMiddleware({
                 ...fixture.options,

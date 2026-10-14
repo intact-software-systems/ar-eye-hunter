@@ -1,9 +1,7 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import {
     computeWsOutboxProvenanceDigest,
     toWsOutboxProvenanceKey,
@@ -12,7 +10,8 @@ import {
 } from '../../websocket/outbox/ws-outbox-provenance.ts';
 import type {
     ClientMutationComputed,
-    ClientMutationDomainAppliedWrite
+    ClientMutationDomainAppliedWrite,
+    ClientMutationOutboxWrite
 } from '../mutation/client-mutation-contracts.ts';
 
 export interface ClientSnapshotProvenanceInsert {
@@ -30,15 +29,14 @@ export function computeClientSnapshotProvenance(
     if (mutation.outcome !== 'write') {
         return [];
     }
-    return mutation.outboxWrites.flatMap((write, index) => {
-        const proof = computeClientSnapshotProvenanceInsert(write, mutation.outboxMessages[index]!, mutation);
+    return mutation.outbox.flatMap((outboxWrite) => {
+        const proof = computeClientSnapshotProvenanceInsert(outboxWrite, mutation);
         return proof === null ? [] : [proof];
     });
 }
 
 function computeClientSnapshotProvenanceInsert(
-    write: AppOutboxInsert,
-    message: ALMessage,
+    { write, message }: ClientMutationOutboxWrite,
     mutation: ClientMutationDomainAppliedWrite
 ): ClientSnapshotProvenanceInsert | null {
     const principalRef = mutation.snapshot.principal;

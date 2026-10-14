@@ -2,7 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import {
@@ -11,13 +12,22 @@ import {
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
+import { AppInboxHandlerExecutor } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-executor.ts';
+import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registration.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { TestResourceInboxResults } from '../test-support/app-inbox-resource-fixtures.ts';
 import {
+    createAtomicHarness,
     createRegisteredHandlerHarness,
     createResilience,
     toRegisteredHandlerIdentityResource,
@@ -415,6 +425,104 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(1);
     });
 });
+
+describe('AppInboxHandlerExecutor claim invariants', () => {
+    it('refuses to complete a claim whose handler-finalized entry reads back as anything but COMPLETED', async () => {
+        const claim = createDirectExecutorClaim(() => 1_000);
+        const execution = claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                handle: async (_command, context) => {
+                    const completionInput = {
+                        ...claim.writer.readCompletionFacts(context),
+                        status: EntityStatus.COMPLETED,
+                        durableResult: { status: 'accepted' }
+                    } as const;
+                    const completion = computeAppInboxCompletion(completionInput);
+                    expect(validateAppInboxCompletion(completionInput, completion)).toEqual([]);
+                    const result = await claim.writer.writeComputedMutation(context, completion, async () => {});
+                    vi.spyOn(claim.writer, 'read').mockReturnValue({
+                        state: 'transaction-finalized',
+                        entry: { ...context.entry, status: EntityStatus.RESERVED }
+                    });
+                    return result;
+                }
+            }
+        });
+
+        await expect(execution).rejects.toThrow('must finalize it COMPLETED');
+    });
+
+    it.each([
+        { handlerDurationMs: 60_000, outranLease: false },
+        { handlerDurationMs: 60_001, outranLease: true }
+    ])(
+        'reports a handler of $handlerDurationMs ms against its 60 s reservation lease as outrunning it: $outranLease',
+        async ({ handlerDurationMs, outranLease }) => {
+            let nowEpochMs = 1_000;
+            const claim = createDirectExecutorClaim(() => nowEpochMs);
+            await claim.executor.execute({
+                ...claim.input,
+                registration: {
+                    ...claim.input.registration,
+                    handle: async () => {
+                        nowEpochMs += handlerDurationMs;
+                        return { status: 'accepted' };
+                    }
+                }
+            });
+
+            expect(claim.timing.filter((event) => event.operation === 'handler-outran-lease')).toEqual(
+                outranLease
+                    ? [expect.objectContaining({
+                        component: 'app-inbox-handler',
+                        status: 'error',
+                        durationMs: handlerDurationMs,
+                        details: expect.objectContaining({ reservationLeaseMs: 60_000, attempt: 7 })
+                    })]
+                    : []
+            );
+        }
+    );
+});
+
+interface DirectExecutorClaim {
+    readonly executor: AppInboxHandlerExecutor;
+    readonly writer: AppInboxTransactionWriter;
+    readonly timing: RallarTimingEvent[];
+    readonly input: AppInboxHandlerExecutor.Input<JsonWireValue, JsonWireValue>;
+}
+
+function createDirectExecutorClaim(nowEpochMs: () => number): DirectExecutorClaim {
+    const harness = createAtomicHarness();
+    const timing: RallarTimingEvent[] = [];
+    const writer = new AppInboxTransactionWriter(
+        { database: harness.database.sql, nowEpochMs },
+        { serviceId: 'server-1' }
+    );
+    const executor = new AppInboxHandlerExecutor(
+        { resultRepository: new TestResourceInboxResults(), transactionWriter: writer, nowEpochMs },
+        { serviceId: 'server-1', timing: (event) => timing.push(event) }
+    );
+    const registration: AppInboxHandlerRegistration<JsonWireValue, JsonWireValue> = {
+        type: AppInboxType.GROUP_CREATE,
+        decodeCommand: (value) => value,
+        encodeResult: (result) => result,
+        handle: async () => null
+    };
+    return {
+        executor,
+        writer,
+        timing,
+        input: {
+            registration,
+            message: harness.context.message,
+            entry: harness.entry,
+            attemptTelemetry: { ...harness.context.attemptTelemetry, reservationLeaseMs: 60_000 }
+        }
+    };
+}
 
 function isJsonWireObject(value: JsonWireValue): value is Readonly<{
     readonly [key: string]: JsonWireValue;

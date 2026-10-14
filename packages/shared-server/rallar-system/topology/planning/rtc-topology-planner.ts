@@ -64,6 +64,7 @@ interface CreateWeightedTopologyNextHopsInput {
 
 interface CreateMeasuredRoomGraphInput {
     readonly group: GroupSnapshot;
+    readonly leaderSessionId: string | undefined;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
     readonly topology: RallarRtcTopologyKind;
     readonly options: RallarRtcTopologyServiceOptions;
@@ -220,6 +221,7 @@ export class RtcTopologyPlanner {
         return this.createMeasuredRoomGraph(
             {
                 group,
+                leaderSessionId: resolveRallarGroupLeaderSessionId(group),
                 rttMeasurements,
                 topology,
                 options: this.serviceOptions
@@ -303,6 +305,7 @@ export class RtcTopologyPlanner {
             globalGraph: this.createMeasuredRoomGraph(
                 {
                     group: plan.group,
+                    leaderSessionId: plan.leaderSessionId,
                     rttMeasurements: plan.relevantRttMeasurements,
                     topology: plan.topology,
                     options: plan.topologyOptions
@@ -346,6 +349,7 @@ export class RtcTopologyPlanner {
             globalGraph: this.createMeasuredRoomGraph(
                 {
                     group: plan.group,
+                    leaderSessionId: plan.leaderSessionId,
                     rttMeasurements: plan.relevantRttMeasurements,
                     topology: plan.topology,
                     options: plan.topologyOptions
@@ -393,6 +397,7 @@ export class RtcTopologyPlanner {
         const result = createRtcRoomGraph({
             group: input.group,
             activeSessionIds,
+            preferredSourceSessionId: input.leaderSessionId,
             rttMeasurements: input.rttMeasurements,
             degreeLimit: this.readDegreeLimit(input.options),
             rttReportingDegreeLimit: publicDispatch.readRttReportingDegreeLimit(input.options),

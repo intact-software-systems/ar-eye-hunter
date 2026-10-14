@@ -29,7 +29,7 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const SERVICE_ID = 'pglite-release-statements';
 
-Deno.test('PGlite AppInbox success committed by its handler transaction issues no release statements', async () => {
+Deno.test('PGlite AppInbox success committed by its handler transaction updates no inbox row afterwards and notifies its waiter once per finalized entry', async () => {
     await withPGliteSql(async (sql) => {
         const statements: string[] = [];
         const recordingSql = recordStatements(sql, statements);
@@ -42,13 +42,11 @@ Deno.test('PGlite AppInbox success committed by its handler transaction issues n
         };
         const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
         let handlerCommittedAt: number | undefined;
-        let statementsAfterHandlerCommit: number | undefined;
         const queueInbox = createPSqlResourceInboxRepository(recordingSql, () => new Date());
         const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
             completionNotifications,
             onAttemptReleaseTelemetry: (release) => {
                 releases.push(release);
-                statementsAfterHandlerCommit = statements.length - (handlerCommittedAt ?? statements.length);
             }
         });
         const commandClient = createAppInboxClientRuntime({
@@ -94,11 +92,16 @@ Deno.test('PGlite AppInbox success committed by its handler transaction issues n
 
         const result = await pending;
         assert.deepEqual(result.right, { accepted: true }, JSON.stringify(result.left));
-        assert.equal(statementsAfterHandlerCommit, 0, 'The committed handler transaction already finalized the entry');
+        assert.ok(handlerCommittedAt !== undefined);
+        assert.deepEqual(
+            statements.slice(handlerCommittedAt).filter((statement) => /update\s+resource_inbox\b/i.test(statement)),
+            [],
+            'The committed handler transaction already finalized the entry'
+        );
         assert.equal(releases.length, 1);
         assert.equal(releases[0]?.status, EntityStatus.COMPLETED);
         assert.equal(releases[0]?.classification, 'accepted');
-        assert.equal(published.filter((resourceId) => resourceId === 'release-statements-request').length, 2);
+        assert.deepEqual(published, ['release-statements-request'], 'Each finalized entry wakes its waiter exactly once');
         const stored = await queueInbox.entries.findAnyByKey(releases[0]!.key);
         assert.equal(stored?.status, EntityStatus.COMPLETED);
         assert.equal(stored?.dequeueAudit.attempts, 1);

@@ -30,11 +30,11 @@ import {
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-result.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { validateComputedProjection } from '@shared-server/rallar-system/computed-data-validation.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import {
@@ -59,7 +59,7 @@ describe('client mutation result validation', () => {
         const read = { ...emptyRead(command), authoritySession: null };
         const computed = computeClientMutation({ command, read });
 
-        expect(() => assertClientMutation({ command, read, computed })).not.toThrow();
+        expect(() => assertClientMutationMatchesRecompute({ command, read, computed })).not.toThrow();
         expect(validateClientMutationAuthorityPolicy(command, read).map(({ path }) => path))
             .toEqual(['read.authoritySession']);
     });
@@ -76,7 +76,7 @@ describe('client mutation result validation', () => {
         const read = emptyRead(command);
         const computed = computeClientMutation({ command, read });
 
-        expect(() => assertClientMutation({ command, read, computed })).not.toThrow();
+        expect(() => assertClientMutationMatchesRecompute({ command, read, computed })).not.toThrow();
         expect(validateClientMutationAuthorityPolicy(command, read).map(({ path }) => path))
             .toEqual(['command.input.actorPrincipalId', 'command.input.actorSessionId']);
     });
@@ -86,32 +86,36 @@ describe('client mutation result validation', () => {
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
 
-        assertClientMutation({ command, read, computed });
+        assertClientMutationMatchesRecompute({ command, read, computed });
     });
 
     it('rejects altered outbox values, page membership, and receipt identities', () => {
         const command = principalCommand();
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
-        const [first, ...remaining] = computed.outboxWrites;
+        const [first, ...remaining] = computed.outbox;
         if (!first || remaining.length === 0) {
             throw new Error('Expected snapshot and event outbox writes');
         }
+        const { write } = first;
         const variants = [
-            { name: 'payload', outboxWrites: [{ ...first, entry: { ...first.entry, resource: 'altered' } }, ...remaining] },
+            { name: 'payload', outbox: [{ ...first, write: { ...write, entry: { ...write.entry, resource: 'altered' } } }, ...remaining] },
             {
                 name: 'physical key',
-                outboxWrites: [{ ...first, entry: { ...first.entry, key: { ...first.entry.key, resourceId: 'another-message' } } }, ...remaining]
+                outbox: [{
+                    ...first,
+                    write: { ...write, entry: { ...write.entry, key: { ...write.entry.key, resourceId: 'another-message' } } }
+                }, ...remaining]
             },
-            { name: 'prepared timestamp', outboxWrites: [{ ...first, createdAt: '2020-01-01 00:00:00' }, ...remaining] },
-            { name: 'missing page', outboxWrites: remaining },
-            { name: 'duplicate page', outboxWrites: [first, first, ...remaining] },
-            { name: 'reordered pages', outboxWrites: [...remaining, first] },
+            { name: 'prepared timestamp', outbox: [{ ...first, write: { ...write, createdAt: '2020-01-01 00:00:00' } }, ...remaining] },
+            { name: 'missing page', outbox: remaining },
+            { name: 'duplicate page', outbox: [first, first, ...remaining] },
+            { name: 'reordered pages', outbox: [...remaining, first] },
             { name: 'receipt identities', receipt: { ...computed.receipt, outboxIds: ['another-message'] } }
         ];
 
         for (const { name, ...changes } of variants) {
-            expect(() => assertClientMutation({ command, read, computed: { ...computed, ...changes } }), name)
+            expect(() => assertClientMutationMatchesRecompute({ command, read, computed: { ...computed, ...changes } }), name)
                 .toThrowError(ClientMutationRejectedError);
         }
     });
@@ -128,7 +132,7 @@ describe('client mutation result validation', () => {
             }
         });
 
-        expect(() => assertClientMutation({ command, read, computed: accessorBacked })).toThrow(
+        expect(() => assertClientMutationMatchesRecompute({ command, read, computed: accessorBacked })).toThrow(
             'Client mutation computed.snapshot must be a data property'
         );
         expect(accessorRead).toBe(false);
@@ -170,7 +174,7 @@ describe('client mutation result validation', () => {
         };
         const computed = computeClientMutation({ command: conflicting, read });
 
-        assertClientMutation({ command: conflicting, read, computed });
+        assertClientMutationMatchesRecompute({ command: conflicting, read, computed });
     });
 
     it('rejects self-consistent state sync and outbox values that differ from canonical computation', () => {
@@ -184,13 +188,13 @@ describe('client mutation result validation', () => {
         const selfConsistentButNoncanonical = {
             ...computed,
             stateSync: shiftedStateSync,
-            outboxWrites: shiftedStateSync
+            outbox: shiftedStateSync
                 .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
-                .map(({ entry }) => computeAppOutboxInsert(entry))
+                .map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }))
         };
 
         expect(() =>
-            assertClientMutation({
+            assertClientMutationMatchesRecompute({
                 command,
                 read,
                 computed: selfConsistentButNoncanonical
@@ -216,9 +220,13 @@ describe('client mutation operation validation', () => {
 
         // Each projection walks the complete operation; one walk over one full recompute is the validation cost contract.
         expect(validateComputedProjection).toHaveBeenCalledTimes(1);
-        const changed = { ...computed.mutation, outboxMessages: computed.mutation.outboxMessages.slice(1) };
+        const [first, ...remaining] = computed.mutation.outbox;
+        if (!first || remaining.length === 0) {
+            throw new Error('Expected snapshot and event outbox writes');
+        }
+        const changed = { ...computed.mutation, outbox: [{ ...first, message: remaining[0]!.message }, ...remaining] };
         expect(() => assertAuthorisedWsConnectOperation({ ...input, computed: { ...computed, mutation: changed } }))
-            .toThrow(/outboxMessages/);
+            .toThrow(/outbox/);
     });
 
     it('rejects an unexpected unicast row even when accepted state sync has no live session', () => {
@@ -235,13 +243,14 @@ describe('client mutation operation validation', () => {
             throw new Error('Expected completed mutation');
         }
         const mutation = computed.mutation;
-        const first = mutation.outboxWrites[0]!;
-        const message = decodePersistedALMessage(first.entry.resource);
-        const unexpectedUnicast = computeAppOutboxInsert({
-            ...first.entry,
-            resource: JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'late-session' } })
-        });
-        const forgedMutation = { ...mutation, outboxWrites: [unexpectedUnicast, ...mutation.outboxWrites.slice(1)] };
+        const first = mutation.outbox[0]!;
+        const message = decodePersistedALMessage(first.write.entry.resource);
+        const unexpectedMessage = { ...message, targets: { mode: 'unicast', toPeerId: 'late-session' } } as const;
+        const unexpectedUnicast = {
+            write: computeAppOutboxInsert({ ...first.write.entry, resource: JSON.stringify(unexpectedMessage) }),
+            message: unexpectedMessage
+        };
+        const forgedMutation = { ...mutation, outbox: [unexpectedUnicast, ...mutation.outbox.slice(1)] };
         expect(() =>
             assertClientMutationOperation({
                 ...input,
@@ -251,7 +260,7 @@ describe('client mutation operation validation', () => {
                     writes: [forgedMutation]
                 }
             })
-        ).toThrow(/outboxWrites/);
+        ).toThrow(/outbox/);
     });
 
     it('rejects missing, duplicated, wrong-scope and wrong-recipient snapshot proof writes before transaction entry', () => {
@@ -326,16 +335,16 @@ describe('client mutation operation validation', () => {
         if (computed.outcome !== 'completed' || computed.mutation.outcome !== 'write') {
             throw new Error('Expected a completed mutation');
         }
-        const [first, ...remaining] = computed.mutation.outboxWrites;
+        const [first, ...remaining] = computed.mutation.outbox;
         if (!first) {
             throw new Error('Expected a state-sync write');
         }
         const mutation = {
             ...computed.mutation,
-            outboxWrites: [{ ...first, entry: { ...first.entry, resource: 'altered' } }, ...remaining]
+            outbox: [{ ...first, write: { ...first.write, entry: { ...first.write.entry, resource: 'altered' } } }, ...remaining]
         };
         expect(() => assertClientMutationOperation({ ...input, computed: { ...computed, mutation, writes: [mutation] } }))
-            .toThrow(/outboxWrites/);
+            .toThrow(/outbox/);
     });
 
     it('rejects altered completion, write membership and committed snapshots', () => {
@@ -444,7 +453,8 @@ function createExecutionMetadata(): AppInboxExecutionMetadata {
             entry,
             selectedLane: Reservator.NEW,
             selectedAtEpochMs: 1_000,
-            selectedDueAtEpochMs: undefined
+            selectedDueAtEpochMs: undefined,
+            reservationLeaseMs: 60_000
         }).telemetry
     };
 }

@@ -273,10 +273,15 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
     stateSync: readonly ComputedClientStateSync[];
-    outboxWrites: readonly AppOutboxInsert[];
-    outboxMessages: readonly ALMessage[];
+    outbox: readonly ClientMutationOutboxWrite[];
     principalAudienceSessionIds: readonly string[];
 }>;
+
+/** One state-sync message and the outbox row that carries it. */
+export interface ClientMutationOutboxWrite {
+    readonly write: AppOutboxInsert;
+    readonly message: ALMessage;
+}
 
 export type ClientRuntimePersistenceOperation =
     | Readonly<{

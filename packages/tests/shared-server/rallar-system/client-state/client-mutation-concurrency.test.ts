@@ -10,9 +10,9 @@ import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/cl
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 import {
@@ -29,8 +29,8 @@ describe('client mutation pure retry compute', () => {
 
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        assertClientMutation({ command, read, computed: first });
-        assertClientMutation({ command, read, computed: second });
+        assertClientMutationMatchesRecompute({ command, read, computed: first });
+        assertClientMutationMatchesRecompute({ command, read, computed: second });
 
         expect(second).toEqual(first);
         expect(command).toEqual(structuredClone(command));

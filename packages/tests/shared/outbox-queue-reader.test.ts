@@ -6,6 +6,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -15,7 +16,8 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 describe('OutboxQueueReader', () => {
@@ -106,6 +108,32 @@ describe('OutboxQueueReader', () => {
         );
 
         expect(outboxMessages).toHaveLength(1);
+    });
+
+    it('resolves with the number of entries it claimed, whether their handlers succeeded, failed or were not ready', async () => {
+        vi.useFakeTimers({ now: Date.parse('2026-01-01T00:00:00Z') });
+        const queue = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
+        const outbox = new OutboxQueueReader(queue);
+        outbox.onOutboxMessageDo('claim.succeeds', { onMessage: async () => {} });
+        outbox.onOutboxMessageDo('claim.fails', {
+            onMessage: async () => await Promise.reject(new Error('handler failed'))
+        });
+        outbox.onOutboxMessageDo('claim.not-ready', {
+            onMessage: async () => await Promise.reject(new NotReadyException(60_000))
+        });
+        for (const type of ['claim.succeeds', 'claim.fails', 'claim.not-ready']) {
+            await outbox.enqueueIfAbsent(createAppMessage(type, 'outbox'));
+        }
+
+        try {
+            await expect(outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).resolves.toBe(3);
+            await expect(outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).resolves.toBe(0);
+            vi.advanceTimersByTime(2);
+            await expect(outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createResilience())).resolves.toBe(1);
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
 });
 

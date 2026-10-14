@@ -13,7 +13,7 @@ import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-i
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { readRtcRttAppInboxCommand } from './rtc-rtt-app-inbox-authority.ts';
+import { decodeRtcRttAppInboxCommand } from './rtc-rtt-app-inbox-authority.ts';
 import type { RtcRttAppInboxDependencies } from './rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttAppInboxHandler } from './rtc-rtt-app-inbox-handler.ts';
 
@@ -70,7 +70,7 @@ export class RtcRttInboxService {
         });
         handlers.registerHandler({
             type: AppInboxType.RTC_RTT_SUBMIT,
-            decodeCommand: readRtcRttAppInboxCommand,
+            decodeCommand: decodeRtcRttAppInboxCommand,
             encodeResult: (result) => encodeAppInboxResult(result, 'RTC RTT AppInbox result'),
             handle: async (_command, context) =>
                 await this.handler.processMutation(context, dependencies.mutationDependencies)

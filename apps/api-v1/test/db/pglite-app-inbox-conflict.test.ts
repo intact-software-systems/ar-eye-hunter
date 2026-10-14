@@ -54,7 +54,8 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
                 entry,
                 selectedLane: Reservator.FINALIZATION,
                 selectedAtEpochMs: completedAtEpochMs,
-                selectedDueAtEpochMs: undefined
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
             });
             const completionInput = {
                 entry,

@@ -19,9 +19,9 @@ import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-syste
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
+    computeTopologyHttpMutationSemanticDigest,
     toTopologyAppInboxCommand,
-    toTopologyConfigMutationCommand,
-    toTopologyHttpMutationSemanticHash
+    toTopologyConfigMutationCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
@@ -434,7 +434,14 @@ describe('topology AppInbox transaction and idempotency', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: { ...entry.dequeueAudit, attempts: 1 }
                     },
-                    attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 0 },
+                    attemptTelemetry: {
+                        selectedLane: Reservator.NEW,
+                        queueAgeMs: 0,
+                        dueAgeMs: 0,
+                        attempt: 1,
+                        selectedDueAtEpochMs: 0,
+                        reservationLeaseMs: 60_000
+                    },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 management.mutationOwners
@@ -573,7 +580,7 @@ function adminReconfigureReservation(
         requestId: 'shared-admin-request',
         callerId,
         groupRef: GROUP_REF,
-        semanticHash: toTopologyHttpMutationSemanticHash({
+        semanticHash: computeTopologyHttpMutationSemanticDigest({
             principalId: callerId,
             groupRef: GROUP_REF,
             requestId: 'shared-admin-request',
@@ -599,7 +606,7 @@ function configReservation(
         requestId,
         callerId,
         groupRef: GROUP_REF,
-        semanticHash: toTopologyHttpMutationSemanticHash({
+        semanticHash: computeTopologyHttpMutationSemanticDigest({
             principalId: callerId,
             groupRef: GROUP_REF,
             requestId,

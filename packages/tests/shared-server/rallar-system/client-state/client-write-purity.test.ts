@@ -6,8 +6,8 @@ import {
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 
@@ -53,7 +53,7 @@ describe('client mutation write purity', () => {
             }
         };
 
-        expect(() => assertClientMutation({ command, read, computed: tampered })).toThrow(
+        expect(() => assertClientMutationMatchesRecompute({ command, read, computed: tampered })).toThrow(
             'Client mutation computed.persistence.runtimeWrites.0.key differs from the computed value'
         );
     });

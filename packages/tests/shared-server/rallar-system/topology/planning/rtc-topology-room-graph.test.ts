@@ -21,6 +21,7 @@ describe('RTC topology weighted room graph planning', () => {
 
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: createRtcTopologyMemberIds(3),
             rttMeasurements: [],
             degreeLimit: 5,
@@ -52,6 +53,7 @@ describe('RTC topology weighted room graph planning', () => {
         const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: createRtcTopologyMemberIds(3),
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({
@@ -80,6 +82,7 @@ describe('RTC topology weighted room graph planning', () => {
         const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: createRtcTopologyMemberIds(3),
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({
@@ -110,6 +113,7 @@ describe('RTC topology weighted room graph planning', () => {
         const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: createRtcTopologyMemberIds(3),
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({
@@ -194,6 +198,7 @@ describe('RTC topology weighted room graph planning', () => {
         const group = createRtcTopologyGroupSnapshot('room-pairs', sessionIds);
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: sessionIds,
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({
@@ -246,6 +251,7 @@ describe('RTC topology weighted room graph planning', () => {
         const group = createRtcTopologyGroupSnapshot('room-1', [composed, decomposed, 'z']);
         const result = createRtcRoomGraph({
             group,
+            preferredSourceSessionId: undefined,
             activeSessionIds: [composed, decomposed, 'z'],
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({

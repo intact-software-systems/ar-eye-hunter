@@ -67,6 +67,7 @@ function createFakeClockQueue(): InMemoryQueueBox {
 
 class ProbedQueueBox extends InMemoryQueueBox {
     probes = 0;
+    failProbes = false;
     failNextReservation = false;
 
     constructor() {
@@ -75,6 +76,9 @@ class ProbedQueueBox extends InMemoryQueueBox {
 
     override async isAnyEntryToLock(...input: Parameters<InMemoryQueueBox['isAnyEntryToLock']>): Promise<boolean> {
         this.probes += 1;
+        if (this.failProbes) {
+            throw new Error('Readiness probe unavailable');
+        }
         return await super.isAnyEntryToLock(...input);
     }
 
@@ -117,7 +121,7 @@ describe('registered AppInbox queue task scheduling', () => {
         }
     });
 
-    it('advertises no work while its circuit is open and claims once the circuit lets dequeue through', async () => {
+    it('advertises no work while its circuit is open and claims at the instant the circuit lets dequeue through', async () => {
         vi.useFakeTimers();
         const resilience = createQueueResilience();
         for (let failure = 0; failure < 11; failure += 1) {
@@ -139,9 +143,8 @@ describe('registered AppInbox queue task scheduling', () => {
             await vi.advanceTimersByTimeAsync(9_999);
             expect(queue.probes).toBe(0);
             expect(deliveredAtMs).toEqual([]);
-            await vi.advanceTimersByTimeAsync(3_001);
-            expect(deliveredAtMs).toHaveLength(1);
-            expect(deliveredAtMs[0]).toBeGreaterThan(10_000);
+            await vi.advanceTimersByTimeAsync(2);
+            expect(deliveredAtMs).toEqual([10_001]);
         }
         finally {
             await stopEngine(harness.engine);
@@ -173,6 +176,30 @@ describe('registered AppInbox queue task scheduling', () => {
             expect(deliveredAtMs).toEqual([]);
             await vi.advanceTimersByTimeAsync(2);
             expect(deliveredAtMs).toEqual([1_000]);
+        }
+        finally {
+            await stopEngine(harness.engine);
+        }
+    });
+
+    it('probes a failing readiness check once per failure backoff step while a sibling task keeps the engine busy', async () => {
+        vi.useFakeTimers();
+        const queue = new ProbedQueueBox();
+        queue.failProbes = true;
+        const harness = createQueueTaskSchedulingHarness(queue);
+        harness.engine.includeTask('busy-sibling', {
+            name: 'busy-sibling',
+            maxConcurrency: () => 1,
+            isWork: async () => true,
+            runnable: async () => {},
+            ongoingTasks: []
+        });
+
+        harness.engine.start();
+        try {
+            await vi.advanceTimersByTimeAsync(7_500);
+            expect(queue.probes).toBe(4);
+            expect(harness.failures.filter((failure) => failure.startsWith('APP_INBOX@'))).toHaveLength(4);
         }
         finally {
             await stopEngine(harness.engine);

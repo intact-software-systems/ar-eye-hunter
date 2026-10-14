@@ -23,8 +23,8 @@ import type { IssuedAuthSession } from '../../auth/persistence/auth-session-type
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import {
+    computePersistedTopologyHttpMutationSemanticDigest,
     decodeDurableTopologyAppInboxCommand,
-    toPersistedTopologyHttpMutationSemanticHash,
     toTopologyAppInboxType,
     toTopologyHttpMutationContextId
 } from './topology-app-inbox-command.ts';
@@ -214,7 +214,7 @@ export class TopologyInboxService {
             reserved.enqueue.resourceId !== key.resourceId ||
             reserved.enqueue.contextId !== key.contextId ||
             reserved.enqueue.senderId !== reservation.callerId ||
-            (toPersistedTopologyHttpMutationSemanticHash(command)) !== reservation.semanticHash
+            (computePersistedTopologyHttpMutationSemanticDigest(command)) !== reservation.semanticHash
         ) {
             throw new AppInboxIdempotencyConflictError(
                 reservation.requestId,

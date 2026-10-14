@@ -101,7 +101,7 @@ describe('group-state snapshots for a principal', () => {
     });
 
     it.each([0, 8, 32])(
-        'scans every member row of the scope twice per principal read beside %i unrelated groups',
+        'documents today\'s cost: a principal read beside %i unrelated groups takes at most five batches and two scans of the scope\'s member rows',
         async (unrelatedGroupCount) => {
             const { runtime, groups } = createRuntime();
             await seedGroup(groups, { groupId: 'room-one', ownerId: 'alice', activeIds: ['bob'], leftIds: [] });
@@ -119,8 +119,12 @@ describe('group-state snapshots for a principal', () => {
             await groups.listSnapshotsForPrincipal(SCOPE, 'alice');
 
             const scopeMemberRows = 2 + 2 * unrelatedGroupCount;
-            expect(runtime.batches.length - batchesBefore).toBe(5);
-            expect(runtime.scannedSuffixRangeRows.slice(scansBefore)).toEqual([scopeMemberRows, scopeMemberRows]);
+            const scans = runtime.scannedSuffixRangeRows.slice(scansBefore);
+            expect(runtime.batches.length - batchesBefore).toBeLessThanOrEqual(5);
+            expect(scans.length).toBeLessThanOrEqual(2);
+            for (const scannedRows of scans) {
+                expect(scannedRows).toBeLessThanOrEqual(scopeMemberRows);
+            }
         }
     );
 

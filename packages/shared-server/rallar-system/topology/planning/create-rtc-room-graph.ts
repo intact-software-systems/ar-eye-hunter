@@ -22,6 +22,8 @@ import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hop
 export interface CreateRtcRoomGraphInput {
     readonly group: GroupSnapshot;
     readonly activeSessionIds: readonly string[];
+    /** Roots the no-RTT seed that completes a sparse graph, so a weighted plan keeps the appointed director central. */
+    readonly preferredSourceSessionId: string | undefined;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
     readonly degreeLimit: number;
     readonly rttReportingDegreeLimit: number;
@@ -86,7 +88,7 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
     const fallbackNextHops = computeNoRttTopologyNextHops({
         topology: input.seedTopology,
         activeSessionIds: input.activeSessionIds,
-        preferredSourceSessionId: undefined,
+        preferredSourceSessionId: input.preferredSourceSessionId,
         degreeLimit: input.degreeLimit,
         meshParamK: input.meshParamK
     });

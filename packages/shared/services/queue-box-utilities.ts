@@ -37,7 +37,10 @@ export namespace QueueBoxUtilities {
 }
 
 export class QueueBoxUtilities {
-    /** Resolves with the number of entries this invocation claimed across every lane. */
+    /**
+     * Resolves with the number of entries this invocation's processing lanes claimed and released, whatever each
+     * handler's outcome. A claim retried within the same invocation counts again.
+     */
     static async defaultDequeue(
         { qbox, typesToDequeue, resilience, onDequeuedDo, options, readLaneBudgets }: QueueBoxUtilities.DequeueInput
     ): Promise<number> {
@@ -50,9 +53,8 @@ export class QueueBoxUtilities {
             return 0;
         }
 
-        const claimedByLane = await createDefaultResourceInboxDequeuer<
-            ResourceInboxHandlerFinalizedSuccess | undefined
-        >({
+        let claimedCount = 0;
+        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess | undefined>({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
@@ -61,31 +63,22 @@ export class QueueBoxUtilities {
             resilience: resilience,
             options: options
         })
-            .withReturnDequeuedEntries(true)
-            .onFailedEntries(
-                (failures) => {
-                    if (
-                        [...failures.values()].some((failure) =>
-                            !isNotReadyException(failure.exception) &&
-                            !(failure.exception instanceof ResourceInboxCommandRejectedError) &&
-                            !(options.isRetryableConflict?.(failure.exception) ?? false)
-                        )
-                    ) {
-                        resilience.failure();
-                    }
+            .onFailedEntries((failures) => {
+                claimedCount += failures.size;
+                if ([...failures.values()].some((failure) => isOperationalDequeueFailure(failure.exception, options))) {
+                    resilience.failure();
                 }
-            )
-            .onCompletedEntries(
-                (completed) => {
-                    if (completed.size > 0) {
-                        resilience.success();
-                    }
+            })
+            .onCompletedEntries((completed) => {
+                claimedCount += completed.size;
+                if (completed.size > 0) {
+                    resilience.success();
                 }
-            )
+            })
             .dequeueForCompute(
                 async (_key, attempt) => (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined
             );
-        return [...claimedByLane.values()].reduce((claimed, lane) => claimed + lane.size, 0);
+        return claimedCount;
     }
 
     static toResourceEntryFromMsg(
@@ -121,4 +114,11 @@ export class QueueBoxUtilities {
             db: undefined
         };
     }
+}
+
+/** A handler failure the queue cannot explain as not-ready, a rejected command or an expected conflict. */
+function isOperationalDequeueFailure(exception: Error, options: DequeueResourceEntryOptions): boolean {
+    return !isNotReadyException(exception) &&
+        !(exception instanceof ResourceInboxCommandRejectedError) &&
+        !(options.isRetryableConflict?.(exception) ?? false);
 }

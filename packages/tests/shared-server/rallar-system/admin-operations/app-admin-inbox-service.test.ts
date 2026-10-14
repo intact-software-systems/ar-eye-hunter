@@ -471,6 +471,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'current-authority',
             'now-callback',
@@ -479,7 +480,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:validate',
             'transaction',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(1);
         expect(harness.database.outboxEntries.size).toBe(0);
@@ -500,6 +502,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'count:resource-inbox-results',
             'current-authority',
@@ -512,7 +515,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'page-write',
             'aggregate-write',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(2);
         expect(harness.events.lastIndexOf('queue-wake')).toBeGreaterThan(
@@ -570,6 +574,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'current-authority',
             'now-callback',
@@ -577,6 +582,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:compute',
             'phase:validate',
             'transaction',
+            'now-callback',
+            'now-callback',
             'now-callback',
             'count:runtime-state',
             'current-authority',
@@ -586,7 +593,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:validate',
             'transaction',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
     });
 

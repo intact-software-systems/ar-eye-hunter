@@ -331,7 +331,8 @@ describe('group-state AppInbox transaction result boundary', () => {
                 entry: entry,
                 selectedLane: Reservator.NEW,
                 selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-                selectedDueAtEpochMs: undefined
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
             }).telemetry,
             encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
         };

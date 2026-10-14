@@ -107,7 +107,7 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
-        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
+        dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         outboundDiagnostics: options.wsOutboundDiagnostics,
         outboundSettlements: options.wsOutboundSettlements,

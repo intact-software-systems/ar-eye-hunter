@@ -12,9 +12,9 @@ import {
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
 import {
+    decodeAuthenticatedTopologyCommand,
     decodeDurableTopologyAppInboxCommand,
-    readAuthenticatedTopologyCommand,
-    readTopologyCommandForValidatedSession
+    decodeTopologyCommandForValidatedSession
 } from './topology-app-inbox-command.ts';
 import type { TopologyAppInboxAuthority, TopologyAppInboxCommand } from './topology-app-inbox-contracts.ts';
 import {
@@ -45,7 +45,7 @@ export interface ValidateCurrentTopologySessionInput {
 export async function createAuthenticatedTopologyEnqueue(
     input: CreateAuthenticatedTopologyEnqueueInput
 ): Promise<AppInboxEnqueueInput> {
-    const command = readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
+    const command = decodeAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
     const currentSession = await readAndValidateCurrentTopologySession({
         principalId: command.actor.principalId,
         claimedAuthority: input.claimedAuthority,
@@ -64,7 +64,7 @@ export async function createAuthenticatedTopologyEnqueueFromValidatedSession(
         currentSession: PersistedAuthSession;
     }>
 ): Promise<AppInboxEnqueueInput> {
-    const command = readTopologyCommandForValidatedSession(input.enqueue, {
+    const command = decodeTopologyCommandForValidatedSession(input.enqueue, {
         principalId: input.currentSession.clientId,
         sessionId: input.currentSession.sessionId
     });

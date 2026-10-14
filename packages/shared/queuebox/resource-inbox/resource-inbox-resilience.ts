@@ -128,6 +128,17 @@ export class ResourceInboxResilience {
         return !this.circuitBreaker.isAllowedThrough();
     }
 
+    /** The first instant a tripped breaker lets a dequeue through again, or `undefined` while it already does. */
+    getDequeueReopenAtMs(nowEpochMs: number): number | undefined {
+        const breaker = this.circuitBreaker;
+        if (breaker.isAllowedThroughAt(nowEpochMs)) {
+            return undefined;
+        }
+        return breaker.isHalfOpen()
+            ? breaker.timestampHalfOpen.get() + breaker.policy.halfOpenTimeout.total({ unit: 'milliseconds' }) + 1
+            : breaker.timestampOpen.get() + breaker.policy.resetTimeout.total({ unit: 'milliseconds' }) + 1;
+    }
+
     /** How long a tripped breaker stays open: the wait a rejected dequeue owes before its next attempt. */
     toCircuitOpenBackoffMs(): number {
         return this.circuitBreaker.policy.resetTimeout.total({ unit: 'milliseconds' });

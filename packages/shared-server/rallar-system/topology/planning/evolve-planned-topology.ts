@@ -57,7 +57,7 @@ export function computeEvolvedTopologyNextHops(
 
     if (
         input.kind === 'tree' && input.leaderSessionId !== undefined &&
-        addedSessionIds.length + removedSessionIds.length === 0
+        (addedSessionIds.length + removedSessionIds.length === 0 || addedSessionIds.includes(input.leaderSessionId))
     ) {
         return { outcome: 'full-rebuild', reason: 'leader-rooting' };
     }

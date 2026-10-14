@@ -1,7 +1,7 @@
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
-    toTopologyAppInboxCommand,
-    toTopologyHttpMutationSemanticHash
+    computeTopologyHttpMutationSemanticDigest,
+    toTopologyAppInboxCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
@@ -35,7 +35,7 @@ export class RecomputeApiAdminTopology {
             requestOptions: input.request.options ?? {},
             publish: input.request.publish ?? true
         };
-        const semanticHash = toTopologyHttpMutationSemanticHash({
+        const semanticHash = computeTopologyHttpMutationSemanticDigest({
             principalId: input.adminSession.clientId,
             groupRef: input.request.groupRef,
             requestId: input.requestId,

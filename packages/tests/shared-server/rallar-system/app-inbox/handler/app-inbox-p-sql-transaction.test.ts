@@ -92,7 +92,8 @@ describe('Postgres transaction write boundary', () => {
                 entry,
                 selectedLane: Reservator.NEW,
                 selectedAtEpochMs: Date.parse('2026-01-01T00:00:00Z'),
-                selectedDueAtEpochMs: undefined
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
             });
             const completion = computeAppInboxCompletion({
                 entry,
@@ -147,7 +148,8 @@ describe('Postgres transaction write boundary', () => {
                 entry: incomingEntry,
                 selectedLane: Reservator.NEW,
                 selectedAtEpochMs: Number(incomingEntry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-                selectedDueAtEpochMs: undefined
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
             }).telemetry,
             encodeResult: (result) => encodeAppInboxResult(result, 'Postgres transaction test result')
         };

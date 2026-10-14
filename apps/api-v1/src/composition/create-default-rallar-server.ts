@@ -3,20 +3,18 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
-import { APP_INBOX_RESERVATION_LEASE_MS } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
-import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
 import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
-import { createApiV1QueueResilience } from '../middleware-resilience.ts';
+import { createApiV1MiddlewareResilience } from '../middleware-resilience.ts';
 import {
     myPublisherId,
     myRtcTopologyStreamId,
@@ -205,17 +203,7 @@ function createConfiguredApiV1Runtime(
         rtcTopologyOptions,
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        resilience: {
-            inbox: createApiV1QueueResilience(configuration.topology.queueResilience, APP_INBOX_RESERVATION_LEASE_MS),
-            outbox: createApiV1QueueResilience(
-                configuration.topology.queueResilience,
-                ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
-            ),
-            appOutbox: createApiV1QueueResilience(
-                configuration.topology.queueResilience,
-                ResourceInboxResilience.DEFAULT_RESERVATION_LEASE_MS
-            )
-        },
+        resilience: createApiV1MiddlewareResilience(configuration.topology.queueResilience),
         backgroundTasks
     });
 }

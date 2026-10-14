@@ -160,6 +160,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appOutbox: createResilience()
             }
         });
@@ -190,6 +191,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appOutbox: createResilience()
             }
         });
@@ -229,6 +231,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: resilience,
+                outbox: resilience,
                 appInbox: resilience,
                 appOutbox: createResilience()
             }
@@ -268,6 +271,7 @@ describe('createRallarMiddleware', () => {
             outbox,
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             }
@@ -299,6 +303,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             }
@@ -376,6 +381,7 @@ function createReadinessMiddlewareOptions(
     return createRallarMiddlewareTestRuntime({
         resilience: {
             inbox: createResilience(),
+            outbox: createResilience(),
             appOutbox: createResilience()
         },
         readiness,

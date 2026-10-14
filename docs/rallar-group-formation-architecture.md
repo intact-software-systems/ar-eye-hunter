@@ -169,7 +169,10 @@ as automatic origin, so under `commanded` the planner freezes it; only the lifec
 replans on command.) Staleness follows product decision 11 by derivation (implementation decision
 I27): the accepted layout is always a promoted planned layout, so the formation view reads it as
 stale when its identity differs from the planned slot's or when the planned slot's stored
-topology-input fingerprint differs from the authority's fingerprint computed at read time.
+topology-input fingerprint differs from the authority's fingerprint computed at read time. The
+fingerprint covers the present appointed director, so a director appointment after activation
+moves it: a `commanded` group then reads `layoutStale` until a commanded replan roots the layout at
+that director.
 
 The replan window (product decision 31, `resolveTopologyReplanWindow`) is decided on the same
 consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` and replans no later

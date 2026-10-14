@@ -109,7 +109,7 @@ export function decodeRtcRttAppInboxAuthority(
         return {
             kind: 'rtc-rtt',
             proof,
-            command: readRtcRttAppInboxCommand(authority.command)
+            command: decodeRtcRttAppInboxCommand(authority.command)
         };
     }
     catch {
@@ -117,7 +117,7 @@ export function decodeRtcRttAppInboxAuthority(
     }
 }
 
-export function readRtcRttAppInboxCommand(
+export function decodeRtcRttAppInboxCommand(
     value: JsonWireValue
 ): RtcRttAppInboxCommand {
     const command = requireRtcRttJsonObject(value, 'command');

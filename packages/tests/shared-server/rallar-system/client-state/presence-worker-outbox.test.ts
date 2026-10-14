@@ -32,7 +32,7 @@ it.each(['client-heartbeat', 'client-reconnect', 'client-disconnect'] as const)(
             ? connectCommand('reconnect', 'generation-2')
             : disconnectCommand();
         const computed = requireWrite(computeClientMutation({ command, read: readAfterWrite(command, connected) }));
-        const messages = computed.outboxWrites.map(({ entry }) => decodePersistedALMessage(entry.resource));
+        const messages = computed.outbox.map(({ write }) => decodePersistedALMessage(write.entry.resource));
         const snapshots = messages.filter((message) => message.route.topicId === AppTopics.clientStateSnapshot);
         expect(snapshots.map((message) => message.targets)).toEqual(
             operation === 'client-disconnect'
@@ -58,7 +58,7 @@ it.each(['client-heartbeat', 'client-reconnect', 'client-disconnect'] as const)(
             messages.filter((message) => message.route.topicId === AppTopics.clientStateEvent)
                 .map((message) => JSON.parse(message.payload.resource))
         ).toEqual([computed.event]);
-        expect(computed.receipt.outboxIds).toEqual(computed.outboxWrites.map(({ entry }) => entry.key.resourceId));
+        expect(computed.receipt.outboxIds).toEqual(computed.outbox.map(({ write }) => write.entry.key.resourceId));
         const output = {
             operation,
             requestId: command.commandId,
@@ -78,33 +78,39 @@ it.each(['client-heartbeat', 'client-reconnect', 'client-disconnect'] as const)(
             .rejects.toThrow();
         await expect(expectPendingWorkerOutboxes({ ...input, outputs: [{ ...output, outboxIds: [...output.outboxIds].reverse() }] }))
             .rejects.toThrow();
-        const [first, ...remaining] = computed.outboxWrites;
+        const [first, ...remaining] = computed.outbox;
         if (!first) {
             throw new Error('Expected a snapshot write');
         }
-        const message = decodePersistedALMessage(first.entry.resource);
+        const message = decodePersistedALMessage(first.write.entry.resource);
         const corrupted = {
             ...computed,
-            outboxWrites: [{
+            outbox: [{
                 ...first,
-                entry: {
-                    ...first.entry,
-                    resource: JSON.stringify({ ...message, id: { ...message.id, msgId: 'other-message' } })
+                write: {
+                    ...first.write,
+                    entry: {
+                        ...first.write.entry,
+                        resource: JSON.stringify({ ...message, id: { ...message.id, msgId: 'other-message' } })
+                    }
                 }
             }, ...remaining]
         };
         await expect(expectPendingWorkerOutboxes({ ...input, sql: createOutboxReadback(corrupted) }))
             .rejects.toThrow('canonical key');
-        await expect(expectPendingWorkerOutboxes({ ...input, outputs: [{ ...output, outboxIds: output.outboxIds.map(() => first.entry.key.resourceId) }] }))
+        await expect(
+            expectPendingWorkerOutboxes({ ...input, outputs: [{ ...output, outboxIds: output.outboxIds.map(() => first.write.entry.key.resourceId) }] })
+        )
             .rejects.toThrow();
     }
 );
 
 function createOutboxReadback(computed: ClientMutationComputedAppliedWrite): PSqlSql {
     const read = async (_strings: TemplateStringsArray, resourceId: string) =>
-        computed.outboxWrites
-            .filter(({ entry }) => entry.key.resourceId === resourceId)
-            .map(({ entry }) => ({
+        computed.outbox
+            .map(({ write }) => write.entry)
+            .filter((entry) => entry.key.resourceId === resourceId)
+            .map((entry) => ({
                 ri_resource_id: entry.key.resourceId,
                 ri_topic_id: entry.key.topicId,
                 ri_type_id: entry.typeId,

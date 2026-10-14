@@ -15,18 +15,22 @@ const COUNTER_NAMES = [
 /** A page's congestion counters, read off page output or a recorded `stats` event; the left names every bad field. */
 export function decodeALCongestionCounters(value: unknown): Either<readonly string[], ALCongestionCounters> {
     const record = decodeRecord(value);
-    const issues = COUNTER_NAMES
-        .filter((name) => decodeNonNegativeInteger(record[name]) === undefined)
-        .map((name) => `${name} is not a count`);
-    if (issues.length > 0) {
-        return Either.ofLeft(issues);
+    const counts = {
+        dropped: decodeNonNegativeInteger(record.dropped),
+        deferred: decodeNonNegativeInteger(record.deferred),
+        handedOver: decodeNonNegativeInteger(record.handedOver),
+        rateLimited: decodeNonNegativeInteger(record.rateLimited),
+        circuitOpen: decodeNonNegativeInteger(record.circuitOpen),
+        queuedBytesHighWater: decodeNonNegativeInteger(record.queuedBytesHighWater)
+    } satisfies Record<(typeof COUNTER_NAMES)[number], number | undefined>;
+    const { dropped, deferred, handedOver, rateLimited, circuitOpen, queuedBytesHighWater } = counts;
+    if (
+        dropped === undefined || deferred === undefined || handedOver === undefined ||
+        rateLimited === undefined || circuitOpen === undefined || queuedBytesHighWater === undefined
+    ) {
+        return Either.ofLeft(
+            COUNTER_NAMES.filter((name) => counts[name] === undefined).map((name) => `${name} is not a count`)
+        );
     }
-    return Either.ofRight({
-        dropped: record.dropped as number,
-        deferred: record.deferred as number,
-        handedOver: record.handedOver as number,
-        rateLimited: record.rateLimited as number,
-        circuitOpen: record.circuitOpen as number,
-        queuedBytesHighWater: record.queuedBytesHighWater as number
-    });
+    return Either.ofRight({ dropped, deferred, handedOver, rateLimited, circuitOpen, queuedBytesHighWater });
 }

@@ -60,14 +60,14 @@ export function computeClientMutationResult(
         nowEpochMs: read.audienceObservedAtEpochMs
     });
     const stateSyncEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
-    const outboxWrites = stateSyncEntries.map(({ entry }) => computeAppOutboxInsert(entry));
+    const outbox = stateSyncEntries.map(({ entry, message }) => ({ write: computeAppOutboxInsert(entry), message }));
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
         principal,
         event,
         stateRevision,
-        outboxIds: outboxWrites.map((write) => write.entry.key.resourceId)
+        outboxIds: outbox.map(({ write }) => write.entry.key.resourceId)
     });
     const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
@@ -83,8 +83,7 @@ export function computeClientMutationResult(
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
         stateSync,
-        outboxWrites,
-        outboxMessages: stateSyncEntries.map(({ message }) => message),
+        outbox,
         principalAudienceSessionIds
     };
     return { ...computed, persistence: computeClientPersistence(computed) };

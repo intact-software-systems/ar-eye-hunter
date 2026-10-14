@@ -18,7 +18,6 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -30,6 +29,7 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -737,7 +737,7 @@ Deno.test(
                 );
                 const read = await service.read(command);
                 const computed = computeClientMutation({ command, read });
-                assertClientMutation({ command, read, computed });
+                assertClientMutationMatchesRecompute({ command, read, computed });
                 assert.deepEqual(validateClientMutationAuthorityPolicy(command, read), []);
                 assert.equal(computed.outcome, 'write');
                 if (computed.outcome !== 'write') {
@@ -759,7 +759,7 @@ Deno.test(
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'alice' })).length, 1);
             const outbox = createPSqlResourceInboxRepository(sql, () => new Date());
-            for (const write of committed.outboxWrites) {
+            for (const { write } of committed.outbox) {
                 assert.equal((await outbox.entries.findByKey(write.entry.key))?.typeId, 'WS_OUTBOX');
             }
 
@@ -778,7 +778,7 @@ Deno.test(
                 undefined
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'bob' })).length, 0);
-            for (const write of rolledBack.outboxWrites) {
+            for (const { write } of rolledBack.outbox) {
                 assert.equal(await outbox.entries.findByKey(write.entry.key), null);
             }
         });

@@ -35,6 +35,7 @@ describe('state-sync websocket ingress', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appOutbox: createResilience()
             }
         });

@@ -24,7 +24,7 @@ import { removeTryReplaceMDDL } from './tree/remove-dynamics-mddl.ts';
 export interface CreateGroupTreeInputDto {
     readonly group: GroupSnapshot;
     readonly globalGraph: WeightedGraph;
-    readonly maxDegree?: number;
+    readonly maxDegree: number;
     readonly preferredSource: VertexId | undefined;
 }
 

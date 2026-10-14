@@ -76,6 +76,7 @@ export type ResourceInboxRetryFinalizer<
     finalization: Finalization
 ) => Promise<ResourceEntry>;
 
+/** A handler failure carrying its persisted entry; one no longer RESERVED was finalized and announced by its committer. */
 export class ResourceInboxHandlerEntryError extends Error {
     readonly code = 'resource-inbox-handler-entry-updated';
 
@@ -103,7 +104,10 @@ export class ResourceInboxHandlerEntryError extends Error {
     }
 }
 
-/** A handler success whose own transaction already committed the terminal entry, so the queue releases nothing. */
+/**
+ * A handler success whose own transaction already committed the terminal entry, so the queue releases nothing and
+ * publishes no completion notice: the committer published it.
+ */
 export class ResourceInboxHandlerFinalizedSuccess {
     readonly entry: ResourceEntry;
 
@@ -230,7 +234,7 @@ async function reserveResourceInboxAttempts(
             maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
         }
     });
-    return toResourceInboxAttempts(entries, selection.lane, dependencies.nowEpochMs());
+    return toResourceInboxAttempts(dependencies, entries, selection.lane);
 }
 
 async function reserveResourceInboxTimeouts(
@@ -253,7 +257,7 @@ async function reserveResourceInboxTimeouts(
     if (entries.size > 0) {
         console.info('Reserved timed-out resource inbox entries', [...entries.keys()]);
     }
-    return toResourceInboxAttempts(entries, Reservator.TIMEOUT, dependencies.nowEpochMs());
+    return toResourceInboxAttempts(dependencies, entries, Reservator.TIMEOUT);
 }
 
 async function reserveResourceInboxFairness(
@@ -293,7 +297,8 @@ async function readResourceInboxFairness(
                 entry: selection.entry,
                 selectedLane: Reservator.FAIRNESS,
                 selectedAtEpochMs,
-                selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds)
+                selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds),
+                reservationLeaseMs: dependencies.resilience.reservationLeaseMs
             })
         );
     }
@@ -322,7 +327,8 @@ async function reserveResourceInboxFinalizations(
             entry: selection.entry,
             selectedLane: Reservator.FINALIZATION,
             selectedAtEpochMs,
-            selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds)
+            selectedDueAtEpochMs: Number(selection.selectedDueTs.epochMilliseconds),
+            reservationLeaseMs: dependencies.resilience.reservationLeaseMs
         })
     ]));
 }
@@ -352,17 +358,16 @@ async function releaseResourceInboxSuccesses<V>(
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
         })));
-    const releases = [
-        ...[...successes.values()].flatMap((success) =>
-            success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess
-                ? [toHandlerFinalizedResourceInboxSuccess(success, success.computedValue.entry)]
-                : []
-        ),
-        ...[...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes))
-    ];
-    for (const { entry } of releases) {
+    const handlerFinalized = [...successes.values()].flatMap((success) =>
+        success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess
+            ? [toHandlerFinalizedResourceInboxSuccess(success, success.computedValue.entry)]
+            : []
+    );
+    const releasedByQueue = [...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes));
+    for (const { entry } of releasedByQueue) {
         publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
     }
+    const releases = [...handlerFinalized, ...releasedByQueue];
     const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
     for (const { original, entry } of releases) {
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
@@ -403,7 +408,6 @@ async function releaseResourceInboxFailure(
         original.exception instanceof ResourceInboxHandlerEntryError &&
         failure.value.entry.status !== EntityStatus.RESERVED
     ) {
-        publishResourceInboxCompletion(dependencies.options.completionNotifications, failure.value.entry);
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
             released: failure.value.entry,
@@ -483,17 +487,19 @@ function computeResourceInboxFailureDecision(
 }
 
 function toResourceInboxAttempts(
+    dependencies: ResourceInboxDequeueDependencies,
     entries: Map<Resource.Key, ResourceEntry>,
-    selectedLane: Reservator,
-    selectedAtEpochMs: number
+    selectedLane: Reservator
 ): Map<Resource.Key, ResourceInboxAttempt> {
+    const selectedAtEpochMs = dependencies.nowEpochMs();
     return new Map([...entries].map(([key, entry]) => [
         key,
         computeResourceInboxAttempt({
             entry,
             selectedLane,
             selectedAtEpochMs,
-            selectedDueAtEpochMs: undefined
+            selectedDueAtEpochMs: undefined,
+            reservationLeaseMs: dependencies.resilience.reservationLeaseMs
         })
     ]));
 }

@@ -1,4 +1,3 @@
-import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
@@ -9,7 +8,6 @@ import {
     assertClientMutationCommand,
     assertClientMutationFacts
 } from '../command-validation/assert-client-mutation-command.ts';
-import { computeClientMutation } from '../compute/compute-client-mutation.ts';
 import { assertClientMutationRead } from './assert-client-mutation-read.ts';
 import { assertClientMutationResult } from './assert-client-mutation-result.ts';
 import { assertClientPersistenceRecords } from './assert-client-persistence.ts';
@@ -39,21 +37,6 @@ export interface ClientMutationAssertionInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly computed: ClientMutationComputed;
-}
-
-export function assertClientMutation(
-    input: ClientMutationAssertionInput
-): void {
-    const { command, read, computed } = input;
-    const issue = validateComputedProjection(
-        computeClientMutation({ command, read }),
-        computed,
-        'Client mutation computed'
-    )[0];
-    if (issue) {
-        throw new ClientMutationRejectedError(issue.message);
-    }
-    assertClientMutationInvariants(input);
 }
 
 /** The caller has proved computed equal to a complete recompute; these are the identity and guard invariants. */

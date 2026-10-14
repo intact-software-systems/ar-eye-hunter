@@ -19,9 +19,9 @@ import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-sy
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -283,7 +283,7 @@ describe('AppClientInbox authentication', () => {
         const read = await service.read(command);
         const computed = computeClientMutation({ command, read });
 
-        assertClientMutation({ command, read, computed });
+        assertClientMutationMatchesRecompute({ command, read, computed });
         expect(
             validateClientMutationAuthorityPolicy(command, read).map(({ path }) => path)
         ).toContain('command.authority.principalId');

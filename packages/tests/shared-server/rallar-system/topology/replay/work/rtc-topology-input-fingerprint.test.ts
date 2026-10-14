@@ -4,6 +4,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import {
     computeRtcTopologyInputFingerprint,
+    computeRtcTopologyInputFingerprintWrite,
     RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
     RtcTopologyInputFingerprintRepository,
     type RtcTopologyInputFingerprintFacts
@@ -24,12 +25,16 @@ const GROUP_REF = {
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 
 describe('RTC topology input fingerprint persistence', () => {
-    it('round-trips the exact current fingerprint row', async () => {
-        const repository = new RtcTopologyInputFingerprintRepository(
-            new FakeRuntimeStateRepository()
+    it('reads back the exact fingerprint row the work transaction writes', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
+        const write = computeRtcTopologyInputFingerprintWrite(GROUP_REF, FINGERPRINT);
+        await runtime.upsert(
+            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
+            write.key,
+            write.value,
+            Date.parse(write.expireAtIsoTimestamp)
         );
-
-        await repository.putFingerprint(GROUP_REF, FINGERPRINT);
 
         await expect(repository.findFingerprint(GROUP_REF)).resolves.toBe(FINGERPRINT);
     });
@@ -85,16 +90,10 @@ describe('RTC topology input fingerprint persistence', () => {
         );
     });
 
-    it('rejects an invalid fingerprint before writing', async () => {
-        const runtime = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyInputFingerprintRepository(runtime);
-
-        await expect(repository.putFingerprint(GROUP_REF, 'not-a-digest')).rejects.toThrow(
+    it('rejects an invalid fingerprint before computing its write', () => {
+        expect(() => computeRtcTopologyInputFingerprintWrite(GROUP_REF, 'not-a-digest')).toThrow(
             'RTC topology input fingerprint is invalid'
         );
-        await expect(
-            runtime.findAllEntries(RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE)
-        ).resolves.toEqual([]);
     });
 });
 
@@ -122,6 +121,12 @@ describe('RTC topology input fingerprint inputs', () => {
         });
 
         expect(wide).not.toBe(narrow);
+    });
+
+    it('keeps the digest a leaderless group stored before directors moved the fingerprint', () => {
+        expect(computeRtcTopologyInputFingerprint(fingerprintFacts({}))).toBe(
+            'sha256:7a299894c9bbd72d36d512270cc5aabe4ebe3fd619aef70e4f9a35a314fa9ae2'
+        );
     });
 
     it('changes when the present appointed director changes', () => {
