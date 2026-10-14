@@ -2594,22 +2594,6 @@ moved or changed test.
       "coverageRelation": "The helper unit suite executes parsing, normalization, resolution, graph traversal, and path-aware failures; this AST access is the implementation input for that repository test interface."
     },
     {
-      "id": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
-      "domain": "Clustered state-read convergence recipe",
-      "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “defines run-scoped identifiers as interpolated string values”.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values",
-      "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
-    },
-    {
-      "id": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
-      "domain": "Clustered state-read convergence recipe",
-      "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “proves tertiary scalar and causal floors with revision and source headers”.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers",
-      "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
-    },
-    {
       "id": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
@@ -6368,28 +6352,6 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Reads the shared-test package manifest and extracts the real managed Postgres commands whose process plans must contain all three API servers.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts#starts three API servers for every managed Postgres cluster command"
-    },
-    {
-      "id": "test-structure-coupling-8a8f9cd497a4e870",
-      "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "kind": "production-source-read",
-      "contract": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar server maintainers",
-      "rationale": "Loads the convergence recipe section containing tertiary value, revision, and source-header assertions so those causal floors remain executable data.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers"
-    },
-    {
-      "id": "test-structure-coupling-9e59573d3730f889",
-      "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "kind": "production-source-read",
-      "contract": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar server maintainers",
-      "rationale": "Parses the state-read convergence recipe and inspects its identifier values for run interpolation, rather than validating a copied fixture object.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values"
     },
     {
       "id": "test-structure-coupling-88e6a7ca47a24a20",

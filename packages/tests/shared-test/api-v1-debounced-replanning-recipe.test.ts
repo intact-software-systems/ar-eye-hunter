@@ -17,9 +17,13 @@ import {
     executeRecipeSegment,
     GROUP_PATH,
     toGroupSnapshot,
-    toTopology,
     type RecipeHttpPort
 } from './api-v1-recipe-causal-prerequisite-fixture.ts';
+
+interface BurstGroupSnapshotInput {
+    readonly sessions: readonly ApiJsonObject[];
+    readonly invalid: string;
+}
 
 beforeEach(() => {
     vi.useFakeTimers();
@@ -40,13 +44,31 @@ describe('API-v1 debounce causal prerequisite', () => {
         await vi.runAllTimersAsync();
         const report = await pending;
 
-        expect(report.summary.failure, JSON.stringify(report.results)).toBe(0);
-        expect(report.outputs).toMatchObject({ burstGroupRevision: 8, burstPresenceRevision: 6 });
+        expect(report.summary.failure).toBe(0);
+        expect(report.resultsByName.allIssuedBurstSessionsAreVisible[0].actual.body.causalRevision).toEqual({ groupRevision: 8, presenceRevision: 6 });
         expect(http.requests.filter(({ method }) => method === 'PUT').map(({ atEpochMs }) => atEpochMs)).toEqual([0, 500, 1000, 1500]);
         expect(http.requests.filter(({ path }) => path === GROUP_PATH).map(({ atEpochMs }) => atEpochMs)).toEqual([2000, 2250]);
     });
 
-    it.each(['missing session', 'wrong generation', 'extra session', 'wrong topology revision'])('never treats %s as the whole burst', async (invalid) => {
+    it.each([
+        'missing session',
+        'wrong generation',
+        'extra session',
+        'wrong principal',
+        'inactive session',
+        'absent accepted identity',
+        'old accepted identity',
+        'inactive accepted identity',
+        'missing accepted snapshot',
+        'wrong accepted group revision',
+        'wrong accepted presence revision',
+        'wrong accepted version',
+        'inactive accepted snapshot',
+        'wrong planned revision',
+        'wrong topology scope',
+        'missing topology session',
+        'extra topology session'
+    ])('never treats %s as the whole burst', async (invalid) => {
         const http = createDebounceHttpPort(invalid);
         const pending = executeRecipeSegment({
             recipe: 'api-v1-debounced-replanning',
@@ -88,17 +110,11 @@ function createDebounceHttpPort(invalid = ''): RecipeHttpPort {
             });
         }
         if (path === GROUP_PATH) {
-            return Response.json(toGroupSnapshot(8, groupReads++ === 0 && !invalid ? 5 : 6, groupReads === 1 && !invalid ? sessions.slice(0, 5) : observed));
+            const incomplete = groupReads++ === 0 && !invalid;
+            return Response.json(toBurstGroupSnapshot({ sessions: incomplete ? sessions.slice(0, 5) : observed, invalid }));
         }
         if (path.endsWith('/topology')) {
-            return Response.json(
-                toTopology({
-                    groupRevision: 8,
-                    presenceRevision: invalid === 'wrong topology revision' ? 5 : 6,
-                    version: 2,
-                    activeSessionIds: ['alice-session', 'bob-session', 'churn-1', 'churn-2', 'churn-3', 'churn-4']
-                })
-            );
+            return Response.json(toBurstTopology(invalid));
         }
         throw new Error(`Unexpected debounce request ${method} ${path}`);
     });
@@ -119,7 +135,60 @@ function toDebounceSessions(invalid: string): ApiJsonObject[] {
         ? sessions.slice(0, 5)
         : invalid === 'wrong generation'
         ? sessions.map((session, index) => index === 5 ? { ...session, generationId: 'old-generation' } : session)
+        : invalid === 'wrong principal'
+        ? sessions.map((session, index) => index === 5 ? { ...session, principalId: 'bob' } : session)
+        : invalid === 'inactive session'
+        ? sessions.map((session, index) => index === 5 ? { ...session, status: 'inactive' } : session)
         : invalid === 'extra session'
         ? [...sessions, { ...ALICE, sessionId: 'extra-session' }]
         : sessions;
+}
+
+function toBurstGroupSnapshot(input: BurstGroupSnapshotInput): ApiJsonObject {
+    const snapshot = toGroupSnapshot(8, input.sessions.length === 5 ? 5 : 6, input.sessions);
+    const acceptedLayoutIdentity = input.invalid === 'absent accepted identity' ? null : {
+        groupRevision: 7,
+        presenceRevision: input.invalid === 'old accepted identity' ? 2 : 6,
+        version: input.invalid === 'old accepted identity' ? 1 : 2,
+        state: input.invalid === 'inactive accepted identity' ? 'inactive' : 'active'
+    };
+    return {
+        ...snapshot,
+        group: { groupId: 'causal-group', lifecycleState: 'active', formationEpoch: 3, snapshotVersion: 8, acceptedLayoutIdentity }
+    };
+}
+
+function toBurstTopology(invalid: string): ApiJsonObject {
+    const sessionIds = ['alice-session', 'bob-session', 'churn-1', 'churn-2', 'churn-3', 'churn-4'];
+    const snapshot = {
+        state: 'active',
+        sourceGroupStateCausalRevision: {
+            groupRevision: invalid === 'wrong planned revision' ? 6 : 7,
+            presenceRevision: invalid === 'old accepted identity' ? 2 : 6
+        },
+        version: invalid === 'old accepted identity' ? 1 : 2,
+        activeSessionIds: invalid === 'missing topology session'
+            ? sessionIds.slice(0, 5)
+            : invalid === 'extra topology session'
+            ? [...sessionIds, 'extra-session']
+            : sessionIds
+    };
+    return {
+        groupRef: {
+            applicationId: 'causal-app',
+            workspaceId: 'causal-workspace',
+            groupId: invalid === 'wrong topology scope' ? 'other-group' : 'causal-group'
+        },
+        snapshot,
+        acceptedSnapshot: invalid === 'missing accepted snapshot' ? null : {
+            ...snapshot,
+            state: invalid === 'inactive accepted snapshot' ? 'inactive' : 'active',
+            sourceGroupStateCausalRevision: {
+                groupRevision: invalid === 'wrong accepted group revision' ? 6 : 7,
+                presenceRevision: invalid === 'old accepted identity' ? 2 : invalid === 'wrong accepted presence revision' ? 5 : 6
+            },
+            version: invalid === 'old accepted identity' ? 1 : invalid === 'wrong accepted version' ? 1 : 2
+        },
+        pending: null
+    };
 }
