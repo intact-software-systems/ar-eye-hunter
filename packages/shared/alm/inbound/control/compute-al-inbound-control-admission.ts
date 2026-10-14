@@ -119,7 +119,7 @@ function toALInboundControlObservations(
 }
 
 /**
- * The relay sends one ACK per recipient a child ACK named, then its own terminal ACK once its row
+ * The relay sends one ACK per recipient its row relays upward, then its own terminal ACK once its row
  * completed (D40). The origin is its own message-owner row sender, never what a child ACK claimed.
  */
 function computeUpwardAcknowledgementWork(

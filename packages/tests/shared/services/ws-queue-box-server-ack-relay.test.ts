@@ -28,7 +28,10 @@ import { createInboundTestStores } from '../alm/inbound-runtime-test-fixture.ts'
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
-const RELAY_BUDGET = 60;
+/** Messages one session acknowledges inside one relay window, each aggregated on another instance. */
+const HELD_AGGREGATES = 61;
+const AGGREGATE_RELAY_BUDGET = 8;
+const UNPROVEN_RELAY_BUDGET = 60;
 const NO_ADMITTED_MESSAGE = 'AL acknowledgement names no message its origin admitted to this sender';
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
@@ -201,7 +204,7 @@ describe('WS server ACK relay across instances', () => {
         expect(other.relayed).toEqual([]);
     });
 
-    it('relays at most a fixed number of genuine ACKs per session per window', async () => {
+    it('relays at most a fixed number of one session\'s ACKs for one message per window', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
             vi.useRealTimers();
@@ -209,27 +212,83 @@ describe('WS server ACK relay across instances', () => {
         const { owner, other } = await createCluster(['a', 'b', 'c', 'd']);
         await admitRoomMessage(owner, Date.now() + 30_000);
         const outcomes = [];
-        for (let index = 0; index < RELAY_BUDGET + 1; index += 1) {
+        for (let index = 0; index < AGGREGATE_RELAY_BUDGET + 1; index += 1) {
             outcomes.push(await other.service.acceptIncomingMessage(repeatedAck('c', index), 'c'));
         }
 
-        expect(other.relayed).toHaveLength(RELAY_BUDGET);
-        expect(outcomes.slice(0, RELAY_BUDGET).map((outcome) => outcome.right)).toEqual(
-            Array.from({ length: RELAY_BUDGET }, () => ({ kind: 'control', handled: false }))
+        expect(other.relayed).toHaveLength(AGGREGATE_RELAY_BUDGET);
+        expect(outcomes.slice(0, AGGREGATE_RELAY_BUDGET).map((outcome) => outcome.right)).toEqual(
+            Array.from({ length: AGGREGATE_RELAY_BUDGET }, () => ({ kind: 'control', handled: false }))
         );
-        expect(outcomes[RELAY_BUDGET]!.left).toEqual({
+        expect(outcomes[AGGREGATE_RELAY_BUDGET]!.left).toEqual({
             code: 'unauthorized',
-            message: 'AL acknowledgement relay budget of this session is used up'
+            message: 'AL acknowledgement relay budget of this session for its message is used up'
         });
 
         const otherSession = await other.service.acceptIncomingMessage(repeatedAck('d', 0), 'd');
         expect(otherSession.right).toEqual({ kind: 'control', handled: false });
-        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
+        expect(other.relayed).toHaveLength(AGGREGATE_RELAY_BUDGET + 1);
 
         vi.setSystemTime(Date.now() + 60_001);
         const nextWindow = await other.service.acceptIncomingMessage(repeatedAck('c', 0), 'c');
         expect(nextWindow.right).toEqual({ kind: 'control', handled: false });
-        expect(other.relayed).toHaveLength(RELAY_BUDGET + 2);
+        expect(other.relayed).toHaveLength(AGGREGATE_RELAY_BUDGET + 2);
+    });
+
+    it('refuses a session\'s ACKs once a fixed number of its ACKs per window named no admitted message', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const { owner, other } = await createCluster(['a', 'b', 'c', 'd']);
+        await admitRoomMessage(owner, Date.now() + 30_000);
+        for (let index = 0; index < UNPROVEN_RELAY_BUDGET; index += 1) {
+            expect((await other.service.acceptIncomingMessage(forgedAck('c', index), 'c')).left?.message).toBe(NO_ADMITTED_MESSAGE);
+        }
+
+        const genuine = await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
+
+        expect(genuine.left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement relay budget of this session is used up' });
+        expect((await other.service.acceptIncomingMessage(receiverAck('d'), 'd')).right).toEqual({ kind: 'control', handled: false });
+        expect(other.relayed.map((message) => message.id.msgId)).toEqual(['ack-d']);
+    });
+
+    it('relays and counts a session\'s ACKs for more held aggregates in one window than one session may repeat', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const { owner, other } = await createCluster(['a', 'c']);
+        const msgIds = Array.from({ length: HELD_AGGREGATES }, (_, index) => `room-message-${index + 1}`);
+        for (const msgId of msgIds) {
+            await admitRoomMessage(owner, Date.now() + 30_000, msgId);
+        }
+
+        const outcomes = [];
+        for (const msgId of msgIds) {
+            outcomes.push(await other.service.acceptIncomingMessage(messageAck('c', msgId), 'c'));
+        }
+
+        expect(outcomes.map((outcome) => outcome.right)).toEqual(msgIds.map(() => ({ kind: 'control', handled: false })));
+        expect(other.relayed).toHaveLength(msgIds.length);
+        await expect.poll(() => readReceipts(owner.sockets.a!).filter((receipt) => receipt.phase === 'complete'))
+            .toHaveLength(msgIds.length);
+    });
+
+    it('refuses an ACK it could not hand to the other instances, so the sender is not told it was relayed', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const inboundStores = createSharedInboundStores();
+        const owner = await createServerInstance({ peerIds: ['a', 'b'], relay: 'none', peers: [], inboundStores, roomAudience: ['a', 'b', 'c'] });
+        const other = await createServerInstance({ peerIds: ['c'], relay: 'fails', peers: [owner], inboundStores, roomAudience: ['a', 'b', 'c'] });
+        await admitRoomMessage(owner, Date.now() + 30_000);
+
+        const refused = await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
+
+        expect(refused.left).toEqual({
+            code: 'unsupported',
+            message: 'AL acknowledgement could not be relayed to the instance that aggregates it: notice channel is down'
+        });
+        expect(other.relayed.map((message) => message.id.msgId)).toEqual(['ack-c']);
     });
 
     it('ends the receipt timed out, naming the recipient, when the relay could not be sent', async () => {
@@ -258,8 +317,7 @@ describe('WS server ACK relay across instances', () => {
         await admitRoomMessage(owner, Date.now() + 30_000);
         await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
 
-        expect((await other.service.acceptIncomingMessage(receiverAck('c'), 'c')).right)
-            .toEqual({ kind: 'control', handled: false });
+        expect((await other.service.acceptIncomingMessage(receiverAck('c'), 'c')).left?.code).toBe('unsupported');
         vi.setSystemTime(Date.now() + 30_001);
         owner.engine.wake();
 
@@ -379,9 +437,10 @@ function toRelayPort(
     }
 }
 
-async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number): Promise<void> {
+async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number, msgId = 'room-message-1'): Promise<void> {
+    const admittedBefore = readReceipts(owner.sockets.a!).filter((receipt) => receipt.phase === 'admitted').length;
     const message: ALMessage = {
-        id: { v: 3, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
+        id: { v: 3, msgId, ts: Date.now(), senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
         constraints: { expiresAtMs },
@@ -389,9 +448,8 @@ async function admitRoomMessage(owner: ServerInstance, expiresAtMs: number): Pro
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
     };
     expect((await owner.service.acceptIncomingMessage(message, 'a')).right?.kind).toBe('admitted');
-    await expect.poll(() => readReceipts(owner.sockets.a!).map((receipt) => receipt.phase)).toEqual(
-        ['admitted']
-    );
+    await expect.poll(() => readReceipts(owner.sockets.a!).filter((receipt) => receipt.phase === 'admitted').length)
+        .toBe(admittedBefore + 1);
 }
 
 function receiverAck(
@@ -406,6 +464,23 @@ function receiverAck(
             toPeerId: address.toPeerId ?? 'a',
             originPeerId: address.originPeerId ?? 'a',
             logicalRecipientPeerId: address.logicalRecipientPeerId ?? recipient,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+/** The one ACK `recipient` sends for the message `ackedMsgId`. */
+function messageAck(recipient: string, ackedMsgId: string): ALMessage {
+    return newALAckControlMessage(
+        { v: 3, msgId: `ack-${recipient}-${ackedMsgId}`, senderId: recipient, ts: Date.now() },
+        {
+            ackedMsgId,
+            fromPeerId: recipient,
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: recipient,
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()

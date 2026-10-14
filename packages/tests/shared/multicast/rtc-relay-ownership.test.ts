@@ -187,7 +187,8 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
 
         await chain.c.receive(chain.origin.channels.c!.sent[0]!, 'a');
 
-        expect(readAckTuples(await chain.c.readSent('a'))).toEqual([]);
+        // A recipient confirms itself to its new parent at once; its subtree still waits on the leaf.
+        expect(readAckTuples(await chain.c.readSent('a'))).toEqual([['c', 'accepted']]);
         const toLeaf = await chain.c.readSent('d');
         expect(readCopies(toLeaf, message)).toBe(2);
         await chain.d.receive(toLeaf.at(-1)!, 'c');
@@ -195,7 +196,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
             await chain.c.receive(control, 'd');
         }
         const answer = await chain.c.readSent('a');
-        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'subtree-complete'], ['d', 'forwarded']]);
+        expect(readAckTuples(answer).toSorted()).toEqual([['c', 'accepted'], ['c', 'subtree-complete'], ['d', 'forwarded']]);
         for (const ack of answer) {
             await chain.origin.manager.acceptControlMessage(ack);
         }
@@ -254,16 +255,16 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
         c.acceptSnapshot(createOriginSnapshot(['a', 's', 'c', 'd'], 5));
         await vi.advanceTimersByTimeAsync(1);
         await c.receive(copy, 's');
-        expect(readAckTuples(await c.readSent('s'))).toEqual([['c', 'subtree-complete']]);
+        expect(readAckTuples(await c.readSent('s'))).toEqual([['c', 'subtree-complete'], ['c', 'accepted']]);
         const toLeaf = await c.readSent('d');
         expect(readCopies(toLeaf, message)).toBe(2);
         await d.receive(toLeaf.at(-1)!, 'c');
         for (const control of await d.readSent('c')) {
             await c.receive(control, 'd');
         }
-        expect(readAckTuples((await c.readSent('s')).slice(1)).toSorted())
+        expect(readAckTuples((await c.readSent('s')).slice(2)).toSorted())
             .toEqual([['c', 'subtree-complete'], ['d', 'forwarded']]);
-        expect(readAckTuples(await c.readSent('r'))).toEqual([]);
+        expect(readAckTuples(await c.readSent('r'))).toEqual([['c', 'accepted']]);
     });
 });
 

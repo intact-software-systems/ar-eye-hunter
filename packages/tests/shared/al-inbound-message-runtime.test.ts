@@ -508,7 +508,9 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         });
 
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
-        expect(controlMessages).toHaveLength(0);
+        // The relay delivered it, so it confirms itself at once; only its terminal ACK waits on its child.
+        await expect.poll(() => readAckPayloads(controlMessages).map((ack) => [ack.logicalRecipientPeerId, ack.status]))
+            .toEqual([['self', 'accepted']]);
 
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
@@ -528,14 +530,14 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         );
 
         // One ACK relayed for the downstream recipient and the terminal ACK of the relay itself.
-        await expect.poll(() => controlMessages).toHaveLength(2);
+        await expect.poll(() => controlMessages).toHaveLength(3);
         expect(controlAcceptances).toHaveLength(1);
 
         const ackPayloads = readAckPayloads(controlMessages);
-        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
         // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
             ['peer-2', 'forwarded'],
+            ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
         for (const ack of ackPayloads) {
@@ -580,16 +582,18 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         releaseForwarding.resolve();
         await admission;
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(3);
         expect(readAckPayloads(controlMessages)).toEqual(
-            expect.arrayContaining([['peer-2', 'forwarded'], ['self', 'subtree-complete']].map(([recipient, status]) =>
-                expect.objectContaining({
-                    ackedMsgId: msg.id.msgId,
-                    toPeerId: 'peer-1',
-                    logicalRecipientPeerId: recipient,
-                    status
-                })
-            ))
+            expect.arrayContaining(
+                [['peer-2', 'forwarded'], ['self', 'accepted'], ['self', 'subtree-complete']].map(([recipient, status]) =>
+                    expect.objectContaining({
+                        ackedMsgId: msg.id.msgId,
+                        toPeerId: 'peer-1',
+                        logicalRecipientPeerId: recipient,
+                        status
+                    })
+                )
+            )
         );
     });
 
@@ -631,7 +635,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         });
 
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
-        expect(controlMessages).toHaveLength(0);
+        await expect.poll(() => readAckPayloads(controlMessages).map((ack) => ack.status)).toEqual(['accepted']);
 
         nowMs += 100;
         await runtime.admitIncomingMessage(
@@ -653,7 +657,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
 
         expect(controlAcceptances).toHaveLength(1);
         expect(controlAcceptances[0]?.completedPendingAcks).toEqual([]);
-        expect(controlMessages).toHaveLength(0);
+        expect(readAckPayloads(controlMessages).map((ack) => ack.status)).toEqual(['accepted']);
     });
 });
 
@@ -915,10 +919,10 @@ describe('ALInboundMessageRuntime durable effects', () => {
             ),
             { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
-        // The offline send releases both acknowledgement rows for retry before the restart. A runtime
+        // The offline send releases all three acknowledgement rows for retry before the restart. A runtime
         // disposed while its batch still holds a claim leaves that row reserved until its lease ends,
         // which the frozen clock never reaches.
-        await expect.poll(() => countWorkRowsWithStatus(stores.workQueue, EntityStatus.RETRY)).toBe(2);
+        await expect.poll(() => countWorkRowsWithStatus(stores.workQueue, EntityStatus.RETRY)).toBe(3);
         await runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
@@ -927,13 +931,13 @@ describe('ALInboundMessageRuntime durable effects', () => {
         await runtime2.ready();
         vi.setSystemTime(Date.now() + 100);
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(3);
         const ackPayloads = readAckPayloads(controlMessages);
 
-        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
-        // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
+        // The relay's own ACK, the child ACK relayed as it arrived, and the terminal ACK that ends its subtree.
         expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
             ['peer-2', 'forwarded'],
+            ['self', 'accepted'],
             ['self', 'subtree-complete']
         ]);
         for (const ack of ackPayloads) {

@@ -1,9 +1,13 @@
+import type { ALTargets } from '../../al-contracts/al-contract.ts';
 import {
     isALHopCompletionAck,
     type ALAckPayload,
     type ALCompletedPendingAck,
     type ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 
 export interface TrackALPendingAckSnapshotInput {
@@ -14,6 +18,8 @@ export interface TrackALPendingAckSnapshotInput {
     readonly localReady: boolean;
     readonly expireAtTimestamp: number | undefined;
     readonly carrier: ALDeliveryCarrier;
+    /** `undefined` relays every child ACK upward; see `resolveALUpwardAudiencePeerIds`. */
+    readonly upwardAudiencePeerIds: readonly string[] | undefined;
 }
 
 export interface MarkALPendingAckLocalReadySnapshotInput {
@@ -52,6 +58,7 @@ export function trackALPendingAckSnapshot(
     input: TrackALPendingAckSnapshotInput
 ): ALPendingAckTransition {
     const expireAtTimestamp = input.expireAtTimestamp ?? input.current?.expireAtTimestamp;
+    const upwardAudiencePeerIds = input.upwardAudiencePeerIds ?? input.current?.upwardAudiencePeerIds;
     return toALPendingAckTransition({
         msgId: input.msgId,
         previous: input.current,
@@ -64,6 +71,7 @@ export function trackALPendingAckSnapshot(
             ],
             ackedFromPeerIds: input.current?.ackedFromPeerIds ?? [],
             ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),
+            ...(upwardAudiencePeerIds === undefined ? {} : { upwardAudiencePeerIds }),
             carrier: input.carrier
         },
         relayedRecipientPeerIds: []
@@ -83,7 +91,25 @@ export function markALPendingAckLocalReadySnapshot(
         });
 }
 
-/** Every admitted child ACK is relayed upward; only the completion ACK of the child hop itself completes it. */
+/**
+ * The audience whose child ACKs a relay passes upward: the frozen audience of a `receiver` or `leader` send, since
+ * its origin counts nobody else; `undefined`, relaying every child ACK, for any other send.
+ */
+export function resolveALUpwardAudiencePeerIds(
+    algo: ALAckAlgo,
+    targets: ALTargets | undefined
+): readonly string[] | undefined {
+    return isALLogicalReceiptMode(algo) ? resolveALFrozenMulticastAudience(targets)?.recipientPeerIds : undefined;
+}
+
+export function isALPendingAckUpwardRecipient(pending: ALPendingAckSnapshot, recipientPeerId: string): boolean {
+    return pending.upwardAudiencePeerIds === undefined || pending.upwardAudiencePeerIds.includes(recipientPeerId);
+}
+
+/**
+ * An admitted child ACK is relayed upward when the origin counts its recipient; only the completion ACK of the
+ * child hop itself completes it.
+ */
 export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
 ): ALPendingAckTransition {
@@ -98,7 +124,9 @@ export function acceptALPendingAckPayload(
         msgId: ack.ackedMsgId,
         previous: current,
         pending: { ...current, ackedFromPeerIds },
-        relayedRecipientPeerIds: [ack.logicalRecipientPeerId]
+        relayedRecipientPeerIds: isALPendingAckUpwardRecipient(current, ack.logicalRecipientPeerId)
+            ? [ack.logicalRecipientPeerId]
+            : []
     });
 }
 

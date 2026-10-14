@@ -428,7 +428,8 @@ export class ALOutboundControlAdmission<TPrepared> {
         }
     }
 
-    private async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {
+    /** Keeps a control its conditional commit lost as work the outbound worker replays until its deadline. */
+    async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {
         const expiresAtMs = toExpireAtTimestampFromNow(this.retention.durableEffectTtlMs, nowMs);
         await this.port.retainIfAbsent(computeALOutboundWorkEntry({
             namespace: this.namespace,

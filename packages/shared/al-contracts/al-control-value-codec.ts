@@ -105,7 +105,7 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
     const record = decodeControlRecord(
         value,
         ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
-        ['expireAtTimestamp']
+        ['expireAtTimestamp', 'upwardAudiencePeerIds']
     );
     if (typeof record.localReady !== 'boolean') {
         throw new TypeError('Pending ACK readiness is invalid');
@@ -123,6 +123,14 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
             'pending ACK acknowledged peer identity'
         ),
         ...decodeOptionalNumber(record, 'expireAtTimestamp', 'pending ACK expiry'),
+        ...(Object.hasOwn(record, 'upwardAudiencePeerIds')
+            ? {
+                upwardAudiencePeerIds: decodeControlIdentifierArray(
+                    record.upwardAudiencePeerIds,
+                    'pending ACK upward audience identity'
+                )
+            }
+            : {}),
         carrier: decodeALDeliveryCarrier(record.carrier, 'pending ACK carrier')
     };
 }

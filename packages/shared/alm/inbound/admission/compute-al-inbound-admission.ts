@@ -1,6 +1,7 @@
 import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import {
     acceptALSupersedenceObservation,
@@ -22,6 +23,7 @@ import {
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
     toALInboundUpwardAcks,
+    type ALInboundAckEffectInput,
     type ALInboundControlEffectInput,
     type ALInboundEffectIntent
 } from '../al-inbound-effect-intent.ts';
@@ -37,6 +39,7 @@ import {
 } from '../prepare-al-inbound-commit-bundle.ts';
 import {
     markALPendingAckLocalReadySnapshot,
+    resolveALUpwardAudiencePeerIds,
     trackALPendingAckSnapshot,
     type ALPendingAckTransition
 } from '../transition-al-pending-ack.ts';
@@ -128,6 +131,9 @@ interface InboundAcknowledgementChanges {
     readonly immediateEffects: readonly ALInboundEffectIntent[];
     readonly completedEffects: readonly ALInboundEffectIntent[];
 }
+
+/** This peer's own ACK of the admitted message, before its status is chosen. */
+type InboundOwnAck = Omit<ALInboundAckEffectInput, 'status'>;
 
 interface InboundPendingAckInput {
     readonly msgId: string;
@@ -246,49 +252,63 @@ function computeIncomingAcknowledgements(
     if (!plan.ack.enabled || !plan.ack.toPeerId) {
         return { mutations: [], immediateEffects: [], completedEffects: [] };
     }
-    const expireAtTimestamp = resolveALMessageExpireAtMs(read.msg, plan.effective);
-    // No forwarding means there is no subtree to wait for.
+    const ack: InboundOwnAck = {
+        toPeerId: plan.ack.toPeerId,
+        ackedMsgId: read.msg.id.msgId,
+        originPeerId: read.msg.id.senderId,
+        logicalRecipient: { kind: 'self' },
+        expireAtTimestamp: resolveALMessageExpireAtMs(read.msg, plan.effective),
+        carrier: toALDeliveryCarrier(read.source)
+    };
     if (!plan.ack.deferred || !shouldForward) {
         return {
             mutations: [],
             completedEffects: [],
-            immediateEffects: [toALInboundAckEffect({
-                toPeerId: plan.ack.toPeerId,
-                ackedMsgId: read.msg.id.msgId,
-                originPeerId: read.msg.id.senderId,
-                logicalRecipient: { kind: 'self' },
-                status: toImmediateAckStatus(plan, shouldForward),
-                expireAtTimestamp,
-                carrier: toALDeliveryCarrier(read.source)
-            })]
+            immediateEffects: [toALInboundAckEffect({ ...ack, status: toImmediateAckStatus(plan, shouldForward) })]
         };
     }
+    return {
+        ...computeRelayAcknowledgements(read, ack),
+        immediateEffects: isALLogicalReceiptMode(plan.ack.algo) && plan.localDelivery.enabled
+            ? [toALInboundAckEffect({ ...ack, status: 'accepted' })]
+            : []
+    };
+}
+
+/**
+ * A relay's row waits on its next hops and ends its hop with its terminal ACK once they completed. A logical
+ * recipient that delivered confirms itself at once with `accepted` beside that row: its confirmation never
+ * waits on the subtree below it, and `accepted` completes no hop, so its parent still waits on its terminal ACK.
+ */
+function computeRelayAcknowledgements(
+    read: ALInboundMessageReadDto,
+    ack: InboundOwnAck
+): Omit<InboundAcknowledgementChanges, 'immediateEffects'> {
+    const plan = read.plan;
     const transition = trackALPendingAckSnapshot({
-        msgId: read.msg.id.msgId,
+        msgId: ack.ackedMsgId,
         current: read.pendingAck,
-        toPeerId: plan.ack.toPeerId,
+        toPeerId: ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
-        expireAtTimestamp,
-        carrier: toALDeliveryCarrier(read.source)
+        expireAtTimestamp: ack.expireAtTimestamp,
+        carrier: ack.carrier,
+        upwardAudiencePeerIds: resolveALUpwardAudiencePeerIds(plan.ack.algo, read.msg.targets)
     });
     const changes = toAckTransitionChanges(transition, {
-        msgId: read.msg.id.msgId,
-        senderId: read.msg.id.senderId,
-        expireAtTimestamp,
+        msgId: ack.ackedMsgId,
+        senderId: ack.originPeerId,
+        expireAtTimestamp: ack.expireAtTimestamp,
         nowMs: read.nowMs,
         retention: read.retention,
-        carrier: toALDeliveryCarrier(read.source)
+        carrier: ack.carrier
     });
     if (!transition.pending) {
         return changes;
     }
     return {
-        ...changes,
-        mutations: [
-            ...changes.mutations,
-            toControlOwnerMutation(read, transition.pending.expireAtTimestamp)
-        ]
+        completedEffects: changes.completedEffects,
+        mutations: [...changes.mutations, toControlOwnerMutation(read, transition.pending.expireAtTimestamp)]
     };
 }
 

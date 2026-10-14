@@ -358,7 +358,7 @@ describe('ALInboundWorkSelector eligibility reads', () => {
 
 describe('ALInboundWorkSelector claim order', () => {
     it.each(['memory', 'indexeddb'] as const)(
-        'dispatches an acknowledged message before it sends the acknowledgement over %s',
+        'sends the acknowledgement before it dispatches the acknowledged message over %s',
         async (storage) => {
             const fixture = createInboundTestRuntime({
                 carrier: 'ws',
@@ -376,9 +376,9 @@ describe('ALInboundWorkSelector claim order', () => {
                 INBOUND_TEST_SOURCE
             );
 
-            // One commit, one batch: both rows are on the page that batch reads, and today
-            // the `ack:` key sorts ahead of the `dispatch:` key.
-            await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'control-sent']);
+            // One commit, one batch: both rows are on the page that batch reads. An ACK confirms the
+            // admission, never the handler, so it does not wait behind the dispatch.
+            await expect.poll(() => fixture.sequence).toEqual(['control-sent', 'dispatched']);
         }
     );
 
@@ -389,7 +389,7 @@ describe('ALInboundWorkSelector claim order', () => {
 
             await runRotationUntilControlSent(fixture);
 
-            await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'dispatched', 'control-sent']);
+            await expect.poll(() => fixture.sequence).toEqual(['control-sent', 'dispatched', 'dispatched']);
             expect(
                 fixture.controlSends.map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg)))
             ).toEqual([['first-acknowledged', 'second-acknowledged']]);
@@ -498,7 +498,20 @@ describe('ALInboundWorkSelector claim order', () => {
         }
     );
 
-    it('ranks page deliveries first, then admission replays and undecoded rows, then control sends', () => {
+    it('claims a control send ahead of a full page of buffered releases', () => {
+        const releases = Array.from({ length: AL_INBOUND_WORK_PAGE_SIZE - 1 }, (_, index) => createTestClaim(`release-${index}`));
+        const control = createTestClaim('send-control');
+        const effectKinds = new Map<ResourceEntryKeyString, ALInboundDurableEffect['kind']>([
+            ...releases.map((claim) => [toKeyAsString(claim.entry.key), 'release-buffered'] as const),
+            [toKeyAsString(control.entry.key), 'send-control']
+        ]);
+
+        const ordered = computeALInboundClaimOrder([...releases, control], effectKinds);
+
+        expect(ordered[0]?.entry.key.resourceId).toBe('send-control');
+    });
+
+    it('ranks control sends first, then page deliveries, then admission replays and undecoded rows, then forwards', () => {
         const claims = [
             createTestClaim('forward-message'),
             createTestClaim('send-control'),
@@ -520,13 +533,13 @@ describe('ALInboundWorkSelector claim order', () => {
         const ordered = computeALInboundClaimOrder(claims, effectKinds);
 
         expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual([
+            'send-control',
             'release-buffered',
             'dispatch-local',
             'undecoded',
             'admit-control',
             'admit-message',
-            'forward-message',
-            'send-control'
+            'forward-message'
         ]);
     });
 });

@@ -183,8 +183,8 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(dispatch.dueAtMs).toBeLessThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.startedAtMs).toBeGreaterThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.queueWaitMs).toBe(Math.max(0, dispatch.batchStartedAtMs - dispatch.dueAtMs));
-        // The dispatch runs ahead of its own ACK: page deliveries rank before control sends.
-        expect(drain.claimedEffectIds).toEqual([dispatch.effectId, control.effectId]);
+        // The ACK runs ahead of the dispatch it confirms: control sends rank before page deliveries.
+        expect(drain.claimedEffectIds).toEqual([control.effectId, dispatch.effectId]);
         expect(drain.deferred).toEqual([]);
     }
 );

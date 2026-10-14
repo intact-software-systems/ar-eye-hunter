@@ -2,7 +2,9 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -16,6 +18,9 @@ import {
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
+
+/** Completed rows a retaining owner keeps until they expire: far more than the live rows a sweep looks for. */
+const RETAINED_COMPLETED_ROWS = 64;
 
 interface QueueEntryTestOptions {
     readonly status?: EntityStatus;
@@ -329,6 +334,37 @@ describe('InMemoryQueueBox', () => {
                 }
             )).size
         ).toBe(0);
+    });
+
+    it('reads only reserved rows to find finalizations, however many completed rows it retains', async () => {
+        const queue = new InMemoryQueueBox();
+        queue.retainCompletedUntilExpiry({ typeIds: [EnqueuedType.APP_INBOX], topicIds: [] });
+        const staleStart = Temporal.Now.instant().subtract({ minutes: 6 });
+        for (let index = 0; index < RETAINED_COMPLETED_ROWS; index += 1) {
+            await queue.enqueue(createEntry(EnqueuedType.APP_INBOX, `completed-${index}`, { status: EntityStatus.COMPLETED }));
+        }
+        const exhausted = createEntry(EnqueuedType.APP_INBOX, 'exhausted', {
+            status: EntityStatus.RESERVED,
+            attempts: 20,
+            startTs: staleStart
+        });
+        await queue.enqueue(exhausted);
+        const iterations = vi.spyOn(Map.prototype, 'entries');
+        const valueIterations = vi.spyOn(Map.prototype, 'values');
+        onTestFinished(() => {
+            iterations.mockRestore();
+            valueIterations.mockRestore();
+        });
+
+        const recovered = await queue.reserveRetryExhaustionFinalizations(
+            new Set([EnqueuedType.APP_INBOX]),
+            { processingAttempts: 20, maxToReserve: 10, staleAfterMs: 5 * 60 * 1000 }
+        );
+
+        expect([...recovered.values()].map(({ entry }) => entry.key)).toEqual([exhausted.key]);
+        const scannedMapSizes = [...iterations.mock.contexts, ...valueIterations.mock.contexts]
+            .map((map) => (map as ReadonlyMap<string, ResourceEntry>).size);
+        expect(scannedMapSizes.filter((size) => size >= RETAINED_COMPLETED_ROWS)).toEqual([]);
     });
 
     it('skips poison finalization generations without consuming a valid bounded batch', async () => {

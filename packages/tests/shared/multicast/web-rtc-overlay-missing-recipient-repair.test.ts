@@ -75,10 +75,10 @@ describe('the RTC origin retry of a receiver receipt', () => {
         const message = createOriginReceiverMulticast('missing-b');
         await enqueueAndDrain(fixture.manager, message);
         await relay.receive(fixture.channels.r!.sent[0]!, 'a');
-        // `b` delivers behind `r`; `r` relays its ACK and ends its subtree, but the r -> a leg loses both.
+        // `b` delivers behind `r`; `r` confirms itself, relays its ACK and ends its subtree, but the r -> a leg loses all three.
         await relay.receive(createLeafAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'r' }), 'b');
         const lost = readAckTuples(await relay.readSent('a'));
-        expect(lost.toSorted()).toEqual([['b', 'forwarded'], ['r', 'subtree-complete']]);
+        expect(lost.toSorted()).toEqual([['b', 'forwarded'], ['r', 'accepted'], ['r', 'subtree-complete']]);
         // `c` is a leaf: its own delivered ACK completes its hop.
         await acknowledgeAtOrigin(fixture.manager, {
             msgId: message.id.msgId,

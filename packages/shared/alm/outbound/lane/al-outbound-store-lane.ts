@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '../../../al-contracts/al-control-type-ids.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
@@ -57,7 +58,10 @@ import {
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
-import type { ALOutboundControlAdmissionResult } from '../control/al-outbound-control-admission.ts';
+import type {
+    ALOutboundControlAdmission,
+    ALOutboundControlAdmissionResult
+} from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
@@ -255,10 +259,14 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
-        return await this.readiness.runStoreOperation(
+        const admitted = await this.readiness.runStoreOperation(
             () => this.receiptAdmission.admit(control),
             (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
+        if (admitted.kind === 'pending-control') {
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+        }
+        return admitted;
     }
 
     /**
@@ -430,7 +438,9 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'dequeue-message':
                 return await this.effects.admitDequeuedMessage(effect, evidence);
             case 'admit-control':
-                return await this.repairAdmission.replayControlAdmission(effect.payload);
+                return effect.payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
+                    ? await this.receiptAdmission.replay(effect.payload)
+                    : await this.repairAdmission.replayControlAdmission(effect.payload);
             case 'send-prepared':
                 evidence?.recordStage('send');
                 return await this.runPreparedSend(effect, effect.payload, deferObservation);
@@ -620,15 +630,17 @@ function createALOutboundLaneAdmissions<TPrepared>(
         diagnostics: runtime.diagnostics,
         settlements
     });
+    const controlAdmission = stores.admissionStore.createControlAdmission({
+        port: workPort,
+        clock: runtime.clock,
+        settlements,
+        carrier: runtime.carrier,
+        hopPeerIds: runtime.hopPeerIds
+    });
     return {
         dispatchAdmission,
-        repairAdmission: createALOutboundLaneRepairAdmission(input, workPort, settlements),
-        receiptAdmission: new ALOutboundReceiptAdmission({
-            admissionStore: stores.admissionStore,
-            clock: runtime.clock,
-            settlements,
-            diagnostics: runtime.diagnostics
-        }),
+        repairAdmission: createALOutboundLaneRepairAdmission(input, controlAdmission, settlements),
+        receiptAdmission: createALOutboundLaneReceiptAdmission(input, controlAdmission, settlements),
         repairRetransmission: new ALOutboundRepairRetransmission({
             admissionStore: stores.admissionStore,
             dispatchAdmission,
@@ -640,28 +652,37 @@ function createALOutboundLaneAdmissions<TPrepared>(
     };
 }
 
-/** Controls commit through the lane's own control admission, over its own work port. */
+/** Peer controls commit through the lane's own control admission, the one its receipts are retained beside. */
 function createALOutboundLaneRepairAdmission<TPrepared>(
     input: ALOutboundStoreLane.Input<TPrepared>,
-    workPort: ALWorkQueuePort,
+    controlAdmission: ALOutboundControlAdmission<TPrepared>,
     settlements: ALOutboundSettlementEmitter
 ): ALOutboundRepairAdmission<TPrepared> {
     const { stores, runtime } = input;
     return new ALOutboundRepairAdmission({
         admissionStore: stores.admissionStore,
-        controlAdmission: stores.admissionStore.createControlAdmission({
-            port: workPort,
-            clock: runtime.clock,
-            settlements,
-            carrier: runtime.carrier,
-            hopPeerIds: runtime.hopPeerIds
-        }),
+        controlAdmission,
         clock: runtime.clock,
         planOutgoingMessage: runtime.planOutgoingMessage,
         planRepairMessage: runtime.planRepairMessage,
         hopPeerIds: runtime.hopPeerIds,
         diagnostics: runtime.diagnostics,
         settlements
+    });
+}
+
+/** Server receipts that keep conflicting wait as work beside the peer controls of the same control admission. */
+function createALOutboundLaneReceiptAdmission<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    controlAdmission: ALOutboundControlAdmission<TPrepared>,
+    settlements: ALOutboundSettlementEmitter
+): ALOutboundReceiptAdmission<TPrepared> {
+    return new ALOutboundReceiptAdmission({
+        admissionStore: input.stores.admissionStore,
+        clock: input.runtime.clock,
+        settlements,
+        diagnostics: input.runtime.diagnostics,
+        pendingControls: controlAdmission
     });
 }
 

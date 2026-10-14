@@ -152,7 +152,10 @@ describe('WS server receipts for addressed sends', () => {
             ) => [ack.ackedMsgId, ack.fromPeerId, ack.logicalRecipientPeerId]);
         }).toEqual([['to-server', SERVER_ID, SERVER_ID]]);
         expect(readReceipts(fixture.sockets.a)).toEqual([]);
-        expect(fixture.routed.map((message) => message.id.msgId)).toEqual(['to-server']);
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return fixture.routed.map((message) => message.id.msgId);
+        }).toEqual(['to-server']);
     });
 
     it('acknowledges a hop room unicast to another session itself, as the origin\'s one hop', async () => {
@@ -167,9 +170,10 @@ describe('WS server receipts for addressed sends', () => {
             await fixture.engine.executeOnce();
             return readAcks(fixture.sockets.a).map((ack) => [ack.ackedMsgId, ack.fromPeerId]);
         }).toEqual([['hop-to-b', SERVER_ID]]);
-        expect(readFrames(fixture.sockets.b).map((message) => message.id.msgId)).toEqual([
-            'hop-to-b'
-        ]);
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readFrames(fixture.sockets.b).map((message) => message.id.msgId);
+        }).toEqual(['hop-to-b']);
     });
 
     it('acknowledges a subtree room send itself: the router owns the fanout, so no subtree is waited for', async () => {

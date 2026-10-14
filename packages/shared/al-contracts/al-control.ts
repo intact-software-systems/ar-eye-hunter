@@ -135,8 +135,9 @@ export interface ALControlAcceptance {
 
 /**
  * How a relay tracks one message it forwarded: the child hops it waits on, and those whose subtree
- * completed. Every child ACK is relayed upward as it arrives; the row completes once this peer is ready
- * and every child hop completed, and stays until it expires so a late child ACK is still relayed.
+ * completed. A child ACK is relayed upward as it arrives when the origin counts its recipient; the row
+ * completes once this peer is ready and every child hop completed, and stays until it expires so a late
+ * child ACK is still relayed.
  */
 export interface ALPendingAckSnapshot {
     readonly toPeerId: string;
@@ -145,6 +146,11 @@ export interface ALPendingAckSnapshot {
     readonly expectedFromPeerIds: readonly string[];
     /** The child hops whose own completion ACK arrived, never a hop that only relayed a recipient below it. */
     readonly ackedFromPeerIds: readonly string[];
+    /**
+     * The frozen audience of a `receiver` or `leader` message, the only recipients its origin counts: a child
+     * ACK for anyone else is not relayed. Absent for any other message, whose child ACKs are all relayed.
+     */
+    readonly upwardAudiencePeerIds?: readonly string[];
     readonly expireAtTimestamp?: number;
     /** The carrier the acknowledged data message arrived on. */
     readonly carrier: ALDeliveryCarrier;

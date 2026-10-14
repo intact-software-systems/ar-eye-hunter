@@ -415,9 +415,9 @@ async function readALInboundClaimedSelection(
 }
 
 /**
- * The batch's run order: page deliveries first, then admission replays and rows whose kind the
- * page never decoded, then control sends and forwards. Stable within each rank, so page order
- * still decides among equals.
+ * The batch's run order: control sends first, since an ACK confirms admission and must not wait
+ * behind a page of handlers; then page deliveries, then admission replays and rows whose kind the
+ * page never decoded, then forwards. Stable within each rank, so page order still decides among equals.
  */
 export function computeALInboundClaimOrder(
     claims: readonly ALWorkClaim[],
@@ -430,18 +430,19 @@ export function computeALInboundClaimOrder(
 }
 
 /** A row whose kind never decoded ranks with the admission replays: both are read again before delivery. */
-function toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2 {
+function toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2 | 3 {
     switch (kind) {
+        case 'send-control':
+            return 0;
         case 'dispatch-local':
         case 'release-buffered':
-            return 0;
+            return 1;
         case 'admit-control':
         case 'admit-message':
         case undefined:
-            return 1;
-        case 'forward-message':
-        case 'send-control':
             return 2;
+        case 'forward-message':
+            return 3;
     }
 }
 

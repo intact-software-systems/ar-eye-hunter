@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
@@ -7,7 +8,11 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
-import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
+import type {
+    ALOutboundControlAdmission,
+    ALOutboundControlAdmissionResult,
+    ALOutboundPendingControl
+} from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
     toALOutboundReceiptMutation,
@@ -22,13 +27,16 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly settlements: ALOutboundSettlementEmitter;
     readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    /** Where a receipt that kept conflicting waits as work, beside the peer controls that lost their commit. */
+    readonly pendingControls: Pick<ALOutboundControlAdmission<TPrepared>, 'retainPendingControl'>;
 }
 
 /**
  * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
  * an outbox-fanned message. One conditional commit fenced on the origin's version; a conflict starts a
- * fresh read, and the few attempts bound a receipt racing the origin's own writes. Running out of them
- * is reported, since the row then keeps waiting on acknowledgements the receipt already counted.
+ * fresh read, and the few attempts bound a receipt racing the origin's own writes. A receipt that runs out
+ * of them is retained as work and replayed until its deadline, since the row would otherwise keep waiting
+ * on acknowledgements the receipt already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
     private static readonly MAX_ATTEMPTS = 3;
@@ -64,11 +72,21 @@ export class ALOutboundReceiptAdmission<TPrepared> {
                 return result;
             }
         }
-        const reason = 'AL receipt kept conflicting with the origin version';
-        console.warn(
-            `AL ${receipt.phase} receipt for ${receipt.msgId} of origin ${receipt.originPeerId} left its receipt row unmoved: ${reason}`
+        await this.dependencies.pendingControls.retainPendingControl(
+            control,
+            'trusted-server',
+            this.dependencies.clock.nowMs()
         );
-        return { kind: 'rejected', reason };
+        return { kind: 'pending-control' };
+    }
+
+    /** A retained receipt is replayed until it commits or its deadline passes. */
+    async replay(payload: ALOutboundPendingControl): Promise<ALWorkOutcome> {
+        if (payload.expiresAtMs <= this.dependencies.clock.nowMs()) {
+            return { status: 'completed' };
+        }
+        const admitted = await this.admit(payload.msg);
+        return { status: admitted.kind === 'pending-control' ? 'retry' : 'completed' };
     }
 
     private async admitOnce(
