@@ -65,6 +65,7 @@ export function createAppInboxClientRuntime(
     );
     const resultWaiter = new AppInboxResultWaiter(
         {
+            completionNotifications: input.inboxQueueReader.completionNotifications,
             statusRepository: input.resourceInboxRepository,
             resultRepository: input.resourceInboxResultsRepository
         },

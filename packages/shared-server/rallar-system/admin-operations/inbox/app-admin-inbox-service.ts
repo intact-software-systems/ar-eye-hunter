@@ -1,18 +1,25 @@
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     ADMIN_PRUNE_EXPIRED_CATEGORIES,
     type AdminPruneExpiredCategory,
     type AdminPruneExpiredRequest
 } from '@shared/api/admin-operations-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
+import {
+    TryWithExhaustedError,
+    TryWithPolicy,
+    tryWithPolicy
+} from '@shared/resilience/try-with-policy.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-
-import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxExecutionMetadata
+} from '../../app-inbox/app-inbox-contracts.ts';
+import { toUnavailableAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import {
     DEFAULT_APP_INBOX_WAIT_JITTER_RATIO,
     DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS,
@@ -29,6 +36,11 @@ import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handl
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import {
+    recordRallarTiming,
+    timeRallarAsync,
+    type RallarTimingSink
+} from '../../observability/timing.ts';
 import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
 import { writeAdminPruneAggregate } from '../postgres/p-sql-admin-prune-repository.ts';
@@ -42,10 +54,6 @@ import {
     decodeAdminPruneCommand,
     type AdminPruneCommand
 } from './admin-prune-command-codec.ts';
-
-import { AppInboxType, type AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
-
-import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
 import {
     decodeAdminPruneEnqueueResultForCommand,
     decodeAdminPruneRequest,
@@ -106,6 +114,14 @@ export interface AppAdminInboxServiceConfig {
     readonly appInbox: AppInboxOptions;
 }
 
+export interface AppAdminPruneExpiredInput {
+    readonly adminSession: AuthSession;
+    readonly requestId: string;
+    readonly request: AdminPruneExpiredRequest;
+}
+
+type AdminPruneTimingOperation = 'read' | 'compute' | 'validate' | 'semantic-identity';
+
 export class AppAdminInboxService {
     private readonly dependencies: AppAdminInboxServiceDependencies;
     private readonly config: AppAdminInboxServiceConfig;
@@ -147,17 +163,13 @@ export class AppAdminInboxService {
             type: AppInboxType.ADMIN_PRUNE_EXPIRED,
             decodeCommand: decodeAdminPruneCommand,
             encodeResult: (result) => encodeAppInboxResult(result, 'Admin prune AppInbox result'),
-            handle: async (command, context) => await this.processCommand(command, context)
+            handle: async (command, context) => await this.pruneExpiredCommand(command, context)
         });
         this.handlers.assertRegistrationComplete([AppInboxType.ADMIN_PRUNE_EXPIRED]);
     }
 
     async pruneExpired(
-        input: Readonly<{
-            adminSession: AuthSession;
-            requestId: string;
-            request: AdminPruneExpiredRequest;
-        }>
+        input: AppAdminPruneExpiredInput
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         const normalizedRequest = decodeAdminPruneRequest(input.request);
         const identity = await this.dependencies.createAdminPruneIdempotencyIdentity({
@@ -182,28 +194,7 @@ export class AppAdminInboxService {
                 senderId: identity.requestedBy,
                 data: null
             },
-            async () => {
-                const capturedAtEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
-                const command = await createAdminPruneCommand({
-                    jobId: identity.jobId,
-                    requestedBy: identity.requestedBy,
-                    requestedSessionId: identity.requestedSessionId,
-                    capturedAtEpochMs,
-                    expireAtEpochMs: this.dependencies.computeRetryExpiryAtEpochMs(capturedAtEpochMs),
-                    dryRun: identity.dryRun,
-                    categories: identity.categories,
-                    appData: identity.appData,
-                    pageSize: this.config.pageSize
-                });
-                return {
-                    type: AppInboxType.ADMIN_PRUNE_EXPIRED,
-                    topicId: key.topicId,
-                    resourceId: key.resourceId,
-                    contextId: key.contextId,
-                    senderId: command.requestedSessionId,
-                    data: encodeAppInboxCommand(command, 'Admin prune AppInbox command')
-                };
-            }
+            async () => await this.createMaterializedPruneEntry(identity, key)
         );
         const command = decodeAdminPruneCommand(reservation.enqueue.data);
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
@@ -212,10 +203,39 @@ export class AppAdminInboxService {
             reservation,
             (value) => decodeAdminPruneEnqueueResultForCommand(value, command)
         );
-        return await this.toCallerResult(command, enqueued);
+        if (enqueued.left !== undefined || command.dryRun) {
+            return enqueued;
+        }
+        return await this.waitForAggregate(command);
     }
 
-    private async processCommand(
+    private async createMaterializedPruneEntry(
+        identity: AdminPruneIdempotencyIdentity,
+        key: Key
+    ): Promise<AppInboxEnqueueInput> {
+        const capturedAtEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
+        const command = await createAdminPruneCommand({
+            jobId: identity.jobId,
+            requestedBy: identity.requestedBy,
+            requestedSessionId: identity.requestedSessionId,
+            capturedAtEpochMs,
+            expireAtEpochMs: this.dependencies.computeRetryExpiryAtEpochMs(capturedAtEpochMs),
+            dryRun: identity.dryRun,
+            categories: identity.categories,
+            appData: identity.appData,
+            pageSize: this.config.pageSize
+        });
+        return {
+            type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+            topicId: key.topicId,
+            resourceId: key.resourceId,
+            contextId: key.contextId,
+            senderId: command.requestedSessionId,
+            data: encodeAppInboxCommand(command, 'Admin prune AppInbox command')
+        };
+    }
+
+    private async pruneExpiredCommand(
         value: AdminPruneCommand,
         context: AppInboxExecutionMetadata
     ): Promise<AdminPruneEnqueueResult> {
@@ -297,16 +317,6 @@ export class AppAdminInboxService {
         }
     }
 
-    private async toCallerResult(
-        command: AdminPruneCommand,
-        result: Either<AppInboxFailure, AdminPruneEnqueueResult>
-    ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
-        if (result.left !== undefined || command.dryRun) {
-            return result;
-        }
-        return await this.waitForAggregate(command);
-    }
-
     private async waitForAggregate(
         command: AdminPruneCommand
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
@@ -334,7 +344,7 @@ export class AppAdminInboxService {
     }
 
     private async timeAdminPrunePhase<T>(
-        operation: string,
+        operation: AdminPruneTimingOperation,
         identity: AdminPruneTimingIdentity | AdminPruneCommand,
         action: () => Promise<T>
     ): Promise<T> {
@@ -354,7 +364,7 @@ export class AppAdminInboxService {
     }
 
     private recordPhase(
-        operation: string,
+        operation: AdminPruneTimingOperation,
         identity: Pick<AdminPruneIdempotencyIdentityInput, 'requestId' | 'requestedBy' | 'requestedSessionId'>,
         details: Readonly<Record<string, string | number | boolean | undefined>>
     ): void {

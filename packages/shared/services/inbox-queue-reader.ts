@@ -5,6 +5,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxWorkPage } from '@shared/queuebox/queue-box-types.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -50,6 +51,7 @@ export class InboxQueueReader {
 
     private static readonly PRESSURE_WINDOW_MS = 1_000;
 
+    public readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     public readonly inbox: QueueBoxResourceEntryRepository;
 
     constructor(
@@ -57,6 +59,7 @@ export class InboxQueueReader {
         dequeueOptions: DequeueResourceEntryOptions = {},
         creationNow: QueueBoxUtilities.CreationClock = Temporal.Now.instant
     ) {
+        this.completionNotifications = dequeueOptions.completionNotifications;
         this.inbox = inbox;
         this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
         this.pressureRefreshLimiter = RateLimiter.initWithTs(

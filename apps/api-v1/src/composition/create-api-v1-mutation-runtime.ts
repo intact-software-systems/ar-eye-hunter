@@ -63,6 +63,7 @@ import {
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -162,6 +163,8 @@ interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDepend
 export function createApiV1MutationRuntime(
     input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationRuntime {
+    const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
+    const appInboxDequeueOptions = createAppInboxDequeueOptions(input, completionNotifications);
     const resources = createApiV1MutationResources(input.database, input.nowEpochMs);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
@@ -183,7 +186,7 @@ export function createApiV1MutationRuntime(
         groupSnapshotCache: resources.groupSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics,
         groupStateService,
-        appInboxDequeueOptions: createAppInboxDequeueOptions(input),
+        appInboxDequeueOptions,
         createGroupStateInboxService: createGroupStateInboxServiceFactory({
             ...stateDependencies,
             groupStateService,
@@ -419,13 +422,16 @@ function createAppAuthInboxServiceFactory(
 }
 
 function createAppInboxDequeueOptions(
-    input: CreateApiV1MutationRuntimeInput
+    input: CreateApiV1MutationRuntimeInput,
+    completionNotifications: ResourceInboxCompletionNotifications
 ): DequeueResourceEntryOptions {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
+        completionNotifications,
         database: input.database,
         timing: input.timing
     });
     return {
+        completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,
         onRetryExhaustionRecovery: finalizeAppInboxRetry,

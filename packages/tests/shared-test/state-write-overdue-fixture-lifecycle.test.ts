@@ -16,7 +16,7 @@ import type {
     InboxRow
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import { parseApiV1StateWriteEvidenceRow } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts';
-import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts';
+import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/collect-api-v1-state-write-evidence-from-sql.ts';
 import type { ResourceInboxFairnessSelection } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,

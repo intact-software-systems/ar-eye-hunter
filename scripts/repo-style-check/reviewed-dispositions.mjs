@@ -1028,9 +1028,32 @@ export const reviewedDispositions = Object.freeze([
     // These raw SQL options go directly to the complete spec boundary above,
     // before the first query. No unvalidated input feeds SQL or fixture policy.
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts',
+        path:
+            'packages/shared-test/black-box-runner/state-write-evidence/collect-api-v1-state-write-evidence-from-sql.ts',
         rule: 'boundary.unknown',
         symbol: 'collectApiV1StateWriteEvidenceFromSql',
+        maximumMagnitude: 1
+    }),
+    // Raw options cross source selection and the PGlite process wire without
+    // field consumption. PostgreSQL forwards directly to the SQL spec validator;
+    // PGlite serializes to its reader, which invokes that same validator before
+    // evidence queries or fixture policy. Preserve snapshot acquisition order.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'collectApiV1StateWriteEvidence',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPGliteStateWriteEvidenceSnapshot',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runPGliteSnapshotReader',
         maximumMagnitude: 1
     }),
     // The parsed message envelope is narrowed by object, presence and string
@@ -1041,20 +1064,33 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'toEvidenceMessageIdentity',
         maximumMagnitude: 1
     }),
-    // Intermediate mutation rows are opaque SQL evidence: only array length
-    // and unchanged artifact retention are used, never domain field decisions.
-    // Undefined names the exact contract owner, not named-function immunity.
+    // Both input and result contracts retain opaque intermediate SQL rows;
+    // only their count and unchanged artifact retention inform evidence. The
+    // gate aggregates both annotations for this exact module owner.
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
         rule: 'boundary.unknown',
         symbol: undefined,
-        maximumMagnitude: 1
+        maximumMagnitude: 2
     }),
+    // JavaScript handlers may reject with any value. Six annotations retain
+    // that identity in context, retry predicates/observers, exhausted causes
+    // and periodic abort/failure rejection; no trusted domain fields are read.
+    // The scanner assigns these class/callable facts to this module owner.
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-derivation.ts',
+        path: 'packages/shared/resilience/try-with-policy.ts',
         rule: 'boundary.unknown',
-        symbol: 'deriveApiV1StateWriteEvidence',
-        maximumMagnitude: 1
+        symbol: undefined,
+        maximumMagnitude: 6
+    }),
+    // Candidate event and snapshot are deliberately malformed test inputs.
+    // Both serialize directly into durable result JSON for production derive
+    // validation; authoritative receipt fields use the authored typed event.
+    Object.freeze({
+        path: 'packages/tests/shared-test/group-state-write-evidence-fixtures.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 2
     }),
     // Deliberately malformed JSON enters the real SQL option validator. The
     // test asserts refusal before any query; raw input never becomes authority.

@@ -50,7 +50,7 @@ export * from './resilience/ComputeAsyncTask.ts';
 export * from './resilience/Either.ts';
 export * from './resilience/PartitionRange.ts';
 export * from './resilience/Resilience.ts';
-export * from './resilience/TryWith.ts';
+export * from './resilience/try-with-policy.ts';
 
 export * from './websocket/json-web-socket-client.ts';
 export * from './websocket/json-web-socket-server.ts';

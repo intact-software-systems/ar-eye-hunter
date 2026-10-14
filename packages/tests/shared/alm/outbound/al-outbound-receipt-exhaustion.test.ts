@@ -12,7 +12,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import type { ALOutboundSettlementFact } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repair-admission.ts';
-import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 
 import {
     createDefaultOutboundTestStores,

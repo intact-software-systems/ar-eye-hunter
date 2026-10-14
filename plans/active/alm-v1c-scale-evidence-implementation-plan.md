@@ -132,8 +132,19 @@ boundaries and strict comparisons. Accepted bundle growth is not a runtime benef
 - The valid balanced 36-sample PostgreSQL comparison fails: shared throughput regresses 5.40%
   against the unchanged 5% allowance. Conditional IndexedDB operation savings do not establish
   PostgreSQL latency, native benefit or a universally optimal lane policy.
-- No production memory leak or causal CPU, database, quota, queue or transport defect is
-  established for the hosted workload failures. Preserve the current failed evidence and
+- An isolated native setup observation locates a completion-polling contribution. Two terminal
+  transactions commit before the original client request rejects, but terminal status is first
+  observed 1,098 and 851 ms later. Adding the requested delay to the recorded retry epoch places
+  nominal poll horizons 1,095 and 847 ms after those commits; actual timer start and expiry are
+  uncaptured. These positive chains justify testing a local committed-result wake;
+  they do not identify the earlier queue delay, actual timer expiry, database cost or server
+  response path. Rejected and malformed observations prohibit absence conclusions. The diagnostic
+  preserves the original allowances and cohorts, but its observation overhead differs from the
+  required release run; it does not establish native acceptance or a production repair.
+- Source review identifies stopped browser cleanup renewing recurring timers and retaining
+  old generation closures. Owned stopping must cancel normal pending timers and prevent
+  re-arm; unsupported in-flight database work may finish. Its contribution to hosted heap
+  growth or workload failures remains unmeasured. Preserve failed workload evidence and
   measurement limits; do not repeat an unchanged workload or revive the inconclusive guard probe.
 
 ## Next two useful slices
@@ -161,15 +172,30 @@ Deliver the existing implementation as a coherent reviewed increment:
   `authorizeInboundMessage`, explicit precise queue creation clocks and explicit RTC quota clock.
   Default factories retain UTC nanoseconds; quota, AL deadlines and creation clocks stay distinct.
   Direct callers supply the required dependencies. No legacy adapters or migration code are selected.
+- Deliver the measured completion-polling repair through one optional wait-execution boundary in
+  the existing retry policy and an explicitly owned local completion hint, with meaningful
+  test-first isolation and fresh integration coverage. A hint follows committed terminal writes or
+  terminal queue release and only requests another durable read. Preserve the canonical retry
+  algorithm, polling defaults, elapsed budget, result validation and cross-process fallback.
+  Close read-to-wait races, duplicate notifications and timer/subscription cleanup without a
+  raced background polling loop or timing-sink dependency. Use the approved canonical retry
+  path, methods, named inputs, timing and exhaustion contracts, with explicit default and
+  injected database factories; retain one engine and no predecessor adapters.
+- Preserve incompatible existing admission databases through typed schema/identity refusal,
+  with acquired-handle cleanup and original failure causes. Initialize genuine absence only;
+  observed cross-context recreation remains an event, not a local delete/recreate migration.
+  Owned browser cleanup stopping cancels normal periodic/retry waits and future admission;
+  distinguish unsupported in-flight work and failed external cancellation from completed cleanup.
 
 Review every changed human-authored file completely for behavior, necessity and current standards.
 Every support file modified by remediation enters closure recursively; independent untouched code
-stays outside. Complete production-legacy classification and owner-to-result navigation review.
+stays outside. Complete production-legacy classification, owner-to-result navigation review and
+the manual five-landmark IDE probe using Go to Definition and Find Usages.
 Remove affected unneeded legacy and duplicate paths. Exact current source and meaningful existing
 review evidence may be reused; heuristic inventories and hash-only bindings do not prove semantic
 review. Keep the unrelated local scanner edit outside publication.
 
-Run the exact changed-range style gate before publication and resolve its current failure. A narrow
+Run the exact changed-range style gate before publication and resolve any failure. A narrow
 reviewed disposition must describe the actual cohesive owner and exact measured cap; it cannot waive
 an actual standards violation or change global thresholds. Run focused affected checks before the
 required current Branch Release Gate, formation and medium-scale correctness gates. Report skipped

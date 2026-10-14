@@ -27,7 +27,11 @@ export function createAppInboxHandlerRuntime(
 ): AppInboxHandlerRuntime {
     const nowEpochMs = input.options?.nowEpochMs ?? Date.now;
     const transactionWriter = new AppInboxTransactionWriter(
-        { database: input.database, nowEpochMs },
+        {
+            database: input.database,
+            nowEpochMs,
+            completionNotifications: input.inboxQueueReader.completionNotifications
+        },
         {
             serviceId: input.serviceId,
             timing: input.timing

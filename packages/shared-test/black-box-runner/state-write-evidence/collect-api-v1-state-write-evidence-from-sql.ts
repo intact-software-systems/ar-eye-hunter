@@ -20,8 +20,6 @@ import { toApiV1StateWriteEvidenceSpec } from './to-api-v1-state-write-evidence-
 import { toExactPersistedEvidenceMatches } from './to-exact-persisted-evidence-matches.ts';
 import { toStateWriteEvidenceInstant } from './to-state-write-evidence-instant.ts';
 
-export type ApiV1StateWriteEvidenceSqlSpec = ApiV1StateWriteEvidenceSpec;
-
 interface FixtureCompletionWaitInput {
     readonly sql: ApiV1StateWriteEvidenceQuery;
     readonly row: ParsedInboxRow;
@@ -65,14 +63,14 @@ export async function collectApiV1StateWriteEvidenceFromSql(
         spec.match,
         ...commandEvidence.flatMap((evidence) => evidence.commandIds)
     ]);
-    const finalEvidence = deriveApiV1StateWriteEvidence(
-        spec,
-        finalRows,
-        outboxRows,
-        intermediate,
-        overdueRecovery,
-        commandEvidence
-    );
+    const finalEvidence = deriveApiV1StateWriteEvidence({
+        spec: spec,
+        rawRows: finalRows,
+        rawOutboxRows: outboxRows,
+        intermediateMutationIntents: intermediate,
+        overdueRecoveryFixture: overdueRecovery,
+        commandEvidence: commandEvidence
+    });
     return {
         ...finalEvidence,
         ...(naturalRetryEvidence
@@ -245,5 +243,12 @@ async function readNaturalRetryEvidence(
     rows: readonly InboxRow[]
 ): Promise<ApiV1StateWriteEvidence> {
     const commandEvidence = await Promise.all(rows.map((row) => readPersistedCommandEvidence(sql, row)));
-    return deriveApiV1StateWriteEvidence(spec, rows, undefined, undefined, undefined, commandEvidence);
+    return deriveApiV1StateWriteEvidence({
+        spec: spec,
+        rawRows: rows,
+        rawOutboxRows: undefined,
+        intermediateMutationIntents: undefined,
+        overdueRecoveryFixture: undefined,
+        commandEvidence: commandEvidence
+    });
 }

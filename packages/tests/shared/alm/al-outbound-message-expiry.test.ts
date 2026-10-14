@@ -20,7 +20,7 @@ import { ALOutboundRepairAdmission } from '@shared/alm/outbound/al-outbound-repa
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
-import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
+import { RetryableConflictError } from '@shared/resilience/try-with-policy.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {

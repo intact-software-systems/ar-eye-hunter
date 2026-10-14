@@ -19,6 +19,15 @@ import type { PersistedCommandEvidence } from './api-v1-state-write-receipt-evid
 import { validatePersistedAppInboxResult } from './api-v1-state-write-result-evidence.ts';
 import { toStateWriteEvidenceInstant } from './to-state-write-evidence-instant.ts';
 
+export interface ApiV1StateWriteEvidenceDerivationInput {
+    readonly spec: ApiV1StateWriteEvidenceSpec;
+    readonly rawRows: readonly InboxRow[];
+    readonly rawOutboxRows?: readonly OutboxRow[];
+    readonly intermediateMutationIntents?: readonly Record<string, unknown>[];
+    readonly overdueRecoveryFixture?: OverdueRecoveryEvidence;
+    readonly commandEvidence?: readonly PersistedCommandEvidence[];
+}
+
 interface EvidenceMessageIdentity {
     readonly msgId: string | undefined;
     readonly typeId: string | undefined;
@@ -128,14 +137,14 @@ export function parseApiV1StateWriteEvidenceRow(
     };
 }
 
-export function deriveApiV1StateWriteEvidence(
-    spec: ApiV1StateWriteEvidenceSpec,
-    rawRows: readonly InboxRow[],
-    rawOutboxRows: readonly OutboxRow[] = [],
-    intermediateMutationIntents: readonly Record<string, unknown>[] = [],
-    overdueRecoveryFixture?: OverdueRecoveryEvidence,
-    commandEvidence: readonly PersistedCommandEvidence[] = []
-): ApiV1StateWriteEvidence {
+export function deriveApiV1StateWriteEvidence({
+    spec,
+    rawRows,
+    rawOutboxRows = [],
+    intermediateMutationIntents = [],
+    overdueRecoveryFixture,
+    commandEvidence = []
+}: ApiV1StateWriteEvidenceDerivationInput): ApiV1StateWriteEvidence {
     const selectedTypes = new Set(spec.commandTypes ?? []);
     const selectedPrefixes = spec.commandIdPrefixes ?? [];
     const appInbox = selectAppInboxEvidence({

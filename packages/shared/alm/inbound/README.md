@@ -335,8 +335,8 @@ already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
 The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-10-roster-fence'`. An
-existing browser database at a different schema identity is deleted and
-recreated once, as described under
+existing browser database at a different schema identity is refused without deletion or
+rewriting, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
 S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
@@ -384,7 +384,7 @@ is what is out of date. The refusal is symmetric: an old-build page also
 refuses a new-build `al.control.ack.v2`, until it reloads.
 
 **The scoped-delivery window.** The WS server's PostgreSQL rows carry no schema identity, so the
-scoped-delivery bump resets browsers only. On the server:
+browser identity check refuses an older schema without resetting it. On the server:
 
 - A server rolled back past this change cannot decode a captured policy, a prepared recipient or a
   `ws-client` source this build wrote; each stays undecodable for its row's TTL.
@@ -394,7 +394,7 @@ scoped-delivery bump resets browsers only. On the server:
   dropped once as corrupt.
 
 **The range-repair window.** PostgreSQL rows carry no schema identity here either, so the
-range-repair bump resets browsers only. On the server, a buffered-slot row, a retained
+browser identity check refuses an older schema without resetting it. On the server, a buffered-slot row, a retained
 `repair-hint` and a `nacks`/`repairs` control history row written by the old build fail strict
 decoding until they expire: the ordering track TTL (`orderingTrackTtlMs`, by default the repository
 TTL of 60 minutes) bounds the buffered slots of a track, and the message deadlines bound the
@@ -404,7 +404,8 @@ page still running the old build sends is refused `unsupported` (`al.control.nac
 above.
 
 **The roster-fence window.** PostgreSQL rows carry no schema identity, so the roster-fence bump
-resets browsers only. On the server, a row an older build wrote holds a `v: 2` envelope and fails
+makes older browser schemas incompatible, which current opening refuses without resetting them.
+On the server, a row an older build wrote holds a `v: 2` envelope and fails
 decoding `unsupported` at its next read; no row is migrated. A page still running the old build
 sends `v: 2` envelopes and controls, refused `unsupported` until it reloads; it refuses this build's
 `v: 3` symmetrically.
@@ -844,9 +845,12 @@ and per owned canonical scope, and each range ends its `resourceId` with the `/`
 delimiter so a neighbouring owner whose id is a string prefix is never pulled in.
 Unrelated work is preserved.
 
-A browser database whose stores or recorded schema identity do not match is deleted
-and recreated once and the reset is reported through the required `onStorageReset`
-port; the details are in the
+A browser database whose stores or recorded schema identity do not match is refused with
+`ALStorageSchemaMismatchError`, preserving its schema and rows. Unreadable or undecodable
+identity throws `ALStorageSchemaIdentityError` with its original cause; acquired handles
+close on failure. Genuine absence still creates the current stores. The required
+`onStorageReset` callback reports observed external `other-context` recreation after a
+recorded `versionchange`, not a destructive mismatch recovery; the details are in the
 [outbound navigation map](../outbound/README.md#atomic-indexeddb-work-storage).
 The outbound canonical storage cutover does not establish the roadmap's
 zero-IndexedDB volatile path for inbound work.

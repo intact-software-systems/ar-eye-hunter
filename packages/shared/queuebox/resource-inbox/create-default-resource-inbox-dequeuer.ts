@@ -28,6 +28,7 @@ import {
     type ResourceInboxAttempt,
     type ResourceInboxAttemptReleaseTelemetry
 } from './resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxCompletionNotifications } from './resource-inbox-completion-notifications.ts';
 import { ResourceInboxResilience } from './resource-inbox-resilience.ts';
 
 export class NonRetryableException extends Error {
@@ -63,6 +64,17 @@ export interface ResourceInboxRetryExhaustionRecovery {
     readonly selectedDueAtEpochMs: number;
     readonly finalizedAtEpochMs: number;
 }
+
+/**
+ * Called once for a claimed exhausted attempt or recovery reservation. The finalizer owns its
+ * transaction and resolves with the same key's terminal entry only after commit. Rejection leaves
+ * publication and recovery to the queue; the callback must not retry a stale attempt internally.
+ */
+export type ResourceInboxRetryFinalizer<
+    Finalization extends ResourceInboxRetryExhaustion | ResourceInboxRetryExhaustionRecovery,
+> = (
+    finalization: Finalization
+) => Promise<ResourceEntry>;
 
 export class ResourceInboxHandlerEntryError extends Error {
     readonly code = 'resource-inbox-handler-entry-updated';
@@ -102,19 +114,16 @@ export interface ResourceInboxDequeuerInput {
 }
 
 export interface DequeueResourceEntryOptions {
+    readonly completionNotifications?: ResourceInboxCompletionNotifications;
     readonly jitterUnit?: () => number;
     readonly nowEpochMs?: () => number;
     readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
     readonly onAttemptReleaseTelemetry?: (event: ResourceInboxAttemptReleaseTelemetry) => void;
-    readonly onRetryExhausted?: (
-        exhaustion: ResourceInboxRetryExhaustion
-    ) => Promise<ResourceEntry>;
+    readonly onRetryExhausted?: ResourceInboxRetryFinalizer<ResourceInboxRetryExhaustion>;
     readonly onRetryExhaustionTelemetry?: (
         exhaustion: ResourceInboxRetryExhaustion | ResourceInboxRetryExhaustionRecovery
     ) => void;
-    readonly onRetryExhaustionRecovery?: (
-        exhaustion: ResourceInboxRetryExhaustionRecovery
-    ) => Promise<ResourceEntry>;
+    readonly onRetryExhaustionRecovery?: ResourceInboxRetryFinalizer<ResourceInboxRetryExhaustionRecovery>;
 }
 
 interface ResourceInboxDequeueDependencies {
@@ -130,6 +139,11 @@ interface ResourceInboxReservationSelection {
     readonly types: Set<string>;
     readonly maxToReserve: number;
     readonly lane: typeof Reservator.NEW | typeof Reservator.RETRY;
+}
+
+interface ResourceInboxReleasedSuccess<V> {
+    readonly original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>;
+    readonly entry: ResourceEntry;
 }
 
 interface ResourceInboxFailureDecision {
@@ -150,24 +164,7 @@ export function createDefaultResourceInboxDequeuer<V>(
         jitterUnit: options.jitterUnit ?? Math.random,
         recordReservationTelemetry: options.onReservationTelemetry ?? recordResourceInboxReservation
     };
-    return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
-        .withInboxTypesToDequeue(input.typesToDequeue)
-        .withMaxNumToDequeue(input.maxNumToDequeue)
-        .withLaneBudgets(input.readLaneBudgets)
-        .withMaxNumToReserve(input.maxToReserve)
-        .onFinalizationEntriesReserveDo(
-            options.onRetryExhaustionRecovery
-                ? (types, maxToReserve) => reserveResourceInboxFinalizations(dependencies, types, maxToReserve)
-                : undefined
-        )
-        .onFinalizationEntriesDo(
-            options.onRetryExhaustionRecovery
-                ? async (key, attempt) => {
-                    await finalizeResourceInboxRecovery(dependencies, attempt);
-                    return key;
-                }
-                : undefined
-        )
+    return createResourceInboxFinalizationController<V>(dependencies, input)
         .onNewEntriesReserveDo((types, maxToReserve) =>
             reserveResourceInboxAttempts(dependencies, { types, maxToReserve, lane: Reservator.NEW })
         )
@@ -183,6 +180,30 @@ export function createDefaultResourceInboxDequeuer<V>(
         .onReleaseEntriesDo(
             (successes) => releaseResourceInboxSuccesses(dependencies, successes),
             (failures) => releaseResourceInboxFailures(dependencies, failures)
+        );
+}
+
+function createResourceInboxFinalizationController<V>(
+    dependencies: ResourceInboxDequeueDependencies,
+    input: ResourceInboxDequeuerInput
+): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
+    return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
+        .withInboxTypesToDequeue(input.typesToDequeue)
+        .withMaxNumToDequeue(input.maxNumToDequeue)
+        .withLaneBudgets(input.readLaneBudgets)
+        .withMaxNumToReserve(input.maxToReserve)
+        .onFinalizationEntriesReserveDo(
+            dependencies.options.onRetryExhaustionRecovery
+                ? (types, maxToReserve) => reserveResourceInboxFinalizations(dependencies, types, maxToReserve)
+                : undefined
+        )
+        .onFinalizationEntriesDo(
+            dependencies.options.onRetryExhaustionRecovery
+                ? async (key, attempt) => {
+                    await finalizeResourceInboxRecovery(dependencies, attempt);
+                    return key;
+                }
+                : undefined
         );
 }
 
@@ -318,12 +339,12 @@ async function releaseResourceInboxSuccesses<V>(
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
         }))
     );
+    const releases = [...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes));
+    for (const { entry } of releases) {
+        publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
+    }
     const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
-    for (const [key, entry] of released) {
-        const original = [...successes.values()].find((success) => isKeysEqual(success.key, key));
-        if (original === undefined) {
-            throw new Error(`Missing success dto for key: ${String(key)}`);
-        }
+    for (const { original, entry } of releases) {
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
             released: entry,
@@ -362,6 +383,7 @@ async function releaseResourceInboxFailure(
         original.exception instanceof ResourceInboxHandlerEntryError &&
         failure.value.entry.status !== EntityStatus.RESERVED
     ) {
+        publishResourceInboxCompletion(dependencies.options.completionNotifications, failure.value.entry);
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
             released: failure.value.entry,
@@ -386,6 +408,7 @@ async function releaseResourceInboxFailure(
     if (!isKeysEqual(failure.key, entry.key)) {
         throw new Error(`Missing failure dto for key: ${String(failure.key)}`);
     }
+    publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
     recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
         attempt: original.value,
         released: entry,
@@ -530,4 +553,28 @@ function toRetryExhaustionRecovery(
         selectedDueAtEpochMs: telemetry.selectedDueAtEpochMs,
         finalizedAtEpochMs
     };
+}
+
+function publishResourceInboxCompletion(
+    completionNotifications: ResourceInboxCompletionNotifications | undefined,
+    entry: ResourceEntry
+): void {
+    if (
+        entry.status === EntityStatus.COMPLETED || entry.status === EntityStatus.FAILED ||
+        entry.status === EntityStatus.NON_RETRYABLE
+    ) {
+        completionNotifications?.publish(entry.key);
+    }
+}
+
+function toReleasedResourceInboxSuccess<V>(
+    key: Resource.Key,
+    entry: ResourceEntry,
+    successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
+): ResourceInboxReleasedSuccess<V> {
+    const original = [...successes.values()].find((success) => isKeysEqual(success.key, key));
+    if (original === undefined || !isKeysEqual(entry.key, key)) {
+        throw new Error(`Missing success dto for key: ${String(key)}`);
+    }
+    return { original, entry };
 }

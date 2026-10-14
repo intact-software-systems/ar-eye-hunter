@@ -44,7 +44,7 @@ import {
     selectApiV1StateWriteEvidenceSource,
     toStateWriteEvidenceSql
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts';
-import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts';
+import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/collect-api-v1-state-write-evidence-from-sql.ts';
 
 interface SnapshotResponsePublication {
     readonly path: string;
