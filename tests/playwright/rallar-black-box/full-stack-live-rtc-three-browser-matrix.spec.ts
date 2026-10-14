@@ -44,7 +44,6 @@ import {
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
     toLiveRtcNativeAcquisitionFailureDiagnostic,
-    writeLiveRtcPerformanceEvidence,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcDiagnosticsCheckpoint,
     type LiveRtcNackFailureDiagnostic,
@@ -54,6 +53,7 @@ import {
     type LiveRtcPerformanceTiming,
     type LiveRtcRetentionCheckpoint
 } from './live-rtc-performance-evidence.ts';
+import { writeLiveRtcPerformanceEvidence } from './write-live-rtc-performance-evidence.ts';
 
 const messagesRtcTypeId = firstEnvValue('VITE_RALLAR_MESSAGES_RTC_TYPE_ID', 'VITE_RALLAR_TYPE_ID') ??
     'manual.type';

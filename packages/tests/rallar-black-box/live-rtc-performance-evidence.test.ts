@@ -22,12 +22,13 @@ import {
     buildLiveRtcRetentionCohort,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
-    writeLiveRtcPerformanceEvidence,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcPerformanceAttemptContext,
     type LiveRtcPerformanceRawEvidence,
     type LiveRtcRetentionCheckpoint
 } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+
+import { writeLiveRtcPerformanceEvidence } from '../../../tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts';
 
 const temporaryDirectories: string[] = [];
 const baselineId = '20260829T081500417Z-0123456789ab-e3-memory-local';

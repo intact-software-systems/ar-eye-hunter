@@ -7,6 +7,7 @@ import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { resolveRtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
 import { validateRtcB06BrowserRecording } from './validate-rtc-b06-browser-recording.ts';
+import { validateRtcB06JournalEvidence } from './validate-rtc-b06-journal-evidence.ts';
 
 import type {
     RtcBaselineIssueDto,
@@ -51,9 +52,8 @@ export function validateRtcB06CaptureEvidence(
         return selection.issues;
     }
     const almIssues = validateAlmCapturePolicy(selection.value.almDiagnostics, captures);
-    return almIssues.length > 0
-        ? almIssues
-        : validateRtcB06BrowserRecording(sample, selection.value, captures);
+    const recordingIssues = validateRtcB06BrowserRecording(sample, selection.value, captures);
+    return [...almIssues, ...recordingIssues, ...validateRtcB06JournalEvidence(sample, selection.value)];
 }
 
 function validateAlmCapturePolicy(

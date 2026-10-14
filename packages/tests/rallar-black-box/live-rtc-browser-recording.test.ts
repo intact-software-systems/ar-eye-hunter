@@ -193,6 +193,13 @@ it('admits and observes actual browser Health with post-bootstrap capture and no
     const recording = new LiveRtcBrowserRecording(control);
     await expect(recording.admit({ runId: 'run', agents, mode: 'disabled' })).resolves.toHaveLength(3);
     const runtime = runtimes.get('c')!;
+    const preEviction = await control.executeOk({ runId: 'run', agentId: 'c', commandId: 'pre-eviction-c', command: { kind: 'health' } });
+    const preEvictionEvidence = recording.observe('run', preEviction);
+    expect(normalizeJson({ ...preEvictionEvidence })).toMatchObject({
+        eventHistory: { evictedThroughEpochMs: null },
+        browserDiagnosticsAdmission: { eventHistory: { evictedThroughEpochMs: null } }
+    });
+    expect(runtime.state().eventHistory.evictedThroughEpochMs).toBeUndefined();
     for (let index = 0; index < 100; index++) {
         runtime.recordEvent({ kind: 'event', topic: 'live-checkpoint-observation' });
     }
@@ -208,12 +215,17 @@ it('admits and observes actual browser Health with post-bootstrap capture and no
     });
     expect(evidence?.eventHistory).toMatchObject({
         generation: 1,
-        totalEvents: 104,
+        totalEvents: 106,
         retainedEvents: 64,
-        evictedEvents: 40,
+        evictedEvents: 42,
         capture: { status: 'continuous', start: { generation: 1, ordinal: 3 } }
     });
-    expect(runtime.state().eventHistory.totalEvents).toBe(106);
+    expect(() => normalizeJson({ ...evidence })).not.toThrow();
+    expect(normalizeJson({ ...evidence })).toMatchObject({
+        eventHistory: { evictedThroughEpochMs: 1 },
+        browserDiagnosticsAdmission: { eventHistory: { evictedThroughEpochMs: null } }
+    });
+    expect(runtime.state().eventHistory.totalEvents).toBe(108);
     const next = await control.executeOk({ runId: 'run', agentId: 'c', commandId: 'next-health-c', command: { kind: 'health' } });
     const nextHealth = jsonRecord(next.result?.value);
     const nextStats = jsonRecord(nextHealth?.stats);

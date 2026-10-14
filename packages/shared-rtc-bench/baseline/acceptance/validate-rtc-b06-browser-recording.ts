@@ -18,7 +18,7 @@ import type {
 import type { RtcB06DiagnosticSelection } from '../observation/read-rtc-b06-diagnostic-selection.ts';
 import { isRtcB06EventHistoryContinuous, toRtcB06EventHistory } from './to-rtc-b06-event-history.ts';
 
-interface BrowserRecordingReading {
+export interface RtcB06BrowserRecordingReading {
     readonly agentId: string;
     readonly runId: string;
     readonly admissionCommandId: string;
@@ -76,10 +76,10 @@ function hasMatchingCheckpointEvidence(
         if (matches.length !== 1 || !Array.isArray(currentAgents) || !Array.isArray(retainedAgents)) {
             return false;
         }
-        const current = currentAgents.map(toBrowserRecordingReading).sort((left, right) =>
+        const current = currentAgents.map(toRtcB06BrowserRecordingReading).sort((left, right) =>
             (left?.agentId ?? '').localeCompare(right?.agentId ?? '')
         );
-        const stored = retainedAgents.map(toBrowserRecordingReading).sort((left, right) =>
+        const stored = retainedAgents.map(toRtcB06BrowserRecordingReading).sort((left, right) =>
             (left?.agentId ?? '').localeCompare(right?.agentId ?? '')
         );
         return JSON.stringify(current) === JSON.stringify(stored);
@@ -92,11 +92,11 @@ function hasVerifiedCheckpointReadings(
     selection: RtcB06DiagnosticSelection
 ): boolean {
     const mode = selection.routineBrowserDiagnostics;
-    const previous = new Map<string, BrowserRecordingReading>();
+    const previous = new Map<string, RtcB06BrowserRecordingReading>();
     const commandIds = new Set<string>();
     const admissionCommandIds = new Set<string>();
     for (const checkpoint of checkpoints) {
-        const readings = toVerifiedBrowserRecordingReadings(checkpoint);
+        const readings = toRtcB06BrowserRecordingReadings(checkpoint);
         if (readings === undefined) {
             return false;
         }
@@ -140,7 +140,7 @@ function hasVerifiedCheckpointReadings(
         );
 }
 
-function toBrowserRecordingReading(agent: RtcBaselineJson): BrowserRecordingReading | undefined {
+function toRtcB06BrowserRecordingReading(agent: RtcBaselineJson): RtcB06BrowserRecordingReading | undefined {
     const record = toRecord(agent);
     const details = toRecord(record?.details);
     const admission = toRecord(details?.browserDiagnosticsAdmission);
@@ -191,14 +191,14 @@ function recordingIssue(): readonly RtcBaselineIssueDto[] {
     }];
 }
 
-function toVerifiedBrowserRecordingReadings(
+export function toRtcB06BrowserRecordingReadings(
     checkpoint: RtcBaselineJson
-): readonly BrowserRecordingReading[] | undefined {
+): readonly RtcB06BrowserRecordingReading[] | undefined {
     const agents = toRecord(checkpoint)?.agents;
     if (!Array.isArray(agents) || agents.length !== 3) {
         return undefined;
     }
-    const readings = agents.map(toBrowserRecordingReading);
+    const readings = agents.map(toRtcB06BrowserRecordingReading);
     if (
         readings.some((reading) => reading === undefined) ||
         new Set(readings.map((reading) => reading?.agentId)).size !== 3
@@ -208,5 +208,5 @@ function toVerifiedBrowserRecordingReadings(
     if (new Set(readings.map((reading) => reading?.currentHistory.runtimeId)).size !== 3) {
         return undefined;
     }
-    return readings as readonly BrowserRecordingReading[];
+    return readings as readonly RtcB06BrowserRecordingReading[];
 }

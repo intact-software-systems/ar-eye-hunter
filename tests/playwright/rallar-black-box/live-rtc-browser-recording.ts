@@ -13,7 +13,9 @@ import {
 
 import {
     isRtcB06EventHistoryContinuous,
-    toRtcB06EventHistory
+    toRtcB06EventHistory,
+    toRtcB06EventHistoryEvidence,
+    type RtcB06EventHistoryEvidenceDto
 } from '../../../packages/shared-rtc-bench/baseline/acceptance/to-rtc-b06-event-history.ts';
 
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -37,9 +39,12 @@ export namespace LiveRtcBrowserRecording {
         readonly agents: readonly Agent[];
         readonly mode: RallarBlackBoxRoutineBrowserDiagnostics;
     }
+    export interface AdmissionEvidence extends Omit<Admission, 'eventHistory'> {
+        readonly eventHistory: RtcB06EventHistoryEvidenceDto;
+    }
     export interface Evidence {
-        readonly eventHistory: RallarBlackBoxEventHistory;
-        readonly browserDiagnosticsAdmission: Admission;
+        readonly eventHistory: RtcB06EventHistoryEvidenceDto;
+        readonly browserDiagnosticsAdmission: AdmissionEvidence;
         readonly browserDiagnosticsHealth: {
             readonly runId: string;
             readonly agentId: string;
@@ -150,8 +155,11 @@ export class LiveRtcBrowserRecording {
         }
         this.#lifetimes.set(lifetime.admission.agentId, { ...lifetime, current: receipt, eventHistory });
         return {
-            eventHistory,
-            browserDiagnosticsAdmission: lifetime.admission,
+            eventHistory: toRtcB06EventHistoryEvidence(eventHistory),
+            browserDiagnosticsAdmission: {
+                ...lifetime.admission,
+                eventHistory: toRtcB06EventHistoryEvidence(lifetime.admission.eventHistory)
+            },
             browserDiagnosticsHealth: { runId, agentId: lifetime.admission.agentId, commandId: result.commandId }
         };
     }

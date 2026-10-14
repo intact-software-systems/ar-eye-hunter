@@ -21,10 +21,36 @@ function agentEvidence(agentId: string, cycle: number) {
             eventHistory: history(agentId, cycle + 2),
             browserDiagnostics: receipt(cycle + 2),
             browserDiagnosticsAdmission: { runId: 'run', agentId, commandId: `admit-${agentId}`, receipt: receipt(1), eventHistory: history(agentId, 1) },
-            browserDiagnosticsHealth: { runId: 'run', agentId, commandId: `health-${agentId}-${cycle}` }
+            browserDiagnosticsHealth: { runId: 'run', agentId, commandId: `rtc-diagnostics-${agentId}-retention-${cycle}-suffix` }
         }
     };
 }
+function journalProof() {
+    return {
+        status: 'durable-prefix',
+        bytes: 50000,
+        rows: 312,
+        source: {
+            kind: 'owned-recorder-file',
+            runId: 'run',
+            endpoint: '/runs/run/events.jsonl',
+            relativePath: 'artifacts/journals/sample.jsonl',
+            bytes: 50000,
+            sha256: 'a'.repeat(64)
+        },
+        agents: ['a', 'b', 'c'].map((agentId) => ({
+            agentId,
+            runId: 'run',
+            admissionCommandId: `admit-${agentId}`,
+            healthCommandId: `rtc-diagnostics-${agentId}-retention-100-suffix`,
+            initialHistory: history(agentId, 1),
+            terminalHistory: history(agentId, 102),
+            capturedRows: 102,
+            countsAfterFirstHealth: { event: 101, diagnostic: 0, message: 0, stats: 0, report: 0, result: 0, state: 0 }
+        }))
+    };
+}
+
 function candidate() {
     const checkpoints = Array.from(
         { length: 11 },
@@ -36,10 +62,11 @@ function candidate() {
         outcome: 'passed',
         evidenceClass: 'local-full-stack',
         metrics: [],
-        rawReferences: [],
+        rawReferences: [{ relativePath: 'artifacts/journals/sample.jsonl', bytes: 50000, sha256: 'a'.repeat(64) }],
         issues: [],
         runtimeObservation: null,
         rawEvidence: {
+            journal: journalProof(),
             diagnostics: checkpoints,
             retention: { checkpoints },
             rtcConnectCaptures: ['a', 'b', 'c'].map((agentId) => ({
@@ -66,6 +93,11 @@ function candidate() {
 }
 it('accepts actual attributed same-lifetime recording receipts at every existing checkpoint', () => {
     expect(validateRtcB06CaptureEvidence(candidate(), configuration)).toEqual([]);
+});
+it('refuses recent retention acceptance without independently preserved durable journal proof', () => {
+    const sample = candidate();
+    Reflect.deleteProperty(sample.rawEvidence, 'journal');
+    expect(validateRtcB06CaptureEvidence(sample, configuration).some((issue) => issue.code === 'journal-unverified')).toBe(true);
 });
 it.each([
     'request-only',
@@ -207,3 +239,52 @@ it.each([
     }
     expect(validateRtcB06CaptureEvidence({ ...sample, rawEvidence: raw }, configuration).length).toBeGreaterThan(0);
 });
+
+it.each([
+    'missing-raw',
+    'byte-mismatch',
+    'hash-mismatch',
+    'wrong-health',
+    'wrong-generation',
+    'wrong-count',
+    'incomplete',
+    'memory-fallback',
+    'wrong-endpoint',
+    'short-row-count'
+])(
+    'refuses %s journal proof at final acceptance',
+    (failure) => {
+        const sample = candidate();
+        if (failure === 'missing-raw') {
+            sample.rawReferences = [];
+        }
+        if (failure === 'byte-mismatch') {
+            sample.rawEvidence.journal.source.bytes++;
+        }
+        if (failure === 'hash-mismatch') {
+            sample.rawEvidence.journal.source.sha256 = 'b'.repeat(64);
+        }
+        if (failure === 'wrong-health') {
+            sample.rawEvidence.journal.agents[2].healthCommandId = 'another-health';
+        }
+        if (failure === 'wrong-generation') {
+            sample.rawEvidence.journal.agents[2].terminalHistory.generation++;
+        }
+        if (failure === 'wrong-count') {
+            sample.rawEvidence.journal.agents[2].countsAfterFirstHealth.event--;
+        }
+        if (failure === 'incomplete') {
+            sample.rawEvidence.journal.agents.pop();
+        }
+        if (failure === 'wrong-endpoint') {
+            sample.rawEvidence.journal.source.endpoint = '/runs/other/events.jsonl';
+        }
+        if (failure === 'short-row-count') {
+            sample.rawEvidence.journal.rows = 1;
+        }
+        if (failure === 'memory-fallback') {
+            sample.rawEvidence.journal.source.kind = 'memory';
+        }
+        expect(validateRtcB06CaptureEvidence(sample, configuration).some((issue) => issue.code === 'journal-unverified')).toBe(true);
+    }
+);

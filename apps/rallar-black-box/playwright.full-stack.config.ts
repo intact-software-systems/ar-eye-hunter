@@ -6,6 +6,7 @@ import {
 import { fileURLToPath } from 'node:url';
 
 import { loadLiveRtcPerformanceAttempt } from '../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+import { readGovernedLiveRtcControlServer } from '../../tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts';
 
 import {
     createDefaultFullStackApiV1WebServer,
@@ -68,6 +69,14 @@ const admittedRtcAttempt = fullStackEnabled
         environment: process.env
     })
     : null;
+
+const controlWebServer = admittedRtcAttempt?.locator.environmentId === 'E3-memory'
+    ? await readGovernedLiveRtcControlServer({
+        attempt: admittedRtcAttempt,
+        baseUrl: fullStackControlBaseUrl,
+        storageDirectory: process.env.RALLAR_BLACK_BOX_STORAGE_DIR
+    })
+    : createFullStackControlWebServer({ baseUrl: fullStackControlBaseUrl, reuseExistingServer });
 
 const productionConfiguration = {
     buildRoot: process.env.RALLAR_BLACK_BOX_RTC_BUILD_ROOT ?? '',
@@ -132,10 +141,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         ]
         : []),
     spaWebServer,
-    createFullStackControlWebServer({
-        baseUrl: fullStackControlBaseUrl,
-        reuseExistingServer
-    })
+    controlWebServer
 ];
 
 export default defineConfig({

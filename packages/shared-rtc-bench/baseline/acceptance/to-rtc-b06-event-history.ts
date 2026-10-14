@@ -7,6 +7,10 @@ import {
 
 import type { RtcBaselineJson } from '../contracts/rtc-baseline-contracts.ts';
 
+export interface RtcB06EventHistoryEvidenceDto extends Omit<RallarBlackBoxEventHistory, 'evictedThroughEpochMs'> {
+    readonly evictedThroughEpochMs: number | null;
+}
+
 interface RtcB06EventHistoryReading {
     readonly history: Readonly<Record<string, RtcBaselineJson>>;
     readonly counts: Readonly<Record<string, RtcBaselineJson>>;
@@ -40,6 +44,10 @@ export function toRtcB06EventHistory(value: RtcBaselineJson | undefined): Rallar
     }
     const receipt = toFrozenRtcB06EventHistory({ history, counts, identity, start });
     return hasRtcB06EventHistoryAccounting(receipt) ? receipt : undefined;
+}
+
+export function toRtcB06EventHistoryEvidence(history: RallarBlackBoxEventHistory): RtcB06EventHistoryEvidenceDto {
+    return Object.freeze({ ...history, evictedThroughEpochMs: history.evictedThroughEpochMs ?? null });
 }
 
 function toFrozenRtcB06EventHistory(reading: RtcB06EventHistoryReading): RallarBlackBoxEventHistory {
@@ -103,6 +111,23 @@ export function isRtcB06EventHistoryContinuous(
         (previous.evictedThroughEpochMs === undefined ||
             (current.evictedThroughEpochMs ?? -1) >= previous.evictedThroughEpochMs) &&
         eventKinds.every((kind) => current.countsByKind[kind] >= previous.countsByKind[kind]);
+}
+
+export function isRtcB06EventHistoryEqual(
+    left: RallarBlackBoxEventHistory | undefined,
+    right: RallarBlackBoxEventHistory
+): boolean {
+    return left !== undefined && left.runtimeId === right.runtimeId && left.generation === right.generation &&
+        isSameEventHistoryPolicy(left.policy, right.policy) && left.totalEvents === right.totalEvents &&
+        left.retainedEvents === right.retainedEvents && left.evictedEvents === right.evictedEvents &&
+        left.evictedThroughEpochMs === right.evictedThroughEpochMs && left.reconnects === right.reconnects &&
+        eventKinds.every((kind) => left.countsByKind[kind] === right.countsByKind[kind]) &&
+        left.capture.status === 'continuous' && right.capture.status === 'continuous' &&
+        left.capture.identity.runId === right.capture.identity.runId &&
+        left.capture.identity.agentId === right.capture.identity.agentId &&
+        left.capture.start.runtimeId === right.capture.start.runtimeId &&
+        left.capture.start.generation === right.capture.start.generation &&
+        left.capture.start.ordinal === right.capture.start.ordinal;
 }
 
 function toRecord(value: RtcBaselineJson | undefined): Readonly<Record<string, RtcBaselineJson>> | undefined {
