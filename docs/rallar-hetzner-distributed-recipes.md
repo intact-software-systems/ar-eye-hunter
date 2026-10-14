@@ -382,7 +382,12 @@ completed/planned frames, attempted frames, failed frames, dropped frames,
 backpressure count, p50/p95/p99/max stream send duration, achieved Hz, and
 slowest stream agents. These manifests use one bounded `rtc.stream` command per
 agent instead of expanding the realtime traffic into many sequential `rtc.send`
-commands, so stream frame metrics are the primary performance baseline.
+commands, so stream frame metrics are the primary performance baseline. The
+backpressure count counts frames a carrier refused at admission for its own rate
+limit or open circuit (`rate-limited`, `circuit-open`), not channel
+backpressure: a carrier at its high watermark refuses an ALM send `congested`
+or holds it `not-ready`, which the agent's `stats.rallar.congestion` counters
+read.
 
 ## SPA Review
 
@@ -393,5 +398,5 @@ non-conforming folders; a failed control request folder has no run to import,
 so read its `analysis/fix-proposal.md` instead. For a valid run it shows the verdict,
 likely cause, next action, minimal fix area, evidence file, warnings, and
 performance baseline beside the live distributed run monitor. Imported stream
-runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure,
-achieved Hz, and slowest stream agent rows in the Performance Health band.
+runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure
+(admission refusals), achieved Hz, and slowest stream agent rows in the Performance Health band.

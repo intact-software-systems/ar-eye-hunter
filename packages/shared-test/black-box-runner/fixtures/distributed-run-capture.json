@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "api-capture-run",
+  "controlRunId": "api-capture-control",
+  "rtcCaptureMode": "off",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "bb-group"
+  },
+  "recipes": [
+    {
+      "recipeId": "api-capture-recipe",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "api-capture-recipe",
+        "rtcCaptureMode": "native",
+        "commands": [
+          {
+            "kind": "health",
+            "commandId": "api-capture-health"
+          }
+        ]
+      },
+      "variables": {}
+    }
+  ],
+  "targetPolicy": {
+    "mode": "selected-agents",
+    "agentIds": ["agent-a"]
+  },
+  "variables": {},
+  "roleAssignments": [],
+  "ackTimeoutMs": 1000,
+  "barrier": { "enabled": false },
+  "startMode": "manual",
+  "groupAssertions": [],
+  "metadata": {}
+}

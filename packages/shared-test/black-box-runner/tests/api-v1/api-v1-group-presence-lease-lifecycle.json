@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 presence lease expiry in a lifecycle-managed group. Bob takes a short lease and Alice the default lease. Current reads must exclude Bob after expiry and preserve monotonic revisions while activation and expiry workers may advance durable state. A named session-disconnected/expired event proves reconciliation; membership and connecting lifecycle remain intact, and Bob can take a fresh lease without rejoining. Read-time filtering preserves its observed causal tuple, as covered by controlled repository snapshot tests; separate live HTTP observations cannot require tuple equality.",
+  "description": "No-browser API-v1 presence lease expiry in a lifecycle-managed group. Bob takes a short lease and Alice the default lease. Current reads must exclude Bob after expiry and preserve monotonic revisions while activation and expiry workers may advance durable state. A named session-disconnected/expired event proves reconciliation. Within the same bounded wait, fresh snapshots must show canonical presence-summary revision advancement while membership and connecting lifecycle remain intact, before Bob can take a fresh lease without rejoining. Read-time filtering preserves its observed causal tuple, as covered by controlled repository snapshot tests; separate live HTTP observations cannot require tuple equality. Accepted presence writes are followed by bounded current reads of the exact leases. The initial observation must succeed before the unchanged absolute short-lease expiry; a separate final observation waits for the exact fresh generation.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -306,11 +306,185 @@
         }
       },
       "expect": {
-        "status": 200,
-        "body": {
-          "onlineMemberCount": 2
-        }
+        "status": 200
       }
+    },
+    {
+      "name": "captureRemainingLeaseObservationStart",
+      "type": "set",
+      "output": "leaseObservationStartedAtEpochMs",
+      "transform": {
+        "timestamp": true
+      }
+    },
+    {
+      "name": "theShortLeaseIsStillLiveBeforeObservation",
+      "type": "assert",
+      "actual": {
+        "startedAt": "{leaseObservationStartedAtEpochMs}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "startedAt",
+            "lt": "{shortLeaseExpiryEpochMs}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "computeRemainingShortLeaseTime",
+      "type": "set",
+      "output": "remainingShortLeaseMs",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.shortLeaseExpiryEpochMs"
+          },
+          {
+            "number": "-{leaseObservationStartedAtEpochMs}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bothInitialLeasesConvergeBeforeExpiry",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
+      "request": {
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": "{remainingShortLeaseMs}",
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "groups": [
+        {
+          "name": "bothInitialLeasesConvergeBeforeExpiryObservation",
+          "steps": [
+            {
+              "name": "captureInitialLeaseReadStart",
+              "type": "set",
+              "output": "initialLeaseReadStartedAtEpochMs",
+              "transform": {
+                "timestamp": true
+              }
+            },
+            {
+              "name": "theShortLeaseIsLiveBeforeEachRead",
+              "type": "assert",
+              "actual": {
+                "startedAt": "{initialLeaseReadStartedAtEpochMs}"
+              },
+              "expect": {
+                "comparators": [
+                  {
+                    "path": "startedAt",
+                    "lt": "{shortLeaseExpiryEpochMs}"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "computeRemainingInitialLeaseReadTime",
+              "type": "set",
+              "output": "remainingInitialLeaseReadMs",
+              "transform": {
+                "add": [
+                  {
+                    "path": "outputs.shortLeaseExpiryEpochMs"
+                  },
+                  {
+                    "number": "-{initialLeaseReadStartedAtEpochMs}"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "theExactInitialLeasesAreVisible",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{bobAuthHeader}",
+                  "x-client-id": "{bobClientId}"
+                },
+                "outputs": {
+                  "initialLiveLeaseSessions": "body.activeSessions"
+                },
+                "timeoutMs": "{remainingInitialLeaseReadMs}"
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}"
+                  },
+                  "onlineMemberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "presencelease-generation-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{bobSessionId}",
+                      "principalId": "{bobClientId}",
+                      "generationId": "presencelease-generation-{runId}",
+                      "status": "active",
+                      "connectedAtEpochMs": "{leaseStartEpochMs}",
+                      "lastHeartbeatAtEpochMs": "{leaseStartEpochMs}",
+                      "expiresAtEpochMs": "{shortLeaseExpiryEpochMs}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "captureInitialLeaseObservationTime",
+              "type": "set",
+              "output": "initialLeaseObservedAtEpochMs",
+              "transform": {
+                "timestamp": true
+              }
+            },
+            {
+              "name": "theInitialLeaseObservationPrecedesExpiry",
+              "type": "assert",
+              "actual": {
+                "observedAt": "{initialLeaseObservedAtEpochMs}",
+                "sessions": "{initialLiveLeaseSessions}"
+              },
+              "expect": {
+                "comparators": [
+                  {
+                    "path": "observedAt",
+                    "lt": "{shortLeaseExpiryEpochMs}"
+                  },
+                  {
+                    "path": "sessions",
+                    "length": 2
+                  },
+                  {
+                    "path": "sessions.0.expiresAtEpochMs",
+                    "gt": "{initialLeaseObservedAtEpochMs}"
+                  },
+                  {
+                    "path": "sessions.1.expiresAtEpochMs",
+                    "gt": "{initialLeaseObservedAtEpochMs}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "planTheLayout",
@@ -481,93 +655,116 @@
       }
     },
     {
-      "name": "theExpiryIsNamedInTheGroupEvents",
-      "type": "http",
-      "connection": "api",
+      "name": "expirySummaryConverges",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
       "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
         "poll": {
           "maxAttempts": 60,
           "maxDurationMs": 95000,
           "backoffMs": 2000,
           "backoffMultiplier": 1
-        },
-        "outputs": {
-          "groupEventsAfterSweep": "body"
         }
       },
-      "expect": {
-        "status": 200,
-        "body": [
-          {
-            "eventType": "session-disconnected",
-            "reason": "expired"
-          }
-        ]
-      }
-    },
-    {
-      "name": "theSweepAdvancedTheChangeToken",
-      "type": "http",
-      "connection": "api",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "outputs": {
-          "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
-          "sessionsAfterSweep": "body.activeSessions",
-          "membersAfterSweep": "body.members",
-          "lifecycleStateAfterSweep": "body.group.lifecycleState"
+      "groups": [
+        {
+          "name": "expiryAndCanonicalSummary",
+          "steps": [
+            {
+              "name": "theExpiryIsNamedInTheGroupEvents",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "groupEventsAfterSweep": "body"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": [
+                  {
+                    "eventType": "session-disconnected",
+                    "reason": "expired"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "theSweepAdvancedTheChangeToken",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "outputs": {
+                  "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
+                  "sessionsAfterSweep": "body.activeSessions",
+                  "membersAfterSweep": "body.members",
+                  "lifecycleStateAfterSweep": "body.group.lifecycleState"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "onlineMemberCount": 1,
+                  "memberCount": 2
+                }
+              }
+            },
+            {
+              "name": "theSweepDroppedPresenceNotMembershipOrTheLifecycle",
+              "type": "assert",
+              "actual": {
+                "lifecycleBefore": "{lifecycleStateBeforeSweep}",
+                "lifecycleAfter": "{lifecycleStateAfterSweep}",
+                "revisionAfterSweep": "{presenceRevisionAfterSweep}",
+                "sessions": "{sessionsAfterSweep}",
+                "members": "{membersAfterSweep}"
+              },
+              "expect": {
+                "missingActualValue": "MISSING",
+                "body": {
+                  "lifecycleBefore": "connecting",
+                  "lifecycleAfter": "connecting"
+                },
+                "comparators": [
+                  {
+                    "path": "revisionAfterSweep",
+                    "gt": "{presenceRevisionBeforeSweep}"
+                  },
+                  {
+                    "path": "sessions",
+                    "length": 1
+                  },
+                  {
+                    "path": "sessions.0.sessionId",
+                    "equals": "{aliceSessionId}"
+                  },
+                  {
+                    "path": "sessions.0.status",
+                    "equals": "active"
+                  },
+                  {
+                    "path": "members",
+                    "length": 2
+                  }
+                ]
+              }
+            }
+          ]
         }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "onlineMemberCount": 1,
-          "memberCount": 2
-        }
-      }
-    },
-    {
-      "name": "theSweepDroppedPresenceNotMembershipOrTheLifecycle",
-      "type": "assert",
-      "actual": {
-        "lifecycleBefore": "{lifecycleStateBeforeSweep}",
-        "lifecycleAfter": "{lifecycleStateAfterSweep}",
-        "revisionAfterSweep": "{presenceRevisionAfterSweep}",
-        "sessions": "{sessionsAfterSweep}",
-        "members": "{membersAfterSweep}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "body": {
-          "lifecycleBefore": "connecting",
-          "lifecycleAfter": "connecting"
-        },
-        "comparators": [
-          {
-            "path": "revisionAfterSweep",
-            "gt": "{presenceRevisionBeforeSweep}"
-          },
-          {
-            "path": "sessions",
-            "length": 1
-          },
-          {
-            "path": "members",
-            "length": 2
-          }
-        ]
-      }
+      ]
     },
     {
       "name": "bobCanTakeAFreshLeaseWithoutRejoining",
@@ -586,11 +783,101 @@
         }
       },
       "expect": {
-        "status": 200,
-        "body": {
-          "onlineMemberCount": 2
-        }
+        "status": 200
       }
+    },
+    {
+      "name": "bothLeasesConvergeAfterRefresh",
+      "type": "parallel",
+      "maxConcurrency": 1,
+      "failFast": true,
+      "request": {
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "groups": [
+        {
+          "name": "bothLeasesConvergeAfterRefreshObservation",
+          "steps": [
+            {
+              "name": "theExactFreshLeaseIsVisible",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{bobAuthHeader}",
+                  "x-client-id": "{bobClientId}"
+                },
+                "outputs": {
+                  "freshLiveLeaseSessions": "body.activeSessions"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "comparison": "compatible-complete",
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}"
+                  },
+                  "onlineMemberCount": 2,
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "presencelease-generation-{runId}",
+                      "status": "active"
+                    },
+                    {
+                      "sessionId": "{bobSessionId}",
+                      "principalId": "{bobClientId}",
+                      "generationId": "presencelease-generation-two-{runId}",
+                      "status": "active"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "captureFreshLeaseObservationTime",
+              "type": "set",
+              "output": "freshLeaseObservedAtEpochMs",
+              "transform": {
+                "timestamp": true
+              }
+            },
+            {
+              "name": "bothFreshLeaseSessionsAreUnexpired",
+              "type": "assert",
+              "actual": {
+                "sessions": "{freshLiveLeaseSessions}",
+                "observedAt": "{freshLeaseObservedAtEpochMs}"
+              },
+              "expect": {
+                "comparators": [
+                  {
+                    "path": "sessions",
+                    "length": 2
+                  },
+                  {
+                    "path": "sessions.0.expiresAtEpochMs",
+                    "gt": "{freshLeaseObservedAtEpochMs}"
+                  },
+                  {
+                    "path": "sessions.1.expiresAtEpochMs",
+                    "gt": "{freshLeaseObservedAtEpochMs}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "postRunAssertions": [

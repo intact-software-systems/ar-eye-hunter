@@ -1,8 +1,7 @@
-import { computeOutboundTestAdmission } from './alm/outbound-runtime-test-fixture.ts';
+import { Temporal } from '@js-temporal/polyfill';
 // @vitest-environment happy-dom
-
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -14,6 +13,7 @@ import {
     createTestALInboundControlAdmission,
     createTestALInboundWorkPort
 } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -21,6 +21,7 @@ import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inboun
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     ALOutboundMessageRuntime,
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -35,23 +36,25 @@ import {
     newALUnicastMessage,
     planALMessageHandling,
     QueueBoxUtilities,
+    type ALInboundAdmissionRead,
     type ALInboundAdmissionStore,
+    type ALInboundMessageRuntime,
     type ALInboundPlanner,
     type ALInboundRuntimeStores,
     type ALMessage,
     type ALOutboundPlanner,
     type ResourceEntry
 } from '@shared/mod.ts';
-
-import '../setup-browser-indexeddb.ts';
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+
 import {
     createOutboundRuntimeWithWorkTask,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
-    peekOutboundWorkReadyAt
+    peekOutboundWorkReadyAt,
+    readOutboundTestAdmission
 } from './alm/outbound-runtime-test-fixture.ts';
+import '../setup-browser-indexeddb.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -62,9 +65,11 @@ const SCOPED_PEER_1_SOURCE = {
 };
 
 describe('IndexedDB AL runtime stores', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
+    beforeEach(() => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        });
     });
 
     it('keeps the default AL schema separate from generic persistence', async () => {
@@ -181,7 +186,7 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBeDefined();
         expect(dispatchedMsgIds).toEqual([]);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime2.admitIncomingMessage(seq1, {
@@ -218,7 +223,7 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                     ...observations
                 }),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
             dispatchInboxEntry: async (entry) => {
                 const msg = decodePersistedALMessage(entry.resource);
                 dispatchedMsgIds.push(msg.id.msgId);
@@ -291,7 +296,7 @@ describe('IndexedDB AL runtime stores', () => {
             peerId: 'peer-1',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
-        runtime.dispose();
+        await runtime.dispose();
         pausedClaims.mockRestore();
 
         const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now });
@@ -400,7 +405,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await control.admit(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
@@ -430,7 +435,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await expect(control.admit(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
+                { v: 3, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: msg.id.senderId,
@@ -478,7 +483,7 @@ describe('IndexedDB AL runtime stores', () => {
         await vi.advanceTimersByTimeAsync(30_000);
 
         expect(await admissionStore.readSentMessage(msg.id.msgId)).toBeUndefined();
-        runtime.dispose();
+        await runtime.dispose();
     });
 
     it('expires outbound repair attempts and control history with configured retention', async () => {
@@ -501,7 +506,12 @@ describe('IndexedDB AL runtime stores', () => {
         const msg = createOutboundUnicastMessage('msg-outbound-ephemeral-retention');
         const planner = createOutboundPlanner();
 
-        const bundle = await computeOutboundTestAdmission(admissionStore, msg);
+        const bundle = await readOutboundTestAdmission({
+            store: admissionStore,
+            message: msg,
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         expect(
             await admissionStore.commitBundle({
                 ...bundle,
@@ -511,7 +521,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' }).admit(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -586,12 +596,12 @@ describe('IndexedDB AL runtime stores', () => {
 
         await enqueueOutboundOrThrow(runtime1, seq1);
         await enqueueOutboundOrThrow(runtime1, seq2);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
@@ -600,7 +610,7 @@ describe('IndexedDB AL runtime stores', () => {
                     observedAtEpochMs: 1,
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
-                    missingSeqs: [1]
+                    missingRanges: [{ from: 1, to: 1 }]
                 }
             ),
             'peer'
@@ -624,9 +634,9 @@ describe('IndexedDB AL runtime stores', () => {
         const runtime1 = createDefaultOutboundRuntime({ dbName, namespace, sent, stores });
 
         await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
+        await runtime1.dispose();
         expect(sent).toEqual([]);
-        await claims.release();
+        await claims.release(runtime1);
 
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.ready();
@@ -634,7 +644,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime2.dispose();
+        await runtime2.dispose();
     });
 
     it('lets only one runtime claim the same IndexedDB outbound effect', async () => {
@@ -652,7 +662,7 @@ describe('IndexedDB AL runtime stores', () => {
         const runtime1 = createDefaultOutboundRuntime({ dbName, namespace, sent, stores });
 
         await enqueueOutboundOrThrow(runtime1, msg);
-        runtime1.dispose();
+        await runtime1.dispose();
         expect(sent).toEqual([]);
 
         const sendStarted = Promise.withResolvers<void>();
@@ -669,6 +679,7 @@ describe('IndexedDB AL runtime stores', () => {
         };
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
         const runtime3 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
+        onTestFinished(() => sendBarrier.resolve());
         const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
 
         await sendStarted.promise;
@@ -679,8 +690,8 @@ describe('IndexedDB AL runtime stores', () => {
 
         sendBarrier.resolve();
         await drain;
-        runtime2.dispose();
-        runtime3.dispose();
+        await runtime2.dispose();
+        await runtime3.dispose();
     });
 
     it('does not repair from IndexedDB when an acknowledgement is accepted while timeout is claimed', async () => {
@@ -708,7 +719,7 @@ describe('IndexedDB AL runtime stores', () => {
                 acceptedAckDuringTimeout = true;
                 await control.admit(
                     newALAckControlMessage(
-                        { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                        { v: 3, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
                         {
                             ackedMsgId: msg.id.msgId,
                             originPeerId: 'self',
@@ -734,7 +745,7 @@ describe('IndexedDB AL runtime stores', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -753,7 +764,7 @@ describe('IndexedDB AL runtime stores', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -775,7 +786,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
+        await runtime.dispose();
     });
 });
 
@@ -786,7 +797,7 @@ interface IndexedDbInboundFixtureInput {
     readonly stores?: ALInboundRuntimeStores;
 }
 
-function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
+function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput): ALInboundMessageRuntime {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
         carrier: 'ws',
@@ -802,7 +813,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
                 fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
@@ -833,7 +844,7 @@ interface IndexedDbOutboundFixtureInput {
     readonly sendPreparedMessage?: ALOutboundMessageRuntime.Dependencies<OutboundTestPayload>['sendPreparedMessage'];
 }
 
-function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
+function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput): ALOutboundMessageRuntime<OutboundTestPayload> {
     const { dbName, namespace, sent } = input;
     const runtime = createOutboundRuntimeWithWorkTask(() =>
         createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
@@ -844,13 +855,13 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
                 namespace,
                 decodePrepared: decodeOutboundTestPayload
             }),
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             decodePreparedMessage: decodeOutboundTestPayload,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
                     enabled: true,
@@ -861,7 +872,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -885,7 +896,7 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
     return (msg) => ({
         msg: msg,
         dropReasonCode: undefined,
-        persist: false,
+        lane: 'volatile',
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         repairTracking: {
             enabled: true,
@@ -895,7 +906,7 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
     });
 }
 
-function createOutboundUnicastMessage(resourceId: string) {
+function createOutboundUnicastMessage(resourceId: string): Readonly<ALMessage> {
     return newALUnicastMessage(
         'self',
         {
@@ -912,7 +923,7 @@ function createOutboundUnicastMessage(resourceId: string) {
     );
 }
 
-function createOrderedMulticastMessage(seq: number, text: string) {
+function createOrderedMulticastMessage(seq: number, text: string): Readonly<ALMessage> {
     return newALMulticastMessage(
         'peer-1',
         {
@@ -939,7 +950,7 @@ function createOrderedMulticastMessage(seq: number, text: string) {
     );
 }
 
-function groupRef(groupId: string) {
+function groupRef(groupId: string): GroupRef {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -947,7 +958,7 @@ function groupRef(groupId: string) {
     };
 }
 
-async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessage) {
+async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessage): Promise<ALInboundAdmissionRead> {
     const source = { kind: 'ws-client' as const, peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
     const nowMs = Date.now();
     return await store.readIncomingMessage({

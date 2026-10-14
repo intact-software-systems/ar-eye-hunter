@@ -10,6 +10,12 @@ import type {
     RallarBlackBoxTestWaitResultValue
 } from '../rallar-black-box-test-contracts.ts';
 
+import {
+    isEventHistoryCovered,
+    toEventHistoryUnavailableOutcome,
+    type RallarBlackBoxEventHistory,
+    type RallarBlackBoxEventHistorySequence
+} from '../runtime/event-history.ts';
 import { resolveWaitMatchResultReferences } from './resolve-wait-match-result-references.ts';
 import { resolveLatestWaitEvent } from './wait-event-match.ts';
 
@@ -31,14 +37,21 @@ export type RallarBlackBoxTestWaitWindow = Pick<
 
 export interface WaitForEventInput {
     readonly command: WaitCommandWithId;
+    /** An owned operation may start a new ordinal window instead of querying all prior payloads. */
+    readonly historyStart?: RallarBlackBoxEventHistorySequence;
     readonly now: () => number;
     readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
     readonly cancellationSignal: AbortSignal;
     readonly cancelRequested: () => boolean;
     readonly currentStatus: () => RallarBlackBoxTestRuntimeStatus;
     readonly currentEvents: () => readonly RallarBlackBoxTestEvent[];
+    readonly currentEventHistory: () => RallarBlackBoxEventHistory;
     readonly resultCache: RallarBlackBoxTestState['resultCache'];
-    readonly subscribe: (listener: () => void) => () => void;
+    /** An owned publisher may emit once after the observation and abort boundaries are installed. */
+    readonly publishAfterSubscription?: () => void;
+    readonly subscribe: (
+        listener: (events: readonly RallarBlackBoxTestEvent[], history: RallarBlackBoxEventHistory) => void
+    ) => () => void;
 }
 
 export async function waitForEvent(
@@ -65,16 +78,15 @@ export async function waitForEvent(
 
 async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
-    if (command.absent === true) {
-        return await waitForEventAbsence(input);
+    if (!isWaitHistoryCovered(input)) {
+        return toEventHistoryUnavailableOutcome(input.currentEventHistory());
     }
-
-    const immediate = resolveLatestWaitEvent(input.currentEvents(), command.match);
-    if (immediate) {
+    const immediate = resolveLatestWaitEvent(toWaitEvents(input, input.currentEvents()), command.match);
+    if (immediate && command.absent !== true && input.publishAfterSubscription === undefined) {
         return toWaitMatchedOutcome(command, immediate, input.currentStatus());
     }
     const deadlineEpochMs = computeWaitDeadlineEpochMs(command, input.now());
-    if (input.now() >= deadlineEpochMs) {
+    if (input.now() >= deadlineEpochMs && command.absent !== true) {
         return toWaitTimedOutOutcome(command, deadlineEpochMs);
     }
     return await new Promise<RallarBlackBoxTestCommandOutcome>((resolve) => {
@@ -98,6 +110,9 @@ class WaitEventSubscription {
     private readonly input: WaitForEventInput;
     private readonly deadlineEpochMs: number;
     private readonly onOutcome: WaitOutcomeListener;
+    private offending: RallarBlackBoxTestEvent | undefined;
+    private readonly historyGeneration: number;
+    private historyChanged = false;
     private settled = false;
     private timeout: ReturnType<typeof setTimeout> | undefined;
     private unsubscribe: (() => void) | undefined;
@@ -107,19 +122,29 @@ class WaitEventSubscription {
         this.input = input;
         this.deadlineEpochMs = deadlineEpochMs;
         this.onOutcome = onOutcome;
+        this.historyGeneration = input.currentEventHistory().generation;
+        this.offending = resolveLatestWaitEvent(toWaitEvents(input, input.currentEvents()), input.command.match);
     }
 
     private readonly onAbort = (): void => {
         this.stopWithOutcome(toWaitCancelledOutcome(this.input.command));
     };
 
-    private readonly onEventsChanged = (): void => {
+    private readonly onEventsChanged = (
+        events: readonly RallarBlackBoxTestEvent[],
+        history: RallarBlackBoxEventHistory
+    ): void => {
         const { command } = this.input;
         if (this.input.cancelRequested()) {
             this.stopWithOutcome(toWaitCancelledOutcome(command));
             return;
         }
-        const matched = resolveLatestWaitEvent(this.input.currentEvents(), command.match);
+        const matched = resolveLatestWaitEvent(toWaitEvents(this.input, events), command.match);
+        if (command.absent === true) {
+            this.offending = matched ?? this.offending;
+            this.historyChanged ||= history.generation !== this.historyGeneration;
+            return;
+        }
         if (matched) {
             this.stopWithOutcome(toWaitMatchedOutcome(command, matched, this.input.currentStatus()));
             return;
@@ -136,16 +161,43 @@ class WaitEventSubscription {
             this.stopWithOutcome(toWaitCancelledOutcome(command));
             return;
         }
-        this.timeout = setTimeout(() => {
-            this.stopWithOutcome(toWaitTimedOutOutcome(command, this.deadlineEpochMs));
-        }, timeoutDelayMs);
+        if (command.absent !== true) {
+            this.timeout = setTimeout(this.onDeadline, timeoutDelayMs);
+        }
         cancellationSignal.addEventListener('abort', this.onAbort, { once: true });
         this.unsubscribe = this.input.subscribe(this.onEventsChanged);
         if (this.unsubscribeOnceSubscribed && this.unsubscribe) {
             this.unsubscribe();
             this.unsubscribe = undefined;
         }
+        this.input.publishAfterSubscription?.();
+        if (command.absent === true && !this.settled) {
+            void this.input.sleep(Math.max(0, this.deadlineEpochMs - this.input.now()), cancellationSignal)
+                .then(this.onDeadline, this.onAbort);
+        }
     }
+
+    private readonly onDeadline = (): void => {
+        const { command } = this.input;
+        if (this.input.cancelRequested()) {
+            this.onAbort();
+            return;
+        }
+        if (command.absent !== true) {
+            this.stopWithOutcome(toWaitTimedOutOutcome(command, this.deadlineEpochMs));
+            return;
+        }
+        const outcome: RallarBlackBoxTestCommandOutcome = this.offending
+            ? toWaitAbsenceViolatedOutcome(command, this.offending, this.deadlineEpochMs)
+            : this.historyChanged
+            ? toEventHistoryUnavailableOutcome(this.input.currentEventHistory())
+            : {
+                status: 'ok',
+                value: toWaitResultValue(command, { matched: false, absent: true }),
+                nextStatus: this.input.currentStatus()
+            };
+        this.stopWithOutcome(outcome);
+    };
 
     private stopWithOutcome(outcome: RallarBlackBoxTestCommandOutcome): void {
         if (this.settled) {
@@ -153,6 +205,7 @@ class WaitEventSubscription {
         }
         this.settled = true;
         this.stopListening();
+        this.offending = undefined;
         this.onOutcome(outcome);
     }
 
@@ -171,37 +224,6 @@ class WaitEventSubscription {
             this.unsubscribeOnceSubscribed = true;
         }
     }
-}
-
-// Parity with runner absence waits: the full window is always held —
-// an absence claim is only as strong as the time the agent kept listening —
-// then the whole buffer is scanned once, so earlier events violate by design.
-async function waitForEventAbsence(
-    input: WaitForEventInput
-): Promise<RallarBlackBoxTestCommandOutcome> {
-    const command = input.command;
-    const deadlineEpochMs = computeWaitDeadlineEpochMs(command, input.now());
-
-    try {
-        await input.sleep(Math.max(0, deadlineEpochMs - input.now()), input.cancellationSignal);
-    }
-    catch (_error) {
-        return toWaitCancelledOutcome(command);
-    }
-    if (input.cancelRequested()) {
-        return toWaitCancelledOutcome(command);
-    }
-
-    const offending = resolveLatestWaitEvent(input.currentEvents(), command.match);
-    if (offending) {
-        return toWaitAbsenceViolatedOutcome(command, offending, deadlineEpochMs);
-    }
-
-    return {
-        status: 'ok',
-        value: toWaitResultValue(command, { matched: false, absent: true }),
-        nextStatus: input.currentStatus()
-    };
 }
 
 function toWaitResultValue(command: WaitCommandWithId, facts: WaitResultFacts): RallarBlackBoxTestWaitResultValue {
@@ -293,4 +315,25 @@ function toWaitInvalidOutcome(
         },
         nextStatus: 'failed'
     };
+}
+
+function isWaitHistoryCovered(input: WaitForEventInput): boolean {
+    const history = input.currentEventHistory();
+    return input.historyStart === undefined
+        ? isEventHistoryCovered(history, input.command.match.sinceEpochMs)
+        : history.runtimeId === input.historyStart.runtimeId && history.generation === input.historyStart.generation &&
+            input.historyStart.ordinal > history.evictedEvents;
+}
+
+function toWaitEvents(
+    input: WaitForEventInput,
+    events: readonly RallarBlackBoxTestEvent[]
+): readonly RallarBlackBoxTestEvent[] {
+    const start = input.historyStart;
+    return start === undefined
+        ? events
+        : events.filter((event) =>
+            event.history?.runtimeId === start.runtimeId && event.history.generation === start.generation &&
+            event.history.ordinal >= start.ordinal
+        );
 }

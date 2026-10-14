@@ -1,5 +1,8 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import { AL_WS_CLIENT_CAPABILITIES, toALCarrierQosInputProvider } from '../al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { isALControlTypeId } from '../al-contracts/al-control-type-ids.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -17,24 +20,30 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import type {
-    ALInboundRuntimeStores,
-    ALVolatileInboundRuntimeStores
-} from '../alm/inbound/al-inbound-message-runtime.ts';
-import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
-import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
-import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type {
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores,
-    ALVolatileOutboundRuntimeStores
-} from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
+} from '../alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '../alm/inbound/al-inbound-resync-required.ts';
+import {
+    recordALInboundDiagnostic,
+    type ALInboundConsumerInvocation,
+    type ALInboundRuntimeDiagnosticsSink
+} from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import {
+    AL_SUBMISSION_NOT_READY_RETRY_MS,
     ALOutboundMessageRuntime,
+    writeALOutboundCongestionDeferral,
+    type ALCheckpointOutboundRuntimeStores,
+    type ALOutboundCancelOutcome,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
-    type ALOutboundSettledSendResult
+    type ALOutboundRuntimeDiagnosticsSink,
+    type ALOutboundRuntimeStores,
+    type ALOutboundSettledSendResult,
+    type ALVolatileOutboundRuntimeStores
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -58,7 +67,7 @@ import {
 } from '../transport-faults/transport-fault-port.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import { WsClientReconnect } from '../websocket/ws-client-reconnect.ts';
-import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from './inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type {
     OnInboxMessageCallback,
@@ -66,6 +75,9 @@ import type {
 } from './queue-message-callbacks.ts';
 import { toWsQueueBoxClientDispatchPlan } from './ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 import { acceptWsQueueBoxClientControlMessage } from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
+
+/** The bytes the browser socket may hold unsent before this session's own sends wait (D184). */
+export const AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES = 256 * 1024;
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -114,6 +126,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Input {
+        readonly creationNow?: QueueBoxUtilities.CreationClock;
         /** Standalone transports may have no domain prerequisite; browser composition supplies room readiness. */
         readonly readSubmissionIneligibility?: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
@@ -123,7 +136,7 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         /**
          * The peer id the WS server answers as, learned from `/api/config` (D57 as applied, Q3); undefined when the server
-         * names none (it predates S3c-i, R-S3c-i-6), so the client tracks no server hop.
+         * names none, so the client tracks no server hop.
          */
         readonly serverPeerId: string | undefined;
         readonly qosProvider?: ALQosInputProvider;
@@ -131,9 +144,13 @@ export namespace WsQueueBoxClientService {
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
+        /** The memory pair a `local-checkpoint` admission goes to; absent, this client has no checkpoint lane. */
+        readonly outboundCheckpointStores?: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** Absent, no recovery owner is told of a track this client can no longer order. */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly newConnectionRequestId?: () => string;
         readonly reconnect?: ReconnectOptions;
@@ -142,6 +159,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
+        readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly readSubmissionIneligibility: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
@@ -154,6 +172,7 @@ export namespace WsQueueBoxClientService {
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
+        readonly onResyncRequired: ((resync: ALInboundResyncRequired) => void) | undefined;
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly reconnect: ReconnectOptions;
     }
@@ -216,19 +235,24 @@ export class WsQueueBoxClientService {
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+                        this.dependencies.creationNow()
                     ),
                 readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-                planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
-                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
+                // A plan without authority is a new admission's; a retained message is planned with its captured one.
+                planOutgoingMessage: (msg, authority) =>
+                    this.planOutgoingMessage(msg, authority === undefined ? 'admission' : 'replan'),
+                planDequeuedMessage: (msg) => this.planOutgoingMessage(msg, 'replan'),
                 afterDequeueAdmission: undefined,
                 planRepairMessage: undefined,
+                hopPeerIds: this.serverPeerId === undefined ? undefined : [this.serverPeerId],
                 sendPreparedMessage: async (prepared, _phase, lifecycle) => {
                     const msg = reconstructALOutboundTransportMessage(prepared, lifecycle.canonicalMessage);
                     return await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
                             msg,
-                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+                            this.dependencies.creationNow()
                         ),
                         lifecycle
                     );
@@ -252,6 +276,7 @@ export class WsQueueBoxClientService {
                     const admitted = await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
                     return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
+                onResyncRequired: this.dependencies.onResyncRequired,
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );
@@ -266,11 +291,18 @@ export class WsQueueBoxClientService {
         }
     }
 
-    private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+    /** Only a new admission of this session's own data reads backpressure, never a control or a replan (D184). */
+    private planOutgoingMessage(
+        msg: ALMessage,
+        stage: 'admission' | 'replan'
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const readsBackpressure = stage === 'admission' && !isALControlTypeId(msg.payload.typeId);
         return toWsQueueBoxClientDispatchPlan(msg, {
             sessionId: this.sessionId,
             serverPeerId: this.serverPeerId,
             socketOpen: this.isSocketOpen(),
+            nowMs: this.dependencies.outboundRuntime.clock.nowMs(),
+            backpressured: readsBackpressure && this.decideBackpressure(msg),
             qosProvider: this.dependencies.qosProvider
         });
     }
@@ -389,12 +421,25 @@ export class WsQueueBoxClientService {
         return this;
     }
 
-    close(code?: number, reason?: string): void {
+    async close(code?: number, reason?: string): Promise<void> {
         this.closed = true;
         this.disableReconnect();
-        this.outboundRuntime.dispose();
-        this.inboundRuntime.dispose();
-        this.socket.close(code, reason);
+        const disposals = [this.outboundRuntime.dispose(), this.inboundRuntime.dispose()];
+        const failures: Error[] = [];
+        try {
+            this.socket.close(code, reason);
+        }
+        catch (error) {
+            failures.push(error instanceof Error ? error : new Error(String(error)));
+        }
+        for (const outcome of await Promise.allSettled(disposals)) {
+            if (outcome.status === 'rejected') {
+                failures.push(outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason)));
+            }
+        }
+        if (failures.length > 0) {
+            throw new AggregateError(failures, 'WS client shutdown failed');
+        }
     }
 
     enableDefaultCallbacks(): WsQueueBoxClientService {
@@ -481,7 +526,11 @@ export class WsQueueBoxClientService {
         if (!this.isSocketOpen()) {
             return 'socket-closed';
         }
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE);
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(
+            message,
+            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+            this.dependencies.creationNow()
+        );
         this.socket.sendAsJsonString(entry.resource);
         return 'sent';
     }
@@ -498,9 +547,12 @@ export class WsQueueBoxClientService {
     ): Promise<void | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
         this.requireInboxDeliveryTime(entry);
-        const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+        const exact = this.onInboxMessageCallbacks.get(message.payload.typeId);
+        const selected = exact ??
             (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN) : undefined);
-        const selectedResult = await selected?.onMessage(message, entry);
+        const selectedResult = exact === undefined
+            ? await this.dispatchWithoutExactConsumer(message, entry, selected)
+            : await this.dispatchExactConsumer(message, entry, exact);
         if (selectedResult === 'retry') {
             return 'retry';
         }
@@ -538,6 +590,53 @@ export class WsQueueBoxClientService {
         }
     }
 
+    private async dispatchWithoutExactConsumer(
+        message: ALMessage,
+        entry: ResourceEntry,
+        selected: OnInboxMessageCallback | undefined
+    ): Promise<void | 'retry'> {
+        const nowMs = this.dependencies.inboundRuntime.clock.nowMs();
+        this.recordConsumerInvocation(message, nowMs, { selection: 'absent', outcome: 'not-invoked' });
+        return await selected?.onMessage(message, entry);
+    }
+
+    private async dispatchExactConsumer(
+        message: ALMessage,
+        entry: ResourceEntry,
+        selected: OnInboxMessageCallback
+    ): Promise<void | 'retry'> {
+        const beganAtMs = this.dependencies.inboundRuntime.clock.nowMs();
+        let result: void | 'retry';
+        try {
+            result = await selected.onMessage(message, entry);
+        }
+        catch (error) {
+            this.recordConsumerInvocation(message, beganAtMs, { selection: 'exact-type', outcome: 'threw' });
+            throw error;
+        }
+        this.recordConsumerInvocation(message, beganAtMs, {
+            selection: 'exact-type',
+            outcome: result === 'retry' ? 'retry' : 'returned'
+        });
+        return result;
+    }
+
+    private recordConsumerInvocation(
+        message: ALMessage,
+        beganAtMs: number,
+        result: Pick<ALInboundConsumerInvocation, 'selection' | 'outcome'>
+    ): void {
+        recordALInboundDiagnostic(this.dependencies.inboundDiagnostics, {
+            kind: 'consumer-invocation',
+            msgId: message.id.msgId,
+            typeId: message.payload.typeId,
+            carrier: 'ws',
+            ...result,
+            beganAtMs,
+            settledAtMs: this.dependencies.inboundRuntime.clock.nowMs()
+        });
+    }
+
     private requireInboxDeliveryTime(entry: ResourceEntry): void {
         if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.outboundRuntime.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before consumer delivery');
@@ -556,10 +655,18 @@ export class WsQueueBoxClientService {
         // effect contract; rechecking here between callbacks could misreport an earlier write.
         const reason = this.dependencies.readSubmissionIneligibility(lifecycle.canonicalMessage);
         if (reason !== undefined) {
-            return { status: 'not-ready', submissionAttempted: false, reason };
+            return {
+                status: 'not-ready',
+                submissionAttempted: false,
+                reason,
+                retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+            };
         }
         if (!this.socket.decideSubmissionReadiness(entry.resource, this.dependencies.submissionReadinessFaultPort)) {
-            return { status: 'not-ready', submissionAttempted: false };
+            return { status: 'not-ready', submissionAttempted: false, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
+        }
+        if (this.decideBackpressure(lifecycle.canonicalMessage)) {
+            return this.deferBackpressuredSend(lifecycle.canonicalMessage);
         }
         if (this.onOutboxMessageCallbacks.size === 0) {
             this.socket.sendAsJsonString(entry.resource);
@@ -576,6 +683,28 @@ export class WsQueueBoxClientService {
         return { status: 'sent', submissionAttempted: true };
     }
 
+    /** A scripted fault holds the socket backpressured, or it holds at or above its watermark (D184). */
+    private decideBackpressure(message: ALMessage): boolean {
+        return this.socket.decideBackpressureFault(message) ||
+            (this.socket.ws?.bufferedAmount ?? 0) >= AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES;
+    }
+
+    private deferBackpressuredSend(message: ALMessage): ALOutboundSettledSendResult {
+        writeALOutboundCongestionDeferral({
+            diagnostics: this.dependencies.outboundDiagnostics,
+            carrier: 'ws',
+            message,
+            selfPeerId: this.sessionId,
+            qosProvider: this.dependencies.qosProvider
+        });
+        return {
+            status: 'not-ready',
+            submissionAttempted: false,
+            reason: 'WS socket is backpressured',
+            retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS
+        };
+    }
+
     private readSendIneligibility(
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): ALOutboundSettledSendResult | undefined {
@@ -588,7 +717,9 @@ export class WsQueueBoxClientService {
         ) {
             return { status: 'expired', submissionAttempted: false };
         }
-        return this.isSocketOpen() ? undefined : { status: 'not-ready', submissionAttempted: false };
+        return this.isSocketOpen()
+            ? undefined
+            : { status: 'not-ready', submissionAttempted: false, retryAfterMs: AL_SUBMISSION_NOT_READY_RETRY_MS };
     }
 
     private isSocketOpen(): boolean {
@@ -597,7 +728,9 @@ export class WsQueueBoxClientService {
 }
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
+    const creationNow = input.creationNow ?? Temporal.Now.instant;
     return new WsQueueBoxClientService({
+        creationNow,
         readSubmissionIneligibility: input.readSubmissionIneligibility ?? (() => undefined),
         submissionReadinessFaultPort: input.submissionReadinessFaultPort ??
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
@@ -610,7 +743,8 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX),
+            toInboxEntry: (message) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, creationNow()),
             durableWorkOwnership: input.durableWorkOwnership
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
@@ -618,6 +752,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             volatileStores: input.outboundVolatileStores,
+            checkpointStores: input.outboundCheckpointStores,
             queueEngine: input.queueEngine,
             durableWorkOwnership: input.durableWorkOwnership
         }),
@@ -625,6 +760,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
     });

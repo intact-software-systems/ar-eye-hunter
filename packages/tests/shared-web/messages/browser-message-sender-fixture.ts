@@ -7,7 +7,12 @@ import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALPrincipalBroadcastMessage,
+    newALUnicastMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { vi, type Mock } from 'vitest';
@@ -27,16 +32,22 @@ export function createBrowserMessageSenderFixture(
 ): BrowserMessageSenderFixture {
     let activeMiddleware = middleware;
     const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => activeMiddleware });
+    const sessionDeliveries = new BrowserSessionDeliveries(registry, {
+        deliverySettlements: feed,
+        readMiddleware: () => activeMiddleware,
+        readRtcCaptureReceipt: () => undefined
+    }, () => activeMiddleware.session);
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
     const connect = vi.fn<() => Promise<ApiMiddleware>>().mockResolvedValue(middleware);
     const sender = new BrowserRallarMessageSender({
+        sessionDeliveries,
         creation: {
             createUnicast: newALUnicastMessage,
             createMulticast: newALMulticastMessage,
             createBroadcast: newALBroadcastMessage,
+            createPrincipalBroadcast: newALPrincipalBroadcastMessage,
             newResourceId: crypto.randomUUID.bind(crypto)
         },
         deliveries: registry,
@@ -48,7 +59,7 @@ export function createBrowserMessageSenderFixture(
         resolveCurrentRoomRef: () => roomRef,
         toRoomId: (room) => typeof room === 'string' ? room : room?.groupId,
         resolveRoomRef: () => roomRef,
-        resolveRoomMinSnapshotVersion: (_room, explicit) => explicit
+        resolveRoomSendFence: (_room, explicit) => ({ minSnapshotVersion: explicit, rosterVersion: undefined })
     });
     return {
         sender,

@@ -1,24 +1,50 @@
-import { expect, test, type Page } from '@playwright/test';
-import { expectFullStackApiReady, loginUser, readFullStackConfig, uniqueSuffix } from './full-stack-helpers.ts';
+import {
+    expect,
+    test,
+    type BrowserContext,
+    type Page
+} from '@playwright/test';
+import type { JSHandle } from '@playwright/test';
+
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
+import type { WebSocketTicketResponse } from '@shared/api/api-config.ts';
+
+import {
+    expectFullStackApiReady,
+    loginUser,
+    readFullStackConfig,
+    uniqueSuffix
+} from './full-stack-helpers.ts';
+import { readBrowserAuthSession } from './full-stack-helpers.ts';
+
+interface WsOpenResult {
+    readonly opened: boolean;
+    readonly sessionId: string;
+}
+
+interface WsCloseRecord {
+    readonly code: number;
+    readonly reason: string;
+}
+
+interface HeldApiWebSocket {
+    readonly socket: WebSocket;
+    readonly closes: WsCloseRecord[];
+    readonly result: WsOpenResult;
+}
+
+interface PreparedApiWebSocket {
+    readonly url: string;
+    readonly sessionId: string;
+}
+
+interface WsTicketResult {
+    readonly status: number;
+    readonly sessionId?: string;
+}
 
 const config = readFullStackConfig();
-
-type BrowserAuthSession = Readonly<{
-    clientId: string;
-    accessToken: string;
-    username: string;
-    sessionId: string;
-}>;
-
-type WsOpenResult = Readonly<{
-    opened: boolean;
-    sessionId: string;
-}>;
-
-type WsCloseRecord = Readonly<{
-    code: number;
-    reason: string;
-}>;
 
 test.describe('full-stack same-user multi-session auth', () => {
     test.skip(!config.enabled, config.skipReason);
@@ -30,17 +56,24 @@ test.describe('full-stack same-user multi-session auth', () => {
         const suffix = uniqueSuffix();
         const groupId = `${config.roomId}-auth-multi-${suffix}`;
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
+        let held: JSHandle<HeldApiWebSocket> | undefined;
         try {
-            const sessionA = await loginUser(pageA, config, config.userA, {
+            contextB = await browser.newContext();
+            const pageA = await contextA.newPage();
+            const pageB = await contextB.newPage();
+            const sessionA = await loginUser({
+                page: pageA,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${config.userA.actor}-same-user-a-${suffix}`,
                 tab: 'auth'
             });
-            const sessionB = await loginUser(pageB, config, config.userA, {
+            const sessionB = await loginUser({
+                page: pageB,
+                config,
+                user: config.userA,
                 groupId,
                 sessionId: `${config.userA.actor}-same-user-b-${suffix}`,
                 tab: 'auth'
@@ -51,7 +84,9 @@ test.describe('full-stack same-user multi-session auth', () => {
             expect(sessionA.sessionId).not.toBe(sessionB.sessionId);
             expect(sessionA.accessToken).not.toBe(sessionB.accessToken);
 
-            await expect(openHeldApiWebSocket(pageA, config.apiBaseUrl)).resolves.toMatchObject({
+            const heldSocket = await openHeldApiWebSocket(pageA, config.apiBaseUrl);
+            held = heldSocket;
+            await expect(held.evaluate((probe) => probe.result)).resolves.toMatchObject({
                 opened: true,
                 sessionId: sessionA.sessionId
             });
@@ -61,7 +96,7 @@ test.describe('full-stack same-user multi-session auth', () => {
             });
 
             await expect(logoutWithStoredSession(pageA, config.apiBaseUrl)).resolves.toBe(200);
-            await expect.poll(() => readHeldSocketCloseRecords(pageA), {
+            await expect.poll(() => heldSocket.evaluate((probe) => probe.closes), {
                 timeout: 15_000
             }).toEqual([
                 {
@@ -83,197 +118,116 @@ test.describe('full-stack same-user multi-session auth', () => {
             });
         }
         finally {
-            await Promise.all([
-                contextA.close(),
-                contextB.close()
-            ]);
+            try {
+                if (held !== undefined) {
+                    await held.evaluate((probe) => probe.socket.close(1000, 'test-complete'));
+                    await held.dispose();
+                }
+            }
+            finally {
+                await Promise.all([contextA.close(), contextB?.close()]);
+            }
         }
     });
 });
 
-async function createWsTicket(
-    page: Page,
-    apiBaseUrl: string
-): Promise<Readonly<{ status: number; sessionId?: string; }>> {
-    return await page.evaluate(async (baseUrl) => {
-        const raw = window.localStorage.getItem('auth.session');
-        if (!raw) {
-            throw new Error('Missing auth.session in localStorage.');
-        }
-        const session = JSON.parse(raw) as BrowserAuthSession;
-        const requestId = crypto.randomUUID();
-        const response = await fetch(`${baseUrl}/api/auth/ws-ticket/requests/${requestId}`, {
+function readWsTicketResponse(value: unknown): WebSocketTicketResponse {
+    if (
+        !isJsonRecordValue(value) || typeof value.ticket !== 'string' || value.ticket.length === 0 ||
+        typeof value.sessionId !== 'string' || value.sessionId.length === 0 ||
+        typeof value.expiresAtEpochMs !== 'number' || !Number.isFinite(value.expiresAtEpochMs)
+    ) {
+        throw new Error('Invalid API WS ticket response.');
+    }
+    return { ticket: value.ticket, sessionId: value.sessionId, expiresAtEpochMs: value.expiresAtEpochMs };
+}
+
+async function createWsTicket(page: Page, apiBaseUrl: string): Promise<WsTicketResult> {
+    const session = await readBrowserAuthSession(page);
+    const response = await page.evaluate(async ({ baseUrl, session }) => {
+        const response = await fetch(`${baseUrl}/api/auth/ws-ticket/requests/${crypto.randomUUID()}`, {
             method: 'POST',
-            headers: {
-                authorization: `Bearer ${session.accessToken}`,
-                'x-client-id': session.clientId
-            }
+            headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId }
         });
-        const body = await response.json().catch(() => undefined) as
-            | { sessionId?: string; }
-            | undefined;
-        return {
-            status: response.status,
-            sessionId: body?.sessionId
-        };
-    }, apiBaseUrl);
+        return { status: response.status, body: await response.json() as unknown };
+    }, { baseUrl: apiBaseUrl, session });
+    if (response.status !== 200) {
+        return { status: response.status };
+    }
+    const body = response.body;
+    return { status: response.status, sessionId: readWsTicketResponse(body).sessionId };
 }
 
 async function logoutWithStoredSession(page: Page, apiBaseUrl: string): Promise<number> {
-    return await page.evaluate(async (baseUrl) => {
-        const raw = window.localStorage.getItem('auth.session');
-        if (!raw) {
-            throw new Error('Missing auth.session in localStorage.');
-        }
-        const session = JSON.parse(raw) as BrowserAuthSession;
-        const requestId = crypto.randomUUID();
-        const response = await fetch(`${baseUrl}/api/auth/logout/requests/${requestId}`, {
+    const session = await readBrowserAuthSession(page);
+    return await page.evaluate(async ({ baseUrl, session }) => {
+        const response = await fetch(`${baseUrl}/api/auth/logout/requests/${crypto.randomUUID()}`, {
             method: 'POST',
-            headers: {
-                authorization: `Bearer ${session.accessToken}`,
-                'x-client-id': session.clientId
-            }
+            headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId }
         });
         return response.status;
-    }, apiBaseUrl);
+    }, { baseUrl: apiBaseUrl, session });
 }
 
-async function openHeldApiWebSocket(
-    page: Page,
-    apiBaseUrl: string
-): Promise<WsOpenResult> {
-    return await page.evaluate(async (baseUrl) => {
-        const win = window as Window & {
-            __authMultiSessionSocket?: WebSocket;
-            __authMultiSessionSocketCloses?: WsCloseRecord[];
-        };
-        win.__authMultiSessionSocketCloses = [];
-
-        const raw = window.localStorage.getItem('auth.session');
-        if (!raw) {
-            throw new Error('Missing auth.session in localStorage.');
-        }
-        const session = JSON.parse(raw) as BrowserAuthSession;
-        const [apiConfigResponse, ticketResponse] = await Promise.all([
+async function prepareApiWebSocket(page: Page, apiBaseUrl: string): Promise<PreparedApiWebSocket> {
+    const session = await readBrowserAuthSession(page);
+    const response = await page.evaluate(async ({ baseUrl, session }) => {
+        const [config, ticket] = await Promise.all([
             fetch(`${baseUrl}/api/config`),
             fetch(`${baseUrl}/api/auth/ws-ticket/requests/${crypto.randomUUID()}`, {
                 method: 'POST',
-                headers: {
-                    authorization: `Bearer ${session.accessToken}`,
-                    'x-client-id': session.clientId
-                }
+                headers: { authorization: `Bearer ${session.accessToken}`, 'x-client-id': session.clientId }
             })
         ]);
-        if (!apiConfigResponse.ok) {
-            throw new Error(`Failed to fetch API config: ${apiConfigResponse.status}`);
+        if (!config.ok || !ticket.ok) {
+            throw new Error(`Failed API config/WS ticket: ${config.status}/${ticket.status}`);
         }
-        if (!ticketResponse.ok) {
-            throw new Error(`Failed to create WS ticket: ${ticketResponse.status}`);
-        }
-        const apiConfig = await apiConfigResponse.json() as { wsBaseUrl?: string; };
-        const ticket = await ticketResponse.json() as { ticket: string; };
-        if (!apiConfig.wsBaseUrl) {
-            throw new Error('API config did not include wsBaseUrl.');
-        }
-        const url = new URL(
-            `/api/ws/${encodeURIComponent(session.sessionId)}`,
-            `${apiConfig.wsBaseUrl.replace(/\/+$/, '')}/`
-        );
-        url.searchParams.set('ticket', ticket.ticket);
+        return { config: await config.json() as unknown, ticket: await ticket.json() as unknown };
+    }, { baseUrl: apiBaseUrl, session });
+    const config = decodeApiConfigResponse(response.config).fold(
+        (issue) => {
+            throw new Error(issue);
+        },
+        (config) => config
+    );
+    const ticket = readWsTicketResponse(response.ticket);
+    const url = new URL(`/api/ws/${encodeURIComponent(session.sessionId)}`, `${config.wsBaseUrl.replace(/\/+$/, '')}/`);
+    url.searchParams.set('ticket', ticket.ticket);
+    return { url: url.toString(), sessionId: session.sessionId };
+}
 
-        return await new Promise<WsOpenResult>((resolve, reject) => {
-            const socket = new WebSocket(url.toString());
-            win.__authMultiSessionSocket = socket;
-            const timeout = window.setTimeout(() => {
+async function openHeldApiWebSocket(page: Page, apiBaseUrl: string): Promise<JSHandle<HeldApiWebSocket>> {
+    const input = await prepareApiWebSocket(page, apiBaseUrl);
+    return await page.evaluateHandle(async ({ url, sessionId }) => {
+        const socket = new WebSocket(url);
+        const closes: WsCloseRecord[] = [];
+        socket.onclose = (event) => closes.push({ code: event.code, reason: event.reason });
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                socket.close(1000, 'test-timeout');
                 reject(new Error('Timed out waiting for held API WebSocket open.'));
             }, 15_000);
-
             socket.onopen = () => {
-                window.clearTimeout(timeout);
-                resolve({
-                    opened: true,
-                    sessionId: session.sessionId
-                });
+                clearTimeout(timeout);
+                resolve();
             };
             socket.onerror = () => {
-                window.clearTimeout(timeout);
+                clearTimeout(timeout);
+                socket.close(1000, 'test-error');
                 reject(new Error('Held API WebSocket failed to open.'));
             };
-            socket.onclose = (event) => {
-                win.__authMultiSessionSocketCloses?.push({
-                    code: event.code,
-                    reason: event.reason
-                });
-            };
         });
-    }, apiBaseUrl);
+        return { socket, closes, result: { opened: true, sessionId } };
+    }, input);
 }
 
-async function openApiWebSocketOnce(
-    page: Page,
-    apiBaseUrl: string
-): Promise<WsOpenResult> {
-    return await page.evaluate(async (baseUrl) => {
-        const raw = window.localStorage.getItem('auth.session');
-        if (!raw) {
-            throw new Error('Missing auth.session in localStorage.');
-        }
-        const session = JSON.parse(raw) as BrowserAuthSession;
-        const [apiConfigResponse, ticketResponse] = await Promise.all([
-            fetch(`${baseUrl}/api/config`),
-            fetch(`${baseUrl}/api/auth/ws-ticket/requests/${crypto.randomUUID()}`, {
-                method: 'POST',
-                headers: {
-                    authorization: `Bearer ${session.accessToken}`,
-                    'x-client-id': session.clientId
-                }
-            })
-        ]);
-        if (!apiConfigResponse.ok) {
-            throw new Error(`Failed to fetch API config: ${apiConfigResponse.status}`);
-        }
-        if (!ticketResponse.ok) {
-            throw new Error(`Failed to create WS ticket: ${ticketResponse.status}`);
-        }
-        const apiConfig = await apiConfigResponse.json() as { wsBaseUrl?: string; };
-        const ticket = await ticketResponse.json() as { ticket: string; };
-        if (!apiConfig.wsBaseUrl) {
-            throw new Error('API config did not include wsBaseUrl.');
-        }
-        const url = new URL(
-            `/api/ws/${encodeURIComponent(session.sessionId)}`,
-            `${apiConfig.wsBaseUrl.replace(/\/+$/, '')}/`
-        );
-        url.searchParams.set('ticket', ticket.ticket);
-
-        return await new Promise<WsOpenResult>((resolve, reject) => {
-            const socket = new WebSocket(url.toString());
-            const timeout = window.setTimeout(() => {
-                socket.close(1000, 'test-timeout');
-                reject(new Error('Timed out waiting for API WebSocket open.'));
-            }, 15_000);
-
-            socket.onopen = () => {
-                window.clearTimeout(timeout);
-                socket.close(1000, 'test-complete');
-                resolve({
-                    opened: true,
-                    sessionId: session.sessionId
-                });
-            };
-            socket.onerror = () => {
-                window.clearTimeout(timeout);
-                reject(new Error('API WebSocket failed to open.'));
-            };
-        });
-    }, apiBaseUrl);
-}
-
-async function readHeldSocketCloseRecords(page: Page): Promise<readonly WsCloseRecord[]> {
-    return await page.evaluate(() => {
-        const win = window as Window & {
-            __authMultiSessionSocketCloses?: WsCloseRecord[];
-        };
-        return win.__authMultiSessionSocketCloses ?? [];
-    });
+async function openApiWebSocketOnce(page: Page, apiBaseUrl: string): Promise<WsOpenResult> {
+    const held = await openHeldApiWebSocket(page, apiBaseUrl);
+    try {
+        return await held.evaluate((probe) => probe.result);
+    }
+    finally {
+        await held.evaluate((probe) => probe.socket.close(1000, 'test-complete'));
+        await held.dispose();
+    }
 }

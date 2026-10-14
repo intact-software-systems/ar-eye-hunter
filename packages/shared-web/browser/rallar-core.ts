@@ -30,7 +30,8 @@ export type {
 
 export type {
     RallarOperationOptions,
-    RallarOperationRetryPredicate
+    RallarOperationRetryPredicate,
+    RallarRtcCaptureContext
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {
@@ -42,6 +43,7 @@ export type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
+    RallarChannelRecovery,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
@@ -133,11 +135,17 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
 export type {
     ALStorageEvent,
     ALStorageHealthState,
+    ALStorageHealthStatus,
     ALStoragePersistOutcome,
     ALStorageRecoveryOutcome
 } from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
+export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+
+export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
+export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';

@@ -34,14 +34,6 @@ export const reviewedScenarioDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 54
     }),
-    // Outcome translation/reporting already have separate owners. Invocation,
-    // cancellation and cleanup fences stay together in the runtime lifecycle.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 68
-    }),
     // Reload command results retain opaque external evidence. These readers keep
     // malformed leaves intact until the adjacent validators reject them; JSON
     // normalization would erase NaN/Infinity and missing-value negative evidence.
@@ -794,6 +786,21 @@ export const reviewedScenarioDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 144
+    }),
+    // Untrusted payloadFields is record-guarded and each operand is admitted by
+    // decodeJsonValue. Only validation issues leave this issue-returning boundary.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateWaitPayloadFields'
+    }),
+    // This generic copier owns comparison arrays/records without admitting
+    // them. Cycles and invalid non-JSON operands retain their existing validation
+    // boundary; unknown array storage stays local. Its checker owner is absent.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/recipe/snapshot-comparison-value.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     // JSON comparison accepts native input at its facade and decoder only.
     // Descriptor-built snapshots remove accessors, prototypes, and caller-owned

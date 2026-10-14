@@ -1,17 +1,25 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
-import type {
-    ALAckAlgo,
-    ALReceiptMode,
-    ALRepairAlgo,
-    ALSupersedenceAlgo
+import {
+    normalizeALQosPolicy,
+    resolveALQosNormalizationInput,
+    type ALAckAlgo,
+    type ALCongestionCause,
+    type ALMessageHandlingPlan,
+    type ALQosInputProvider,
+    type ALReceiptMode,
+    type ALRepairAlgo,
+    type ALSupersedenceAlgo
 } from '../../al-contracts/al-policy.ts';
+import type { ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
+import type { QRtcDataChannel } from '../../webrtc/qrtc-data-channel.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
+import type { ALCheckpointPort } from '../checkpoint/al-checkpoint.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -23,8 +31,9 @@ import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
-import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALVolatileSessionBudget, ALVolatileSessionLimit } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
+import type { ALWorkObservationDeferral } from '../work/al-work-handler.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -36,11 +45,13 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import type { ALOutboundReceiptConfirmationDiagnostic } from './control/to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
     ALOutboundCanonicalHandoff
 } from './lane/al-outbound-canonical-handoff.ts';
+import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -65,6 +76,9 @@ export type ALOutboundDequeueAuthorityReader = (
     message: ALMessage,
     entry: ResourceEntry
 ) => Promise<ALOutboundDequeueAuthority | undefined>;
+
+/** The delay a carrier names on a `not-ready` submission, on both carriers: a full channel or socket may drain within it (D185). */
+export const AL_SUBMISSION_NOT_READY_RETRY_MS = 50;
 
 export interface ALOutboundSettledSendResult {
     readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
@@ -91,7 +105,8 @@ export interface ALOutboundAckTrackingPlan {
     readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
     /**
      * The next hops this dispatch sends through: the local hop view a `receiver` receipt states beside its
-     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names no hop.
+     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names its server, once
+     * it knows the server's peer id, and otherwise no hop.
      */
     readonly nextHopPeerIds: readonly string[];
     /** The send's resolved ack algorithm: what the receipt it tracks counts. */
@@ -132,7 +147,7 @@ export interface ALOutboundRepairRequest {
     /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
-    readonly missingSeqs: readonly number[];
+    readonly missingRanges: readonly ALSeqRange[];
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
@@ -140,6 +155,8 @@ export type ALOutboundDropReasonCode =
     | 'unauthorized'
     | 'unsupported'
     | 'capacity'
+    | 'congested'
+    | 'no-leader'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'
@@ -152,7 +169,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReason?: string;
     /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
-    readonly persist: boolean;
+    /** The session volatile bound a `capacity` drop passed (D179); absent on a congestion drop the planner made. */
+    readonly capacityLimit?: ALVolatileSessionLimit;
+    /** The congestion decision behind a `capacity` or `congested` drop the planner made (D186); absent on every other plan. */
+    readonly congestionDrop?: ALOutboundCongestionDrop;
+    /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
+    readonly lane: ALStoreDurability;
     readonly preparedMessages: readonly TPrepared[];
     readonly ackTracking?: ALOutboundAckTrackingPlan;
     /**
@@ -163,6 +185,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
+    /**
+     * The sender asks its own outbound for the sequence: a first admission of a message that names an
+     * ordering key without one takes the next sequence of that track. Only the WS server plans it, and only
+     * for a message it publishes itself; absent, a keyed message without a sequence stays unsequenced.
+     */
+    readonly mintsSequence?: true;
     /**
      * The audience a server admitted the message to, carried beside the message rather than on the wire,
      * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
@@ -194,13 +222,71 @@ export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRu
     readonly budget: ALVolatileSessionBudget | undefined;
 }
 
+/** The memory pair a checkpointed admission goes to: its lane sweeps it, and its checkpoint saves it. */
+export interface ALCheckpointOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
+    evictExpired(): void;
+    readonly checkpoint: ALCheckpointPort;
+}
+
+/** The congestion decision behind a drop: its cause and the message's priority (D186). */
+export interface ALOutboundCongestionDrop {
+    readonly cause: ALCongestionCause;
+    readonly priority: number;
+}
+
+/**
+ * One congestion decision (D186): `drop` at the admission of this session's own send, `defer` at a submission its
+ * channel or socket could not take, of any message the page holds there, relay forwards and controls included, and
+ * `hand-over` by a fallback strategy that moved a congested leg of its own send to the other carrier.
+ */
+export interface ALOutboundCongestionDiagnostic {
+    readonly kind: 'congestion';
+    readonly carrier: ALDeliveryCarrier;
+    readonly cause: ALCongestionCause;
+    readonly action: 'drop' | 'defer' | 'hand-over';
+    readonly priority: number;
+    readonly msgId: string;
+}
+
+/** The congestion decisions of one session, counted from its `congestion` diagnostics by action (D186). */
+export interface ALCongestionCounters {
+    readonly dropped: number;
+    readonly deferred: number;
+    readonly handedOver: number;
+}
+
+export interface WriteALOutboundCongestionDeferralInput {
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    readonly carrier: ALDeliveryCarrier;
+    readonly message: ALMessage;
+    readonly selfPeerId: string;
+    /** The carrier's provider, so the deferral names the priority its planner read. */
+    readonly qosProvider: ALQosInputProvider;
+}
+
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
 export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 
 /** What the write transaction returned, or that the admission settled before opening one. */
 export type ALOutboundCommitBundleOutcome = 'committed' | 'conflict' | 'expired' | 'not-attempted';
 
+/** The QR terminal fact for one exact ACK/hop; sent establishes local submission, not recipient delivery. */
+export interface ALOutboundRtcAckSubmission {
+    readonly kind: 'rtc-ack-submission';
+    readonly controlMsgId: string;
+    readonly controlSenderId: string;
+    readonly fromPeerId: string;
+    readonly toPeerId: string;
+    readonly carrier: 'rtc';
+    readonly status: QRtcDataChannel.SendSettlement['status'];
+    readonly submissionAttempted: boolean;
+    /** Terminal observer time, after QR's settlement microtask; not the instant native send ran. */
+    readonly observedAtEpochMs: number;
+}
+
 export type ALOutboundRuntimeDiagnosticsEvent =
+    | ALOutboundReceiptConfirmationDiagnostic
+    | ALOutboundRtcAckSubmission
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;
@@ -278,16 +364,12 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         readyAtMs: number | 'none';
         /** What that storage read cost: the page read the batch behind a "due now" answer then reuses. */
         durationMs: number;
-    }>;
+    }>
+    | ALOutboundCongestionDiagnostic;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
-
-/** Every settlement variant without the three fields the runtime stamps for its owners. */
-type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
-    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
-    never;
 
 /** One delivery fact as the owner that observed it states it, before the runtime stamps it. */
 export type ALOutboundSettlementFact = ALOutboundUnstampedSettlement<ALDeliverySettlement>;
@@ -308,6 +390,17 @@ export interface ALOutboundEnqueueResult {
     readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
+/** Every settlement variant without the three fields the runtime stamps for its owners. */
+type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
+    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
+    never;
+
+/** The lane one admission goes to and the planner its admission reads the plan through. */
+interface ALOutboundPlannedAdmission<TPrepared> {
+    readonly lane: ALOutboundStoreLane<TPrepared>;
+    readonly planner: ALOutboundPlanner<TPrepared>;
+}
+
 export namespace ALOutboundMessageRuntime {
     /** An admitted message sent again with this plan, as one repair attempt of its own identity. */
     export interface Retransmission<TPrepared> {
@@ -321,6 +414,7 @@ export namespace ALOutboundMessageRuntime {
         | Readonly<{ status: 'rejected'; reason: string; }>
         | Readonly<{ status: 'not-ready'; reason: string; retryAfterMs: number; }>;
     export interface SendLifecycle {
+        readonly deferReceiptObservation?: ALWorkObservationDeferral;
         readonly canonicalMessage: ALMessage;
         /** This message's own signal: `cancel(msgId)` aborts it directly; disposal aborts every live one. */
         readonly signal: AbortSignal;
@@ -344,13 +438,15 @@ export namespace ALOutboundMessageRuntime {
         readonly storageRecovery: ALStorageRecoveryReporter | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
+        /** The memory pair a checkpointed admission goes to; `undefined` sends it to the volatile pair. */
+        readonly checkpointStores: ALCheckpointOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
         readonly clock: Clock;
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
         readonly browserLocks: ALBrowserLocks | undefined;
-        /** Which runtime of the session drains the durable pair; only the durable lane takes it. */
+        /** Which runtime of the session drains the durable pair; only the durable lane's work follows it. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
@@ -361,6 +457,8 @@ export namespace ALOutboundMessageRuntime {
     }
 
     export interface Dependencies<TPrepared> extends Resources<TPrepared> {
+        /** Absent outside explicitly enabled private server receipt capture. */
+        readonly receiptWorkCapture?: ALOutboundReceiptWorkEvidence.Capture<TPrepared>;
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
@@ -389,6 +487,12 @@ export namespace ALOutboundMessageRuntime {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        /**
+         * The peers every frame of this composition passes through, whether or not the send tracks a receipt
+         * with them: a WS client names its server. Absent, the composition has no fixed hop (an RTC mesh plans
+         * its own repairs; the WS server is the hop), so only a plan's tracked next hops are the sender's own.
+         */
+        readonly hopPeerIds?: readonly string[];
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALDeliverySettlementSink | undefined;
     }
@@ -399,18 +503,23 @@ export namespace ALOutboundMessageRuntime {
  * cancellation, the settlement guard and disposal.
  *
  * - An admission (`enqueueIfAbsent`, each member of `enqueueAllIfAbsent`) goes to the lane its plan's
- *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
- *   is computed once and handed to that lane's admission of the same message, so the admission never
- *   plans the message twice. The lane over the memory pair states no admission durable.
+ *   `lane` names: the durability decision (`resolveALOutboundStoreDurability`) on every browser planner.
+ *   A runtime without a checkpoint pair sends a `checkpoint` plan to its volatile lane, and one without
+ *   either to its only lane, the durable one (the server's planner never names `checkpoint`). The plan is
+ *   computed once and handed to that lane's admission of the same message, so the admission never plans
+ *   the message twice. The volatile lane states no admission durable; the
+ *   checkpoint lane states one durable only in the runtime that owns the session's work, which saves it.
  * - Members with different durability plans stay in one logical enqueue group but route to separate store lanes.
  *   Each lane may commit its members together or individually; there is no cross-store atomicity.
- * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
- *   message (a memory read), else to the durable lane.
+ * - A control, a receipt and a retransmission go to the memory lane that owns the target message (a
+ *   memory read), else to the durable lane.
  * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
  * - Only the durable lane admits foreign dequeue rows. The volatile lane names none and takes no
  *   browser lock, since Web Locks guard cross-tab IndexedDB commits and memory is per tab.
- * - The volatile lane's worker id is `${effectWorkerId}/volatile`. It sweeps its expired rows from its
- *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
+ * - The volatile lane's worker id is `${effectWorkerId}/volatile`, the checkpoint lane's
+ *   `${effectWorkerId}/checkpoint`. Each sweeps its expired rows from its own work round, at most once per
+ *   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock. Every runtime of the session runs its
+ *   checkpoint lane's work from its own memory.
  * - An ordering or supersedence track whose messages declare different durabilities is split between
  *   the lanes; no caller declares one that way.
  * - Duplicate detection is per lane: a msgId the memory lane admitted is invisible to the IndexedDB lane,
@@ -421,14 +530,16 @@ export namespace ALOutboundMessageRuntime {
  *   send its storage refused: that admission committed nothing, so the memory lane holds the only copy.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
-    private readonly sendControls = new ALOutboundSendControls();
+    private readonly sendControls: ALOutboundSendControls;
     private readonly durable: ALOutboundStoreLane<TPrepared>;
     private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
+    private readonly checkpoint: ALOutboundStoreLane<TPrepared> | undefined;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
+        this.sendControls = new ALOutboundSendControls({ nowMs: () => dependencies.clock.nowMs() });
         this.durable = new ALOutboundStoreLane({
             lane: 'durable',
             stores: dependencies,
@@ -437,6 +548,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             browserLocks: dependencies.browserLocks,
             durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
+            checkpoint: undefined,
             canonicalHandoff: new ALOutboundCanonicalHandoff({
                 namespace: dependencies.admissionStore.namespace,
                 limit: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT
@@ -453,24 +565,45 @@ export class ALOutboundMessageRuntime<TPrepared> {
             browserLocks: undefined,
             durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
+            checkpoint: undefined,
             canonicalHandoff: undefined,
             runtime: dependencies,
             sendControls: this.sendControls,
             settlements: (fact) => this.emitSettlement(fact, 'volatile')
         });
+        this.checkpoint = dependencies.checkpointStores === undefined
+            ? undefined
+            : this.createCheckpointLane(dependencies.checkpointStores);
     }
 
-    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    /**
+     * What the storage of the durable lane answered. The memory pairs are always ready; the checkpoint
+     * lane's readiness is its restore, which states a failure of its own on the checkpoint store's health.
+     */
     async ready(): Promise<ALStorageReadiness.Outcome> {
-        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready(), this.checkpoint?.ready()]);
         return durable;
     }
 
-    dispose(): void {
+    /** Aborts transports and every lane synchronously, then joins their owned work and releases. */
+    async dispose(): Promise<void> {
         this.disposed = true;
-        this.durable.dispose();
-        this.volatile?.dispose();
         this.sendControls.dispose();
+        const disposed = await Promise.allSettled([
+            this.durable.dispose(),
+            this.volatile?.dispose(),
+            this.checkpoint?.dispose()
+        ]);
+        for (const outcome of disposed) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+        }
+    }
+
+    /** Starts the checkpoint now, as a hidden or frozen page may run nothing later; never awaited. */
+    flushCheckpoint(): void {
+        this.checkpoint?.flushCheckpoint();
     }
 
     get sendSignal(): AbortSignal {
@@ -478,10 +611,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Cancels one message for this owner's lifetime. A message the owner never admitted is still
-     * remembered, so a row later claimed for it completes without sending; a message with a live
-     * attempt has that attempt's transport signal aborted. Idempotent: only the first call states the
-     * `cancelled` settlement.
+     * Cancels one message for the durable row retention (`DEFAULT_AL_REPOSITORY_TTL_MS`). A message the owner never
+     * admitted is still remembered, so a row later claimed for it completes without sending; a message with a live
+     * attempt has that attempt's transport signal aborted. Idempotent within the retention: only the first call
+     * states the `cancelled` settlement.
      */
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
@@ -507,6 +640,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         await (await this.readLaneForMessage(msgId)).endReceipt(msgId);
     }
 
+    /**
+     * Only a plan made here (`planAdmission`) states a congestion `drop`: an explicit `dispatchPlan` writes none, and
+     * its callers, the relay forwards and the WS server queue box, never set `congestionDrop`.
+     */
     async enqueueIfAbsent(
         msg: ALMessage,
         dispatchPlan?: ALOutboundDispatchPlan<TPrepared>
@@ -599,8 +736,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /**
-     * Plans the message once, for the lane its plan names. A planner that throws is left to the durable
-     * lane's admission, which plans it again and states that failure where a single send always has.
+     * Plans the message once, for the lane its plan names, and states a congestion drop of that plan. A planner
+     * that throws is left to the durable lane's admission, which plans it again and states that failure where a
+     * single send always has.
      */
     private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
@@ -610,6 +748,16 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
+        }
+        if (plan.congestionDrop !== undefined) {
+            writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
+                kind: 'congestion',
+                carrier: this.dependencies.carrier,
+                cause: plan.congestionDrop.cause,
+                action: 'drop',
+                priority: plan.congestionDrop.priority,
+                msgId: msg.id.msgId
+            });
         }
         const lane = this.resolveLaneForPlan(plan);
         const bounded = lane === this.volatile
@@ -622,14 +770,48 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
-    /** The lane a durable plan names, or the only lane of a runtime with one backend. */
+    /**
+     * The lane a plan names. A checkpointed plan without a checkpoint pair stays in memory; a runtime with
+     * one backend sends every plan to it.
+     */
     private resolveLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
-        return plan.persist || this.volatile === undefined ? this.durable : this.volatile;
+        switch (plan.lane) {
+            case 'volatile':
+                return this.volatile ?? this.durable;
+            case 'checkpoint':
+                return this.checkpoint ?? this.volatile ?? this.durable;
+            case 'durable':
+                return this.durable;
+        }
     }
 
-    /** A memory read, so a control about a volatile message never reaches IndexedDB. */
+    /** Memory reads, so a control about a message in memory never reaches IndexedDB. */
     private async readLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
-        return this.volatile !== undefined && await this.volatile.ownsMessage(msgId) ? this.volatile : this.durable;
+        for (const lane of [this.volatile, this.checkpoint]) {
+            if (lane !== undefined && await lane.ownsMessage(msgId)) {
+                return lane;
+            }
+        }
+        return this.durable;
+    }
+
+    /** Admits from memory in every runtime of the session; the pair's checkpoint was built under the connect's claim. */
+    private createCheckpointLane(stores: ALCheckpointOutboundRuntimeStores<TPrepared>): ALOutboundStoreLane<TPrepared> {
+        const { dependencies } = this;
+        return new ALOutboundStoreLane({
+            lane: 'checkpoint',
+            stores,
+            workerId: `${dependencies.effectWorkerId}/checkpoint`,
+            dequeueTypes: new Set<string>(),
+            browserLocks: undefined,
+            durableWorkOwnership: undefined,
+            evictExpired: stores.evictExpired,
+            checkpoint: stores.checkpoint,
+            canonicalHandoff: undefined,
+            runtime: dependencies,
+            sendControls: this.sendControls,
+            settlements: (fact) => this.emitSettlement(fact, 'checkpoint')
+        });
     }
 
     /** An undecodable control goes to the durable lane, which answers it `not-handled`. */
@@ -696,12 +878,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 }
 
-/** The lane one admission goes to and the planner its admission reads the plan through. */
-interface ALOutboundPlannedAdmission<TPrepared> {
-    readonly lane: ALOutboundStoreLane<TPrepared>;
-    readonly planner: ALOutboundPlanner<TPrepared>;
-}
-
 /** The plan the router already made for this message, so its admission does not plan it twice. */
 function toPlannedOnce<TPrepared>(
     planned: ALMessage,
@@ -712,4 +888,50 @@ function toPlannedOnce<TPrepared>(
         msg === planned && authority === undefined
             ? plan
             : planner(msg, authority);
+}
+
+/** The congestion decision behind a handling plan's `overloaded` or `congested` drop; `undefined` for every other plan. */
+export function toALOutboundCongestionDrop(
+    plan: Pick<ALMessageHandlingPlan, 'dropReasonCode' | 'congestion'>
+): ALOutboundCongestionDrop | undefined {
+    const { cause, priority } = plan.congestion;
+    const congestionDropped = plan.dropReasonCode === 'overloaded' || plan.dropReasonCode === 'congested';
+    return congestionDropped && cause !== undefined ? { cause, priority } : undefined;
+}
+
+/**
+ * A message its carrier holds back at submission because its channel or socket cannot take it now (D186): every held
+ * message of the page, relay forwards and controls included, not only this session's own sends.
+ */
+export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongestionDeferralInput): void {
+    const { message } = input;
+    const policy = normalizeALQosPolicy(
+        message,
+        resolveALQosNormalizationInput(
+            message,
+            { direction: 'outbound', selfPeerId: input.selfPeerId },
+            input.qosProvider
+        )
+    );
+    writeALOutboundRuntimeDiagnostic(input.diagnostics, {
+        kind: 'congestion',
+        carrier: input.carrier,
+        cause: 'backpressured',
+        action: 'defer',
+        priority: policy.effective.congestion.opts.priority,
+        msgId: message.id.msgId
+    });
+}
+
+/** A throwing sink changes nothing the runtime or its carrier decided: the diagnostic follows the decision. */
+export function writeALOutboundRuntimeDiagnostic(
+    diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined,
+    event: ALOutboundRuntimeDiagnosticsEvent
+): void {
+    try {
+        diagnostics?.(event);
+    }
+    catch (error) {
+        console.error('AL outbound runtime diagnostics sink failed', error);
+    }
 }

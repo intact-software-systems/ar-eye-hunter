@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import type { ALStoreDurability } from '@shared/alm/al-runtime-stores.ts';
 import {
     applyALOutboundCapturedPolicy,
+    captureALOutboundPolicy,
     type ALOutboundCapturedPolicy
 } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
@@ -83,6 +85,28 @@ describe('a re-plan under the policy its message was admitted with', () => {
     });
 });
 
+describe('the lane of a re-plan under its captured policy', () => {
+    it.each([
+        { lane: 'volatile' as const, persist: false },
+        { lane: 'checkpoint' as const, persist: true },
+        { lane: 'durable' as const, persist: true }
+    ])('captures a $lane plan as persist $persist', ({ lane, persist }) => {
+        expect(captureALOutboundPolicy(replan({}, lane)).persist).toBe(persist);
+    });
+
+    it.each([
+        { planned: 'checkpoint' as const, persist: true, lane: 'checkpoint' },
+        { planned: 'durable' as const, persist: true, lane: 'durable' },
+        { planned: 'volatile' as const, persist: false, lane: 'volatile' },
+        { planned: 'volatile' as const, persist: true, lane: 'durable' },
+        { planned: 'checkpoint' as const, persist: false, lane: 'volatile' }
+    ])('keeps a $planned re-plan under persist $persist in the $lane lane', ({ planned, persist, lane }) => {
+        const applied = applyALOutboundCapturedPolicy(replan({}, planned), { ...captured(null), persist });
+
+        expect(applied.lane).toBe(lane);
+    });
+});
+
 function tracking(
     mode: ALOutboundAckTrackingPlan['mode'],
     expectedPeerIds: readonly string[],
@@ -110,12 +134,13 @@ function captured(ackTracking: ALOutboundAckTrackingPlan | null): ALOutboundCapt
 }
 
 function replan(
-    overrides: Pick<ALOutboundDispatchPlan<never>, 'ackTracking' | 'receiptNextHopPeerIds'>
+    overrides: Pick<ALOutboundDispatchPlan<never>, 'ackTracking' | 'receiptNextHopPeerIds'>,
+    lane: ALStoreDurability = 'volatile'
 ): ALOutboundDispatchPlan<never> {
     return {
         msg: MESSAGE,
         dropReasonCode: undefined,
-        persist: false,
+        lane,
         preparedMessages: [],
         ...overrides
     };

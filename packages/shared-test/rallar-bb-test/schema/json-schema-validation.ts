@@ -22,6 +22,7 @@ export type JsonSchema = Readonly<{
     readonly minimum?: number;
     readonly exclusiveMinimum?: number;
     readonly maximum?: number;
+    readonly pattern?: string;
     readonly minItems?: number;
     readonly examples?: readonly unknown[];
     readonly default?: unknown;
@@ -122,6 +123,16 @@ function validateAlternatives(input: SchemaNodeInput): void {
             // This diagnostic selection must never decide whether the oneOf accepts a value.
             errors.push(...toValidationErrors({ ...input, schema: discriminated.schema }));
         }
+        else if (matches === 0 && isJsonRecordValue(value) && typeof value.operator === 'string') {
+            const selected = schema.oneOf.find((candidate) =>
+                candidate.properties?.operator?.const === value.operator
+            ) ?? schema.oneOf.find((candidate) => candidate.properties?.operator?.enum !== undefined);
+            errors.push(
+                ...(selected
+                    ? toValidationErrors({ ...input, schema: selected })
+                    : [{ path, message: 'Expected value to match exactly one schema, matched 0.' }])
+            );
+        }
         else if (matches !== 1) {
             errors.push({ path, message: `Expected value to match exactly one schema, matched ${matches}.` });
         }
@@ -144,6 +155,9 @@ function validateBounds(input: SchemaNodeInput): void {
     }
     if (typeof schema.maximum === 'number' && typeof value === 'number' && value > schema.maximum) {
         errors.push({ path, message: `Expected number <= ${schema.maximum}.` });
+    }
+    if (schema.pattern !== undefined && typeof value === 'string' && !new RegExp(schema.pattern).test(value)) {
+        errors.push({ path, message: `Expected string matching ${schema.pattern}.` });
     }
     if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) {
         errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });

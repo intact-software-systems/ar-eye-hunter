@@ -1,6 +1,6 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
-    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -8,6 +8,7 @@ import {
     vi
 } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type {
@@ -25,7 +26,7 @@ import {
     newALUnicastMessage,
     QueueBoxUtilities
 } from '@shared/mod.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -39,11 +40,13 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 describe('ALOutboundMessageRuntime', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-        vi.restoreAllMocks();
-    });
+    beforeEach(() =>
+        onTestFinished(() => {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            vi.restoreAllMocks();
+        })
+    );
 
     it('replays a deferred send using its supplied store, clock, and queue engine', async () => {
         vi.useFakeTimers();
@@ -63,6 +66,7 @@ describe('ALOutboundMessageRuntime', () => {
             storageHealth: undefined,
             storageRecovery: undefined,
             volatileStores: undefined,
+            checkpointStores: undefined,
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
@@ -72,10 +76,10 @@ describe('ALOutboundMessageRuntime', () => {
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             random: () => 0,
             diagnostics: undefined,
-            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+            toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ resourceId: msg.route.resourceId }] }),
-            planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ resourceId: msg.route.resourceId }] }),
+            planDequeuedMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }),
             afterDequeueAdmission: undefined,
             planRepairMessage: undefined,
             sendPreparedMessage: async (prepared) => {
@@ -114,7 +118,7 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] })
         });
         onTestFinished(() => runtime.dispose());
         const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
@@ -139,7 +143,7 @@ describe('ALOutboundMessageRuntime', () => {
                 dropReason: 'No route for outbound enqueue',
                 dropReasonCode: 'no-route',
                 msg: msg,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             })
         });
@@ -149,7 +153,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(result.verdict).toEqual({ kind: 'unroutable', reason: 'no-route', detail: 'No route for outbound enqueue' });
         expect(result.reason).toBe('No route for outbound enqueue');
         expect(result.entries).toEqual([]);
-        runtime.dispose();
     });
 
     it('persists an outbox entry when enqueue has no prepared transport route', async () => {
@@ -165,7 +168,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             })
         });
@@ -176,7 +179,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(result.entries).toHaveLength(1);
         expect(sent).toEqual([]);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
-        runtime.dispose();
     });
 
     it('returns accepted with a retained canonical fact for immediate prepared dispatch', async () => {
@@ -192,7 +194,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
@@ -206,7 +208,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         expect(await reserveOutbox(outbox)).toHaveLength(0);
-        runtime.dispose();
     });
 
     it('stops invalidating the sender revision when acknowledgement ownership expires', async () => {
@@ -221,7 +222,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }],
                 ackTracking: {
                     enabled: true,
@@ -238,11 +239,11 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
 
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
-        const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] });
+        const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile' as const, preparedMessages: [] });
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -269,7 +270,7 @@ describe('ALOutboundMessageRuntime', () => {
         });
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -290,7 +291,6 @@ describe('ALOutboundMessageRuntime', () => {
             intent: 'enqueue'
         });
         expect(afterLateAck.clientRecord).toEqual(beforeLateAck.clientRecord);
-        runtime.dispose();
     });
 
     it('retries a not-ready transport after the requested delay across restart', async () => {
@@ -310,7 +310,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
@@ -319,7 +319,7 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(0);
 
         expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
-        runtime.dispose();
+        await runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: async (prepared) => {
@@ -327,7 +327,7 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(24);
@@ -337,7 +337,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
-        restarted.dispose();
     });
 
     it('does not replay a no-targets send after restart', async () => {
@@ -355,7 +354,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             })
         });
@@ -365,7 +364,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
-        runtime.dispose();
+        await runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: async () => {
@@ -373,12 +372,11 @@ describe('ALOutboundMessageRuntime', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(30_000);
         expect(sent).toEqual([]);
-        restarted.dispose();
     });
 
     it('uses browser Web Locks around outbound commits when available', async () => {
@@ -399,7 +397,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             })
         });
@@ -411,7 +409,6 @@ describe('ALOutboundMessageRuntime', () => {
             { mode: 'exclusive' },
             expect.any(Function)
         );
-        runtime.dispose();
     });
 
     it('releases browser Web Locks before draining committed send effects', async () => {
@@ -445,10 +442,12 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             })
         });
+
+        onTestFinished(() => sendGate.resolve());
 
         const enqueue = runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock-drain'));
         await waitUntil(() => events.includes('send-start'));
@@ -461,7 +460,6 @@ describe('ALOutboundMessageRuntime', () => {
         await waitUntil(() => events.includes('send-end'));
 
         expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start', 'send-end']);
-        runtime.dispose();
     });
 
     it('waits for effects committed while another drain is running', async () => {
@@ -487,10 +485,15 @@ describe('ALOutboundMessageRuntime', () => {
                 return {
                     msg: msg,
                     dropReasonCode: undefined,
-                    persist: false,
+                    lane: 'volatile',
                     preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }]
                 };
             }
+        });
+
+        onTestFinished(() => {
+            firstGate.resolve();
+            secondGate.resolve();
         });
 
         const first = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-first'));
@@ -509,7 +512,6 @@ describe('ALOutboundMessageRuntime', () => {
         secondGate.resolve();
         await first;
         expect(started).toEqual(['msg-drain-first', 'msg-drain-second']);
-        runtime.dispose();
     });
 
     it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
@@ -527,7 +529,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             })
         });
@@ -563,7 +565,6 @@ describe('ALOutboundMessageRuntime', () => {
                 completedCount: 1
             })
         );
-        runtime.dispose();
     });
 
     it('returns an outbox entry when enqueue is persistent', async () => {
@@ -574,7 +575,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: []
             })
         });
@@ -592,7 +593,6 @@ describe('ALOutboundMessageRuntime', () => {
                 msgId: msg.id.msgId
             }
         });
-        runtime.dispose();
     });
 
     it('returns duplicate with the existing outbox entry when a persistent message is enqueued twice', async () => {
@@ -603,7 +603,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: []
             })
         });
@@ -617,7 +617,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
-        runtime.dispose();
     });
 
     it('returns superseded with no entries when an older superseded message is enqueued', async () => {
@@ -628,7 +627,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [],
                 supersedenceTracking: {
                     enabled: true,
@@ -669,7 +668,6 @@ describe('ALOutboundMessageRuntime', () => {
                 msgId: newer.id.msgId
             }
         });
-        runtime.dispose();
     });
 
     it('triggers repair dispatches after acknowledgement timeouts', async () => {
@@ -685,7 +683,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -704,7 +702,7 @@ describe('ALOutboundMessageRuntime', () => {
             planRepairMessage: async (msg, request) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -733,8 +731,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         await vi.advanceTimersByTimeAsync(102);
         expect(sent).toHaveLength(2);
-
-        runtime.dispose();
     });
 
     it('retries a `receiver` receipt toward the logical recipients it has not counted', async () => {
@@ -746,14 +742,14 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], nextHopPeerIds: ['r1', 'r2'], mode: 'receiver' },
                 repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
             }),
             planRepairMessage: async (msg, request) => {
                 retried.push(request.failedPeerIds);
-                return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] };
+                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] };
             }
         });
         const msg = createOutboundMessage('msg-receiver-retry');
@@ -763,7 +759,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(
             await runtime.acceptControlMessage(
                 newALAckControlMessage(
-                    { v: 2, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
+                    { v: 3, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
                     {
                         ackedMsgId: msg.id.msgId,
                         fromPeerId: 'relay',
@@ -781,7 +777,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(102);
 
         expect(retried).toEqual([['r2']]);
-        runtime.dispose();
     });
 
     it('hands a retry the audience the message was admitted to, so the planner never widens it (D24, D43)', async () => {
@@ -793,7 +788,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1'], nextHopPeerIds: ['r1'], mode: 'receiver' },
                 repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
@@ -801,7 +796,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
             planRepairMessage: async (msg, request) => {
                 audiences.push(request.admittedAudience);
-                return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] };
+                return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] };
             }
         });
         await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-admitted-audience-retry'));
@@ -809,7 +804,6 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(102);
 
         expect(audiences).toEqual([['r1']]);
-        runtime.dispose();
     });
 
     it('stops pending acknowledgement timers when disposed', async () => {
@@ -825,7 +819,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -839,16 +833,17 @@ describe('ALOutboundMessageRuntime', () => {
             planRepairMessage: async (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }]
             })
         });
 
         await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-dispose'));
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         await vi.advanceTimersByTimeAsync(200);
         expect(sent).toHaveLength(1);
+        await disposing;
     });
 
     it('retransmits cached missing ordered messages when a gap nack arrives', async () => {
@@ -862,7 +857,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
                     enabled: true,
@@ -894,7 +889,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: seq2.id.msgId,
                     fromPeerId: 'peer-1',
@@ -903,7 +898,7 @@ describe('ALOutboundMessageRuntime', () => {
                     observedAtEpochMs: 1,
                     orderingKey: toALOrderingTrackKey(seq1),
                     expectedSeq: 1,
-                    missingSeqs: [1]
+                    missingRanges: [{ from: 1, to: 1 }]
                 }
             ),
             'peer'
@@ -929,7 +924,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
                     enabled: true,
@@ -943,7 +938,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -968,7 +963,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('admits a durable prepared attempt for a not-yet-in-sync retry without reopening the canonical fact', async () => {
@@ -990,7 +984,7 @@ describe('ALOutboundMessageRuntime', () => {
                     ? {
                         msg: msg,
                         dropReasonCode: undefined,
-                        persist: true,
+                        lane: 'durable',
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
                             enabled: true,
@@ -1001,7 +995,7 @@ describe('ALOutboundMessageRuntime', () => {
                     : {
                         msg: msg,
                         dropReasonCode: undefined,
-                        persist: false,
+                        lane: 'volatile',
                         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                         retryTracking: {
                             enabled: true,
@@ -1015,7 +1009,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-not-synced', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1034,7 +1028,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         expect(await reserveOutbox(outbox)).toEqual([]);
-        runtime.dispose();
     });
 
     it('coalesces duplicate not-yet-in-sync nacks while a retry is pending', async () => {
@@ -1050,7 +1043,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
                     enabled: true,
@@ -1064,7 +1057,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-not-synced-1', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1077,7 +1070,7 @@ describe('ALOutboundMessageRuntime', () => {
         );
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-not-synced-2', ts: 2, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',
@@ -1095,7 +1088,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('counts retransmission rounds rather than duplicate not-yet-in-sync nack deliveries', async () => {
@@ -1111,7 +1103,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 retryTracking: {
                     enabled: true,
@@ -1124,7 +1116,7 @@ describe('ALOutboundMessageRuntime', () => {
         const nack = (serverSnapshotVersion = 1) =>
             newALNackControlMessage(
                 {
-                    v: 2,
+                    v: 3,
                     msgId: `control-duplicate-not-synced-${serverSnapshotVersion}`,
                     ts: serverSnapshotVersion,
                     senderId: 'peer-1'
@@ -1155,7 +1147,6 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('retains immutable message rows while supersedence skips the older physical attempt', async () => {
@@ -1166,7 +1157,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [],
                 supersedenceTracking: {
                     enabled: true,
@@ -1225,7 +1216,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [],
                 supersedenceTracking: {
                     enabled: true,
@@ -1307,7 +1298,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -1326,7 +1317,7 @@ describe('ALOutboundMessageRuntime', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -1337,11 +1328,13 @@ describe('ALOutboundMessageRuntime', () => {
             })
         });
 
+        onTestFinished(() => sendCompleted.resolve());
+
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;
         await runtime.acceptControlMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'self',
@@ -1362,7 +1355,6 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        runtime.dispose();
     });
 
     it('does not resend successful prepared messages when a later prepared send fails', async () => {
@@ -1384,7 +1376,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     { peerId: 'peer-1' },
                     { peerId: 'peer-2' }
@@ -1397,7 +1389,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         await vi.advanceTimersByTimeAsync(50);
         expect(sent).toEqual(['peer-1', 'peer-2']);
-        runtime.dispose();
     });
 
     it('dispatches durable prepared repair work while retaining one completed canonical payload', async () => {
@@ -1412,7 +1403,7 @@ describe('ALOutboundMessageRuntime', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
                     enabled: true,
@@ -1423,7 +1414,7 @@ describe('ALOutboundMessageRuntime', () => {
             planRepairMessage: async (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
@@ -1432,7 +1423,7 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(
             newALNackControlMessage(
-                { v: 2, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1' },
+                { v: 3, msgId: 'control-persisted-gap', ts: 1, senderId: 'peer-1' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-1',

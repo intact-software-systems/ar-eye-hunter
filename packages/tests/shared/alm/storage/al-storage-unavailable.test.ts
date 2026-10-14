@@ -1,11 +1,16 @@
 import * as FakeIndexedDb from 'fake-indexeddb';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
-    ALStorageResetBlockedError,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import {
@@ -60,16 +65,9 @@ describe('toALStorageUnavailable', () => {
         });
     });
 
-    // The delete that stays blocked is pinned against the real database in browser-al-storage-reset.test.ts;
-    // it waits the 5 s timeout in real time, so the classification reads a constructed error.
-    it('reads reset-blocked from the blocked reset error', () => {
-        const error = new ALStorageResetBlockedError('al-runtime');
-
-        expect(error.name).toBe('ALStorageResetBlockedError');
-        expect(toALStorageUnavailable(error)).toEqual({
-            cause: 'reset-blocked',
-            detail: 'IndexedDB database "al-runtime" delete is blocked by an open connection'
-        });
+    it('classifies a supplied reset-blocked descriptor without an opener reset engine', () => {
+        const error = new ALStorageUnavailableError({ cause: 'reset-blocked', detail: 'External reset was blocked' });
+        expect(toALStorageUnavailable(error)).toEqual({ cause: 'reset-blocked', detail: 'External reset was blocked' });
     });
 
     // fake-indexeddb has no storage quota, so the classification reads a constructed DOMException.

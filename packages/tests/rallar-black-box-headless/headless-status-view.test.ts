@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { renderHeadlessStatus } from '../../../apps/rallar-black-box-headless/src/status-view.ts';
 import type { RallarBlackBoxBrowserControlAgentSnapshot } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
     return {
@@ -11,7 +17,9 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
         runState: 'waiting',
         lastAction: 'Remote control agent configured; connecting',
         bootstrap: {
+            eventHistory: { mode: 'full' },
             mode: 'control-agent',
+            routineBrowserDiagnostics: 'enabled',
             autoConnect: true,
             providerMode: 'browser-rallar',
             controlUrl: 'wss://control.example.test/control',
@@ -36,31 +44,9 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             source: 'url',
             issues: []
         },
-        control: {
-            state: 'registered',
-            url: 'wss://control.example.test/control',
-            runId: 'run-1',
-            agentId: 'agent-1',
-            lastHeartbeatAtEpochMs: 2_000,
-            reconnectAttempt: 0,
-            sentCount: 3,
-            receivedCount: 1,
-            identity: {
-                principalId: 'agent-1',
-                clientId: 'agent-1',
-                sessionId: 'agent-1',
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'room-1',
-                region: 'eu-north',
-                provider: 'hetzner',
-                datacenter: 'fsn1',
-                hostId: 'host-1',
-                sessionLabel: 'agent-1:agent-1',
-                updatedAtEpochMs: 1_000
-            }
-        },
+        control: controlSnapshot(),
         state: {
+            ...createRuntimeStateFixture([]),
             status: 'configured',
             commandHistory: [],
             events: [],
@@ -135,3 +121,30 @@ describe('headless status view', () => {
         );
     });
 });
+
+function controlSnapshot(): RallarBlackBoxBrowserControlAgentSnapshot['control'] {
+    return {
+        state: 'registered',
+        url: 'wss://control.example.test/control',
+        runId: 'run-1',
+        agentId: 'agent-1',
+        lastHeartbeatAtEpochMs: 2_000,
+        reconnectAttempt: 0,
+        sentCount: 3,
+        receivedCount: 1,
+        identity: {
+            principalId: 'agent-1',
+            clientId: 'agent-1',
+            sessionId: 'agent-1',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'room-1',
+            region: 'eu-north',
+            provider: 'hetzner',
+            datacenter: 'fsn1',
+            hostId: 'host-1',
+            sessionLabel: 'agent-1:agent-1',
+            updatedAtEpochMs: 1_000
+        }
+    };
+}

@@ -6,6 +6,7 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
@@ -13,6 +14,7 @@ import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
 } from '../../al-runtime-state-stores.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
@@ -33,11 +35,14 @@ export interface ALStoredOutboundMessage {
 }
 
 export interface ALOutboundCapturedPolicy {
+    /** Whether the copy outlives the volatile lane; the row keeps no finer lane. */
     readonly persist: boolean;
     readonly ackTracking: NonNullable<ALOutboundDispatchPlan<never>['ackTracking']> | null;
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
+    /** Kept only for a WS server publication whose admission mints its sequence, so a retained replay mints too. */
+    readonly mintsSequence?: true;
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
@@ -47,11 +52,12 @@ export interface ALOutboundCapturedPolicy {
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
     return {
-        persist: plan.persist,
+        persist: plan.lane !== 'volatile',
         ackTracking: plan.ackTracking ?? null,
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
+        ...(plan.mintsSequence ? { mintsSequence: true } : {}),
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
         ...(plan.sessionInvalidation === undefined
             ? {}
@@ -81,18 +87,22 @@ export function toALOutboundSentPolicy<TPrepared>(
         : stored;
 }
 
+export function toALOutboundCapturedLane(policy: ALOutboundCapturedPolicy): ALStoreDurability {
+    return policy.persist ? 'durable' : 'volatile';
+}
+
 export function applyALOutboundCapturedPolicy<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     policy: ALOutboundCapturedPolicy
 ): ALOutboundDispatchPlan<TPrepared> {
     return {
         ...plan,
-        persist: policy.persist,
+        lane: policy.persist === (plan.lane !== 'volatile') ? plan.lane : toALOutboundCapturedLane(policy),
         ackTracking: policy.ackTracking
             ? {
                 ...policy.ackTracking,
                 expectedPeerIds: plan.ackTracking?.expectedPeerIds ??
-                    (policy.ackTracking.mode === 'receiver'
+                    (isALLogicalReceiptMode(policy.ackTracking.mode)
                         ? policy.ackTracking.expectedPeerIds
                         : plan.receiptNextHopPeerIds ?? []),
                 expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
@@ -141,7 +151,10 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    ], ['mintsSequence', 'admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    if (policy.mintsSequence !== undefined && policy.mintsSequence !== true) {
+        throw new TypeError('Captured sequence minting is invalid');
+    }
     if (policy.sessionInvalidation !== undefined) {
         decodeALSessionInvalidationAuthority(policy.sessionInvalidation);
         if (policy.recipientScope !== undefined) {
@@ -270,7 +283,7 @@ export function decodeALOutboundNotYetInSyncRetry(
 }
 
 function requirePersistedALReceiptMode(value: PersistedALValue | undefined, label: string): void {
-    if (value !== 'hop' && value !== 'subtree' && value !== 'receiver') {
+    if (value !== 'hop' && value !== 'subtree' && value !== 'receiver' && value !== 'leader') {
         throw new TypeError(`Persisted AL ${label} is invalid`);
     }
 }

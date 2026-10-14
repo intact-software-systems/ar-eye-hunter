@@ -1,4 +1,4 @@
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 export function createBrowserQueueBoxEngine(): InboxOutboxEngine {
     const qboxEngine = new InboxOutboxEngine();

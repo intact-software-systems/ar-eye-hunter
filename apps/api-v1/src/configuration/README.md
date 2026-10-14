@@ -56,7 +56,9 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`, `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`,
   `RALLAR_TIMING_LOGS`.
-- ICE: `RALLAR_ICE_MODE`, `METERED_APP_NAME`, `METERED_REGION`.
+- ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
+  The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
+  All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.
 - CRDT: `RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON`.
 - Black-box token issue: `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`,
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
@@ -74,3 +76,12 @@ or derived fingerprints.
 
 Import the specific owner directly. There is deliberately no configuration barrel, fallback
 reader, compatibility alias, or legacy profile selector.
+
+The owned memory RTC fixture sets a finite per-principal allowance: standalone governed
+retention uses 101 (initial connect plus 100 reconnects), while governed default/all-scenarios
+use 20. The supported combined three-case diagnostic uses 106 for Charlie (2 default,
+3 all-scenarios, 101 retention); default plus retention uses 103. The fixture rejects
+inherited operational overrides without a governed case locator, mismatched budgets and
+contradictory case selectors before launching, and requires its own fresh API process.
+These fixture values are fingerprinted in B06's existing configuration/source observation.
+They do not change the product defaults or make earlier failed artifacts accepted evidence.

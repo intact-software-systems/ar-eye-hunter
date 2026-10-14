@@ -1,9 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import { InMemoryQueueBox } from '../../queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
-import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
 import { readALBrowserLocks } from '../storage/al-browser-locks.ts';
@@ -11,35 +12,18 @@ import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../wo
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
 import {
     ALOutboundMessageRuntime,
+    type ALCheckpointOutboundRuntimeStores,
     type ALOutboundRuntimeStores,
     type ALVolatileOutboundRuntimeStores
 } from './al-outbound-message-runtime.ts';
-
-const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;
-const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
-
-/** The dequeue-admission resilience a composition without its own shared breaker gets. */
-export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilience {
-    const duration = Temporal.Duration.from({ milliseconds: DEQUEUE_CIRCUIT_OPEN_MS });
-    return ResourceInboxResilience.createDefault({
-        circuitBreakerPolicy: new CircuitBreakerPolicy(
-            DEQUEUE_MAX_CONSECUTIVE_FAILURES,
-            duration,
-            duration,
-            duration
-        ),
-        initialRate: 1,
-        maxRate: 10,
-        concurrencyIncreaseStep: 1,
-        concurrencyReduceStep: 1
-    });
-}
 
 export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
     /** The memory pair a browser carrier routes volatile admissions to; a server keeps one backend. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<TPrepared>;
+    /** The memory pair a browser carrier routes checkpointed admissions to; absent, they go to `stores`. */
+    readonly checkpointStores?: ALCheckpointOutboundRuntimeStores<TPrepared>;
     readonly canonicalQueue?: QueueBoxResourceEntryRepository;
     readonly nowMs?: () => number;
     readonly random?: () => number;
@@ -66,12 +50,33 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'planDequeuedMessage'
                 | 'afterDequeueAdmission'
                 | 'planRepairMessage'
+                | 'hopPeerIds'
                 | 'diagnostics'
                 | 'settlements'
             >
         > {
     readonly outbox: QueueBoxResourceEntryRepository;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
+}
+
+const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;
+const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
+
+/** The dequeue-admission resilience a composition without its own shared breaker gets. */
+export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilience {
+    const duration = Temporal.Duration.from({ milliseconds: DEQUEUE_CIRCUIT_OPEN_MS });
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(
+            DEQUEUE_MAX_CONSECUTIVE_FAILURES,
+            duration,
+            duration,
+            duration
+        ),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 export function createDefaultALOutboundMessageRuntime<TPrepared>(
@@ -89,6 +94,7 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
         afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
+        hopPeerIds: dependencies.hopPeerIds,
         diagnostics: dependencies.diagnostics,
         settlements: dependencies.settlements
     });
@@ -120,6 +126,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         storageHealth: stores.storageHealth,
         storageRecovery: stores.storageRecovery,
         volatileStores: input.volatileStores,
+        checkpointStores: input.checkpointStores,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs },
         random: input.random ?? Math.random,

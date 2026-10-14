@@ -1,4 +1,6 @@
+import type { BrowserContext } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+
 import {
     expectFullStackApiReady,
     loginThroughUi,
@@ -19,16 +21,22 @@ test.describe('full-stack Rallar Quick Test WS delivery', () => {
         const suffix = uniqueSuffix();
         const groupName = `${config.roomId}-quick-${suffix}`;
         const contextA = await browser.newContext();
-        const contextB = await browser.newContext();
-        const pageA = await contextA.newPage();
-        const pageB = await contextB.newPage();
-
+        let contextB: BrowserContext | undefined;
         try {
-            await loginThroughUi(pageA, config, config.userA, {
+            contextB = await browser.newContext();
+            const pageA = await contextA.newPage();
+            const pageB = await contextB.newPage();
+            await loginThroughUi({
+                page: pageA,
+                config,
+                user: config.userA,
                 suffix: `quick-a-${suffix}`,
                 tab: 'quick-test'
             });
-            await loginThroughUi(pageB, config, config.userB, {
+            await loginThroughUi({
+                page: pageB,
+                config,
+                user: config.userB,
                 suffix: `quick-b-${suffix}`,
                 tab: 'quick-test'
             });
@@ -93,7 +101,7 @@ test.describe('full-stack Rallar Quick Test WS delivery', () => {
         finally {
             await Promise.all([
                 contextA.close(),
-                contextB.close()
+                contextB?.close()
             ]);
         }
     });

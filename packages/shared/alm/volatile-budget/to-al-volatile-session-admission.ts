@@ -4,6 +4,7 @@ import {
     computeALMessageEnvelopeBytes
 } from '../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ALVolatileSessionBudget } from './al-volatile-session-budget.ts';
 
 /**
@@ -24,7 +25,8 @@ export function toALVolatileSessionAdmission(
         msgId: msg.id.msgId,
         bytes: computeALMessageEnvelopeBytes(msg).right ?? AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
         deadlineAtMs,
-        nowMs
+        nowMs,
+        trackKey: toALOrderingTrackKey(msg)
     };
 }
 

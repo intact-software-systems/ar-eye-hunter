@@ -34,23 +34,24 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
     createAutoAuthorizingClientStateService,
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
@@ -71,6 +72,7 @@ interface SnapshotProducerFixture {
 }
 
 interface ForeignReceiverFixture {
+    readonly service: WsQueueBoxServerService;
     readonly native: TestWebSocket;
     readonly engine: InboxOutboxEngine;
     readonly stores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
@@ -434,23 +436,7 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
     const database = createAppInboxTestDatabase(queue, results, {
         runtimeRepository: repository,
         withTransaction: async (write) => {
-            if (state.removeSessionBeforeWrite) {
-                await repository.deleteByKey(
-                    CLIENT_STATE_SESSIONS_NAMESPACE,
-                    clientStateSessionStorageKey({
-                        ...SCOPE,
-                        principalId: 'alice',
-                        clientInstanceId: 'browser',
-                        sessionId: 'alice-session'
-                    })
-                );
-            }
-            if (state.removeMemberBeforeWrite) {
-                await repository.deleteByKey(
-                    MEMBERS_NAMESPACE,
-                    groupStateMemberStorageKey({ ...SCOPE, groupId: 'shared-room', principalId: 'bob' })
-                );
-            }
+            await removeSnapshotAudienceBeforeWrite(repository, state);
             state.inTransaction = true;
             try {
                 return await write();
@@ -493,6 +479,30 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         clientStateService: clientState
     }, { serviceId: 'producer-server' });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
+}
+
+/** Changes durable membership after the accepted observation and before transaction entry. */
+async function removeSnapshotAudienceBeforeWrite(
+    repository: FakeRuntimeStateRepository,
+    state: SnapshotProducerFixture['state']
+): Promise<void> {
+    if (state.removeSessionBeforeWrite) {
+        await repository.deleteByKey(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            clientStateSessionStorageKey({
+                ...SCOPE,
+                principalId: 'alice',
+                clientInstanceId: 'browser',
+                sessionId: 'alice-session'
+            })
+        );
+    }
+    if (state.removeMemberBeforeWrite) {
+        await repository.deleteByKey(
+            MEMBERS_NAMESPACE,
+            groupStateMemberStorageKey({ ...SCOPE, groupId: 'shared-room', principalId: 'bob' })
+        );
+    }
 }
 
 function upsertAliceProfile(
@@ -621,9 +631,119 @@ function createForeignReceiver(repository: FakeRuntimeStateRepository, sessionId
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry),
         readAuthenticatedConnectionScope: () => ({ scope: authentication.scope, expiresAtEpochMs: Date.now() + 60_000 })
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
-    });
-    return { native, engine, stores, reader, socket, authentication };
+    const fixture = { service, native, engine, stores, reader, socket, authentication };
+    onTestFinished(() => closeForeignReceiver(fixture));
+    return fixture;
 }
+
+/** The foreign test fixture owns its service and its separately supplied engine. */
+async function closeForeignReceiver(fixture: Pick<ForeignReceiverFixture, 'service' | 'engine'>): Promise<void> {
+    const outcomes = await Promise.allSettled([fixture.service.dispose(), fixture.engine.stop()]);
+    const failures = outcomes.flatMap((outcome) => outcome.status === 'rejected' ? [toError(outcome.reason)] : []);
+    const primary = failures[0];
+    if (!primary) {
+        return;
+    }
+    if (failures.length > 1) {
+        try {
+            console.error('Foreign snapshot receiver secondary cleanup failed', new AggregateError(failures.slice(1), 'Foreign receiver cleanup'));
+        }
+        catch {
+            // Reporting cannot replace the original disposal failure.
+        }
+    }
+    throw primary;
+}
+
+describe('foreign snapshot receiver cleanup ownership', () => {
+    it('joins real engine work when service disposal rejects', async () => {
+        const fixture = createForeignReceiver(new FakeRuntimeStateRepository());
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let available = true;
+        let workCompleted = false;
+        fixture.engine.includeTask('held-foreign-work', {
+            name: 'held-foreign-work',
+            maxConcurrency: () => 1,
+            isWork: () => available,
+            runnable: async () => {
+                available = false;
+                entered.resolve();
+                await release.promise;
+                workCompleted = true;
+            },
+            ongoingTasks: []
+        });
+        await fixture.engine.executeOnce();
+        await entered.promise;
+        const serviceFailure = new Error('foreign service disposal failed');
+        const failedService = Promise.withResolvers<void>();
+        const disposal = vi.spyOn(fixture.service, 'dispose').mockImplementation(async () => {
+            failedService.resolve();
+            throw serviceFailure;
+        });
+        let cleanupCompleted = false;
+        const closing = closeForeignReceiver(fixture).then(
+            () => {
+                cleanupCompleted = true;
+                return undefined;
+            },
+            (failure) => {
+                cleanupCompleted = true;
+                return toError(failure);
+            }
+        );
+        try {
+            await failedService.promise;
+            await Promise.resolve();
+            expect(cleanupCompleted, 'Foreign cleanup returned while its actual engine work remained held').toBe(false);
+        }
+        finally {
+            release.resolve();
+            disposal.mockRestore();
+            await Promise.allSettled([closing, fixture.service.dispose(), fixture.engine.stop()]);
+        }
+        expect(workCompleted).toBe(true);
+        expect(await closing).toBe(serviceFailure);
+    });
+
+    it('preserves the exact primary disposal Error when secondary cleanup reporting throws', async () => {
+        const fixture = createForeignReceiver(new FakeRuntimeStateRepository());
+        const primary = new Error('primary foreign disposal');
+        const secondary = new Error('secondary foreign engine');
+        const dispose = vi.spyOn(fixture.service, 'dispose').mockRejectedValue(primary);
+        const stop = vi.spyOn(fixture.engine, 'stop').mockRejectedValue(secondary);
+        const reported: AggregateError[] = [];
+        const report = vi.spyOn(console, 'error').mockImplementation((_message, failure) => {
+            if (failure instanceof AggregateError) {
+                reported.push(failure);
+            }
+            throw new Error('foreign reporting sink');
+        });
+        try {
+            await expect(closeForeignReceiver(fixture)).rejects.toBe(primary);
+            expect(reported).toHaveLength(1);
+            expect(reported[0]?.errors).toHaveLength(1);
+            expect(reported[0]?.errors[0]).toBe(secondary);
+        }
+        finally {
+            dispose.mockRestore();
+            stop.mockRestore();
+            report.mockRestore();
+            await Promise.allSettled([fixture.service.dispose(), fixture.engine.stop()]);
+        }
+    });
+
+    it('propagates the exact independently owned engine Error after successful service disposal', async () => {
+        const fixture = createForeignReceiver(new FakeRuntimeStateRepository());
+        const failure = new Error('foreign engine completion');
+        const stop = vi.spyOn(fixture.engine, 'stop').mockRejectedValue(failure);
+        try {
+            await expect(closeForeignReceiver(fixture)).rejects.toBe(failure);
+        }
+        finally {
+            stop.mockRestore();
+            await fixture.engine.stop();
+        }
+    });
+});

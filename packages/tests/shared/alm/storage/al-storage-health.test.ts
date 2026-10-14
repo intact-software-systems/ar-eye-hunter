@@ -6,6 +6,7 @@ import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavai
 
 const QUOTA: ALStorageUnavailable = { cause: 'quota', detail: 'QuotaExceededError: full' };
 const CLOSED: ALStorageUnavailable = { cause: 'closed', detail: 'InvalidStateError: closed' };
+const LAG: ALStorageUnavailable = { cause: 'checkpoint-lag', detail: 'The oldest unsaved change is 10001 ms old.' };
 
 describe('ALStorageHealth', () => {
     it('starts healthy and states nothing until the first failure', async () => {
@@ -84,6 +85,39 @@ describe('ALStorageHealth', () => {
         await flushListeners();
 
         expect(events).toEqual([]);
+    });
+
+    it('states a checkpoint store delayed once, with its oldest unsaved age, and healthy at its next recovery point', async () => {
+        const { health, events } = createHealth();
+
+        health.recordDelayed(1_200, QUOTA);
+        health.recordDelayed(2_400, QUOTA);
+        health.recordRecoveryPoint(3_000);
+
+        await vi.waitFor(() => expect(events).toHaveLength(2));
+        await flushListeners();
+        expect(events.map((event) => JSON.stringify(event))).toEqual([
+            '{"kind":"health","storeId":"browser-ws-client:session-1","status":"delayed","lastFailure":{"cause":"quota","detail":"QuotaExceededError: full"},"oldestUnsavedAgeMs":1200}',
+            '{"kind":"health","storeId":"browser-ws-client:session-1","status":"healthy","lastFailure":{"cause":"quota","detail":"QuotaExceededError: full"},"lastRecoveryPointAtMs":3000}'
+        ]);
+    });
+
+    it('keeps a failing store failing through a later delay', async () => {
+        const { health, events } = createHealth();
+
+        health.recordLagFailure(LAG, 10_001);
+        health.recordDelayed(10_500, undefined);
+
+        await vi.waitFor(() => expect(events).toHaveLength(1));
+        await flushListeners();
+        expect(events).toEqual([{
+            kind: 'health',
+            storeId: 'browser-ws-client:session-1',
+            status: 'failing',
+            lastFailure: LAG,
+            lastRecoveryPointAtMs: undefined,
+            oldestUnsavedAgeMs: 10_001
+        }]);
     });
 
     it('keeps recording when the storage port throws', async () => {

@@ -1,4 +1,3 @@
-import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
 
 interface IndexedDbIndexDefinition {
@@ -27,6 +26,26 @@ interface IndexedDbStoreSchema<InitialRecord extends object> {
     readonly initialRecords: readonly InitialRecord[];
 }
 
+/** Copied values only; no live database, transaction, store or index handles reach validation. */
+interface IndexedDbDatabaseMetadata {
+    readonly storeNames: readonly string[];
+    readonly stores: readonly IndexedDbStoreMetadata[];
+}
+
+interface IndexedDbStoreMetadata {
+    readonly name: string;
+    readonly keyPath: string | readonly string[] | null;
+    readonly autoIncrement: boolean;
+    readonly indexes: readonly IndexedDbIndexMetadata[];
+}
+
+interface IndexedDbIndexMetadata {
+    readonly name: string;
+    readonly keyPath: string | readonly string[];
+    readonly unique: boolean;
+    readonly multiEntry: boolean;
+}
+
 export interface OpenedIndexedDb {
     readonly db: IDBDatabase;
     /** Empty when the opened database is the required schema; every reason it is not otherwise. */
@@ -45,11 +64,14 @@ class IndexedDbSchemaMismatchError extends Error {
     }
 }
 
+/** One open per uncached connection attempt; failure or versionchange permits a fresh caller-owned attempt. */
+export type IndexedDbOpening = () => Promise<IDBDatabase>;
+
 export class IndexedDbConnection {
     private opening?: Promise<IDBDatabase>;
-    private readonly openDatabase: () => Promise<IDBDatabase>;
+    private readonly openDatabase: IndexedDbOpening;
 
-    constructor(openDatabase: () => Promise<IDBDatabase>) {
+    constructor(openDatabase: IndexedDbOpening) {
         this.openDatabase = openDatabase;
     }
 
@@ -79,8 +101,8 @@ export class IndexedDbConnection {
 
 /**
  * Opens the database and reports whether what it found is the required schema, without deciding
- * what a mismatch means: a caller that resets its storage owns that decision, and the handle is
- * open either way so it can close it on its own terms.
+ * what a mismatch means. Existing databases are never upgraded or rewritten; the caller closes
+ * the returned handle after using it or refusing its reported mismatch.
  */
 export async function openIndexedDbWithValidatedStores<InitialRecord extends object>(
     dbName: string,
@@ -90,13 +112,20 @@ export async function openIndexedDbWithValidatedStores<InitialRecord extends obj
         throw new Error('IndexedDB is not supported in this environment');
     }
     const stores = definitions.map(toIndexedDbStoreSchema);
-    const validated = validateIndexedDbStoreNames(stores);
-    if (validated.left) {
-        throw validated.left;
+    const issues = validateIndexedDbStoreNames(stores);
+    if (issues.length > 0) {
+        throw new Error(issues[0]);
     }
     const { db, created } = await openIndexedDb(dbName, stores);
     db.onversionchange = () => db.close();
-    return { db, schemaIssues: validateIndexedDbDatabaseSchema(db, stores), created };
+    try {
+        const metadata = readIndexedDbDatabaseMetadata(db, stores);
+        return { db, schemaIssues: validateIndexedDbDatabaseSchema(metadata, stores), created };
+    }
+    catch (error) {
+        db.close();
+        throw error;
+    }
 }
 
 /** The same open for a caller whose contract is that a schema mismatch is a defect, not an outcome. */
@@ -131,52 +160,91 @@ function toIndexedDbStoreSchema<InitialRecord extends object>(
 
 function validateIndexedDbStoreNames(
     stores: readonly IndexedDbStoreSchema<object>[]
-): Either<Error, readonly IndexedDbStoreSchema<object>[]> {
+): readonly string[] {
     const names = new Set(stores.map((store) => store.name));
     return stores.length === 0 || names.size !== stores.length
-        ? Either.ofLeft(new Error('IndexedDB schema requires distinct store names'))
-        : Either.ofRight(stores);
+        ? ['IndexedDB schema requires distinct store names']
+        : [];
 }
 
-/** Every reason the opened database is not the required schema; empty means it is. */
-function validateIndexedDbDatabaseSchema(
+/** Captures native metadata and owns its transaction/getter failures; a name mismatch needs no transaction. */
+function readIndexedDbDatabaseMetadata(
     db: IDBDatabase,
     stores: readonly IndexedDbStoreSchema<object>[]
+): IndexedDbDatabaseMetadata {
+    const storeNames = [...db.objectStoreNames];
+    return {
+        storeNames,
+        stores: hasMatchingIndexedDbStoreNames(storeNames, stores)
+            ? stores.map((store) => readIndexedDbStoreMetadata(db, store.name))
+            : []
+    };
+}
+
+function readIndexedDbStoreMetadata(db: IDBDatabase, storeName: string): IndexedDbStoreMetadata {
+    const store = db.transaction(storeName).objectStore(storeName);
+    const keyPath = store.keyPath;
+    return {
+        name: storeName,
+        keyPath: keyPath === null || typeof keyPath === 'string' ? keyPath : [...keyPath],
+        autoIncrement: store.autoIncrement,
+        indexes: [...store.indexNames].map((name) => {
+            const index = store.index(name);
+            const keyPath = index.keyPath;
+            return {
+                name,
+                keyPath: typeof keyPath === 'string' ? keyPath : [...keyPath],
+                unique: index.unique,
+                multiEntry: index.multiEntry
+            };
+        })
+    };
+}
+
+function hasMatchingIndexedDbStoreNames(
+    names: readonly string[],
+    stores: readonly IndexedDbStoreSchema<object>[]
+): boolean {
+    return names.length === stores.length && stores.every((store) => names.includes(store.name));
+}
+
+/** Every reason the captured database is not the required schema; empty means it is. */
+function validateIndexedDbDatabaseSchema(
+    metadata: IndexedDbDatabaseMetadata,
+    stores: readonly IndexedDbStoreSchema<object>[]
 ): readonly string[] {
-    if (
-        db.objectStoreNames.length !== stores.length ||
-        stores.some((store) => !db.objectStoreNames.contains(store.name))
-    ) {
+    if (!hasMatchingIndexedDbStoreNames(metadata.storeNames, stores)) {
         return ['IndexedDB database stores do not match the required schema'];
     }
-    return stores.flatMap((store) => validateIndexedDbStoreSchema(db, store));
+    return stores.flatMap((store, position) => validateIndexedDbStoreSchema(metadata.stores[position], store));
 }
 
 function validateIndexedDbStoreSchema(
-    db: IDBDatabase,
+    metadata: IndexedDbStoreMetadata,
     store: IndexedDbStoreSchema<object>
 ): readonly string[] {
-    const objectStore = db.transaction(store.name).objectStore(store.name);
     const issues: string[] = [];
-    if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
+    if (!isEqualKeyPath(metadata.keyPath, store.keyPath)) {
         issues.push(
-            `IndexedDB store "${store.name}" has key path "${formatKeyPath(objectStore.keyPath)}"; ` +
+            `IndexedDB store "${store.name}" has key path "${formatKeyPath(metadata.keyPath)}"; ` +
                 `expected "${store.keyPath}"`
         );
     }
-    if (objectStore.autoIncrement) {
+    if (metadata.autoIncrement) {
         issues.push(`IndexedDB store "${store.name}" auto-increment does not match its required schema`);
     }
     if (
-        objectStore.indexNames.length !== store.indexes.length ||
-        store.indexes.some((index) => !isMatchingIndex(objectStore, index))
+        metadata.indexes.length !== store.indexes.length ||
+        store.indexes.some((index) =>
+            !isMatchingIndex(metadata.indexes.find((actual) => actual.name === index.name), index)
+        )
     ) {
         issues.push(`IndexedDB indexes for "${store.name}" do not match their required schema`);
     }
     return issues;
 }
 
-function formatKeyPath(keyPath: string | string[] | null): string {
+function formatKeyPath(keyPath: string | readonly string[] | null): string {
     if (keyPath === null) {
         return 'null';
     }
@@ -222,20 +290,16 @@ function createIndexedDbStore<InitialRecord extends object>(
 }
 
 function isMatchingIndex(
-    store: IDBObjectStore,
+    actual: IndexedDbIndexMetadata | undefined,
     definition: IndexedDbIndexSchema
 ): boolean {
-    if (!store.indexNames.contains(definition.name)) {
-        return false;
-    }
-    const index = store.index(definition.name);
-    return index.unique === definition.unique &&
-        index.multiEntry === false &&
-        isEqualKeyPath(index.keyPath, definition.keyPath);
+    return actual !== undefined && actual.unique === definition.unique &&
+        actual.multiEntry === false &&
+        isEqualKeyPath(actual.keyPath, definition.keyPath);
 }
 
 function isEqualKeyPath(
-    actual: string | string[] | null,
+    actual: string | readonly string[] | null,
     expected: string | readonly string[]
 ): boolean {
     if (actual === null) {

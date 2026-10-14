@@ -2,6 +2,7 @@ import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/bro
 import {
     createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
+    createBrowserResyncRecoveryComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
@@ -30,18 +31,20 @@ import {
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
     RallarDirectorFacade,
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-core.ts';
-import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type {
     RallarRealtimeFacade,
     RallarWsFacade
@@ -49,9 +52,11 @@ import type {
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import {
     createCountingIndexedDbOperationObserver,
@@ -65,11 +70,21 @@ import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
+import {
+    createBlackBoxRallarCongestionCounters,
+    type BlackBoxRallarCongestionCounters
+} from './black-box-rallar-congestion-counters.ts';
 import type {
     BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
+import {
+    createBlackBoxRallarOrderingTracks,
+    type BlackBoxRallarOrderingTracks
+} from './black-box-rallar-ordering-tracks.ts';
 import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
 import {
     replayBlackBoxCapturedMessage,
@@ -81,12 +96,24 @@ import {
     type BlackBoxRoomStateRefreshOptions
 } from './refresh-black-box-browser-room-state.ts';
 
+export namespace BlackBoxBrowserRallarRuntimeDependency {
+    export interface ConnectCompletion {
+        readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
+        readonly diagnosticsPorts: RallarDiagnosticsPorts;
+        captureOwnershipFailure(): ReturnType<BrowserSessionDeliveries['captureOwnershipFailure']>;
+    }
+}
+
 // The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency
-    extends Pick<RallarConnectionOperations, 'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session'> {
+    extends
+        Pick<
+            RallarConnectionOperations,
+            'configure' | 'setDefaults' | 'status' | 'isConnected' | 'session' | 'rtcCapture'
+        > {
     connect(
         options?: Parameters<RallarConnectionOperations['connect']>[0]
-    ): Promise<void>;
+    ): Promise<BlackBoxBrowserRallarRuntimeDependency.ConnectCompletion>;
     disconnect(): Promise<void>;
     refreshRoomState(
         roomRef: GroupRef,
@@ -121,20 +148,23 @@ export interface BlackBoxBrowserRoomsDependency {
     ): RallarRoomFormation;
 }
 
-export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
+export interface BlackBoxBrowserMessagesDependency
+    extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws' | 'readUsage'> {}
 
 /** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
     replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
     submitRawControl(control: BlackBoxRallarControlSubmitInput): Promise<SubmitBlackBoxRawControl.Submission>;
-    /** The floor the product stamps on a room send that states none: the sender's cached room version. */
-    resolveRoomMinSnapshotVersion(roomRef: GroupRef): number | undefined;
+    /** The fence the product stamps on a room send that states no floor: the sender's cached room and roster versions. */
+    resolveRoomSendFence(roomRef: GroupRef): RoomSendFence;
 }
 
 /** What the page reads to name a peer by its lane role: the WS server's id, its own session and the room's roster. */
 export interface BlackBoxBrowserPeersDependency extends Pick<RallarConnectionOperations, 'serverPeerId' | 'session'> {
     /** Undefined while the page holds no snapshot of the room. */
     getRoomSessions(roomRef: GroupRef): readonly GroupPresenceSession[] | undefined;
+    /** Undefined while the page holds no snapshot of the room, or the room has no active director. */
+    getRoomLeaderSessionId(roomRef: GroupRef): string | undefined;
 }
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
@@ -143,6 +173,8 @@ export interface BlackBoxBrowserDiagnosticsDependency {
     readonly storage: CountingIndexedDbOperationObserver;
     /** Decides each IndexedDB operation after `storage` has counted it. */
     readonly storageFaults: ScriptedStorageFaultPort;
+    readonly congestion: BlackBoxRallarCongestionCounters;
+    readonly orderingTracks: BlackBoxRallarOrderingTracks;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -161,7 +193,7 @@ export interface BlackBoxBrowserRtcDependency extends
         | 'onStatus'
     > {}
 
-export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
+export interface BlackBoxBrowserCrdtDependency extends Pick<BrowserRallarCrdtFacade, 'open'> {}
 
 export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
     createRelay(
@@ -188,6 +220,8 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
     const storageFaults = createScriptedStorageFaultPort();
+    const congestion = createBlackBoxRallarCongestionCounters();
+    const orderingTracks = createBlackBoxRallarOrderingTracks();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
         input.readVolatileSessionLimits
     );
@@ -201,7 +235,6 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        rooms,
         session: session.session
     });
     registerBlackBoxBrowserRallarLifecycle({
@@ -224,13 +257,18 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage, storageFaults },
+        diagnostics: { faults, storage, storageFaults, congestion, orderingTracks },
         ...toBlackBoxBrowserMessagingPorts({ session, state })
     });
 }
 
+interface BlackBoxBrowserMessagingPortsInput {
+    readonly session: BrowserSessionCoreComposition;
+    readonly state: BrowserStateComposition;
+}
+
 function toBlackBoxBrowserMessagingPorts(
-    input: Readonly<{ session: BrowserSessionCoreComposition; state: BrowserStateComposition; }>
+    input: BlackBoxBrowserMessagingPortsInput
 ): Pick<BlackBoxBrowserRuntimeComponents, 'deliveries' | 'peers'> {
     const { session, state } = input;
     return {
@@ -249,12 +287,16 @@ function toBlackBoxBrowserMessagingPorts(
                     context: session.session.readMiddleware(),
                     nowMs: Date.now()
                 }),
-            resolveRoomMinSnapshotVersion: (roomRef) => state.roomStateStore.resolveRoomMinSnapshotVersion(roomRef)
+            resolveRoomSendFence: (roomRef) => state.roomStateStore.resolveRoomSendFence(roomRef)
         },
         peers: {
             serverPeerId: () => session.connection.serverPeerId(),
             session: () => session.connection.session(),
-            getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions
+            getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions,
+            getRoomLeaderSessionId: (roomRef) => {
+                const snapshot = state.roomStateStore.findGroupSnapshot(roomRef);
+                return snapshot === undefined ? undefined : resolveRallarGroupLeaderSessionId(snapshot);
+            }
         }
     };
 }
@@ -277,7 +319,7 @@ export async function readBlackBoxRtcMessageNacks(
         (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: []
         })
     );
@@ -322,6 +364,7 @@ interface BlackBoxBrowserRuntimeComponents {
     readonly deliveries: BlackBoxBrowserDeliveriesDependency;
     readonly peers: BlackBoxBrowserPeersDependency;
 }
+
 function toBlackBoxBrowserRuntimeDependency(
     components: BlackBoxBrowserRuntimeComponents
 ): BlackBoxBrowserRallarRuntimeDependency {
@@ -329,7 +372,13 @@ function toBlackBoxBrowserRuntimeDependency(
     return {
         ...session.connection,
         connect: async (options) => {
-            await session.connection.connect(options);
+            const connected = await session.session.connectWithRtcCapture(options);
+            return Object.freeze({
+                rtcCapture: connected.rtcCapture,
+                diagnosticsPorts: connected.diagnosticsPorts,
+                captureOwnershipFailure: () =>
+                    browserDeliveryComposition.sessionDeliveries.captureOwnershipFailure(connected.middleware)
+            });
         },
         readRtcMessageNacks: async (messageId) =>
             await readBlackBoxRtcMessageNacks(
@@ -376,12 +425,16 @@ function createBlackBoxBrowserTransportComposition(
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
+    const recovery = createBrowserResyncRecoveryComposition({
+        nowMs: browserDeliveryComposition.nowMs
+    });
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         readVolatileSessionLimits,
         foundation,
         state,
-        sessionDeliveries: browserDeliveryComposition.sessionDeliveries
+        sessionDeliveries: browserDeliveryComposition.sessionDeliveries,
+        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
     });
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,
@@ -390,6 +443,7 @@ function createBlackBoxBrowserTransportComposition(
     const messaging = createBrowserMessagingComposition({
         ...browserDeliveryComposition,
         wsInbox: stateEvents.wsInbox,
+        recoveryOwners: recovery.recoveryOwners,
         state,
         session: session.session
     });

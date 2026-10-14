@@ -1,6 +1,9 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '../al-outbound-message-runtime.ts';
+import {
+    writeALOutboundRuntimeDiagnostic,
+    type ALOutboundRuntimeDiagnosticsSink
+} from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 
 export interface ALOutboundControlAdmissionDiagnosticInput {
@@ -19,19 +22,14 @@ export function writeALOutboundControlAdmissionDiagnostic(
     input: ALOutboundControlAdmissionDiagnosticInput
 ): void {
     const { control, admitted } = input;
-    try {
-        diagnostics?.({
-            kind: 'control-admission',
-            msgId: control.id.msgId,
-            typeId: control.payload.typeId,
-            targetMsgId: input.targetMsgId,
-            outcome: admitted.kind,
-            reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
-            // Last, so a match on `typeId`, `targetMsgId` and `outcome` in their emitted order still finds a receipt.
-            ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase })
-        });
-    }
-    catch (error) {
-        console.error('AL outbound runtime diagnostics sink failed', error);
-    }
+    writeALOutboundRuntimeDiagnostic(diagnostics, {
+        kind: 'control-admission',
+        msgId: control.id.msgId,
+        typeId: control.payload.typeId,
+        targetMsgId: input.targetMsgId,
+        outcome: admitted.kind,
+        reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
+        // Last, so a match on `typeId`, `targetMsgId` and `outcome` in their emitted order still finds a receipt.
+        ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase })
+    });
 }

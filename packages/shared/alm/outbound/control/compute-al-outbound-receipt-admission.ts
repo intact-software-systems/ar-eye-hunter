@@ -1,5 +1,6 @@
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
+import { isALLogicalReceiptMode } from '../../../al-contracts/validate-al-ack-support.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundAdmissionMutation } from '../admission/al-outbound-admission-mutations.ts';
@@ -74,8 +75,8 @@ export function validateALOutboundReceiptAdmission(
         return [toMissingReceiptRejection(read)];
     }
     const issues: ALMessageRejection[] = [];
-    if (write.value.mode !== 'receiver') {
-        issues.push(refuseReceipt('AL receipt names a message that tracks no receiver receipt'));
+    if (!isALLogicalReceiptMode(write.value.mode)) {
+        issues.push(refuseReceipt('AL receipt names a message that tracks no logical recipient receipt'));
     }
     if (read.receipt.phase === 'admitted' && write.value.deadlineAtMs <= read.nowMs) {
         issues.push(refuseReceipt('AL admitted receipt arrived after its message deadline'));

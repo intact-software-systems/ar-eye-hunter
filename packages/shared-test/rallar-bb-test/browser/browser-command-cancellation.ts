@@ -5,6 +5,7 @@ import type { CommandWithId } from './browser-command-contracts.ts';
 export interface BrowserCommandAbortScope {
     /** Absent when the command has neither a parent signal nor a time budget, so nothing can abort it. */
     readonly signal: AbortSignal | undefined;
+    readonly origin: 'timeout' | 'parent' | undefined;
     cleanup(): void;
 }
 
@@ -50,32 +51,52 @@ export function createBrowserCommandAbortScope(
     const parentSignal = context.abortSignal?.();
     const timeoutMs = resolveCommandTimeoutMs(command, now);
     if (!parentSignal && timeoutMs === undefined) {
-        return { signal: undefined, cleanup: () => undefined };
+        return { signal: undefined, origin: undefined, cleanup: () => undefined };
     }
 
-    const controller = new AbortController();
-    const abortFromParent = () => {
-        if (!controller.signal.aborted) {
-            controller.abort(parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
-        }
-    };
-    if (parentSignal?.aborted) {
-        abortFromParent();
-    }
-    else {
-        parentSignal?.addEventListener('abort', abortFromParent, { once: true });
-    }
-    const timeout = timeoutMs === undefined ? undefined : setTimeout(() => {
-        if (!controller.signal.aborted) {
-            controller.abort(createTimeoutError());
-        }
-    }, timeoutMs);
+    return new BrowserCommandCancellation(parentSignal, timeoutMs);
+}
 
-    return {
-        signal: controller.signal,
-        cleanup: () => {
-            clearTimeout(timeout);
-            parentSignal?.removeEventListener('abort', abortFromParent);
+/** Owns the first abort, its provenance, and the resources forwarding it. */
+class BrowserCommandCancellation implements BrowserCommandAbortScope {
+    readonly #controller = new AbortController();
+    readonly #parentSignal: AbortSignal | undefined;
+    readonly #timeout: ReturnType<typeof setTimeout> | undefined;
+    #origin: BrowserCommandAbortScope['origin'];
+
+    constructor(parentSignal: AbortSignal | undefined, timeoutMs: number | undefined) {
+        this.#parentSignal = parentSignal;
+        if (parentSignal?.aborted) {
+            this.#abortFromParent();
+        }
+        else {
+            parentSignal?.addEventListener('abort', this.#abortFromParent, { once: true });
+        }
+        this.#timeout = timeoutMs === undefined ? undefined : setTimeout(() => {
+            if (!this.signal.aborted) {
+                this.#origin = 'timeout';
+                this.#controller.abort(createTimeoutError());
+            }
+        }, timeoutMs);
+    }
+
+    get signal(): AbortSignal {
+        return this.#controller.signal;
+    }
+
+    get origin(): BrowserCommandAbortScope['origin'] {
+        return this.#origin;
+    }
+
+    cleanup(): void {
+        clearTimeout(this.#timeout);
+        this.#parentSignal?.removeEventListener('abort', this.#abortFromParent);
+    }
+
+    #abortFromParent = (): void => {
+        if (!this.signal.aborted) {
+            this.#origin = 'parent';
+            this.#controller.abort(this.#parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
         }
     };
 }
@@ -88,6 +109,8 @@ export async function withBrowserCommandAbort<T>(
         return await promise;
     }
     if (signal.aborted) {
+        // The operation is already running; handle its rejection without delaying cancellation.
+        void promise.catch(() => undefined);
         throw decodeAbortReason(signal.reason);
     }
 

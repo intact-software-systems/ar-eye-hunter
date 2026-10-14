@@ -7,6 +7,8 @@ import {
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
 import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
@@ -21,6 +23,7 @@ import {
     type ALMObservationPageDiagnosticsFile
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { toAlmReloadCheckpoints } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import { readAlmReceiptRolesEntries } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
@@ -41,7 +44,6 @@ import {
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     uniqueSuffix,
-    type ControlRunSnapshot,
     type RecipePairOutcome,
     type RecipeRunOutcome,
     type TwoAgentRun,
@@ -51,12 +53,15 @@ import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same
 import {
     createThreeAgentRun,
     runRecipeTrioOnThreeAgents,
+    type ThirdAgentRole,
     type ThreeAgentRun
 } from './full-stack-three-agent-run.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context'>;
+type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context' | 'same-principal'>;
+
+type ThreeAgentScenarioFamily = Extract<AlmConformanceLaneFamily, 'three-agent' | 'same-principal'>;
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
@@ -74,19 +79,37 @@ interface ScenarioRoleEvidence {
     readonly outcome: RecipeRunOutcome;
 }
 
-type ScenarioSelectionInput = Pick<
-    CreateAlmConformanceRecipesInput,
-    'group' | 'senderConnection' | 'receiverConnection'
->;
+interface ScenarioSelectionInput
+    extends Pick<CreateAlmConformanceRecipesInput, 'group' | 'senderConnection' | 'receiverConnection'> {}
+
+interface ObservationRegimeInput {
+    readonly snapshot: ControlRunSnapshot;
+    readonly carrier: AlmConformanceCarrier;
+    readonly cellOutcome: ALMObservationCellOutcome;
+    readonly pageDiagnosticsFile: ALMObservationPageDiagnosticsFile | undefined;
+}
 
 interface ObservationFiles {
     readonly testInfo: TestInfo;
     readonly fileName: string;
     readonly regime: ALMObservationRegime;
     readonly snapshot: ControlRunSnapshot;
-    /** Undefined only when neither agent page ever attached a diagnostics capture. */
-    readonly pageDiagnosticsFile: PageDiagnosticsFile | undefined;
+    readonly pageDiagnosticsFile: PageDiagnosticsFile;
 }
+
+interface SameContextCell {
+    readonly run: TwoAgentRun;
+    readonly carrier: AlmConformanceCarrier;
+    readonly testInfo: TestInfo;
+    /** The cell's pages; each scenario's successor joins them, so the observation reads every page that ran. */
+    readonly participants: TwoAgentRunParticipant[];
+}
+
+/** The role of each three-agent family's third agent, the one it adds to the sender and the receiver. */
+const THIRD_AGENT_ROLES: Readonly<Record<ThreeAgentScenarioFamily, ThirdAgentRole>> = {
+    'three-agent': 'recipient-b',
+    'same-principal': 'sibling'
+};
 
 const config = readFullStackConfig();
 const scope = process.env.RALLAR_BLACK_BOX_ALM_SCOPE === 'full' ? 'full' : 'smoke';
@@ -100,9 +123,11 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
-// widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family.
-const CARRIER_TEST_TIMEOUT_MS = 480_000;
+// Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
+// scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
+// its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
+// the page's renders stay off the lane's sends.
+const CARRIER_TEST_TIMEOUT_MS = 900_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -155,39 +180,42 @@ test.describe('ALM conformance lane', () => {
             });
         }
 
-        test(`three-agent family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-            test.skip(
-                selectScenarios(toPlanningSelection(), carrier, 'three-agent').length === 0,
-                `no ${scope} ALM scenario over ${carrier} declares three roles`
-            );
-            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+        for (const family of ['three-agent', 'same-principal'] as const) {
+            test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+                test.skip(
+                    selectScenarios(toPlanningSelection(), carrier, family).length === 0,
+                    `no ${scope} ALM scenario over ${carrier} declares the ${THIRD_AGENT_ROLES[family]} role`
+                );
+                test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
 
-            const run = await createThreeAgentRun({
-                browser,
-                request,
-                testInfo,
-                runId: `alm-${carrier}-three-agent-${uniqueSuffix()}`
-            });
-            let scenarioFailed = false;
-            try {
-                await runThreeAgentScenarios(run, carrier);
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    family: 'three-agent',
-                    participants: [run.sender, run.receiver, run.recipientB],
+                const run = await createThreeAgentRun({
+                    browser,
+                    request,
                     testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
+                    thirdRole: THIRD_AGENT_ROLES[family]
                 });
-                await run.close();
-            }
-        });
+                let scenarioFailed = false;
+                try {
+                    await runThreeAgentScenarios(run, carrier, family);
+                }
+                catch (scenarioError) {
+                    scenarioFailed = true;
+                    throw scenarioError;
+                }
+                finally {
+                    await recordObservation({
+                        run,
+                        family,
+                        participants: [run.sender, run.receiver, run.third],
+                        testInfo,
+                        carrier,
+                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    });
+                    await run.close();
+                }
+            });
+        }
 
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
             test.skip(
@@ -226,6 +254,128 @@ test.describe('ALM conformance lane', () => {
     }
 });
 
+/** Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions. */
+function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
+    return scenario.scenarioId === 'delivery-lifecycle' ||
+        scenario.scenarioId === 'delivery-reload' ||
+        readAlmReceiptRolesEntries(scenario.sender).length > 0;
+}
+
+/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
+function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
+    const requested = (value ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+    if (requested.length === 0) {
+        return ALM_CONFORMANCE_CARRIERS;
+    }
+    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
+    if (unsupported.length > 0) {
+        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
+    }
+    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
+}
+
+function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
+    return ALM_CONFORMANCE_CARRIERS.some((carrier) => carrier === value);
+}
+
+function selectScenarios(
+    selection: ScenarioSelectionInput,
+    carrier: AlmConformanceCarrier,
+    family: AlmConformanceLaneFamily
+): readonly AlmConformanceScenario[] {
+    return createAlmConformanceRecipes({
+        ...selection,
+        carrier,
+        typeId: CONFORMANCE_TYPE_ID,
+        deadlineMs: CONFORMANCE_DEADLINE_MS,
+        recoveryOwner: 'record'
+    }).filter((scenario) =>
+        scenario.laneFamily === family &&
+        (scope === 'full' || scenario.tags.includes('smoke')) &&
+        !skippedScenarioIds.includes(scenario.scenarioId)
+    );
+}
+
+function toRunSelection(run: TwoAgentRun): ScenarioSelectionInput {
+    return { group: run.group, senderConnection: run.sender.connection, receiverConnection: run.receiver.connection };
+}
+
+/** Only the roles decide the selection, so a placeholder group and connections plan a cell before its agents open. */
+function toPlanningSelection(): ScenarioSelectionInput {
+    return {
+        group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
+        senderConnection: 'planning-sender',
+        receiverConnection: 'planning-receiver'
+    };
+}
+
+function toObservationRegime(
+    input: ObservationRegimeInput
+): ALMObservationRegime {
+    const { carrier, cellOutcome, pageDiagnosticsFile } = input;
+    return decodeALMObservationSnapshot(input.snapshot).fold(
+        (snapshotIssues) =>
+            createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues, pageDiagnosticsFile }),
+        (decoded) =>
+            computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome, pageDiagnosticsFile })
+    );
+}
+
+/** Every completed participant owns the capture attached when its real page was created. */
+function toRunPageDiagnosticsFile(
+    participants: readonly TwoAgentRunParticipant[],
+    snapshot: ControlRunSnapshot
+): PageDiagnosticsFile {
+    const captures = participants.map((participant) => participant.diagnostics);
+    if (captures.length === 0) {
+        throw new Error('A completed ALM run must retain participant diagnostics.');
+    }
+    return toPageDiagnosticsFile(captures, toPageDiagnosticsReferenceEpochMs(snapshot, captures));
+}
+
+/** The cell's first control event when the snapshot decoded, else the earliest page's own creation. */
+function toPageDiagnosticsReferenceEpochMs(
+    snapshot: ControlRunSnapshot,
+    captures: readonly PageDiagnosticsCapture[]
+): number {
+    return decodeALMObservationSnapshot(snapshot).fold(
+        () => Math.min(...captures.map((capture) => capture.pageCreatedAtEpochMs)),
+        (decoded) => decoded.firstEventAtEpochMs
+    );
+}
+
+/** Decodes the file the lane is about to write, so the cell JSON reads it through the same contract a later re-read would. */
+function toDecodedPageDiagnosticsFile(
+    raw: PageDiagnosticsFile
+): ALMObservationPageDiagnosticsFile | undefined {
+    return decodeALMObservationPageDiagnosticsFile(raw).fold(() => undefined, (decoded) => decoded);
+}
+
+/**
+ * An unsuffixed name would let a retried cell overwrite the regime and snapshot of the first attempt, or the
+ * three-agent cell overwrite the two-agent one.
+ */
+function toObservationFileName(
+    carrier: AlmConformanceCarrier,
+    family: AlmConformanceLaneFamily,
+    retry: number
+): string {
+    const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
+    return retry === 0 ? cell : `${cell}-retry${retry}`;
+}
+
+/** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
+function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
+    return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
+}
+
+function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {
+    return JSON.stringify(value, null, 2);
+}
+
 /** Soft assertions so one run exercises every in-scope scenario and reports all of them. */
 async function runAlmConformanceScenarios(
     run: TwoAgentRun,
@@ -245,7 +395,7 @@ async function runAlmConformanceScenarios(
                 receiverNavigations += 1;
             }
         };
-        const reload = scenario.scenarioId === 'delivery-reload';
+        const reload = toAlmReloadCheckpoints(scenario.sender.metadata?.almReloadCheckpoints) !== undefined;
         if (reload) {
             run.sender.page.on('framenavigated', onSenderNavigation);
             run.receiver.page.on('framenavigated', onReceiverNavigation);
@@ -279,35 +429,38 @@ async function runAlmConformanceScenarios(
 
 async function runThreeAgentScenarios(
     run: ThreeAgentRun,
-    carrier: AlmConformanceCarrier
+    carrier: AlmConformanceCarrier,
+    family: ThreeAgentScenarioFamily
 ): Promise<void> {
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'three-agent')) {
-        if (scenario.recipientB === undefined) {
-            throw new Error(`${scenario.scenarioKey} declares three roles without a recipient-b recipe.`);
+    const thirdRole = THIRD_AGENT_ROLES[family];
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, family)) {
+        const third = toAlmConformanceRoleRecipe(scenario, thirdRole);
+        if (third === undefined) {
+            throw new Error(`${scenario.scenarioKey} declares three roles without a ${thirdRole} recipe.`);
         }
-        const outcome = await runRecipeTrioOnThreeAgents(run, { ...scenario, recipientB: scenario.recipientB });
-        for (const role of ['receiver', 'recipientB', 'sender'] as const) {
-            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
+        const outcome = await runRecipeTrioOnThreeAgents(run, {
+            sender: scenario.sender,
+            receiver: scenario.receiver,
+            third
+        });
+        for (const role of ['receiver', 'third', 'sender'] as const) {
+            const name = role === 'third' ? thirdRole : role;
+            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${name}: ${outcome[role].summary}`).toBe(true);
         }
         if (hasIdentityEvidence(scenario)) {
             await assertScenarioIdentity(run, scenario, [
                 { role: 'sender', agent: run.sender, outcome: outcome.sender },
                 { role: 'receiver', agent: run.receiver, outcome: outcome.receiver },
-                { role: 'recipient-b', agent: run.recipientB, outcome: outcome.recipientB }
+                { role: thirdRole, agent: run.third, outcome: outcome.third }
             ]);
         }
     }
 }
 
-interface SameContextCell {
-    readonly run: TwoAgentRun;
-    readonly carrier: AlmConformanceCarrier;
-    readonly testInfo: TestInfo;
-    /** The cell's pages; each scenario's successor joins them, so the observation reads every page that ran. */
-    readonly participants: TwoAgentRunParticipant[];
-}
-
-/** Each scenario closes the page that owns the sender's session, so its successor owns the session for the next one. */
+/**
+ * Each scenario ends the page that owns the sender's session, so its successor owns the session for the next one.
+ * `flush-on-hide` ends it through its lifecycle flush and a crash; every other scenario closes it.
+ */
 async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
     const { run, carrier, testInfo, participants } = cell;
     let owner = run.sender;
@@ -317,7 +470,8 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         }
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
-        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor }, {
+        const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
+        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd }, {
             ...scenario,
             successor: scenario.successor
         });
@@ -326,13 +480,6 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         }
         owner = successor;
     }
-}
-
-/** Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions. */
-function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
-    return scenario.scenarioId === 'delivery-lifecycle' ||
-        scenario.scenarioId === 'delivery-reload' ||
-        readAlmReceiptRolesEntries(scenario.sender).length > 0;
 }
 
 async function assertScenarioIdentity(
@@ -346,7 +493,7 @@ async function assertScenarioIdentity(
         roles: scenario.roles,
         participants: evidence.flatMap(({ role, agent, outcome }) => {
             const recipe = toAlmConformanceRoleRecipe(scenario, role);
-            const recorded = snapshot.results?.find((result) => result.commandId === outcome.commandId);
+            const recorded = snapshot.results.find((result) => result.commandId === outcome.commandId);
             const decoded = parseControlClientMessage(recorded);
             return recipe === undefined ? [] : [{
                 role,
@@ -358,56 +505,6 @@ async function assertScenarioIdentity(
         })
     });
     expect.soft(issues, 'ALM actual identity evidence for every declared role').toEqual([]);
-}
-
-/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
-function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
-    const requested = (value ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-    if (requested.length === 0) {
-        return ALM_CONFORMANCE_CARRIERS;
-    }
-    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
-    if (unsupported.length > 0) {
-        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
-    }
-    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
-}
-
-function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
-    return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
-}
-
-function selectScenarios(
-    selection: ScenarioSelectionInput,
-    carrier: AlmConformanceCarrier,
-    family: AlmConformanceLaneFamily
-): readonly AlmConformanceScenario[] {
-    return createAlmConformanceRecipes({
-        ...selection,
-        carrier,
-        typeId: CONFORMANCE_TYPE_ID,
-        deadlineMs: CONFORMANCE_DEADLINE_MS
-    }).filter((scenario) =>
-        scenario.laneFamily === family &&
-        (scope === 'full' || scenario.tags.includes('smoke')) &&
-        !skippedScenarioIds.includes(scenario.scenarioId)
-    );
-}
-
-function toRunSelection(run: TwoAgentRun): ScenarioSelectionInput {
-    return { group: run.group, senderConnection: run.sender.connection, receiverConnection: run.receiver.connection };
-}
-
-/** Only the roles decide the selection, so a placeholder group and connections plan a cell before its agents open. */
-function toPlanningSelection(): ScenarioSelectionInput {
-    return {
-        group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
-        senderConnection: 'planning-sender',
-        receiverConnection: 'planning-receiver'
-    };
 }
 
 /** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */
@@ -446,60 +543,6 @@ async function recordObservation(
     }
 }
 
-function toObservationRegime(
-    input: Readonly<{
-        snapshot: ControlRunSnapshot;
-        carrier: AlmConformanceCarrier;
-        cellOutcome: ALMObservationCellOutcome;
-        pageDiagnosticsFile: ALMObservationPageDiagnosticsFile | undefined;
-    }>
-): ALMObservationRegime {
-    const { carrier, cellOutcome, pageDiagnosticsFile } = input;
-    return decodeALMObservationSnapshot(input.snapshot).fold(
-        (snapshotIssues) =>
-            createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues, pageDiagnosticsFile }),
-        (decoded) =>
-            computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome, pageDiagnosticsFile })
-    );
-}
-
-/** `undefined` only for a run whose participants never opened a real page (never happens on this lane). */
-function toRunPageDiagnosticsFile(
-    participants: readonly TwoAgentRunParticipant[],
-    snapshot: ControlRunSnapshot
-): PageDiagnosticsFile | undefined {
-    const captures = participants.map((participant) => participant.diagnostics).filter(isPresentCapture);
-    return captures.length === 0
-        ? undefined
-        : toPageDiagnosticsFile(captures, toPageDiagnosticsReferenceEpochMs(snapshot, captures));
-}
-
-/** The cell's first control event when the snapshot decoded, else the earliest page's own creation. */
-function toPageDiagnosticsReferenceEpochMs(
-    snapshot: ControlRunSnapshot,
-    captures: readonly PageDiagnosticsCapture[]
-): number {
-    return decodeALMObservationSnapshot(snapshot).fold(
-        () => Math.min(...captures.map((capture) => capture.pageCreatedAtEpochMs)),
-        (decoded) => decoded.firstEventAtEpochMs
-    );
-}
-
-function isPresentCapture(
-    value: PageDiagnosticsCapture | undefined
-): value is PageDiagnosticsCapture {
-    return value !== undefined;
-}
-
-/** Decodes the file the lane is about to write, so the cell JSON reads it through the same contract a later re-read would. */
-function toDecodedPageDiagnosticsFile(
-    raw: PageDiagnosticsFile | undefined
-): ALMObservationPageDiagnosticsFile | undefined {
-    return raw === undefined
-        ? undefined
-        : decodeALMObservationPageDiagnosticsFile(raw).fold(() => undefined, (decoded) => decoded);
-}
-
 async function writeObservationFiles(
     observation: ObservationFiles
 ): Promise<void> {
@@ -519,26 +562,11 @@ async function writeObservationFiles(
         toJsonText(observation.snapshot),
         'utf8'
     );
-    if (observation.pageDiagnosticsFile !== undefined) {
-        await writeFile(
-            path.join(directory, `${fileName}-page-diagnostics.json`),
-            toJsonText(observation.pageDiagnosticsFile),
-            'utf8'
-        );
-    }
-}
-
-/**
- * An unsuffixed name would let a retried cell overwrite the regime and snapshot of the first attempt, or the
- * three-agent cell overwrite the two-agent one.
- */
-function toObservationFileName(
-    carrier: AlmConformanceCarrier,
-    family: AlmConformanceLaneFamily,
-    retry: number
-): string {
-    const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
-    return retry === 0 ? cell : `${cell}-retry${retry}`;
+    await writeFile(
+        path.join(directory, `${fileName}-page-diagnostics.json`),
+        toJsonText(observation.pageDiagnosticsFile),
+        'utf8'
+    );
 }
 
 /** Kept for a failed cell's convenience: the snapshot is one click away in the Playwright report. */
@@ -550,13 +578,4 @@ async function attachRunSnapshot(
     const attachmentPath = testInfo.outputPath(fileName);
     await writeFile(attachmentPath, toJsonText(snapshot), 'utf8');
     await testInfo.attach(fileName, { path: attachmentPath, contentType: 'application/json' });
-}
-
-/** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
-function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
-    return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
-}
-
-function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {
-    return JSON.stringify(value, null, 2);
 }

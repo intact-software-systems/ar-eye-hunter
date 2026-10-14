@@ -1,4 +1,7 @@
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
+import type { RallarBlackBoxRoutineBrowserDiagnostics } from '../black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import {
     computeRallarBlackBoxBootstrapLaunch,
     type RallarBlackBoxBootstrapIssue,
@@ -20,7 +23,10 @@ import {
 } from './client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
 
+import { validateEventHistoryPolicy, type RallarBlackBoxEventHistoryPolicy } from './runtime/event-history.ts';
+
 export interface RallarBlackBoxBootstrapConfig {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly mode: 'local-workbench' | 'control-agent';
     readonly autoConnect: boolean;
     readonly providerMode: RallarBlackBoxProviderMode;
@@ -41,7 +47,10 @@ export interface RallarBlackBoxBootstrapConfig {
     readonly actor: string;
     readonly sessionId: string;
     readonly roomId: string;
+    readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly transport: RallarBlackBoxBootstrapTransport;
+    /** Absent when the launch inherits the SDK host capture default. */
+    readonly rtcCaptureMode?: RtcSignalingDiagnostics.CaptureMode;
     /** Absent when the launch names no Rallar user to sign in as. */
     readonly rallarUsername?: string;
     /** Absent when the launch carries no Rallar password to sign in with. */
@@ -112,6 +121,10 @@ export function resolveRallarBlackBoxBootstrapConfig(
         ...resolveControlTargetBootstrap(sources, launch.settings),
         ...resolveControlReportingBootstrap(sources, launch.settings, fragment),
         ...resolveRallarScopeBootstrap(sources, launch.settings),
+        routineBrowserDiagnostics: launch.settings.routineBrowserDiagnostics ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics,
+        rtcCaptureMode: launch.settings.rtcCaptureMode,
+        eventHistory: launch.settings.eventHistory ?? { mode: 'full' },
         ...resolveRallarAuthBootstrap(sources, launch.settings, fragment),
         ...resolveFleetBootstrap(sources, launch.settings),
         runnerAgentPrefix: resolveLaunchText(sources, 'runnerAgentPrefix'),
@@ -123,9 +136,11 @@ export function resolveRallarBlackBoxBootstrapConfig(
 
 /** Absent when the launch reads as its settings; otherwise the failure an agent reports when it refuses to start. */
 export function toRallarBlackBoxBootstrapRefusal(bootstrap: RallarBlackBoxBootstrapConfig): string | undefined {
-    return bootstrap.issues.length === 0
-        ? undefined
-        : `The agent launch cannot be read: ${bootstrap.issues.map((issue) => issue.message).join(' ')}`;
+    const issues = [
+        ...bootstrap.issues.map((issue) => issue.message),
+        ...validateEventHistoryPolicy(bootstrap.eventHistory)
+    ];
+    return issues.length === 0 ? undefined : `The agent launch cannot be read: ${issues.join(' ')}`;
 }
 
 function resolveControlTargetBootstrap(

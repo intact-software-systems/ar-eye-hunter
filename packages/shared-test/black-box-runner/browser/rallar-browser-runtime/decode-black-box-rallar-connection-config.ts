@@ -1,9 +1,100 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { toRallarRtcCaptureContext } from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_AGE_MS,
+    AL_VOLATILE_SESSION_MAX_TRACKS,
+    type ALVolatileSessionLimits
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
 import type { BlackBoxRallarConfig, BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
 import { decodeBlackBoxCommandRoomRef, isBlackBoxCommandRecord } from './decode-black-box-rallar-command-input.ts';
+
+export function decodeBlackBoxRallarConnectionConfig(value: unknown): BlackBoxRallarConnectionConfig {
+    const record = configRecord(value);
+    const connection = optionalString(record.connection);
+    const rallar = decodeBlackBoxRallarConfigFields(record.rallar);
+    if (!connection || !rallar.apiBaseUrl) {
+        throw new TypeError('Rallar connection requires connection and rallar.apiBaseUrl.');
+    }
+    return {
+        connection,
+        actor: optionalString(record.actor),
+        peerId: optionalString(record.peerId),
+        remotePeerId: optionalString(record.remotePeerId),
+        roomId: optionalString(record.roomId),
+        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
+        rallar: { ...rallar, apiBaseUrl: rallar.apiBaseUrl }
+    };
+}
+
+/** Shared sparse wire configuration; local CRDT documents need no API endpoint. */
+export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
+    const record = configRecord(value);
+    const captureMode = decodeRtcCaptureMode(record.rtcCaptureMode);
+    const rtc = record.rtc === undefined ? undefined : configRecord(record.rtc);
+    const scope = record.scope === undefined ? undefined : configRecord(record.scope);
+    return {
+        almDiagnostics: optionalBoolean(record.almDiagnostics),
+        rtcCaptureMode: captureMode,
+        rtc: rtc === undefined ? undefined : { captureMode: decodeRtcCaptureMode(rtc.captureMode) },
+        rtcCaptureContext: record.rtcCaptureContext === undefined
+            ? undefined
+            : toRallarRtcCaptureContext(record.rtcCaptureContext),
+        apiBaseUrl: optionalString(record.apiBaseUrl),
+        applicationId: optionalString(record.applicationId),
+        workspaceId: optionalString(record.workspaceId),
+        scope: scope === undefined ? undefined : {
+            applicationId: optionalString(scope.applicationId),
+            workspaceId: optionalString(scope.workspaceId)
+        },
+        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
+        username: optionalString(record.username),
+        password: optionalString(record.password),
+        displayName: optionalString(record.displayName),
+        register: registration(record.register),
+        transport: optionalChoice(record.transport, ['realtime', 'messages.rtc', 'messages.ws']),
+        laneId: optionalString(record.laneId),
+        openTimeoutMs: optionalNumber(record.openTimeoutMs),
+        timeoutMs: optionalNumber(record.timeoutMs),
+        ...decodeBlackBoxRallarMessageConfigFields(value),
+        dataChannelLanes: dataChannelLanes(record.dataChannelLanes),
+        expectedSessionId: optionalString(record.expectedSessionId),
+        leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
+        logoutOnClose: optionalBoolean(record.logoutOnClose),
+        almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits),
+        recoveryOwner: optionalChoice(record.recoveryOwner, ['record'])
+    };
+}
+
+function decodeBlackBoxRallarMessageConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
+    if (!isBlackBoxCommandRecord(value)) {
+        throw new TypeError('Rallar connection configuration must be an object.');
+    }
+    return {
+        peerIds: stringList(value.peerIds),
+        nextHopPeerIds: stringList(value.nextHopPeerIds),
+        typeId: optionalString(value.typeId),
+        topicId: optionalString(value.topicId),
+        contextId: optionalString(value.contextId),
+        resourceId: optionalString(value.resourceId),
+        messageSelector: messageSelector(value.messageSelector),
+        messageTypeIds: stringList(value.messageTypeIds),
+        ttlHops: optionalNumber(value.ttlHops),
+        ttlMs: optionalNumber(value.ttlMs),
+        reliability: optionalChoice(value.reliability, ['best-effort', 'at-least-once']),
+        ack: optionalChoice(value.ack, ['none', 'receiver', 'all-logical-recipients', 'group-leader']),
+        ownership: optionalChoice(value.ownership, ['shared', 'exclusive']),
+        minSnapshotVersion: optionalNumber(value.minSnapshotVersion),
+        seq: optionalNumber(value.seq),
+        orderingKey: optionalString(value.orderingKey),
+        overlayId: optionalString(value.overlayId),
+        fanoutLimit: optionalNumber(value.fanoutLimit)
+    };
+}
 
 function configRecord(value: unknown): Record<string, unknown> {
     if (!isBlackBoxCommandRecord(value)) {
@@ -123,89 +214,40 @@ function dataChannelLanes(value: unknown): readonly RtcDataChannelLaneConfig[] |
     });
 }
 
+/** The wire names the count and byte bounds; a lane that lowers no age or track bound reads the constants (D179). */
 function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | undefined {
     if (value === undefined) {
         return undefined;
     }
     const record = configRecord(value);
-    const { maxAdmissions, maxBytes } = record;
+    const {
+        maxAdmissions,
+        maxBytes,
+        maxAgeMs = AL_VOLATILE_SESSION_MAX_AGE_MS,
+        maxTracks = AL_VOLATILE_SESSION_MAX_TRACKS,
+        ...unknownFields
+    } = record;
     if (
-        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) ||
-        Object.keys(record).length !== 2
+        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) || !isPositiveInteger(maxAgeMs) ||
+        !isPositiveInteger(maxTracks) || Object.keys(unknownFields).length > 0
     ) {
         throw new TypeError(
-            'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
+            'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
+                'each a positive integer.'
         );
     }
-    return { maxAdmissions, maxBytes };
+    return { maxAdmissions, maxBytes, maxAgeMs, maxTracks };
 }
 
 function isPositiveInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
-/** Shared sparse wire configuration; local CRDT documents need no API endpoint. */
-export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
-    const record = configRecord(value);
-    const scope = record.scope === undefined ? undefined : configRecord(record.scope);
-    return {
-        apiBaseUrl: optionalString(record.apiBaseUrl),
-        applicationId: optionalString(record.applicationId),
-        workspaceId: optionalString(record.workspaceId),
-        scope: scope === undefined ? undefined : {
-            applicationId: optionalString(scope.applicationId),
-            workspaceId: optionalString(scope.workspaceId)
+function decodeRtcCaptureMode(value: unknown): RtcSignalingDiagnostics.CaptureMode | undefined {
+    return parseRtcCaptureMode(value).fold(
+        (issues) => {
+            throw new TypeError(issues[0].message);
         },
-        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
-        username: optionalString(record.username),
-        password: optionalString(record.password),
-        displayName: optionalString(record.displayName),
-        register: registration(record.register),
-        transport: optionalChoice(record.transport, ['realtime', 'messages.rtc', 'messages.ws']),
-        laneId: optionalString(record.laneId),
-        openTimeoutMs: optionalNumber(record.openTimeoutMs),
-        timeoutMs: optionalNumber(record.timeoutMs),
-        peerIds: stringList(record.peerIds),
-        nextHopPeerIds: stringList(record.nextHopPeerIds),
-        typeId: optionalString(record.typeId),
-        topicId: optionalString(record.topicId),
-        contextId: optionalString(record.contextId),
-        resourceId: optionalString(record.resourceId),
-        messageSelector: messageSelector(record.messageSelector),
-        messageTypeIds: stringList(record.messageTypeIds),
-        ttlHops: optionalNumber(record.ttlHops),
-        ttlMs: optionalNumber(record.ttlMs),
-        reliability: optionalChoice(record.reliability, ['best-effort', 'at-least-once']),
-        ack: optionalChoice(record.ack, ['none', 'receiver', 'all-logical-recipients', 'group-leader']),
-        ownership: optionalChoice(record.ownership, ['shared', 'exclusive']),
-        membershipEpoch: optionalNumber(record.membershipEpoch),
-        minSnapshotVersion: optionalNumber(record.minSnapshotVersion),
-        seq: optionalNumber(record.seq),
-        orderingKey: optionalString(record.orderingKey),
-        overlayId: optionalString(record.overlayId),
-        fanoutLimit: optionalNumber(record.fanoutLimit),
-        dataChannelLanes: dataChannelLanes(record.dataChannelLanes),
-        expectedSessionId: optionalString(record.expectedSessionId),
-        leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
-        logoutOnClose: optionalBoolean(record.logoutOnClose),
-        almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits)
-    };
-}
-
-export function decodeBlackBoxRallarConnectionConfig(value: unknown): BlackBoxRallarConnectionConfig {
-    const record = configRecord(value);
-    const connection = optionalString(record.connection);
-    const rallar = decodeBlackBoxRallarConfigFields(record.rallar);
-    if (!connection || !rallar.apiBaseUrl) {
-        throw new TypeError('Rallar connection requires connection and rallar.apiBaseUrl.');
-    }
-    return {
-        connection,
-        actor: optionalString(record.actor),
-        peerId: optionalString(record.peerId),
-        remotePeerId: optionalString(record.remotePeerId),
-        roomId: optionalString(record.roomId),
-        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
-        rallar: { ...rallar, apiBaseUrl: rallar.apiBaseUrl }
-    };
+        (parsed) => parsed.mode
+    );
 }

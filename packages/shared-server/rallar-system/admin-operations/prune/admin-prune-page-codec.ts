@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -99,7 +99,8 @@ function requireAdminPruneOutboxIdentity(
         contextId: work.jobId
     });
     if (
-        id.v !== 2 || id.msgId !== expectedRoute.resourceId || id.ts !== work.capturedAtEpochMs ||
+        id.v !== AL_MESSAGE_ENVELOPE_VERSION || id.msgId !== expectedRoute.resourceId ||
+        id.ts !== work.capturedAtEpochMs ||
         typeof id.senderId !== 'string' || id.senderId.length === 0 ||
         route.topicId !== expectedRoute.topicId || route.resourceId !== expectedRoute.resourceId ||
         route.contextId !== expectedRoute.contextId || entry.key.topicId !== route.topicId ||
@@ -120,7 +121,12 @@ export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string):
         contextId: work.jobId
     });
     const message: ALMessage = {
-        id: { v: 2, msgId: route.resourceId, ts: work.capturedAtEpochMs, senderId: serviceId },
+        id: {
+            v: AL_MESSAGE_ENVELOPE_VERSION,
+            msgId: route.resourceId,
+            ts: work.capturedAtEpochMs,
+            senderId: serviceId
+        },
         route,
         targets: { mode: 'broadcast', scope: 'all' },
         constraints: { expiresAtMs: work.expireAtEpochMs },

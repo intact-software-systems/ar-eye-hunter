@@ -6,7 +6,11 @@ import type {
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import {
+    toCommandId,
+    toConnectionName,
+    toScenarioTypeId
+} from './alm-conformance-step-identities.ts';
 
 interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
     readonly count: number;
@@ -25,6 +29,21 @@ interface AlmConformancePayloadWaitInput {
     readonly absent: boolean;
 }
 
+interface AlmConformanceControlAdmissionOutcomeInput {
+    readonly name: string;
+    readonly controlMsgId: string;
+    readonly controlTypeId: string;
+    readonly contains: string;
+    readonly timeoutMs: number;
+}
+
+interface AlmConformanceAdmissionOutcomeInput {
+    readonly name: string;
+    /** Omitted when the admission outcome's reason is unrestricted. */
+    readonly contains?: string;
+    readonly timeoutMs: number;
+}
+
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 /**
@@ -40,7 +59,7 @@ export function toReceivedCommand(received: AlmConformanceReceivedInput): Rallar
     return {
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
-        connection: received.input.receiverConnection,
+        connection: toConnectionName(received),
         typeId: toScenarioTypeId(received),
         count: received.count,
         absent: received.absent,
@@ -51,13 +70,13 @@ export function toReceivedCommand(received: AlmConformanceReceivedInput): Rallar
 
 export function toPayloadWait(
     { step, name, payload, absent }: AlmConformancePayloadWaitInput
-): RallarBlackBoxTestCommand {
+): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
         commandId: toCommandId(step, name),
         match: {
             kind: 'message',
-            connection: step.input.receiverConnection,
+            connection: toConnectionName(step),
             payloadPath: 'data.payload',
             equals: payload
         },
@@ -93,9 +112,7 @@ export function toSingleArrivalReceiverCommands(
  */
 export function toControlAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<
-        { name: string; controlMsgId: string; controlTypeId: string; contains: string; timeoutMs: number; }
-    >
+    outcome: AlmConformanceControlAdmissionOutcomeInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -111,12 +128,12 @@ export function toControlAdmissionOutcomeWait(
 }
 
 /**
- * The pair's `admission-outcome` event, matched in its emitted key order (`typeId`, then `carrier`, `outcome`,
- * `reason`); the inbound diagnostics event carries no connection to route on.
+ * Exact admission kind and scenario scope apply to one event. Optional refusal fragments retain
+ * their emitted key-order contract; absence selects the latest scoped admission outcome.
  */
 export function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<{ name: string; contains: string; timeoutMs: number; }>
+    outcome: AlmConformanceAdmissionOutcomeInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -124,8 +141,14 @@ export function toAdmissionOutcomeWait(
         match: {
             kind: 'diagnostic',
             topic: INBOUND_DIAGNOSTICS_TOPIC,
-            payloadPath: 'data',
-            contains: `"typeId":"${toScenarioTypeId(step)}",${outcome.contains}`
+            payloadFields: {
+                'data.kind': 'admission-outcome',
+                'data.typeId': toScenarioTypeId(step)
+            },
+            ...(outcome.contains === undefined ? {} : {
+                payloadPath: 'data',
+                contains: `"typeId":"${toScenarioTypeId(step)}",${outcome.contains}`
+            })
         },
         timeoutMs: outcome.timeoutMs
     };

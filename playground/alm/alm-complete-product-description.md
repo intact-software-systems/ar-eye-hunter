@@ -140,13 +140,15 @@ extensions are introduced only through a versioned compatibility rule. All
 identifiers, arrays, payloads, gap windows, and total envelopes have documented
 byte/count bounds.
 
-**CURRENT — bounded envelope:** The v2 envelope, one decoder, the resource
+**CURRENT — bounded envelope:** The v3 envelope, one decoder, the resource
 ceilings in
 [`al-message-resource-limits.ts`](../../packages/shared/al-contracts/al-message-resource-limits.ts)
 with UTF-8 byte accounting, and validated control payloads exist since the first
-release. Authenticated RTC relay provenance remains PARTIAL (S2). The
-membership-epoch field is renamed to the group-state roster version it fences on
-in R2, with an envelope version bump and explicit rejection of older versions.
+release. Authenticated RTC relay provenance remains PARTIAL (S2). R2 renamed the
+membership-epoch field to the group-state roster version it fences on
+(`targets.rosterVersion`) and bumped the envelope to v3
+(`AL_MESSAGE_ENVELOPE_VERSION`); an envelope of any other version is refused
+`unsupported`.
 
 **PLANNED — I1, session and trace identity:** Builders do not populate AL
 `sessionId`/`traceId`, and no end-to-end trace propagation behavior exists.
@@ -228,10 +230,10 @@ authoritative membership snapshot. A supplied `targets.minSnapshotVersion` preve
 receiver or relay with stale group state from silently accepting or forwarding.
 The origin requires valid current room and routing authority and preserves the
 recipient floor on the message; the floor does not raise the origin's own
-snapshot requirement. Membership
-fencing must use an authoritative membership epoch; its current field and
-ordering use do not establish that guarantee. Until that implementation lands,
-requests requiring membership fencing are explicitly unsupported. The outcome
+snapshot requirement. Every room send is fenced on the group's roster: it
+carries the sender's cached `rosterVersion` beside the floor, and a receiver
+delivers it only at or beyond that roster with the sender still an active
+member. The outcome
 identifies the authority snapshot used. For a
 reliable send, the logical audience is frozen at admission: joins do not expand
 it, and departures do not silently reduce the success requirement.
@@ -249,33 +251,68 @@ falls back from RTC to WS keeps its frozen set narrowed to what the server
 authorizes. A `receiver` receipt expects exactly that audience; joins do not widen
 it, and a session that leaves stays expected and reads unconfirmed.
 
-**PLANNED — R2, fencing:** Membership fencing is explicitly rejected as
-unsupported today; R2 defines it on group-state's roster version supplied by the
-sender's snapshot, never on a caller-invented epoch.
+**CURRENT — R2, fencing:** Every room send -- RTC multicast, WS room broadcast,
+and the room broadcast a fallback send becomes -- carries `targets.rosterVersion`
+from the sender's cached room snapshot beside `minSnapshotVersion`, never a
+caller-invented value. A receiver behind either stamp refuses `not-yet-in-sync`
+and the existing bounded catch-up applies: the RTC receiver NACKs, refreshes
+once and re-admits once while the sender retries, and the WS server retains the
+send as a pending admission, NACKs it advisorily and re-authorizes it every
+50 ms until the floor is met or the deadline passes. At or
+beyond the stamps, a sender whose member is absent or not `active` is refused
+`membership-fenced`, NACKed on both carriers; from the WS server the sender's
+handle reads `rejected` (`relay-rejected` with that reason) when it holds no
+receipt row yet, and an RTC room send hears a peer's fence only through a
+tracked receipt, which ends `receipt-exhausted` with `hop-refused`. WS is fenced at the server,
+whose receiving clients trust it; server-originated room publications carry no
+fence. The conformance lane runs `fenced-delivery` and `fenced-catch-up` over
+`ws` and `rtc` and `fenced-rejection` over `ws`; the RTC peer's fenced refusal is
+proven by unit tests, since a sender's own room authority refuses its send once
+its cache holds the move.
 
 ### Broadcast
 
 Broadcast scopes have distinct semantics:
 
 - `room`: live sessions in one scoped room/group;
-- `principal`: the principal's own live sessions plus the explicitly defined
-  co-group audience;
-- `world`: one product world/application audience;
-- `all`: every authorized live connection in the relevant deployment scope.
+- `principal`: the principal's live sessions in the addressed room (the server's
+  state-sync fan-out to a principal's co-group sessions is not a client audience);
+- `world`: every authenticated live connection in the sender's authenticated scope
+  (application and workspace);
+- `all`: every authenticated connection the server holds, across scopes: a server
+  and proxy audience, refused from a client.
 
-Exclusions are applied after authoritative audience resolution. A server may
-capture immutable `recipientPeerIds` for replayable authoritative work; clients
-cannot use that field to expand authority.
+Exclusions are applied after authoritative audience resolution. A sender may name
+a fixed audience inside its room (`recipientPeerIds`), resolved to the room's live
+sessions; a server captures the same field for replayable authoritative work;
+neither expands authority beyond the room.
 
-**PARTIAL:** Server WS implements room routing and application-specific
-principal/state-sync and fixed-topology cases.
-
-**PLANNED — A1, general scope semantics:** The shared planner treats broadcast
-as “not excluded,” does not interpret scope/principal/fixed recipients, and the
-public builder cannot create principal or fixed-recipient broadcasts. A1 gives
-every scope one semantic with RTC and WS parity; world and all take the WS route
-automatically when fallback is allowed and are typed carrier-unsupported over
-RTC otherwise.
+**CURRENT — A1, audiences with carrier parity:** each scope has the one meaning
+above on both carriers (D156). `principal` and a fixed list are room audiences:
+the browser's `principalId` and `recipientPeerIds` (on `messages.rtc`,
+`messages.ws` and the room channel) narrow the room's audience at the sender's
+snapshot, the RTC origin freezing the narrowed audience on its multicast and the
+WS server admitting it as the room audience, so `receiver` and
+`all-logical-recipients` receipts, the roster fence and repair work as for any
+room send; a list holds at most 256 sessions, and a listed session outside the
+room is dropped silently. The shared planner delivers a room broadcast that
+carries `recipientPeerIds` only at a listed session (D159, D160). RTC carries
+room, principal and list audiences and refuses `world` and `all` `unsupported`,
+so the browser sender routes a `world` send to WS at once on
+`rtc-with-ws-fallback` and `ws-then-rtc`, and on `rtc` the send ends `rejected`
+with that refusal: carrier-unsupported is the existing typed refusal, not a new
+state (D157). WS ingress binds a client's `world` broadcast to the connection's
+authenticated scope, on every instance through the scoped cluster notice,
+requires a client's `principal` broadcast to name its room, and refuses a
+client's `all` `unauthorized`; `world` keeps `ack: 'none'` (D158). The
+conformance lane's `same-principal` family, which signs the sender's principal
+in on a second agent, runs `principal-delivery`, `fixed-list-delivery` and
+`world-routing` over `ws`, `rtc` and `rtc-with-ws-fallback`; a client's `all`
+is no browser input, so its refusal is pinned at the server, the RTC origin and
+the browser validator rather than in a lane cell; manifests 18 and 22 are
+unchanged (D161). A server-originated principal publication was carried to A2a,
+where Relic's hunter event is the first (D168); the deployment-wide principal
+audience stays state-sync (D163).
 
 ## Transport selection and parity
 
@@ -354,7 +391,8 @@ fixes the channel's send defaults (D52):
 | `notification` | `at-least-once` | `all-logical-recipients` | 30 s     | `volatile` |
 
 The two acks are one frozen-audience algorithm (D41). A `world` or `all`
-broadcast names no logical audience, so it keeps `ack: 'none'` until A1. The
+broadcast names no logical audience, so it keeps `ack: 'none'`; a principal or
+listed room broadcast has its narrowed room audience (D159). The
 2-second ACK timeout and three receipt retries are the at-least-once
 normalization defaults these fields select. A channel may declare `durability`,
 and a send may override each field, durability through `qos.durability`. `realtime` is refused at a typed channel and
@@ -367,14 +405,16 @@ application's QoS provider, whose own capabilities override the carrier's. The
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
-budget is at or over a limit (D78), for the session's own outbound data
+budget would refuse its next own send at its count or byte limit (D78; since
+V1b-ii the total and the own pool both at their bounds, D189), for the session's own outbound data
 originations only: a control, a receipt, an acknowledgement, a repair, a relay
 forward and an inbound plan never read it, so a session at its bound still
 acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
 bound every send, best-effort or not, on either carrier, reads `capacity`: it
 ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
-handed to a fallback. Transport-aware authorization, the other budgets and
-fairness are V1's.
+handed to a fallback. The age and track budgets joined in V1a (D179, below);
+channel backpressure joined in V1b-i (D184, below); fairness joined in V1b-ii
+(D189–D191, below), and transport-aware authorization stays planned.
 
 ## Reliability and acknowledgement
 
@@ -419,8 +459,9 @@ caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
 A director command can reach the director twice after a fallback, because AL
 dedup is per carrier lane: relay commands are at-least-once, and the game's
-sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay reports a
-command `sent` only when the director's receipt arrives, waiting at most 30 s.
+sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay addresses a
+command to the director by role (`ack: 'group-leader'`, D167) and reports it
+`sent` only when the director's receipt arrives, waiting at most 30 s.
 A command the typed send refuses at validation becomes a `failed` result with
 the refusal as its reason; any other error from the send still propagates.
 
@@ -481,9 +522,29 @@ server's own room notifications carry `receiver` receipts over the room's live s
 delivery honours that audience (D58, D77). Since #566 the router freezes the audience for every server or proxy
 publish that carries a `groupRef`, and cluster delivery reads it once from the captured policy (D104).
 
-**PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
-behavior; all-recipient is the frozen logical audience since S2. A2 defines the
-leader as the group's appointed director session.
+**CURRENT — A2a, the leader ACK:** `group-leader` is its own receipt algorithm,
+`leader`, declared by every carrier, and no longer maps to the subtree behavior
+(D166). The leader is the room's appointed director session present at
+admission: the carrier that admits a room, principal or fixed-list send resolves
+it from the room snapshot it holds and freezes the audience to that session
+alone, and its ordinary ACK confirms the send; a succession after admission does
+not move the frozen leader, and no leader epoch rides the wire (D164, D170). A
+room with no active director, a sender that is the director, and a named
+audience that leaves the director out are refused `no-leader` on both carriers:
+a typed refusal that ends the handle `rejected` (on RTC `refused` before any
+attempt, on WS a trusted-server `relay-rejected` after the frame left) and is no
+fallback trigger. A unicast, `world` or `all` send asking for it is refused
+`unsupported` (D165, D166), as is a send that asks for the `leader` receipt
+through `qos.ack` without the `group-leader` ack. AR Eye Hunter's director relay
+sends intents and sync requests by role with `group-leader` and reads a
+`no-leader` refusal as `no-director`, while the director's own outputs stay
+all-recipient (D167); the director acts on an intent or sync request stamped
+with its appointment's epoch or an earlier one, whose sender had not yet read a
+succession. The conformance lane's `leader-ack` family proves the director's
+confirmation over `ws`, `rtc` and `rtc-with-ws-fallback`, the `no-leader`
+refusal after the director resigns over `ws` and `rtc`, and the refusal of a
+list that omits the director over `ws`; manifests 18 and 22 are unchanged
+(D169).
 
 ## Ordering and gap recovery
 
@@ -505,9 +566,48 @@ repair, release, expiry, and restart behavior exist. Outbound ACK history uses
 applies the 256-sequence repair window and the 256-message, 1 MiB buffered-track
 ceilings and returns `resync-required` without enumerating an oversized gap.
 
-**PLANNED — R1, range repair and resync integration:** Repair controls still
-carry individual sequence lists; R1 replaces them with compact ranges and pages
-and invokes the topic's declared recovery owner with bounded cursor information.
+**CURRENT — R1, range repair and resync integration:** The ordering observation,
+the planner's NACK plan, the NACK and repair payloads (`al.control.nack.v2`,
+`al.control.repair.v2`; the `v1` ids are refused `unsupported`), the repair hint
+and the effect ids carry missing sequences as inclusive `ALSeqRange` ranges, at
+most 128 per payload
+([`al-seq-range.ts`](../../packages/shared/al-contracts/al-seq-range.ts), D139).
+A repair hint retransmits 32 sequences per execution and re-commits the rest as
+one follow-up hint (D140); exhausted repair settles the sender's message
+`skipped`/`repair-exhausted` once, on its handle (D141); a typed channel's
+declared recovery owner is invoked with a bounded cursor (D142, under "Repair
+and resynchronization"). The lane's `ordering-gap-repair` and `repair-exhausted`
+cells prove the repair and its end.
+
+**CURRENT — R2b, server-sequenced tracks:** A browser's sequence is
+client-assigned; a server publication's is minted by the server (D24 narrowed,
+D150). A server publication that names an ordering key and no sequence is
+sequenced by the WS server's outbound admission from one ordering-head row per
+track (ordering key, server peer id, epoch), advanced in the same commit that
+admits the message under the server's sender-version fence, so the sequence is
+contiguous whichever server instance publishes, continues after a restart, and
+is not reassigned when the same `msgId` is admitted again. The server repairs
+its own tracks from its sent copies: a receiving WS client NACKs a gap to the
+server, which retransmits the missing sequences to that requester alone, 32 per
+page, until the message's deadline and only to a requester inside the audience
+the message was admitted to that the triggering message's receipt still
+expects, so a keyed server publication asks `ack: 'receiver'` and is published
+to the `outbox` (a keyed publish without a sequence at `live-only` or `none` is
+refused, and an `ack: 'none'` one gets no ranged repair). The repair budget is
+per message and shared: the first receiver to NACK a sequence spends it, the
+others fall back to receipt retries; exhausted repair settles
+`skipped`/`repair-exhausted` once (D141, D153). Sequences follow commit order,
+so under contention two publications of one track can commit out of publish
+order (a first-in-first-out mint per track is a follow-up), and since a
+receiver's ordering-track TTL defaults to the repository TTL (60 minutes), the
+lifetime of the server's head, a track silent for over an hour restarts at `seq`
+1 on both sides. One receiver's `resync-required` NACK settles the publication
+`relay-rejected` and removes its whole pending receipt (D155). The receiver's
+recovery owner is the typed channel's, as for a browser sender. The WS server
+fixture, the shared-key schedule over memory, IndexedDB and pglite with the
+gated PostgreSQL two-connection case, and the api-v1 end-to-end test prove it;
+no conformance cell exercises a server-originated send, since no harness step
+makes the server publish one (D155).
 
 ## Deduplication and supersedence
 
@@ -532,12 +632,17 @@ that ignores the message deadline. A replay of a longer-lived message that
 arrives after 60 s is therefore admitted again. I2a makes the retention at least
 the deadline plus the receipt grace for every durability tier (D85).
 
-**PLANNED — R1, shared arbitration proof:** Since the first release both
-admission stores re-read the dedup and supersedence observations inside the
-write transaction and return `conflict` when they changed, so two stale
-cross-sender reads cannot both win. The cross-backend proof (memory, IndexedDB,
-PostgreSQL, A/B stale-read then sequential-commit schedule with one winner) lands
-in R1.
+**CURRENT — R1, shared arbitration proof:** Both admission stores re-read the
+dedup and supersedence observations inside the write transaction and return
+`conflict` when they changed, so two stale cross-sender reads cannot both win.
+[`al-shared-key-arbitration.test.ts`](../../packages/tests/shared/alm/al-shared-key-arbitration.test.ts)
+runs the A/B stale-read then sequential-commit schedule over memory, IndexedDB
+and pglite for both stores and names, per case, the written key whose guard
+decides it (D137); the gated real-PostgreSQL suite adds the outbound
+supersedence case over two connections. PostgreSQL fences written keys only: a
+key a writer only reads is checked by the store's re-read before the transaction
+opens, which is not atomic with the commit (D138). Every arbitrated key of the
+schedule is one both writers write.
 
 ## Congestion and RTC flow control
 
@@ -563,7 +668,64 @@ congestion/fanout/supersedence concepts.
 volatile budget is the first `overloaded` producer (D78), reported for the
 session's own outbound data originations only, so at the bound every send
 reads `capacity` and controls, forwards and arrivals flow on (R-S3c-ii-8).
-Channel backpressure as a policy input is V1's.
+
+**CURRENT — V1b-i, channel backpressure as a policy input:** the session's own
+new data sends are planned with a live `backpressured` flag beside `overloaded`
+(D184): the RTC overlay reports it for a room send when the reliable channel of
+every ready next hop holds at least its high watermark, the WS client when the
+socket's `bufferedAmount` is at least 256 KiB
+(`AL_WS_BACKPRESSURE_HIGH_WATERMARK_BYTES`), and the WS client reads it alone.
+Controls, forwards, retransmissions, replans, inbound plans, RTC unicasts and
+unaddressed RTC sends never read it. The congestion policy applies to either
+flag and its drop names the cause (D185): an `overloaded` drop stays `capacity`;
+a backpressure drop is the refusal `congested`, a fallback trigger that hands an
+`rtc-with-ws-fallback` RTC leg to WS at admission and otherwise ends the send
+`rejected` with no attempt. `drop-low` drops a priority-0 (or lower) send only,
+`reject` every send and `defer` none; a kept send waits at submission, where
+backpressure is a `not-ready` retried after 50 ms on both carriers, so a held
+send is not acknowledged until its carrier takes it. WS submission backpressure
+holds every message, controls included: an ACK waits 50 ms on a full socket.
+Every decision is a `congestion` diagnostic, and the black-box harness counts
+them as `stats.rallar.congestion { dropped, deferred, handedOver }` (D186);
+`deferred` counts every message the page held at submission, relay forwards and
+controls included. Channel health stays on `rallar.rtc.status()`.
+
+**CURRENT — V1b-ii, fairness under many tracks and churn:** the session's
+volatile ledger keeps two pools, its own sends and its arrivals, under the same
+limits, and an own send is refused `capacity` only when the own pool would pass
+its share, half of the count and byte limits (500 messages, 2 MiB), and the
+total would pass the limit (D189); arrivals are never refused, so a session
+keeps its share whatever arrives, where one pool refused every own send of a
+once-a-second sender at 34 arrivals a second. `readUsage()` and the harness's
+`stats.rallar.alm` report both pools. A receiver that delivers a buffered
+release runs the same track's next release in the same batch, read by its key,
+up to 16 claims a batch (D190): a 64-message buffer drains in 5 batches instead
+of 65 engine rounds, and a 255-message one no longer outlives the 30 s default
+lifetime. Departed-sender state is bounded by count (D191): at most 256
+ordering snapshots in each of the browser's inbound stores, the least recently
+updated evicted; a browser session holds two such stores, its IndexedDB store
+and the memory store of its volatile messages, so up to 512 snapshots, and the
+harness's `orderingTracks` is their sum. The WS server's inbound stores are
+not capped, since one of them holds every relayed client's tracks. The
+browser's resync record holds at most 256 tracks; the WS server holds at most
+4 096 receipt aggregates, ending the oldest at the cap as its deadline would.
+Three two-agent lane cells prove the share, the promotion and the snapshot cap
+(D192). **Limit:** a receiver holding more than 256 live ordered tracks in one
+store thrashes: each new track evicts a live one, whose next arrival reads as a
+gap from sequence 1 and goes to repair or resynchronization. **Limit:** an
+at-least-once `ack: 'receiver'` send can be reported delivered although no
+channel handler saw it: in one lane run the message arrived 131 ms before the
+receiving page's channel subscribed, and it was admitted and acknowledged with
+no handler to run. Whether a typed channel replays an arrival that predates its
+subscription is open.
+
+**PLANNED:** `replace-latest` by semantic key and a bounded queue on the
+reliable lane (the realtime lane keeps its own `replace-by-key`); relay fanout
+reduction and alternate routes under congestion; routing around one
+backpressured peer; congestion on RTC unicasts; server-side WS backpressure;
+an outbound claim order that rotates across senders or tracks (V1b-ii measured
+the sender-blind claim order and kept it); a count bound on a track's delivered marker,
+which lives for the hour after its snapshot is evicted.
 
 ## Durability and browser-local storage
 
@@ -675,29 +837,56 @@ Repair is receiver-driven and bounded:
 **PARTIAL:** Durable ACK timeout, targeted retransmission, ordered-message lookup,
 and RTC alternate-parent repair exist.
 
-**PLANNED — R1, complete resync contract:** `resync-required` exists as an
-outcome since the first release, but no generic snapshot/cursor recovery owner is
-invoked after repair-window exhaustion, and server/client transport parity is
-proven only by the conformance lane (F1 onward).
+**CURRENT — R1, the recovery owner:** A typed channel may declare
+`recovery: { onResyncRequired(cursor) }`. When the browser's inbound runtime
+refuses a message `resync-required` at admission, or can no longer order a
+buffered release, it hands the channel's owner the cursor `{ orderingKey,
+senderId, epoch, lastContiguousSeq, expectedSeq, observedSeq, carrier }` once per
+ordering track while it goes on resynchronizing, after its NACK to the sender committed, and states
+`recovery-owner-invoked` on the storage diagnostics port
+([`browser-resync-recovery.ts`](../../packages/shared-web/browser/messages/browser-resync-recovery.ts),
+D142). ALM resets no track; the sender's new epoch re-arms the owner, as does a
+track's next resynchronization after 5 minutes without one, and a reload invokes
+it once more. Without an owner the message is dropped as before.
+The WS server declares no owner and keeps NACKing `resync-required`. The
+conformance lane's `ordering-resync` cell observes the owner over the RTC
+carriers; over `ws` the relay refuses the gapped send before the receiver sees
+it, so no owner is invoked there.
 
 ## Ownership
 
 `shared` means every matching local subscriber may observe the message.
-`exclusive` means exactly one registered consumer in the declared ownership
-scope may claim it. The scope is explicit: local process, browser session,
-principal, group, or server consumer group. Durable exclusive claims use leases
-and redelivery from existing QueueBox/ResourceInbox; volatile exclusive selection
-is deterministic and observable. Distributed ownership reuses the existing
-ResourceInbox reservation with lease, expiry, and redelivery; no generic claim
-system is added.
+`exclusive` means exactly one sending session holds the message's resource key
+in its room at a time. The room is the only ownership scope defined. The exclusive
+claim is an admission-store row with an expiry, read and guarded at the commit as
+the dedup key is; no generic claim system is added.
 
-**PARTIAL:** Current services use `exclusive` to select one local callback.
-
-**PLANNED — A2, ownership scope:** The contract does not say whether exclusive
-is local or distributed, and no distributed exclusive-consumer claim exists. A2
-defines `exclusive` as a claim on the message's resource key backed by the
-existing ResourceInbox reservation with lease, expiry, and redelivery, surfaced
-as `claimed`, `held-by-other`, or `expired`.
+**CURRENT — A2b, the claim on the resource key:** an `exclusive` send the WS
+server admits from a client claims the room-scoped resource key (the room's
+`GroupRef` scope with the route `topicId`, `contextId` and `resourceId`) for the
+sending session (D171). The first claimant is admitted and delivered, which is
+`claimed`; another session's exclusive send on a live claim is dropped
+`held-by-other` and NACKed, a trusted-server `relay-rejected` on its handle and
+no fallback trigger; the holder's re-send is admitted and moves the expiry
+(D175). The lease is the message's lifetime: the claim expires with the
+message's `constraints.expiresAtMs`, an expired claim frees the key for the next
+claimant, and an unconfirmed claimed message ends `expired`; there is no lease
+constant, renewal call or release call (D172); a send with no expiry of its own
+holds the key for the WS server's retention default, and every browser send
+carries a `ttlMs`. The claim lives in the WS
+server's admission store beside dedup, read with the message and decided in the
+planner as the drop code `held-by-other`, so it holds across every API process;
+browsers never read one (D173). Exclusive is WS-only: the browser sends it over
+WS under every strategy but `rtc`, the RTC origin refuses it `unsupported`, and
+the browser validator refuses an exclusive send without a `resourceId` or
+without a room audience (D174). `shared` sends neither read nor take a claim,
+and receivers still select one local callback for an `exclusive` message. AR
+Eye Hunter's pickup intents claim the pickup: the loser reads `held-by-other`
+before its intent reaches the director, and the arena shows the loss (D176).
+The conformance lane's `claim` family proves one winner over `ws` and
+`rtc-with-ws-fallback`, the reclaim after expiry over `ws` and the refusal over
+`rtc`; manifests 18 and 22 are unchanged (D177). Server publications claim
+nothing, and scopes other than the room are not defined (D178).
 
 ## Observability and privacy
 
@@ -760,15 +949,51 @@ elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
 repair window, and 256 messages and 1 MiB per ordering track. The additional
 ceilings are planned requirements, not current guarantees.
 
-**CURRENT — S3c-ii, the volatile bound:** one session holds at most 1 000
-volatile messages and 4 MiB of envelopes at a time, sent and received together.
-A sent message is counted until its deadline, a received one until the earlier
-of its deadline and 30 s after its arrival; a message whose sender named no
-deadline is not counted. Over the bound the next send is refused `capacity`, and
-a received message is counted, never refused (D74, D78). The bound is shared
-with the platform's own state sync received on the volatile pair: a lane agent
-that leaves and rejoins a room holds about 26 KB of it, under one per cent of
-the production limits (R-S3c-ii-6, R-S3c-ii-7).
+**CURRENT — S3c-ii and V1a, the volatile bound:** one session's volatile
+messages are counted against limits of 1 000 messages and 4 MiB of envelopes,
+in two pools since V1b-ii (D189): its own sends and its arrivals. Arrivals are
+never refused, so the total can pass the limits while they keep arriving. An
+own send is refused only when it would pass both a limit on the total and the
+own pool's share of it, half of each limit (500 messages, 2 MiB): own sends may
+use whatever the arrivals leave free, and once the total is at a limit they
+still have their share. A session sends no
+volatile message whose deadline lies more than 5 minutes ahead, and its own
+ordered sends hold at most 64 live ordering tracks (D179).
+A sent message is counted until its deadline, and its track until the last
+counted send on it reaches its deadline; a received one until the earlier of
+its deadline and 30 s after its arrival, and it never opens a counted track; a
+message whose sender named no deadline is not counted. A send that would pass a
+limit is refused `capacity` with the `limit` it would pass (`admissions`,
+`bytes`, `age` or `tracks`), and a received message is counted, never refused
+(D74, D78). A best-effort RTC room send that the RTC carrier's congestion drop
+sheds while the session would refuse its next own send at the count or byte limit is refused
+`capacity` with no `limit`. The bound is shared with the platform's own state sync received on
+the volatile pair: a lane agent that leaves and rejoins a room holds about
+26 KB of it, under one per cent of the production limits (R-S3c-ii-6,
+R-S3c-ii-7).
+
+**CURRENT — V1a, the bound as a metric:** `rallar.messages.readUsage()` reads
+the session's usage (messages, bytes, the age of the oldest counted message,
+tracks), its limits and whether it is `overloaded`, and the black-box `stats`
+command records the same report as `rallar.alm`, so every run that reads
+`stats` measures the bound over time; the ALM lane's observation records each
+page's one end-of-cell reading, and the `capacity-tracks` cell's reading at the
+track bound (D180). The age limit bounds the messages the bound counts, not ordering
+state: an ordering track stays known for an hour after its last message unless
+the snapshot cap (D191, above) evicts it first, so a resumed track is not read as
+a gap; an evicted track's next arrival reads as a gap from sequence 1, and a
+buffered release on it reads `resync-required`. What a session keeps per
+message, track or peer is bounded rather than held for its lifetime: the ids of
+cancelled and handed-over sends for 60 minutes, the browser's record of
+resynchronized tracks for 5 minutes and at most 256 tracks (a track that has not
+resynchronized for 5 minutes, or that 256 later tracks pushed out, calls its
+recovery handler again when it next resyncs), at most 256 ordering snapshots in
+each of the browser's inbound stores, and RTC round-trip measurements share one
+counter for all peers
+(D181). **Limit:** a long session plateaus rather than empties: an idle ordering
+track keeps two inbound rows for an hour, its snapshot while it is one of its
+store's 256 and the marker of its delivered sequences, which the snapshot cap
+leaves for the hour, and each sending origin one outbound version row.
 
 These are work limits, not a 256-session room limit. Large audiences and system
 snapshots use bounded producer/consumer pages without truncation; incomplete
@@ -782,8 +1007,8 @@ buffers retain their separate responsibilities.
 route identifier, 128 KiB envelope, 256-entry collection or page, 64 hops,
 256-sequence repair window, 256 messages and 1 MiB per ordered track) live in one
 contract and apply to live and persisted envelopes and to control payloads.
-Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
-V1.
+Aggregate per-session budgets (count, bytes, age, active tracks) are current:
+count and bytes since S3, age and active tracks since V1a (D179).
 
 **PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
 storage budget (D87):
@@ -843,12 +1068,13 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — A1, I1, I2a, and I2b, complete safe surface:** The delivery handle
+**PLANNED — I1, I2a, and I2b, complete safe surface:** The delivery handle
 (S1) and the channel purpose (S3a) exist. They are exported by
-`browser/rallar-messages.ts`, the narrow entry point F1 added. Four parts are
-absent:
+`browser/rallar-messages.ts`, the narrow entry point F1 added. A1 added the
+principal and fixed-recipient builders (`newALPrincipalBroadcastMessage`, and
+`recipientPeerIds` on `newALBroadcastMessage`) and the browser's `principalId`
+and `recipientPeerIds` send inputs. Three parts are absent:
 
-- principal and fixed-recipient builders (A1);
 - correlation and trace builders (I1);
 - the channel's storage-unavailable policy (I2a);
 - `local-checkpoint` with its per-store settings (I2b).
@@ -868,6 +1094,45 @@ this document is in scope (decision D5); the roadmap's release map owns the
 order, and the two games are changed wherever that proves a capability in a
 real UI (decision D4). #566 ships two such cutovers as one web and API deploy:
 RTC signaling's required `offerId` (D97) and the admission schema bump (D101).
+
+Relic Hunters is the server-authoritative consumer. Its commands travel over WS
+as a unicast to the server peer id on `room.relic.command`, receipted at the
+server's admission (D79), on a `local-checkpoint` channel that refuses when
+storage is unavailable (D134): the server's `msgId` dedup absorbs a command
+resumed after a reload, and a command admitted inside the last checkpoint
+interval is lost with the page and reads `unobservable`. Every applied command
+publishes the whole game snapshot as a latest-wins room notification from the
+server, with `receiver` receipts over the audience frozen at publish and a 15 s
+TTL (D77); the client keeps the newest by its own comparator. **CURRENT — R2b,
+round transitions:** the server publishes each round transition -- the round
+starting, resolving into review, and the review continuing into the next round
+or the finish -- as a `relic.event.v1` notification on `room.relic.event` with
+the game's incarnation (`${gameId}:${createdAtEpochMs}`, since a reset keeps the
+game id) as ordering key, the round the transition enters as epoch (the finish
+enters the round past the last) and no sequence, so the server mints one track
+per round and no track spans a review (D150, D151). The client reads it through
+a typed room channel whose recovery owner re-reads the game over REST, and the
+UI's live round cues follow that stream in order while the snapshot stays the
+game's state (D152). A browser that joins during a round sees that round's state
+from the snapshot and its cues from the next round (D155). **CURRENT — A1, AI
+suggestions on a principal audience:** a hunter's planning suggestion, generated
+in the browser, shows in the asking browser at once and is sent as a principal
+broadcast in the room over WS (`ai.broadcastJson` with `scope: 'principal'` and
+the hunter's principal id), so the hunter's other sessions in the room receive
+it and no other hunter does; the receiver keeps its room and revision checks
+(D162). **CURRENT — A2a, the hunter's private event:** the server publishes
+`relic.hunter.v1` on `room.relic.hunter` as a principal broadcast to the acting
+hunter's sessions in the room (`newALPrincipalBroadcastMessage` with the room's
+`groupRef`, `receiver` receipts, the outbox, a 15 s TTL): `action-recorded`
+with the round and the action after a command that records the hunter's action,
+and `command-refused` with the command and the rule's text after a command the
+rules refuse. Relic keys its players by session, so each event names the session
+that sent the command (`playerId`): the browser reads it through a typed room
+channel, and only that session shows a refusal's text where the command's
+error shows; the hunter's other sessions are other players and drop it, and the
+locked-plan card stays the display of the plan a session submitted. No other
+hunter receives it. This closes D72's lost rule text for the acting session
+without a correlated reply (D168).
 
 ## Current validation baseline
 
@@ -901,7 +1166,7 @@ in scope by roadmap decision D5.
    sessions, and each durability tier meets its recorded storage budget.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
-   authoritative membership fencing when requested and supported, respects required
+   authoritative membership fencing on every room send, respects required
    snapshot floors, and freezes the reliable intended audience at admission.
 7. Every target/ACK mode, including principal, world, all, and fixed audiences
    and the group-leader mode, has one documented semantic proven by the

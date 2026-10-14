@@ -22,7 +22,7 @@ describe('Relic game state storage', () => {
         const handlers: CommandHandler[] = [];
         await installRelicHunterGame(createServer(store, handlers), {
             createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-            readSessionUsername: () => Promise.resolve('Alice')
+            readSession: () => Promise.resolve({ username: 'Alice', clientId: 'alice-client' })
         });
 
         await handlers[0]({ payload: joinCommand('room-1') }, {
@@ -41,7 +41,7 @@ describe('Relic game state storage', () => {
         const store = createEncodingStore();
         const service = await installRelicHunterGame(createServer(store, []), {
             createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
-            readSessionUsername: () => Promise.resolve(undefined)
+            readSession: () => Promise.resolve(undefined)
         });
 
         await expect(service.ensureSnapshot('room-2')).resolves.toMatchObject({ gameId: 'room-2', phase: 'lobby' });

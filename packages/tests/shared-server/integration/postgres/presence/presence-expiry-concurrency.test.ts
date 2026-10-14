@@ -1,5 +1,24 @@
+import {
+    mkdtemp,
+    rm,
+    writeFile
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
+import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
+import { encodeClientStateStorageKeyPart } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-key-codec.ts';
+import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
@@ -14,25 +33,13 @@ import type {
     GroupRef
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import {
-    mkdtemp,
-    rm,
-    writeFile
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
-import { createTestGroup } from '../../../../create-test-group.ts';
-import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 import { readDirectResourceOutboxEntries } from '../../../rallar-system/app-outbox/direct-resource-outbox-lifecycle.ts';
 import { assertWorkerOutboxLifecycle } from '../../../rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
+import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
+import { createRuntimeStatePostgresSql } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 import { createPostgresAppInboxWorkerRuntime, createPostgresAppInboxWorkerTrace } from '../test-support/postgres-app-inbox-worker-runtime.ts';
 import {
     createPostgresAppInboxTestAuthority,
@@ -43,7 +50,6 @@ import {
     unwrapAppInboxResult
 } from '../test-support/postgres-group-app-inbox-mutation.ts';
 import { waitForPostgresAppInboxWorkerParticipants } from '../test-support/postgres-worker-barrier.ts';
-
 import {
     assertIndependentBarrierWorkers,
     assertOneWorkerRebased,
@@ -58,19 +64,17 @@ import {
     type WorkerInput
 } from './presence-concurrency-worker-test-runtime.ts';
 import {
+    BarrierPSqlRuntimeStateRepository,
+    cleanupPostgresPresenceClients,
     cleanupRuntimeState,
     createPostgresClientService,
     createPostgresGroupRuntime,
-    createSql,
     GroupPresenceReadBarrier,
     PrincipalReadBarrier,
     seedConnectedClientSession,
     seedExpiredClientSession,
-    seedExpiredGroupPresenceSession,
-    toRuntimeRepository
+    seedExpiredGroupPresenceSession
 } from './presence-expiry-concurrency-test-runtime.ts';
-
-import { createPostgresTestRequestIdFactory } from '../test-support/create-postgres-test-request-id-factory.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = process.env.RALLAR_POSTGRES_INTEGRATION === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -81,7 +85,7 @@ describe('Postgres presence expiry concurrency', () => {
         'rejects client and group worker inputs without request ids before mutation',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('worker-request-id');
             const groupRef: GroupRef = { ...scope, groupId: 'room-1' };
             const atEpochMs = Date.now();
@@ -133,7 +137,7 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 await seedConnectedClientSession({ sql: setupSql, scope, sessionRef, atEpochMs });
                 const setup = createTestGroupStateRuntime({
-                    runtimeRepository: toRuntimeRepository(setupSql),
+                    runtimeRepository: new PSqlRuntimeStateRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     serviceId: 'postgres-worker-request-id-setup'
@@ -182,7 +186,7 @@ describe('Postgres presence expiry concurrency', () => {
         'rebases independent client heartbeat workers with compact durable receipts',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('client-worker-heartbeat');
             const atEpochMs = Date.now();
             const sessionRef: ClientSessionRef = {
@@ -263,7 +267,7 @@ describe('Postgres presence expiry concurrency', () => {
         'rebases independent client disconnect and reconnect workers without stale generation loss',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('client-worker-reconnect');
             const atEpochMs = Date.now();
             const sessionRef: ClientSessionRef = {
@@ -372,7 +376,7 @@ describe('Postgres presence expiry concurrency', () => {
         'rebases independent group join and ban workers and retains both accepted mutations',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('group-worker-membership');
             const groupRef: GroupRef = { ...scope, groupId: 'room-1' };
             const atEpochMs = Date.now();
@@ -417,7 +421,7 @@ describe('Postgres presence expiry concurrency', () => {
 
             try {
                 const setup = createTestGroupStateRuntime({
-                    runtimeRepository: toRuntimeRepository(setupSql),
+                    runtimeRepository: new PSqlRuntimeStateRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     serviceId: 'postgres-worker-group-setup'
@@ -483,7 +487,7 @@ describe('Postgres presence expiry concurrency', () => {
         'runs group presence connect heartbeat and disconnect through independent barrier workers',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('group-worker-presence-lifecycle');
             const groupRef: GroupRef = { ...scope, groupId: 'room-1' };
             const atEpochMs = Date.now();
@@ -493,7 +497,7 @@ describe('Postgres presence expiry concurrency', () => {
 
             try {
                 const setup = createTestGroupStateRuntime({
-                    runtimeRepository: toRuntimeRepository(setupSql),
+                    runtimeRepository: new PSqlRuntimeStateRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     serviceId: 'postgres-worker-presence-setup'
@@ -627,9 +631,9 @@ describe('Postgres presence expiry concurrency', () => {
         'admits exactly one independent contender for the last group member slot',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
-            const leftSql = await createSql(databaseUrl, 2);
-            const rightSql = await createSql(databaseUrl, 2);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const leftSql = await createRuntimeStatePostgresSql(databaseUrl, 2);
+            const rightSql = await createRuntimeStatePostgresSql(databaseUrl, 2);
             const scope = uniqueScope('group-last-slot-capacity');
             const groupRef: GroupRef = { ...scope, groupId: 'room-1' };
             const atEpochMs = Date.now();
@@ -771,9 +775,9 @@ describe('Postgres presence expiry concurrency', () => {
             'without revising the group aggregate',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
-            const leftSql = await createSql(databaseUrl, 2);
-            const rightSql = await createSql(databaseUrl, 2);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const leftSql = await createRuntimeStatePostgresSql(databaseUrl, 2);
+            const rightSql = await createRuntimeStatePostgresSql(databaseUrl, 2);
             const scope = uniqueScope('group-heartbeat-100');
             const groupRef: GroupRef = { ...scope, groupId: 'room-1' };
             const atEpochMs = Date.now();
@@ -914,14 +918,88 @@ describe('Postgres presence expiry concurrency', () => {
         120_000
     );
 
+    postgresIt('isolates client expiry application pages before SQL limits and cursors', async () => {
+        const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
+        const scopeStem = uniqueScope('client-expiry-page-isolation');
+        const targetScope: StateScope = {
+            ...scopeStem,
+            applicationId: `${scopeStem.applicationId}-b-target`
+        };
+        const foreignScope: StateScope = {
+            ...scopeStem,
+            applicationId: `${scopeStem.applicationId}-a-foreign`
+        };
+        const targetSessionRef: ClientSessionRef = {
+            ...targetScope,
+            principalId: 'alice',
+            clientInstanceId: 'browser',
+            sessionId: 'target-page-session'
+        };
+        const foreignSessionRef: ClientSessionRef = {
+            ...foreignScope,
+            principalId: 'foreign-alice',
+            clientInstanceId: 'foreign-browser',
+            sessionId: 'foreign-page-session'
+        };
+        const atEpochMs = Date.now();
+        let hasPrimaryFailure = false;
+
+        try {
+            await seedExpiredClientSession({ sql, scope: targetScope, sessionRef: targetSessionRef, atEpochMs });
+            await seedExpiredClientSession({ sql, scope: foreignScope, sessionRef: foreignSessionRef, atEpochMs });
+            const clientRepository = createClientStateRepository(sql);
+            const foreignEntry = await clientRepository.findSessionEntry(foreignSessionRef);
+            const foreignEvents = await clientRepository.listEvents(foreignSessionRef);
+            expect(foreignEntry?.value).toMatchObject({ status: 'active', expiresAtEpochMs: atEpochMs - 1_000 });
+
+            const repository = new BarrierPSqlRuntimeStateRepository(
+                sql,
+                new PrincipalReadBarrier(1),
+                targetScope.applicationId
+            );
+            const keyPrefix = `app=${encodeClientStateStorageKeyPart(scopeStem.applicationId)}-`;
+            const targetKey = clientStateSessionStorageKey(targetSessionRef);
+            const foreignKey = clientStateSessionStorageKey(foreignSessionRef);
+            expect(targetKey).not.toBe(foreignKey);
+            const firstPage = await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix, { limit: 1 });
+            expect(firstPage.map((entry) => entry.key)).toEqual([targetKey]);
+            const afterForeign = await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix, { afterKey: foreignKey, limit: 1 });
+            expect(afterForeign.map((entry) => entry.key)).toEqual([targetKey]);
+            const afterTarget = await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix, { afterKey: targetKey, limit: 1 });
+            expect(afterTarget).toEqual([]);
+            const targetPrefixPage = await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, targetKey, { limit: 1 });
+            expect(targetPrefixPage.map((entry) => entry.key)).toEqual([targetKey]);
+            expect(await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, `${targetKey}-absent`, { limit: 1 })).toEqual([]);
+            expect(await repository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, foreignKey, { limit: 1 })).toEqual([]);
+            const unscopedRepository = new BarrierPSqlRuntimeStateRepository(sql, new PrincipalReadBarrier(1));
+            const unscopedPage = await unscopedRepository.findEntriesByPrefixPage(CLIENT_STATE_SESSIONS_NAMESPACE, keyPrefix, { limit: 1 });
+            expect(unscopedPage.map((entry) => entry.key)).toEqual([foreignKey]);
+            expect(await clientRepository.findSessionEntry(foreignSessionRef)).toEqual(foreignEntry);
+            expect(await clientRepository.listEvents(foreignSessionRef)).toEqual(foreignEvents);
+        }
+        catch (error) {
+            hasPrimaryFailure = true;
+            throw error;
+        }
+        finally {
+            await cleanupPostgresPresenceClients({
+                sql,
+                applicationIds: [targetScope.applicationId, foreignScope.applicationId],
+                clients: [sql],
+                hasPrimaryFailure
+            });
+        }
+    });
+
     postgresIt(
         'rebases client expiry CAS workers and preserves a concurrent reconnect',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
-            const leftSql = await createSql(databaseUrl);
-            const rightSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const leftSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const rightSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('client-expiry-concurrency');
+            const foreignScope = uniqueScope('zz-client-expiry-foreign');
             const atEpochMs = Date.now();
             const sessionRef: ClientSessionRef = {
                 ...scope,
@@ -929,9 +1007,32 @@ describe('Postgres presence expiry concurrency', () => {
                 clientInstanceId: 'browser-1',
                 sessionId: 'session-1'
             };
+            const foreignSessionRef: ClientSessionRef = {
+                ...foreignScope,
+                principalId: 'foreign-alice',
+                clientInstanceId: 'foreign-browser',
+                sessionId: 'foreign-session'
+            };
+            const attempts: Promise<ClientMutationComputed | readonly ClientMutationComputed[]>[] = [];
+            let hasPrimaryFailure = false;
 
             try {
                 await seedExpiredClientSession({ sql: setupSql, scope, sessionRef, atEpochMs });
+                await seedExpiredClientSession({
+                    sql: setupSql,
+                    scope: foreignScope,
+                    sessionRef: foreignSessionRef,
+                    atEpochMs
+                });
+                const repository = createClientStateRepository(setupSql);
+                const foreignEntry = await repository.findSessionEntry(foreignSessionRef);
+                const foreignEvents = await repository.listEvents(foreignSessionRef);
+                expect(foreignEntry?.value).toMatchObject({
+                    ...foreignSessionRef,
+                    status: 'active',
+                    generationId: 'generation-1',
+                    expiresAtEpochMs: atEpochMs - 1_000
+                });
                 const expiryBarrier = new PrincipalReadBarrier(2);
                 const leftExpiry = createPostgresClientService({
                     sql: leftSql,
@@ -945,27 +1046,50 @@ describe('Postgres presence expiry concurrency', () => {
                     atEpochMs,
                     applicationId: scope.applicationId
                 });
-                const [leftFirstAttempt, rightFirstAttempt] = await Promise.allSettled([
+                const firstAttempts = [
                     leftExpiry.expireExpiredSessions(atEpochMs),
                     rightExpiry.expireExpiredSessions(atEpochMs)
-                ]);
+                ];
+                attempts.push(...firstAttempts);
+                const [leftFirstAttempt, rightFirstAttempt] = await Promise.allSettled(firstAttempts);
+                if (!leftFirstAttempt || !rightFirstAttempt) {
+                    throw new Error('Expected both client expiry attempts to settle');
+                }
                 if (leftFirstAttempt.status === 'rejected') {
                     expect(leftFirstAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
                 }
                 if (rightFirstAttempt.status === 'rejected') {
                     expect(rightFirstAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
                 }
-                const [leftResults, rightResults] = await Promise.all([
+                const retryAttempts = [
                     leftFirstAttempt.status === 'fulfilled'
                         ? Promise.resolve(leftFirstAttempt.value)
                         : leftExpiry.expireExpiredSessions(atEpochMs),
                     rightFirstAttempt.status === 'fulfilled'
                         ? Promise.resolve(rightFirstAttempt.value)
                         : rightExpiry.expireExpiredSessions(atEpochMs)
-                ]);
-                expect(leftResults.length + rightResults.length).toBe(1);
+                ];
+                attempts.push(...retryAttempts);
+                const [leftResults, rightResults] = await Promise.all(retryAttempts);
+                if (!leftResults || !rightResults) {
+                    throw new Error('Expected both client expiry result arrays');
+                }
+                const written = [...leftResults, ...rightResults];
+                expect(written.length, JSON.stringify({ leftResults, rightResults })).toBe(1);
+                expect(written).toMatchObject([{
+                    outcome: 'write',
+                    session: {
+                        operation: 'update',
+                        value: {
+                            ...sessionRef,
+                            generationId: 'generation-1',
+                            status: 'expired'
+                        }
+                    }
+                }]);
+                expect(await repository.findSessionEntry(foreignSessionRef)).toEqual(foreignEntry);
+                expect(await repository.listEvents(foreignSessionRef)).toEqual(foreignEvents);
 
-                const repository = createClientStateRepository(setupSql);
                 const session = await repository.findSession(sessionRef);
                 const events = await repository.listEvents({
                     ...scope,
@@ -1012,7 +1136,7 @@ describe('Postgres presence expiry concurrency', () => {
                     expiresAtEpochMs: atEpochMs + 60_000,
                     requestId: requestIdFor('postgres-reconnect-generation-2')
                 } as const;
-                const [expiryAttempt, reconnectAttempt] = await Promise.allSettled([
+                const reconnectAttempts = [
                     reconnectExpiry.expireExpiredSessions(atEpochMs),
                     reconnect.connectSession(
                         {
@@ -1023,14 +1147,21 @@ describe('Postgres presence expiry concurrency', () => {
                             request: reconnectRequest
                         }
                     )
-                ]);
+                ];
+                attempts.push(...reconnectAttempts);
+                const [expiryAttempt, reconnectAttempt] = await Promise.allSettled(reconnectAttempts);
+                if (!expiryAttempt || !reconnectAttempt) {
+                    throw new Error('Expected both reconnect race attempts to settle');
+                }
                 if (expiryAttempt.status === 'rejected') {
                     expect(expiryAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
-                    await reconnectExpiry.expireExpiredSessions(atEpochMs);
+                    const expiryRetry = reconnectExpiry.expireExpiredSessions(atEpochMs);
+                    attempts.push(expiryRetry);
+                    await expiryRetry;
                 }
                 if (reconnectAttempt.status === 'rejected') {
                     expect(reconnectAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
-                    await reconnect.connectSession(
+                    const reconnectRetry = reconnect.connectSession(
                         {
                             scope: scope,
                             principalId: reconnectRef.principalId,
@@ -1039,6 +1170,8 @@ describe('Postgres presence expiry concurrency', () => {
                             request: reconnectRequest
                         }
                     );
+                    attempts.push(reconnectRetry);
+                    await reconnectRetry;
                 }
                 expect(await repository.findSession(reconnectRef)).toMatchObject({
                     status: 'active',
@@ -1046,10 +1179,21 @@ describe('Postgres presence expiry concurrency', () => {
                     generationVersion: 2,
                     connectionId: 'connection-2'
                 });
+                expect(await repository.findSessionEntry(foreignSessionRef)).toEqual(foreignEntry);
+                expect(await repository.listEvents(foreignSessionRef)).toEqual(foreignEvents);
+            }
+            catch (error) {
+                hasPrimaryFailure = true;
+                throw error;
             }
             finally {
-                await cleanupRuntimeState(setupSql, scope.applicationId);
-                await Promise.all([setupSql.end(), leftSql.end(), rightSql.end()]);
+                await Promise.allSettled(attempts);
+                await cleanupPostgresPresenceClients({
+                    sql: setupSql,
+                    applicationIds: [scope.applicationId, foreignScope.applicationId],
+                    clients: [setupSql, leftSql, rightSql],
+                    hasPrimaryFailure
+                });
             }
         },
         60_000
@@ -1059,9 +1203,9 @@ describe('Postgres presence expiry concurrency', () => {
         'rebases two group expiry CAS workers and writes one durable disconnect event',
         async () => {
             const databaseUrl = requireDatabaseUrl();
-            const setupSql = await createSql(databaseUrl);
-            const leftSql = await createSql(databaseUrl);
-            const rightSql = await createSql(databaseUrl);
+            const setupSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const leftSql = await createRuntimeStatePostgresSql(databaseUrl);
+            const rightSql = await createRuntimeStatePostgresSql(databaseUrl);
             const scope = uniqueScope('group-expiry-concurrency');
             const atEpochMs = Date.now();
             const groupRef: GroupRef = {
@@ -1138,7 +1282,7 @@ describe('Postgres presence expiry concurrency', () => {
         'isolates absent and explicit sentinel workspaces ' +
             'at the live group repository and event boundaries',
         async () => {
-            const sql = await createSql(requireDatabaseUrl());
+            const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
             const applicationId = uniqueScope('group-scope-key-isolation').applicationId;
             const absentGroup = groupFixture(
                 {

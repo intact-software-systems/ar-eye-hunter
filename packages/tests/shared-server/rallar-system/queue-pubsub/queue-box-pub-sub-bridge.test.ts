@@ -1,3 +1,12 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     installQueueBoxPubSubBridge,
@@ -19,17 +28,14 @@ import {
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
+import type {
+    WsServerLiveSendInputDto,
+    WsServerLiveSendResult
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
@@ -99,6 +105,7 @@ describe('QueueBoxPubSubBridge', () => {
         const reportFailure = vi
             .spyOn(console, 'error')
             .mockImplementation(() => undefined);
+        onTestFinished(() => reportFailure.mockRestore());
 
         const readiness = installQueueBoxPubSubBridge({
             wsQBoxServerService,
@@ -124,7 +131,6 @@ describe('QueueBoxPubSubBridge', () => {
             'QueueBox pub/sub bridge listener failed:',
             failure
         );
-        reportFailure.mockRestore();
     });
 
     it('publishes a durable outbox key and sends the message to local recipients', async () => {
@@ -811,6 +817,32 @@ describe('the captured audience of a cluster publication', () => {
         }
     );
 
+    it('hands a world row the scope it captured on the local and the remote send', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createCanonicalWorldOutboxEntry(Date.now());
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const sends: WsServerLiveSendInputDto[] = [];
+        const recipientScope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                recipientScope,
+                sends
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(sends.map((send) => send.recipientScope)).toEqual([recipientScope, recipientScope]);
+    });
+
     it('fails the local publish closed when the captured policy is missing, as the remote receive does', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const entry = createCanonicalRoomOutboxEntry(Date.now());
@@ -866,6 +898,8 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly outbox?: InMemoryQueueBox;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
     readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
+    readonly recipientScope?: StateScope;
+    readonly sends?: WsServerLiveSendInputDto[];
     readonly sendToTargetsWithResult?: (
         message: ALMessage,
         recipientSessionIds?: readonly string[],
@@ -882,7 +916,9 @@ function createTestQueueBoxPubSubWsService(
             input.registerOutboxPublisher?.(publisher);
             return service;
         },
-        sendToTargetsWithResult({ message, recipientSessionIds, admittedPeerIds }) {
+        sendToTargetsWithResult(send) {
+            input.sends?.push(send);
+            const { message, recipientSessionIds, admittedPeerIds } = send;
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },
@@ -893,7 +929,8 @@ function createTestQueueBoxPubSubWsService(
                 retryTracking: null,
                 repairTracking: null,
                 supersedenceTracking: null,
-                admittedAudience: await input.readAudience?.(message, entry)
+                admittedAudience: await input.readAudience?.(message, entry),
+                ...(input.recipientScope === undefined ? {} : { recipientScope: input.recipientScope })
             };
         }
     };
@@ -948,7 +985,8 @@ function createWsEntry(): ResourceEntry {
             'todo.item.updated.v1',
             { title: 'Ship bridge' }
         ),
-        EnqueuedType.WS_INBOX
+        EnqueuedType.WS_INBOX,
+        Temporal.Now.instant()
     );
 }
 
@@ -969,7 +1007,8 @@ function createWsOutboxEntry(): ResourceEntry {
                 }
             }
         ),
-        EnqueuedType.WS_OUTBOX
+        EnqueuedType.WS_OUTBOX,
+        Temporal.Now.instant()
     );
 }
 
@@ -986,13 +1025,25 @@ function createCanonicalRoomOutboxEntry(nowMs: number): ResourceEntry {
             groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
         }
     );
+    return createCanonicalOutboxEntry(message, nowMs);
+}
+
+/** A client's world broadcast stored under its canonical outbound key. */
+function createCanonicalWorldOutboxEntry(nowMs: number): ResourceEntry {
+    const message = newALBroadcastMessage('peer-1', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', { version: 1 }, {
+        ttlMs: 60_000
+    });
+    return createCanonicalOutboxEntry(message, nowMs);
+}
+
+function createCanonicalOutboxEntry(message: ALMessage, nowMs: number): ResourceEntry {
     const timed = {
         ...message,
         id: { ...message.id, ts: nowMs },
         constraints: { expiresAtMs: nowMs + 60_000 }
     };
     return {
-        ...QueueBoxUtilities.toResourceEntryFromMsg(timed, EnqueuedType.WS_OUTBOX),
+        ...QueueBoxUtilities.toResourceEntryFromMsg(timed, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
         key: toALOutboundCanonicalKey('cluster-test', timed)
     };
 }

@@ -48,11 +48,17 @@ unicast to the WS server's peer id from `/api/config`, D57 as applied). The serv
 the server admitted it. The server applies it under the sender's session username and publishes the new snapshot
 through the outbox with receipts.
 
-The command channel is `local-outbox` with `onStorageUnavailable: 'refuse'`: the command is stored before it leaves, so
-a reload resumes it under the same message id and deadline (30 s), and a browser whose storage is unavailable reports
-the command failed instead of sending it unstored. There is no command id in the model, so only the ALM message-id dedup
-within the deadline plus grace stops a repeat: the server re-acknowledges a resumed command it already admitted without
-applying it again, and drops one past its deadline as expired.
+The command channel is `local-checkpoint` with `onStorageUnavailable: 'refuse'`: the command is admitted and sent from
+memory, with no storage work on the send, and the session's checkpoint saves it within one interval (1 s by default); a
+page that is hidden or frozen starts a checkpoint at once, and one started as the page unloads is best effort. A reload
+after the save resumes the command under the same message id and deadline (30 s). A command admitted inside the last
+interval before the page ends is lost with the page, and its handle reads `unobservable`. A checkpoint that lags past
+its bound (10 s by default) makes the next command fail with `storage-unavailable` instead of being sent. There is no
+command id in the model, so only the ALM message-id dedup within the deadline plus grace stops a repeat: the server
+re-acknowledges a resumed command it already admitted without applying it again, and drops one past its deadline as
+expired. The full-stack spec's reload-mid-command case holds a start command's WS frame, reloads the page past one
+interval and expects the expedition to start exactly once; it stays red until the lane retransmits a receipted WS
+unicast whose frame the transport accepted but the server never received, which it does under neither tier today.
 
 ```text
 command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription
@@ -60,9 +66,22 @@ reset -> REST reset endpoint -> persisted new game -> outbox snapshot -> REST re
 ```
 
 REST (`POST /api/relic/games/:gameId/commands`) stays for one release: the browser uses it only before it knows the WS
-server's peer id, never after a WS attempt. A rule error the server meets on the WS path is logged there and not
-shown in the browser until a reply channel exists (D72's stated regression); the UI shows the command's receipt state
-and the applied snapshot's arrival.
+server's peer id, never after a WS attempt. The UI shows the command's receipt state and the applied snapshot's
+arrival.
+
+The server also tells the acting hunter what became of a command, on `room.relic.hunter` / `relic.hunter.v1`: a
+principal broadcast in the room, receipted, that only the acting hunter's own live sessions in the room receive.
+Relic keys its players by session, so the event names the session that sent the command (`playerId`) and only that
+session uses it; the hunter's other sessions are other players and drop it. After a submitted plan it carries the
+recorded action for the round (`action-recorded`), which the page does not render because the locked-plan card
+already shows the plan it submitted; after a command a rule refused it carries the rule's text (`command-refused`),
+which the page shows as the command error. A storage or session failure on the WS path is still only logged until a
+reply channel exists.
+
+```text
+submit-action -> applyCommand -> outbox snapshot (room) -> outbox hunter event (the hunter's principal in the room)
+refused command -> outbox hunter event with the rule's text (the hunter's principal in the room)
+```
 
 ## Expedition Setup Path
 
@@ -236,12 +255,14 @@ facade with a browser-only policy, a stable `baseStateRevision`, stale-result
 rejection, and a deterministic mock provider in development/tests. Production
 builds stay unavailable unless an app-supplied browser provider is injected.
 
-Accepted local suggestions become RallarAI `proposed` envelopes and are
-broadcast over Rallar WS on `room.relic.ai.planning` /
-`relic.ai.planning-proposal.v1`. Peers keep recent compatible proposals as
-read-only party notes. Only the local browser can prime its own suggestion into
-the existing draft controls, and the normal Submit Plan REST command remains
-the only authoritative gameplay submission.
+Accepted local suggestions become RallarAI `proposed` envelopes and are sent
+over Rallar WS on `room.relic.ai.planning` / `relic.ai.planning-proposal.v1` as
+a principal broadcast in the room: only the asking hunter's own sessions in the
+room receive it, and other hunters never do. The panel's one suggestion card
+shows the hunter's newest proposal, whichever of the hunter's sessions asked for
+it. Only the local browser can prime its own suggestion into the existing draft
+controls, and the normal Submit Plan REST command remains the only authoritative
+gameplay submission.
 
 ## Known Data-Flow Gaps
 

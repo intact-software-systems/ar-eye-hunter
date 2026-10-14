@@ -298,7 +298,7 @@
       "request": {
         "send": {
           "id": {
-            "v": 2,
+            "v": 3,
             "msgId": "crdt-delivery-{runId}",
             "ts": 0,
             "senderId": "{crdtSessionId}",

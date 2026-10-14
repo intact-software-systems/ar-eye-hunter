@@ -1,5 +1,3 @@
-import '../../../setup-browser-indexeddb.ts';
-
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
@@ -32,21 +30,22 @@ import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-
 import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { toKeyAsString, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    toKeyAsString,
+    toResourceEntryWithKey,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import '../../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
-
-afterEach(() => {
-    vi.restoreAllMocks();
-});
 
 const TRANSACTION_NAMESPACE = 'admission-transactions';
 /** Longer than a few engine passes at their 100 ms delay, and far inside the 3 s readiness memory. */
@@ -56,7 +55,7 @@ const IDLE_OWNER_SETTLE_MS = 300;
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }],
     supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
 });
@@ -64,7 +63,7 @@ const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
@@ -72,7 +71,7 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: msg.id.ts + 30_000 } },
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
@@ -108,6 +107,10 @@ interface AdmissionTransactionFixture {
     readonly backend: IndexedDbAdmissionBackend;
 }
 
+afterEach(() => {
+    vi.restoreAllMocks();
+});
+
 /** The single-send and group commit of the runtime, without the worker that would claim what it commits. */
 function createTransactionDispatchAdmission(
     { store, backend }: AdmissionTransactionFixture
@@ -116,7 +119,7 @@ function createTransactionDispatchAdmission(
         lane: 'durable',
         admissionStore: store,
         workPort: createTestALOutboundWorkPort({ admissionStore: store, workQueue: backend.workQueue, nowMs: Date.now }),
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
@@ -166,7 +169,17 @@ async function admitOutboundMessage(
     message: ALMessage,
     planner: ALOutboundPlanner<OutboundTestPayload>
 ): Promise<void> {
-    expect(await store.commitBundle(await computeOutboundTestAdmission(store, message, planner))).toBe('committed');
+    expect(
+        await store.commitBundle(
+            await readOutboundTestAdmission({
+                store: store,
+                message: message,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() },
+                planner: planner
+            })
+        )
+    ).toBe('committed');
 }
 
 /** A committed message whose receiver still owes an acknowledgement: what a control admission reads. */
@@ -174,7 +187,13 @@ async function seedAcknowledgeableMessage(
     store: ALOutboundAdmissionStore<OutboundTestPayload>
 ): Promise<ALMessage> {
     const message = createOutboundMessage('control-transactions');
-    const admission = await computeOutboundTestAdmission(store, message, SEND_PLANNER);
+    const admission = await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: SEND_PLANNER
+    });
     expect(
         await store.commitBundle({
             ...admission,
@@ -235,7 +254,13 @@ it('reads a re-admitted supersedence-tracked message from one readonly transacti
 
 it('commits a bundle handed over alone with its own read snapshot, one fence snapshot and one write', async () => {
     const { store } = await createAdmissionFixture('commit-bundle');
-    const bundle = await computeOutboundTestAdmission(store, createOutboundMessage('commit-bundle'), SEND_PLANNER);
+    const bundle = await readOutboundTestAdmission({
+        store: store,
+        message: createOutboundMessage('commit-bundle'),
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: SEND_PLANNER
+    });
 
     const recorded = recordIndexedDbTransactions();
     expect(await store.commitBundle(bundle)).toBe('committed');
@@ -256,7 +281,7 @@ it('reads a single send decision and the observation its commit fences from one 
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
-    }, async (read) => ({ kind: 'commit', bundle: toTestBundle(store, read) }));
+    }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
 
     expect(recorded.modes()).toEqual(['readonly']);
     // The effect row the commit writes, observed empty, and the canonical pair it writes beside it.
@@ -303,10 +328,10 @@ it('conflicts a single send whose canonical row was written after its decision r
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
-    }, async (read) => ({ kind: 'commit', bundle: toTestBundle(store, read) }));
+    }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
 
     // Written without an admission, so the sender version the commit also fences does not move.
-    await backend.workQueue.enqueue(createOutboundCanonicalEntry(store, message));
+    await backend.workQueue.enqueue(createOutboundCanonicalEntry(store, message, Temporal.Now.instant()));
 
     expect(await store.commitBundle(decision.bundle, observation)).toBe('conflict');
 });
@@ -314,7 +339,7 @@ it('conflicts a single send whose canonical row was written after its decision r
 it('reads the canonical row a dequeue supplies inside the commit\'s observation, never trusting the supplied entry', async () => {
     const { store, backend } = await createAdmissionFixture('dequeue-observation');
     const message = createOutboundMessage('dequeue-observation');
-    const supplied = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
+    const supplied = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
     await backend.workQueue.enqueue(supplied);
 
     const { decision, observation } = await store.readOutgoingDecision({
@@ -322,7 +347,7 @@ it('reads the canonical row a dequeue supplies inside the commit\'s observation,
         planner: SEND_PLANNER,
         observedCanonicalEntry: supplied,
         intent: 'dequeue'
-    }, async (read) => ({ kind: 'commit', bundle: toTestDequeueBundle(read, supplied) }));
+    }, async (read) => ({ kind: 'commit', bundle: createTestDequeueBundle(read, supplied) }));
 
     const canonicalWrite = observation?.canonicalWrites.find((write) => toKeyAsString(write.entry.key) === toKeyAsString(supplied.key));
     expect(canonicalWrite?.expected, 'the session read the stored row, not the supplied entry')
@@ -339,7 +364,7 @@ it('conflicts a single send whose effect row was written after its decision read
         planner: SEND_PLANNER,
         observedCanonicalEntry: undefined,
         intent: 'enqueue'
-    }, async (read) => ({ kind: 'commit', bundle: toTestBundle(store, read) }));
+    }, async (read) => ({ kind: 'commit', bundle: createTestBundle(store, read) }));
     const [effect] = decision.bundle.durableEffects;
     const nowMs = Date.now();
 
@@ -359,8 +384,20 @@ it('conflicts a single send whose effect row was written after its decision read
 it('closes the fence snapshot of a commit that conflicts inside its own write phase', async () => {
     const { store } = await createAdmissionFixture('commit-conflict');
     const message = createOutboundMessage('commit-conflict');
-    const winner = await computeOutboundTestAdmission(store, message, SEND_PLANNER);
-    const stale = await computeOutboundTestAdmission(store, message, SEND_PLANNER);
+    const winner = await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: SEND_PLANNER
+    });
+    const stale = await readOutboundTestAdmission({
+        store: store,
+        message: message,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: SEND_PLANNER
+    });
     expect(await store.commitBundle(winner)).toBe('committed');
 
     const recorded = recordIndexedDbTransactions();
@@ -392,7 +429,7 @@ it('reads a control decision surface from one readonly transaction before its wr
         carrier: 'ws'
     });
     const ack = newALAckControlMessage(
-        { v: 2, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() },
+        { v: 3, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() },
         {
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
@@ -535,13 +572,13 @@ describe('control sends committed as one outbound admission', () => {
     );
 });
 
-function toTestBundle(
+function createTestBundle(
     store: ALOutboundAdmissionStore<OutboundTestPayload>,
     read: ALOutboundMessageReadDto<OutboundTestPayload>
 ): ALOutboundCommitBundle<OutboundTestPayload> {
     const computed = computeALOutboundDispatch({
         read,
-        outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+        outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',
@@ -554,7 +591,7 @@ function toTestBundle(
 }
 
 /** A dequeue's bundle: the supplied foreign row is the message's canonical entry. */
-function toTestDequeueBundle(
+function createTestDequeueBundle(
     read: ALOutboundMessageReadDto<OutboundTestPayload>,
     outboxEntry: ResourceEntry
 ): ALOutboundCommitBundle<OutboundTestPayload> {
@@ -599,7 +636,7 @@ function createOrderedOutboundMessage(resourceId: string, seq: number): ALMessag
 
 function createAcknowledgement(msgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId, senderId: 'receiver', ts: Date.now() },
+        { v: 3, msgId, senderId: 'receiver', ts: Date.now() },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',

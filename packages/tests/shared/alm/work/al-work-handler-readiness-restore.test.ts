@@ -4,8 +4,8 @@ import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim, ALWorkOutcome } from '@shared/alm/work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
     collectProbe,
     fakePort,
@@ -15,6 +15,8 @@ import {
     toFakeALWorkKey,
     toTestALWorkReadySelection
 } from './al-work-test-entries.ts';
+
+import { ALWorkBatchTestObserver } from './al-work-batch-test-observer.ts';
 
 const AL_TEST_TYPES: ReadonlySet<string> = new Set(['AL_TEST']);
 
@@ -28,6 +30,7 @@ interface RestoreFixture {
     readonly exhausted: ALWorkClaim[];
     readonly released: string[];
     readonly probes: ALWorkReadinessProbeDiagnostics[];
+    readonly batches: ALWorkBatchTestObserver;
     /** Every time this owner handed the engine, in order. */
     readonly wakeAtCalls: (number | undefined)[];
 }
@@ -37,6 +40,7 @@ interface RestoreFixtureClaimScope {
     readonly engine: InboxOutboxEngine;
     readonly commit: () => void;
     readonly claimCommitted: () => void;
+    readonly retain: () => Promise<ALWorkOutcome>;
 }
 
 interface RestoreFixtureInput {
@@ -67,7 +71,7 @@ const UNCLEAN_BATCHES: readonly UncleanBatchCase[] = [
         name: 'a retained claim',
         pageSize: 16,
         exhaustedRows: [],
-        runClaim: async () => ({ status: 'retained', settled: new Promise<ALWorkOutcome>(() => {}) })
+        runClaim: async (_claim, scope) => ({ status: 'retained', settled: scope.retain() })
     },
     { name: 'a rejected claim', pageSize: 16, exhaustedRows: [], runClaim: async () => ({ status: 'non-retryable' }) },
     {
@@ -108,6 +112,8 @@ const UNCLEAN_BATCHES: readonly UncleanBatchCase[] = [
 
 function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
     const engine = new InboxOutboxEngine();
+    const batches = new ALWorkBatchTestObserver();
+    const retained: ((outcome: ALWorkOutcome) => void)[] = [];
     const clock = { atMs: 10_000 };
     const storage = { readyAtMs: input.probedReadyAtMs };
     const pending: ALWorkClaim[] = [];
@@ -122,6 +128,7 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
     });
     const handler: ALWorkHandler = new ALWorkHandler({
         workerId: 'restore-worker',
+        batchObservations: batches.batchObservations,
         port: {
             ...fakePort({ claims: [], onRelease: (claim, outcome) => released.push(`${claim.entry.key.contextId}:${outcome.status}`) }),
             claim: async ({ maxCount }) => pending.splice(0, maxCount),
@@ -134,15 +141,27 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
         readinessMemoryMs: input.readinessMemoryMs,
         readNextReadyAtMs: async () => storage.readyAtMs,
         selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+        claimSuccessor: undefined,
         runClaim: (claim) =>
             input.runClaim(claim, {
                 engine,
                 commit: () => handler.committed({ dueByMs: clock.atMs, writtenKeys: [] }),
-                claimCommitted: () => handler.claimCommitted()
+                claimCommitted: () => handler.claimCommitted(),
+                retain: () => new Promise<ALWorkOutcome>((resolve) => retained.push(resolve))
             }),
         diagnostics: (event) => collectProbe(probes, event)
     });
-    return { handler, engine, clock, storage, pending, exhausted, released, probes, wakeAtCalls };
+    onTestFinished(async () => {
+        for (const release of retained) {
+            release({ status: 'completed' });
+        }
+        const outcomes = await Promise.allSettled([handler.dispose(), engine.stop()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
+    });
+    return { handler, engine, clock, storage, pending, exhausted, released, probes, wakeAtCalls, batches };
 }
 
 /** One row this owner wrote, due now, and announced, and the batch its commit runs, to the end. */
@@ -158,7 +177,7 @@ async function commitRowWriting(
 ): Promise<void> {
     fixture.pending.push(toFakeALWorkClaim(effectId));
     fixture.handler.committed(written);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fixture.batches.waitForPublishedBatches();
 }
 
 describe('ALWorkHandler readiness restore', () => {
@@ -187,7 +206,6 @@ describe('ALWorkHandler readiness restore', () => {
         fixture.clock.atMs = 10_000 + AL_WORK_READINESS_MEMORY_MS;
         await fixture.engine.executeOnce();
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'age-bound']);
-        fixture.handler.dispose();
     });
 
     it.each(UNCLEAN_BATCHES)('probes after a batch with $name, naming the commit', async (unclean) => {
@@ -205,7 +223,6 @@ describe('ALWorkHandler readiness restore', () => {
         await fixture.engine.executeOnce();
 
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
-        fixture.handler.dispose();
     });
 
     it.each([
@@ -228,7 +245,6 @@ describe('ALWorkHandler readiness restore', () => {
 
         expect(fixture.released).toEqual(['sent-row:completed']);
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
-        fixture.handler.dispose();
     });
 
     it('probes after a clean batch that claimed none of the rows its commit wrote', async () => {
@@ -244,19 +260,18 @@ describe('ALWorkHandler readiness restore', () => {
         // The queue claims by its own clock, which lags this owner's: the commit's batch claims
         // nothing although the commit wrote a row due now, and the row appears to the next read.
         fixture.handler.committed({ dueByMs: fixture.clock.atMs, writtenKeys: [toFakeALWorkKey('lagging-row')] });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.batches.waitForPublishedBatches();
         expect(fixture.released).toEqual([]);
         fixture.pending.push(toFakeALWorkClaim('lagging-row'));
         fixture.storage.readyAtMs = fixture.clock.atMs;
         await fixture.engine.executeOnce();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.batches.waitForPublishedBatches();
 
         expect(fixture.probes.map((probe) => [probe.cause, probe.readyAtMs])).toEqual([
             ['no-memory', 'none'],
             ['own-commit', 10_000]
         ]);
         expect(fixture.released).toEqual(['lagging-row:completed']);
-        fixture.handler.dispose();
     });
 
     it('probes after a clean batch that left a row its commit wrote unclaimed, though all were due', async () => {
@@ -280,7 +295,6 @@ describe('ALWorkHandler readiness restore', () => {
 
         expect(fixture.released).toEqual(['due-row:completed']);
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
-        fixture.handler.dispose();
     });
 
     it('probes after a clean batch that claimed another row in place of the one its commit wrote', async () => {
@@ -297,19 +311,18 @@ describe('ALWorkHandler readiness restore', () => {
         // another sweep recovered, not the row the commit wrote, which appears to the next read.
         fixture.pending.push(toFakeALWorkClaim('substitute-row'));
         fixture.handler.committed({ dueByMs: fixture.clock.atMs, writtenKeys: [toFakeALWorkKey('own-row')] });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.batches.waitForPublishedBatches();
         expect(fixture.released).toEqual(['substitute-row:completed']);
         fixture.pending.push(toFakeALWorkClaim('own-row'));
         fixture.storage.readyAtMs = fixture.clock.atMs;
         await fixture.engine.executeOnce();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.batches.waitForPublishedBatches();
 
         expect(fixture.probes.map((probe) => [probe.cause, probe.readyAtMs])).toEqual([
             ['no-memory', 'none'],
             ['own-commit', 10_000]
         ]);
         expect(fixture.released).toEqual(['substitute-row:completed', 'own-row:completed']);
-        fixture.handler.dispose();
     });
 
     it('restores after a clean batch that claimed and completed every row its commit wrote', async () => {
@@ -335,7 +348,6 @@ describe('ALWorkHandler readiness restore', () => {
 
         expect(fixture.released).toEqual(['first-row:completed', 'second-row:completed']);
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory']);
-        fixture.handler.dispose();
     });
 
     it('probes after a batch during which a claim an earlier batch retained released', async () => {
@@ -357,6 +369,7 @@ describe('ALWorkHandler readiness restore', () => {
             }
         });
         await fixture.handler.ready();
+        onTestFinished(() => settleHeld?.({ status: 'completed' }));
         await commitRow(fixture, 'held-row');
         await fixture.engine.executeOnce();
         expect(fixture.probes).toHaveLength(1);
@@ -366,7 +379,6 @@ describe('ALWorkHandler readiness restore', () => {
         await fixture.engine.executeOnce();
 
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
-        fixture.handler.dispose();
     });
 
     it('probes after a clean batch whose suspended answer had come due before the batch started', async () => {
@@ -386,7 +398,6 @@ describe('ALWorkHandler readiness restore', () => {
         await fixture.engine.executeOnce();
 
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
-        fixture.handler.dispose();
     });
 
     it('probes every round as before when its answers never stand, and hands the engine only the selection\'s time', async () => {
@@ -407,7 +418,6 @@ describe('ALWorkHandler readiness restore', () => {
 
         expect(fixture.probes.map((probe) => probe.cause))
             .toEqual(['no-memory', 'own-commit', 'age-bound', 'age-bound']);
-        fixture.handler.dispose();
     });
 
     it('finds a row another tab wrote, unannounced, once the restored answer reaches its age bound', async () => {
@@ -415,8 +425,11 @@ describe('ALWorkHandler readiness restore', () => {
         const claimed: string[] = [];
         const queue = new InMemoryQueueBox();
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        const batches = new ALWorkBatchTestObserver();
         const handler = new ALWorkHandler({
             workerId: 'foreign-row-worker',
+            batchObservations: batches.batchObservations,
             port: createALWorkQueuePort({
                 queue,
                 workTypes: AL_TEST_TYPES,
@@ -432,33 +445,34 @@ describe('ALWorkHandler readiness restore', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: () => readTestALWorkReadyAtMs(queue, AL_TEST_TYPES, nowMs),
             selectReady: async (claimable, size) => toTestALWorkReadySelection(await claimable.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async (claim) => {
                 claimed.push(claim.entry.key.contextId);
                 return { status: 'completed' };
             },
             diagnostics: undefined
         });
+        onTestFinished(() => handler.dispose());
         await handler.ready();
         await engine.executeOnce();
 
         nowMs = 11_000;
         await queue.enqueue(newWorkEntry('AL_TEST', 'own-row'));
         handler.committed({ dueByMs: nowMs, writtenKeys: [toFakeALWorkKey('own-row')] });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await batches.waitForPublishedBatches();
         expect(claimed).toEqual(['own-row']);
 
         // No browser code announces another tab's write: the row reaches the queue and nothing else.
         await queue.enqueue(newWorkEntry('AL_TEST', 'foreign-row'));
         nowMs = 10_000 + AL_WORK_READINESS_MEMORY_MS - 1;
         await engine.executeOnce();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await batches.waitForPublishedBatches();
         expect(claimed).toEqual(['own-row']);
 
         nowMs = 10_000 + AL_WORK_READINESS_MEMORY_MS;
         await engine.executeOnce();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await batches.waitForPublishedBatches();
         expect(claimed).toEqual(['own-row', 'foreign-row']);
-        handler.dispose();
     });
 });
 
@@ -469,6 +483,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
         let releaseProbe: (() => void) | undefined;
         let gateNextProbe = false;
         const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
         const handler = new ALWorkHandler({
             workerId: 'discarded-probe-worker',
             port: { ...fakePort({ claims: [], onRelease: () => {} }), claim: async ({ maxCount }) => pending.splice(0, maxCount) },
@@ -487,9 +502,12 @@ describe('ALWorkHandler readiness invalidation label', () => {
                 return undefined;
             },
             selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => collectProbe(probes, event)
         });
+        onTestFinished(() => handler.dispose());
+        onTestFinished(() => releaseProbe?.());
         await handler.ready();
         await engine.executeOnce();
 
@@ -508,7 +526,6 @@ describe('ALWorkHandler readiness invalidation label', () => {
         await engine.executeOnce();
 
         expect(probes.map((probe) => probe.cause)).toEqual(['no-memory', 'external-wake', 'own-commit']);
-        handler.dispose();
     });
 
     it('labels a probe no-memory once the probe before it took the invalidation and failed', async () => {
@@ -531,6 +548,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
                 return undefined;
             },
             selectReady: async () => toTestALWorkReadySelection([]),
+            claimSuccessor: undefined,
             runClaim: async () => ({ status: 'completed' }),
             diagnostics: (event) => collectProbe(probes, event)
         });
@@ -549,8 +567,12 @@ describe('ALWorkHandler readiness invalidation label', () => {
             expect(probes.map((probe) => probe.cause)).toEqual(['no-memory', 'no-memory']);
         }
         finally {
+            const cleanup = await Promise.allSettled([handler.dispose(), engine.stop()]);
             consoleErrorSpy.mockRestore();
-            handler.dispose();
+            const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+            if (failure?.status === 'rejected') {
+                throw failure.reason;
+            }
         }
     });
 });

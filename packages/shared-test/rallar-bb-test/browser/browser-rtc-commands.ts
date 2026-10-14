@@ -85,7 +85,8 @@ export class BrowserRtcCommands {
                 session: this.environment.readSession(),
                 wsTicket: undefined
             }),
-            context.config()
+            context.config(),
+            context.rtcCapture
         );
         const diagnostics = await this.connectRuntime(command, context, connectionConfig);
         const connected = { command, context, connectionConfig, diagnostics };

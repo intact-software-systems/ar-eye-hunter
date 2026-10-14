@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -10,9 +16,15 @@ import type {
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 import { EntityStatus, NEW_AND_RETRY_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
 import '../../setup-browser-indexeddb.ts';
 
 const WORK_TYPE = 'STORAGE_FAULT_WORK';
+
+interface HeldIndexedDbObserver {
+    readonly observer: IndexedDbOperationObserver;
+    release(): void;
+}
 
 describe('storage faults through the IndexedDB owners', () => {
     it('fails an admission write with QuotaExceededError and writes nothing', async () => {
@@ -103,6 +115,10 @@ describe('storage faults through the IndexedDB owners', () => {
             .then(() => {
                 settled = true;
             });
+        onTestFinished(async () => {
+            gate.release();
+            await operation;
+        });
         await new Promise((resolve) => setTimeout(resolve, 20));
         expect(settled).toBe(false);
 
@@ -127,11 +143,8 @@ function createBackend(observer: IndexedDbOperationObserver): IndexedDbAdmission
 /** Holds the first operation that matches `held` until `release`; every other operation runs at once. */
 function createHeldObserver(
     held: IndexedDbOperation
-): { observer: IndexedDbOperationObserver; release(): void; } {
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-        release = resolve;
-    });
+): HeldIndexedDbObserver {
+    const gate = Promise.withResolvers<void>();
     let armed = true;
     return {
         observer: {
@@ -140,10 +153,10 @@ function createHeldObserver(
                     return undefined;
                 }
                 armed = false;
-                return gate;
+                return gate.promise;
             }
         },
-        release: () => release()
+        release: gate.resolve
     };
 }
 
@@ -165,6 +178,7 @@ function workEntry() {
             'test',
             { value: 1 }
         ),
-        WORK_TYPE
+        WORK_TYPE,
+        Temporal.Now.instant()
     );
 }

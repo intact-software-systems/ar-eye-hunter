@@ -1,14 +1,21 @@
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { bindAcknowledgedControlRecipe } from '@shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { toControlCommandSnapshot } from './control-service-snapshots.ts';
 import type {
     ControlAgentState,
     ControlCommandState,
     ControlRunState
 } from './control-service-state.ts';
 import type { ControlServiceFailure } from './control-service.ts';
-import { computeControlRecipeReloadStep } from './recipe-reload/compute-control-recipe-reload-step.ts';
-import { resolveControlRecipeReloadOwner } from './recipe-reload/control-recipe-reload-commands.ts';
+import {
+    computeControlRecipeReloadStep,
+    toControlRecipeReloadDispatch
+} from './recipe-reload/compute-control-recipe-reload-step.ts';
+import {
+    resolveControlRecipeReloadOwner
+} from './recipe-reload/control-recipe-reload-commands.ts';
 import { hasControlReloadCleanup, isDispatchableControlReloadCleanup } from './recipe-reload/control-reload-cleanup.ts';
 
 export interface ControlCommandRateWindowInput {
@@ -67,6 +74,22 @@ export function isDispatchableControlCommand({ command, agent, run, nowEpochMs }
         command.completedAtEpochMs === undefined &&
         !agent.resumeCompletedCommandIds.has(command.envelope.commandId) &&
         command.lastDispatchedConnectionSequence !== agent.connectionSequence;
+}
+
+/** The outgoing body binding is lowered from the current finite queue/ACK facts; authored fingerprints stay unchanged. */
+export function toControlCommandDispatchEnvelope(
+    input: Pick<ControlCommandDispatchRead, 'command' | 'agent' | 'run'>
+): ControlCommandEnvelope {
+    const { command, agent, run } = input;
+    return bindAcknowledgedControlRecipe({
+        command: toControlRecipeReloadDispatch(
+            resolveControlRecipeReloadOwner(run, command.envelope.commandId),
+            command.envelope
+        ),
+        agentId: agent.agentId,
+        commands: [...run.commands.values()].map(toControlCommandSnapshot),
+        results: [...run.results.values()]
+    });
 }
 
 export interface ControlCommandQueueRead {

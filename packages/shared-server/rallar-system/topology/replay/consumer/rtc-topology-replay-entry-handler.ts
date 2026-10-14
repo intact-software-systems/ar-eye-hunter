@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -154,7 +154,7 @@ export function materializeRtcTopologyCurrentRepairMessages(
     const revision = currentSnapshot.sourceGroupStateCausalRevision;
     const envelope = {
         id: {
-            v: 2 as const,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: JSON.stringify([
                 'rtc-topology-current-repair',
                 toCanonicalRtcTopologyGroupIdentity(entry.groupRef),

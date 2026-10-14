@@ -16,7 +16,7 @@ import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-m
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -168,7 +168,7 @@ function createHandOffFixture(): HandOffFixture {
         decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
         stores,
         nowMs: () => HAND_OFF_NOW_MS,
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const delivery = new WsQueueBoxServerControlDelivery({
@@ -186,7 +186,7 @@ function createHandOffFixture(): HandOffFixture {
 
 function serverAck(msgId: string): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS },
+        { v: 3, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS },
         {
             ackedMsgId: 'to-server',
             fromPeerId: SERVER_ID,
@@ -280,7 +280,8 @@ function createControlInstance(
                 backend: new InMemoryAdmissionBackend(stores.inbound, Date.now),
                 orderingTrackTtlMs: 300000,
                 supersedenceTrackTtlMs: 300000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             }),
             workQueue: holdWorkQueueClaims(stores.inbound.workQueue, isClaimHeld)
         },
@@ -322,7 +323,7 @@ async function installTestClusterBus(instances: readonly ControlInstance[]): Pro
 async function admitServerAddressedMessage(fixture: ControlClusterFixture): Promise<void> {
     const nowMs = Date.now();
     const message: ALMessage = {
-        id: { v: 2, msgId: 'to-server', ts: nowMs, senderId: 'a' },
+        id: { v: 3, msgId: 'to-server', ts: nowMs, senderId: 'a' },
         route: { topicId: 'room.command', resourceId: 'to-server', contextId: ROOM.groupId },
         targets: { mode: 'unicast', toPeerId: SERVER_ID, groupRef: ROOM },
         constraints: { expiresAtMs: nowMs + 30_000 },

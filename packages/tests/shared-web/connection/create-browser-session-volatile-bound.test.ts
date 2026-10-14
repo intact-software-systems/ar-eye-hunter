@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBrowserSessionVolatileBound } from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
+    AL_VOLATILE_SESSION_LIMITS,
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES,
     type ALVolatileSessionBudget
@@ -19,7 +20,7 @@ const MESSAGE = newALUnicastMessage(
 );
 
 function toAdmission(msgId: string, bytes = 1): ALVolatileSessionBudget.Admission {
-    return { msgId, bytes, deadlineAtMs: NOW_MS + 30_000, nowMs: NOW_MS };
+    return { msgId, bytes, deadlineAtMs: NOW_MS + 30_000, nowMs: NOW_MS, trackKey: undefined };
 }
 
 describe('the session volatile bound the middleware builds (C3, C13)', () => {
@@ -42,9 +43,9 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
     });
 
     it('bounds the session by the limits its reader answered first', () => {
-        const answers = [{ maxAdmissions: 2, maxBytes: 4_096 }];
+        const answers = [{ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 2, maxBytes: 4_096 }];
         const bound = createBrowserSessionVolatileBound({
-            readVolatileSessionLimits: () => answers.shift() ?? { maxAdmissions: 1_000, maxBytes: 4_096 },
+            readVolatileSessionLimits: () => answers.shift() ?? { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1_000, maxBytes: 4_096 },
             qosProvider: undefined,
             nowMs: () => NOW_MS
         });
@@ -58,7 +59,7 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
 
     it('hands the carriers a provider over the same budget that keeps the application\'s answers', () => {
         const bound = createBrowserSessionVolatileBound({
-            readVolatileSessionLimits: () => ({ maxAdmissions: 1, maxBytes: 4_096 }),
+            readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 1, maxBytes: 4_096 }),
             qosProvider: { liveForMessage: () => ({ hasAlternateRoute: true }) },
             nowMs: () => NOW_MS
         });

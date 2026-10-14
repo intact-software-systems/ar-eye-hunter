@@ -25,18 +25,23 @@ export interface CreateAppInboxHandlerRuntimeInput {
 export function createAppInboxHandlerRuntime(
     input: CreateAppInboxHandlerRuntimeInput
 ): AppInboxHandlerRuntime {
+    const nowEpochMs = input.options?.nowEpochMs ?? Date.now;
     const transactionWriter = new AppInboxTransactionWriter(
-        { database: input.database },
+        {
+            database: input.database,
+            nowEpochMs,
+            completionNotifications: input.inboxQueueReader.completionNotifications
+        },
         {
             serviceId: input.serviceId,
-            timing: input.timing,
-            nowEpochMs: input.options?.nowEpochMs
+            timing: input.timing
         }
     );
     const handlerExecutor = new AppInboxHandlerExecutor(
         {
             resultRepository: input.resultRepository,
-            transactionWriter
+            transactionWriter,
+            nowEpochMs
         },
         {
             serviceId: input.serviceId,

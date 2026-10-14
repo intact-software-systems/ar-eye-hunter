@@ -79,7 +79,7 @@ describe('admission control decoding', () => {
                     observedAtEpochMs: 7,
                     orderingKey: 'track',
                     expectedSeq: 1,
-                    missingSeqs: [1],
+                    missingRanges: [{ from: 1, to: 1 }],
                     serverSnapshotVersion: 2
                 }]
             },

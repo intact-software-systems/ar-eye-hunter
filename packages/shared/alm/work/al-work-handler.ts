@@ -1,13 +1,19 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/inbox-outbox-engine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
+import type { ALWorkBatchObservations } from './al-work-batch-observations.ts';
 import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
+import type {
+    ALWorkClaim,
+    ALWorkOutcome,
+    ALWorkQueuePort,
+    ALWorkRelease
+} from './al-work-queue-port.ts';
 import {
     ALWorkReadinessMemory,
     type ALWorkCommittedRows,
@@ -36,7 +42,12 @@ export interface ALWorkReadySelection {
     readonly earliestDueAtMs: number | undefined;
 }
 
+/** Per-batch private evidence, delivered after the handler's mandatory lifecycle; never a release receipt. */
+export type ALWorkObservationDeferral = (publish: () => void) => void;
+
 export interface ALWorkHandlerDependencies {
+    readonly batchObservations?: typeof ALWorkBatchObservations;
+
     readonly workerId: string;
     readonly port: ALWorkQueuePort;
     readonly queueEngine: InboxOutboxEngine;
@@ -62,13 +73,26 @@ export interface ALWorkHandlerDependencies {
         pageSize: number
     ) => Promise<ALWorkReadySelection>;
     /**
+     * Reserves the claim a completed one hands its place in the batch to, which the batch then runs
+     * after the claims it selected. Asked only after a claim completed and while the batch has
+     * fewer than `pageSize` claims, so a claim that failed promotes nothing and no batch runs more
+     * than a page. Undefined for an owner whose rows wait on no other row of theirs.
+     */
+    readonly claimSuccessor:
+        | ((port: ALWorkQueuePort, completed: ALWorkClaim) => Promise<ALWorkClaim | undefined>)
+        | undefined;
+    /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
      * measures the wait behind earlier claims against the same moment the batch diagnostics do. A
      * claim that may commit this owner's work rows calls `ALWorkHandler.claimCommitted()` before it
      * runs, or the batch's end could restore an answer that misses those rows.
      */
-    readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
+    readonly runClaim: (
+        claim: ALWorkClaim,
+        batchStartedAtMs: number,
+        deferObservation?: ALWorkObservationDeferral
+    ) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
     /**
      * Absent on the server lane and on the browser's memory lanes, which have no storage health
@@ -153,6 +177,7 @@ interface ALWorkCounts {
 interface ALWorkClaimedRun {
     readonly selection: ALWorkReadySelection;
     readonly runStartedAtMs: number;
+    readonly deferObservation: ALWorkObservationDeferral | undefined;
 }
 
 /** What a running batch has accumulated: its outcome counts and the two phases the handler itself times. */
@@ -177,6 +202,7 @@ interface ALWorkBatchEnd {
 export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
+    private readonly retainedReleases = new Set<Promise<void>>();
     private bootstrapped = false;
     private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
@@ -189,6 +215,7 @@ export class ALWorkHandler {
         this.readiness = new ALWorkReadinessMemory(dependencies.readinessMemoryMs);
         this.engine = new ALWorkEngineMembership({
             queueEngine: dependencies.queueEngine,
+            ownsQueueEngine: dependencies.ownsQueueEngine,
             workerId: dependencies.workerId,
             task: {
                 name: dependencies.workerId,
@@ -211,16 +238,21 @@ export class ALWorkHandler {
         }
         await this.runBatch();
         this.bootstrapped = true;
-        if (!this.shutdown.signal.aborted && this.dependencies.ownsQueueEngine) {
-            this.dependencies.queueEngine.start();
-        }
+        this.engine.startOwnedEngine();
     }
 
-    dispose(): void {
+    /** Cancels synchronously; completion joins the owned engine, running batch and retained releases. */
+    async dispose(): Promise<void> {
         this.shutdown.abort();
         this.engine.dispose();
-        if (this.dependencies.ownsQueueEngine) {
-            this.dependencies.queueEngine.stop();
+        const retained = [...this.retainedReleases];
+        const stoppingEngine = this.engine.stopOwnedEngine();
+        const outcomes = await Promise.allSettled([this.batch, stoppingEngine]);
+        // A batch can register retained work while disposal joins its mandatory releases.
+        outcomes.push(...await Promise.allSettled([...new Set([...retained, ...this.retainedReleases])]));
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw toError(failure.reason);
         }
     }
 
@@ -317,14 +349,48 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             return this.batch;
         }
-        this.batch = this.runSelectedWork()
+        const observations = this.dependencies.batchObservations?.tryCreate();
+        const deferObservation = this.dependencies.batchObservations === undefined
+            ? undefined
+            : observations?.defer ?? this.dependencies.batchObservations.discard;
+        this.batch = this.runSelectedWork(deferObservation)
             .then((ended) => this.endBatch(ended))
             .catch((error) => this.failBatch(toError(error)))
-            .finally(() => {
-                this.batch = undefined;
-                this.runPendingCommit();
-            });
+            .then(
+                () => this.completeBatch(observations, undefined),
+                (error) => this.completeBatch(observations, toError(error))
+            );
         return this.batch;
+    }
+
+    /** Start the owed batch, publish this batch, then join the owed work even when either failed. */
+    private async completeBatch(
+        observations: ALWorkBatchObservations | undefined,
+        primaryFailure: Error | undefined
+    ): Promise<void> {
+        this.batch = undefined;
+        let following: Promise<void> | undefined;
+        try {
+            following = this.runPendingCommit();
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        try {
+            observations?.publish();
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        try {
+            await following;
+        }
+        catch (failure) {
+            primaryFailure ??= toError(failure);
+        }
+        if (primaryFailure !== undefined) {
+            throw primaryFailure;
+        }
     }
 
     private endBatch(ended: ALWorkBatchEnd): void {
@@ -355,16 +421,16 @@ export class ALWorkHandler {
     }
 
     /** A commit that landed behind the batch earns the immediate re-run the page read missed. */
-    private runPendingCommit(): void {
+    private runPendingCommit(): Promise<void> | undefined {
         if (!this.commitPending || this.shutdown.signal.aborted) {
             return;
         }
         this.commitPending = false;
         this.dependencies.queueEngine.wake();
-        void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
+        return this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
     }
 
-    private async runSelectedWork(): Promise<ALWorkBatchEnd> {
+    private async runSelectedWork(deferObservation: ALWorkObservationDeferral | undefined): Promise<ALWorkBatchEnd> {
         const { clock } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const progress: ALWorkBatchProgress = {
@@ -379,7 +445,7 @@ export class ALWorkHandler {
         let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                run = await this.runClaimedWork(releases, progress);
+                run = await this.runClaimedWork(releases, progress, deferObservation);
             }
         }
         finally {
@@ -400,22 +466,49 @@ export class ALWorkHandler {
      */
     private async runClaimedWork(
         releases: ALWorkRelease[],
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchProgress,
+        deferObservation: ALWorkObservationDeferral | undefined
     ): Promise<ALWorkClaimedRun | undefined> {
         const { clock, port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
-        progress.claimedCount = selection.claims.length;
+        const queued = [...selection.claims];
+        progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
-        for (const claim of selection.claims) {
+        const run = { selection, runStartedAtMs, deferObservation };
+        for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
             if (this.shutdown.signal.aborted) {
                 return undefined;
             }
-            const release = await this.runOne(claim, runStartedAtMs, progress);
-            if (release !== undefined) {
-                releases.push(release);
+            const release = await this.runOne(claim, progress, run);
+            if (release === undefined) {
+                continue;
             }
+            releases.push(release);
+            const successors = await this.claimSuccessors(release, progress.claimedCount);
+            queued.push(...successors);
+            progress.claimedCount += successors.length;
         }
-        return { selection, runStartedAtMs };
+        return run;
+    }
+
+    /**
+     * The successor a completed claim hands its place to, while the batch holds fewer than a page.
+     * One that cannot be claimed is left to the next selection, and the failure is stated as a batch
+     * failure is: throwing here would strand the claims this batch has not run yet.
+     */
+    private async claimSuccessors(release: ALWorkRelease, claimedCount: number): Promise<readonly ALWorkClaim[]> {
+        const { claimSuccessor, pageSize, port } = this.dependencies;
+        if (claimSuccessor === undefined || release.outcome.status !== 'completed' || claimedCount >= pageSize) {
+            return [];
+        }
+        try {
+            const successor = await claimSuccessor(port, release.claim);
+            return successor === undefined ? [] : [successor];
+        }
+        catch (error) {
+            this.reportBatchFailure(toError(error));
+            return [];
+        }
     }
 
     private reportBatch(
@@ -455,31 +548,33 @@ export class ALWorkHandler {
     /** The release the batch's flush owes this claim, or nothing at all for a retained one. */
     private async runOne(
         claim: ALWorkClaim,
-        batchStartedAtMs: number,
-        progress: ALWorkBatchProgress
+        progress: ALWorkBatchProgress,
+        run: ALWorkClaimedRun
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
         let result: ALWorkAttemptResult;
         try {
-            result = await runClaim(claim, batchStartedAtMs);
+            result = await runClaim(claim, run.runStartedAtMs, run.deferObservation);
         }
         catch (error) {
             result = toALWorkFailureOutcome(toError(error));
         }
         progress.runDurationMs += computeElapsedMs(runStartedAtMs, clock.nowMs());
-        if (result.status === 'retained') {
-            this.releaseRetainedClaim(claim, result.settled);
-            return undefined;
-        }
-        if (result.status === 'completed') {
-            progress.completedCount += 1;
-        }
-        else if (result.status === 'non-retryable') {
-            progress.rejectedCount += 1;
-        }
-        else {
-            progress.rescheduledCount += 1;
+        switch (result.status) {
+            case 'retained':
+                this.releaseRetainedClaim(claim, result.settled);
+                return undefined;
+            case 'completed':
+                progress.completedCount += 1;
+                break;
+            case 'non-retryable':
+                progress.rejectedCount += 1;
+                break;
+            case 'retry':
+            case 'not-ready':
+                progress.rescheduledCount += 1;
+                break;
         }
         return { claim, outcome: result };
     }
@@ -504,7 +599,7 @@ export class ALWorkHandler {
      * on this path or on the eventual release.
      */
     private releaseRetainedClaim(claim: ALWorkClaim, settled: Promise<ALWorkOutcome>): void {
-        void settled
+        const release = settled
             .then((outcome) => this.dependencies.port.releaseAll([{ claim, outcome }]))
             .catch((error) => console.error('Retained ALM work failed', error))
             .finally(() => {
@@ -513,6 +608,10 @@ export class ALWorkHandler {
                 this.readiness.forget('retained-release');
                 this.dependencies.queueEngine.wake();
             });
+        this.retainedReleases.add(release);
+        void release.then(() => {
+            this.retainedReleases.delete(release);
+        });
     }
 
     /** A storage failure wrote nothing, so its rows wait for the next batch; the store's health states it. */

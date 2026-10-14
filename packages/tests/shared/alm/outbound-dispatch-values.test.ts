@@ -1,29 +1,93 @@
-import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished,
+    vi
 } from 'vitest';
-import {
-    createOutboundCanonicalEntry,
-    peekOutboundWorkReadyAt
-} from './outbound-runtime-test-fixture.ts';
 
+import { createTestALOutboundWorkPort } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALOutboundMessageReadDto } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createDefaultOutboundTestStores, createOutboundMessage } from './outbound-runtime-test-fixture.ts';
+import {
+    createDefaultOutboundTestStores,
+    createOutboundCanonicalEntry,
+    createOutboundMessage,
+    peekOutboundWorkReadyAt,
+    readOutboundTestAdmission
+} from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound dispatch value ownership', () => {
+    it('creates a canonical row at the explicitly captured nanosecond instant', () => {
+        const stores = createDefaultOutboundTestStores();
+        const message = createOutboundMessage('explicit-creation-instant');
+        const createdAt = Temporal.Instant.from('2026-01-01T23:59:59.123456789Z');
+
+        const entry = createOutboundCanonicalEntry(stores.admissionStore, message, createdAt);
+
+        expect(entry.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123456789');
+        expect(entry.audit.date.toString()).toBe('23:59:59.123456789');
+    });
+
+    it.each([
+        { dispatchAtMs: 1_999, expired: false },
+        { dispatchAtMs: 2_000, expired: true }
+    ])('captures separate creation and dispatch clocks after a paused read at $dispatchAtMs', async ({ dispatchAtMs, expired }) => {
+        vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const stores = createDefaultOutboundTestStores();
+        const message = createOutboundMessage('deferred-clock', { ttlMs: 1_000 });
+        const captured = Promise.withResolvers<void>();
+        const resume = Promise.withResolvers<void>();
+        let createdAt = Temporal.Instant.from('2026-01-01T00:00:00.000000001Z');
+        let nowMs = 1_000;
+        const read = stores.admissionStore.readOutgoingMessage.bind(stores.admissionStore);
+        const observedRead = vi.spyOn(stores.admissionStore, 'readOutgoingMessage').mockImplementation(async (input) => {
+            const result = await read(input);
+            captured.resolve();
+            await resume.promise;
+            return result;
+        });
+        onTestFinished(() => observedRead.mockRestore());
+        const pending = readOutboundTestAdmission({
+            store: stores.admissionStore,
+            message,
+            creationNow: () => createdAt,
+            clock: { nowMs: () => nowMs }
+        });
+        onTestFinished(async () => {
+            resume.resolve();
+            await Promise.allSettled([pending]);
+        });
+        await captured.promise;
+        createdAt = Temporal.Instant.from('2026-01-01T23:59:59.123456789Z');
+        nowMs = dispatchAtMs;
+        resume.resolve();
+
+        if (expired) {
+            await expect(pending).rejects.toThrow('Expected outbound admission, received expired');
+        }
+        else {
+            const bundle = await pending;
+            expect(bundle.canonicalEntry?.audit.createdTs.toString()).toBe('2026-01-01T23:59:59.123456789');
+            expect(bundle.canonicalEntry?.audit.expiryTs.epochMilliseconds).toBe(2_000);
+        }
+        expect(Date.now()).toBe(1_000);
+    });
+
     it('rejects a mismatched queue resource before admitting message ownership or work', async () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;
         const message = createOutboundMessage('intended-message');
-        const wrongEntry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('other-message'), 'outbox');
+        const wrongEntry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('other-message'), 'outbox', Temporal.Now.instant());
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
@@ -38,7 +102,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -62,14 +126,14 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [] as readonly OutboundTestPayload[],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
             }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
-        const outboxEntry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
+        const outboxEntry = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant());
         const input = freezeValues({
             read,
             outboxEntry,
@@ -113,7 +177,7 @@ describe('outbound dispatch value ownership', () => {
         const stores = createDefaultOutboundTestStores();
         const store = stores.admissionStore;
         const message = createOutboundMessage('observed-outbox');
-        const observedOutboxEntry = freezeValues(QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'));
+        const observedOutboxEntry = freezeValues(QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox', Temporal.Now.instant()));
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             lane: 'durable',
             admissionStore: store,
@@ -129,7 +193,7 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ resourceId: message.route.resourceId }] }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
             origin: intent === 'enqueue' ? 'send' : 'drain',
@@ -154,7 +218,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ resourceId: 'exhausted-repair' }]
             }),
             observedCanonicalEntry: undefined,
@@ -167,7 +231,7 @@ describe('outbound dispatch value ownership', () => {
 
         const computed = computeALOutboundDispatch({
             read,
-            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg, Temporal.Now.instant()),
             dispatchAtMs: 1_000,
             intent: 'repair',
             phase: 'immediate',

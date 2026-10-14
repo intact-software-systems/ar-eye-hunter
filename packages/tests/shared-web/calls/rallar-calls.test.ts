@@ -1,10 +1,4 @@
-import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     beforeEach,
     describe,
@@ -12,9 +6,20 @@ import {
     it,
     vi
 } from 'vitest';
+
+import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
+
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -41,7 +46,11 @@ const mocks = await vi.hoisted(async () => {
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => ({
+            middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
+            rtcCaptureReceipt,
+            checkpoints: []
+        })
     })
 );
 
@@ -294,7 +303,7 @@ describe('Rallar calls', () => {
 
         await findLatestWsAnyMessageCallback()?.onMessage(
             incoming,
-            QueueBoxUtilities.toResourceEntryFromMsg(incoming, incoming.payload.typeId)
+            QueueBoxUtilities.toResourceEntryFromMsg(incoming, incoming.payload.typeId, Temporal.Now.instant())
         );
 
         expect(invites).toHaveLength(1);
@@ -449,6 +458,7 @@ function resetCallWsDoubles(): void {
     });
     mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
         mocks.webSocket.close(code, reason);
+        return Promise.resolve();
     });
     mocks.webSocket.onWebsocketCallbacksDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox.socket

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { AL_MESSAGE_ENVELOPE_VERSION } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -11,7 +12,7 @@ export function toAuthLogoutOutbox(
 ): ResourceEntry {
     const message = {
         id: {
-            v: 2,
+            v: AL_MESSAGE_ENVELOPE_VERSION,
             msgId: `auth-logout:${command.requestId}`,
             ts: command.capturedAtEpochMs,
             senderId: serviceId

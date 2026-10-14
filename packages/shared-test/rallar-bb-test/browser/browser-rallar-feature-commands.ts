@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
+import { toRecipeCaptureConnectionInput } from './browser-rallar-command-input.ts';
 
 import { createBrowserCommandAbortScope, withBrowserCommandAbort } from './browser-command-cancellation.ts';
 import type {
@@ -209,7 +210,11 @@ export class BrowserRallarFeatureCommands {
             actor: resolved.actor ?? config?.actor,
             sessionId: resolved.sessionId ?? config?.sessionId ?? configuredRallar.sessionId,
             roomId: resolved.roomId ?? config?.roomId,
-            rallar: { ...configuredRallar, ...decodeBrowserCommandRecord(resolved.rallar) }
+            rallar: {
+                ...configuredRallar,
+                ...decodeBrowserCommandRecord(resolved.rallar),
+                ...toRecipeCaptureConnectionInput(context.rtcCapture, decodeBrowserCommandRecord(resolved.rallar))
+            }
         };
     }
 

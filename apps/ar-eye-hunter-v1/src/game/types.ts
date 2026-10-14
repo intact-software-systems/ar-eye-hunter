@@ -361,6 +361,7 @@ export type ArenaEventKind =
     | 'overdrive-window'
     | 'weapon-drop'
     | 'weapon-picked-up'
+    | 'pickup-taken'
     | 'player-hit'
     | 'player-eliminated'
     | 'player-respawned'

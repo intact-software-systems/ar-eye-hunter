@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -38,10 +39,11 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type {
     QueueBoxResourceEntryRepository,
+    ResourceInboxRelease,
     ResourceInboxReservationRequest
 } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY } from '@shared/services/web-rtc-connection-service.ts';
 import {
@@ -164,11 +166,13 @@ class RtcControlHandoffFixture {
 
     static async create(): Promise<RtcControlHandoffFixture> {
         const locks = new HeldOutboundControlLocks();
+        onTestFinished(() => locks.release());
         vi.stubGlobal('WebSocket', TestWebSocket);
         const stores = await createRtcAdmissionStores();
         const claimTrace: InboundClaimTrace[] = [];
         const firstBatchSelected = Promise.withResolvers<readonly InboundClaimTrace[]>();
         const releaseFirstBatch = Promise.withResolvers<void>();
+        onTestFinished(() => releaseFirstBatch.resolve());
         traceInboundClaims({
             queue: stores.inbound.workQueue,
             namespace: stores.inbound.admissionStore.namespace,
@@ -179,6 +183,7 @@ class RtcControlHandoffFixture {
             }
         });
         const queueEngine = new InboxOutboxEngine();
+        onTestFinished(() => queueEngine.stop());
         const connected = await connectWsQueueBoxService({ ...stores, queueEngine });
         const observations: RtcControlHandoffFixture.Observations = {
             controlSendCount: 0,
@@ -186,11 +191,12 @@ class RtcControlHandoffFixture {
             receiverClock: undefined,
             rtcDeliveredAtMs: undefined
         };
-        await observeRtcControlTraffic(connected.service, observations);
         onTestFinished(() => {
-            connected.service.close();
-            queueEngine.stop();
+            // Held fixture work must resume before the separately owned shutdown hooks join it.
+            releaseFirstBatch.resolve();
+            locks.release();
         });
+        await observeRtcControlTraffic(connected.service, observations);
         return new RtcControlHandoffFixture({
             locks,
             inboundStores: stores.inbound,
@@ -205,7 +211,7 @@ class RtcControlHandoffFixture {
 
     async seedFullInboundControlPage(): Promise<readonly InboundClaimTrace[]> {
         const bootstrap = newALAckControlMessage(
-            { v: 2, senderId: 'bootstrap-peer', msgId: 'unknown-control', ts: BATCH_STARTED_AT_MS },
+            { v: 3, senderId: 'bootstrap-peer', msgId: 'unknown-control', ts: BATCH_STARTED_AT_MS },
             {
                 ackedMsgId: 'unknown',
                 originPeerId: 'self',
@@ -320,7 +326,7 @@ class RtcControlHandoffFixture {
             selfPeerId: 'self',
             stores: this.dependencies.inboundStores,
             queueEngine: this.dependencies.queueEngine,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const admission = new ALInboundMessageAdmission({
             ...resources,
@@ -380,6 +386,7 @@ async function connectWsQueueBoxService(
     input: ConnectWsQueueBoxServiceInput
 ): Promise<ConnectedWsQueueBoxService> {
     const client = new JsonWebSocketClient('ws://pending-signaling-test', createPassThroughTransportFaultPort());
+    onTestFinished(() => client.close());
     const connecting = client.connect();
     await Promise.resolve();
     const socket = TestWebSocket.instances.at(-1);
@@ -396,7 +403,9 @@ async function connectWsQueueBoxService(
         inboundStores: input.inbound,
         outboundStores: input.outbound,
         queueEngine: input.queueEngine
-    }).enableDefaultCallbacks();
+    });
+    onTestFinished(() => service.close());
+    service.enableDefaultCallbacks();
     return { socket, service };
 }
 
@@ -465,7 +474,7 @@ function traceInboundClaims(input: TraceInboundClaimsInput): void {
         return reserved;
     });
     vi.spyOn(input.queue, 'releaseEntries').mockImplementation(async (
-        releases: Parameters<QueueBoxResourceEntryRepository['releaseEntries']>[0]
+        releases: readonly ResourceInboxRelease[]
     ) => {
         const released = await releaseEntries(releases);
         for (const { entry, disposition } of releases.filter((candidate) => candidate.entry.typeId === toALInboundWorkType(input.namespace, 'ws'))) {

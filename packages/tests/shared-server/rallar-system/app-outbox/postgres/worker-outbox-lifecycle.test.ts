@@ -104,7 +104,7 @@ function entry(input: EntryInput): DirectResourceOutboxEntry {
 
 function clientMessageResource(resourceId: string, topicId: string, effect: string): string {
     const message: ALMessage = {
-        id: { v: 2, msgId: resourceId, ts: 1_000, senderId: 'worker-test' },
+        id: { v: 3, msgId: resourceId, ts: 1_000, senderId: 'worker-test' },
         route: { resourceId, topicId, contextId: 'worker-test' },
         payload: { typeId: topicId, contentType: 'application/json', resource: JSON.stringify({ effect }) }
     };

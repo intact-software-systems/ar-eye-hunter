@@ -29,10 +29,15 @@ occurrence is needed by that assertion. Related occurrences share a contract;
 distinct executable assertions remain separately reviewable.
 
 An entry's `id` is derived from the occurrence's path, kind, whitespace-normalized
-source text, and its occurrence order within the file. It deliberately excludes
-line and column so that reformatting cannot re-key a registered review; a change
-in what an occurrence _asserts_ re-keys it, a change in where it _sits_ does not.
-The checker report still prints the live `path:line:column` for navigation.
+detected syntax, and its order among identical detected occurrences in the file.
+It deliberately excludes line and column so reformatting does not re-key a
+registered review. Detected syntax can be narrower than the whole assertion:
+for call-count matchers it includes the callee but not the expected count argument.
+Inserting or removing an identical detected occurrence can also shift which
+assertion holds an existing ID. An unchanged ID therefore does not prove that
+its linked contract still describes the live assertion. Review the source and
+`semanticCoverage` together after edits; the report prints the live
+`path:line:column` for that check.
 
 Every entry has a named `owner`. A `durable-boundary` entry additionally
 declares `boundary` as `public`, `security`, `compatibility`, or `interaction`.
@@ -65,10 +70,11 @@ individually. The `--changed <base> <head>` mode fails closed for every current
 changed occurrence without an individual disposition; deleted occurrences stay
 neutral evidence.
 
-Candidate IDs are intentionally occurrence-specific so every occurrence receives
-its own review and an edited assertion cannot silently inherit another
-assertion's exception. In a changed range, the checker compares a rename or
-modification's old and new occurrences by kind and normalized syntax detail:
+Candidate IDs are occurrence-specific so every reported occurrence has its own
+review entry. Reviewers must still check the live association because occurrence
+order can transfer an existing ID to another assertion. In a changed range, the
+checker compares a rename or modification's old and new occurrences by kind and
+normalized syntax detail:
 unmatched old occurrences are neutral `change=deleted` evidence, never a
 semantic replacement. Copies report `origin=copy`. A file move can therefore
 require an explicit registry update after its new candidate IDs are reviewed;
@@ -79,6 +85,98 @@ moved or changed test.
 {
   "version": 1,
   "contracts": [
+    {
+      "id": "queue-engine-retained-completion-single-report",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "Replacing a queue registration that retains the same completion reports its eventual failure once and does not report already completed retained work again.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#observes a retained completion once when its registration is replaced",
+      "coverageRelation": "The test registers the same real TrackedTask before and after settlement, rejects its owned completion, then captures the default error sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "One retained completion produces one owner-visible task failure report even when its task registration changes.",
+        "requiredConstraint": "Report each owned completion failure exactly once; registration replacement must not duplicate observation.",
+        "failureRationale": "Repeated reports turn one failure into multiple alerts or recovery requests and keep obsolete observation ownership alive."
+      }
+    },
+    {
+      "id": "queue-engine-settled-failure-owned-before-stop",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A runnable failure that settles before shutdown reaches the engine failure sink once after its cleanup, without an unhandled rejection.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection",
+      "coverageRelation": "The test rejects a real registered runnable, lets its finally cleanup complete, asserts the exact failure report before stop, then verifies that shutdown does not duplicate it and that no process rejection event escaped.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "The owner receives the settled runnable error before shutdown even after the active-work references are removed.",
+        "requiredConstraint": "Report the exact settled error once without keeping a failure history or allowing an unhandled derived rejection.",
+        "failureRationale": "An absent report loses completed failures before stop; repeated reports duplicate owner-visible failure effects."
+      }
+    },
+    {
+      "id": "queue-engine-failure-reporter-exception-owned",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A throwing task-failure sink preserves the task and reporter errors in one fallback report without creating an unhandled rejection.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a failure-sink exception without creating an unhandled task rejection",
+      "coverageRelation": "The test rejects a real registered task and supplies a sink that records the task error then throws; it captures the fallback console report and process rejection events.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "One failing reporter invocation creates one fallback report containing both the original task error and reporter error.",
+        "requiredConstraint": "Invoke the supplied sink once and emit exactly one normalized fallback report if it throws.",
+        "failureRationale": "Repeating the sink can repeat its side effects; dropping or rejecting its failure leaves the reporting operation without an owner."
+      }
+    },
+    {
+      "id": "queue-engine-failure-report-follows-cleanup",
+      "domain": "Owned queue task settlement reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "Shutdown waits for runnable-owned cleanup and the failure sink receives the exact task error only after cleanup settles.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once",
+      "coverageRelation": "The test gates a registered runnable computation and its finally release separately, starts stop while both are pending, and verifies no early report, one final report and the stop caller aggregate.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "InboxOutboxEngine task-failure reporting sink and its default console error adapter",
+        "observableEffect": "The resource release finishes before owner-visible failure reporting and shutdown completion.",
+        "requiredConstraint": "Emit no failure report while release is pending, then report once after release completes; stop must join that cleanup.",
+        "failureRationale": "An early report can trigger recovery while the failed task still owns resources; duplicate reporting repeats recovery effects."
+      }
+    },
+    {
+      "id": "hetzner-original-scale-serialized-arrival-isolation",
+      "domain": "Serialized room matching for unchanged ALM traffic",
+      "owner": "Rallar operations maintainers",
+      "summary": "The original fifteen-agent manifest accepts its outgoing effective-room traffic in preserved and isolated modes while excluding unrelated and original-room traffic after isolation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic",
+      "coverageRelation": "The test runs the actual CLI on the original hashed fixture, expands real runtime placeholders and result references, and uses the actual wait matcher for 86 arrivals per mode with independent room/session literals, wrong-room/type/sender/sequence controls and source byte preservation."
+    },
+    {
+      "id": "hetzner-serialized-source-room-refusal",
+      "domain": "Serialized wait scope admission before filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "A source wait fragment naming a room outside the source GroupRef is rejected before output or record creation and preserves its test-owned input bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects a serialized source room mismatch before output writes",
+      "coverageRelation": "The test independently appends a wrong-room partial matcher to a valid fixture, invokes the actual CLI, checks the room-specific diagnostic and complete directory inventory, and compares the original input bytes after refusal."
+    },
+    {
+      "id": "alm-all-local-runner-provenance-source",
+      "domain": "Frozen ALM all-local runner provenance",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Runner provenance and the retained frozen source identify the admitted authored ALM workload even if a later selected path points to different bytes.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#retains runner resources and exact source before service startup can fail",
+      "coverageRelation": "The test invokes the workflow's source-admission and provenance commands, substitutes a different later path, then checks the recorded digest and retained manifest against the originally selected authored bytes."
+    },
+    {
+      "id": "alm-all-local-source-admission-freeze",
+      "domain": "Frozen ALM all-local source admission",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The all-local admission rejects substituted ALM source bytes and retains the admitted canonical bytes after the selected path changes.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#admits only canonical source bytes and retains them after the selected path changes",
+      "coverageRelation": "The test supplies a selected file under an isolated repository root, observes rejection of invalid bytes before a frozen copy exists, admits the canonical authored bytes, then changes the selected file and reads the retained frozen copy."
+    },
     {
       "id": "agent-reload-result-precedes-page-reload",
       "domain": "Black-box agent reload ordering",
@@ -303,14 +401,6 @@ moved or changed test.
         "requiredConstraint": "No prepared send may start when the post-read clock has reached the admitted deadline.",
         "failureRationale": "Terminal or absent queue work can also follow an illegal late send, so work-state readback alone cannot prove deadline enforcement at the external send boundary."
       }
-    },
-    {
-      "id": "alm-outbound-held-claim-quiescence",
-      "domain": "ALM outbound held-claim test fixture",
-      "owner": "Rallar shared maintainers",
-      "summary": "The held-claim fixture restores real queue reservations only once no owner batch is still asking for work, so a disposed runtime cannot strand rows in a reservation nobody releases. Executable assertion: “lets only one runtime claim the same committed send effect”.",
-      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect",
-      "coverageRelation": "The named test holds every claim while a first runtime commits send work, disposes that runtime, releases the hold, and proves a second runtime claims and sends the row exactly once; the fixture wait is the precondition that the release never lands inside a batch."
     },
     {
       "id": "alm-outbound-runtime-control-conflict-retention",
@@ -1040,59 +1130,67 @@ moved or changed test.
     },
     {
       "id": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Published Playwright dependency contract",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “keeps Playwright packages aligned past the Node 24 browser-install hang regression”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "Published package and lockfile inputs carry the same supported Playwright version above the known Node 24 hang regression.",
+      "semanticCoverage": "packages/tests/hetzner/playwright-browser-installation.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression",
+      "coverageRelation": "Reads actual package and lockfile dependency inputs, narrows the consumed versions to strings, and compares the three independently selected versions."
     },
     {
       "id": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Immutable materialization input",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “materializes a deterministic isolated group throughout executable manifest data”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "Actual materializer executions produce deterministic isolated scope, equal repeated output and record bytes, unchanged authored source bytes, and 64-character hexadecimal source/output hash fields.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data",
+      "coverageRelation": "The named test supplies the authored 05a manifest to the actual CLI twice, observes executable scope and record fields, compares repeated output and record bytes, and re-reads the same source against its independently acquired pre-execution bytes."
     },
     {
-      "id": "hetzner-distributed-workflow--persists-control-server-snapshots-with-an-atomic-temp-file-renam",
-      "domain": "Supported Hetzner distributed workflow",
+      "id": "hetzner-materializer-null-refusal-preserves-input",
+      "domain": "Materializer validation refusal filesystem effects",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “persists control-server snapshots with an atomic temp-file rename”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The actual materializer rejects a null source before creating output, record, or atomic temporary artifacts and preserves the owned null input bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects",
+      "coverageRelation": "The test writes literal null input, runs the actual CLI, observes the validation diagnostic and absent output/record artifacts, inventories the owned directory, and reads the input against the independently authored null bytes."
+    },
+    {
+      "id": "hetzner-materializer-rename-refusal-preserves-input",
+      "domain": "Materializer atomic publication refusal filesystem effects",
+      "owner": "Rallar operations maintainers",
+      "summary": "After a genuine rename refusal, the actual materializer removes its atomic temporary, preserves the existing destination sentinel and owned source bytes, and creates no record.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination",
+      "coverageRelation": "The test supplies an owned valid manifest and existing destination directory to the actual CLI, observes refusal, inventories remaining files and sentinel content, confirms record absence, and compares the source with its independently written bytes."
     },
     {
       "id": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Supported manifest preparation contract",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “prepares the supported commit once before running the serial manifest matrix”.",
+      "summary": "Full canonical supported manifests omit topology-only RTC requirements; authored prepare/run job controls are independently asserted.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "coverageRelation": "Reads the concrete supported manifests consumed by the named case and checks their authored metadata after full canonical validation."
     },
     {
       "id": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Executable scope versus parallel label",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “preserves a parallel label that happens to equal the source room”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The actual materializer isolates executable room identities while preserving a parallel label that equals the original room.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room",
+      "coverageRelation": "Loads the fully validated source fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope."
     },
     {
       "id": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Materializer executable scope admission",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “rejects an executable command scoped outside the source manifest group”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The actual child rejects independently authored room, marked-request and canonical-path scope violations in a full valid source manifest.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group",
+      "coverageRelation": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation."
     },
     {
       "id": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "domain": "Supported Hetzner distributed workflow",
+      "domain": "Controlled controller lockfile repair",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “repairs known Deno lockfile drift before the controlled rollout dirty checkout guard”.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
-      "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
+      "summary": "The controlled rollout child restores the exact clean lockfile bytes before reporting its dirty-checkout guard outcome.",
+      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
+      "coverageRelation": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes."
     },
     {
       "id": "indexeddb-invalid-schema-no-open",
@@ -1320,28 +1418,20 @@ moved or changed test.
       }
     },
     {
-      "id": "mutation-boundary-analysis-interface",
-      "domain": "Mutation boundary analysis interface",
-      "owner": "Rallar server maintainers",
-      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model. Executable assertion: “exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions",
-      "coverageRelation": "The analyzer test executes import traversal and inventory checks across the authoritative mutation surface; this file enumeration is the fail-closed production input to that security audit."
-    },
-    {
       "id": "mutation-capability-export-interface",
       "domain": "Mutation capability export analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run. Executable assertion: “resolves mutable repository capabilities through the shared-server barrel”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel",
-      "coverageRelation": "The capability traversal test executes barrel and re-export resolution; this AST parse is the mechanism that follows a mutable capability to its canonical owner."
+      "summary": "Imported mutable repository capabilities resolve from their canonical package modules before receiver mutations are classified.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-provenance.test.ts#follows mutable capability provenance through production receiver shapes",
+      "coverageRelation": "The test executes the boundary analyzer on parameter, bracket, constructor, declared-property and destructured receiver fixtures. Their canonical ClientStateRepository imports reach readCapabilityExports, which parses the repository module and identifies its exported mutable capability; a read-only fixture remains accepted."
     },
     {
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 56 entrypoints and 52 types to real registrations and owners”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners",
-      "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
+      "summary": "An imported object type preserves the mutable repository capability of its nested member when the boundary analyzer follows the receiver.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#resolves mutable capability provenance in %s",
+      "coverageRelation": "The imported-object-alias.ts variant imports ImportedRepositoryHolder from alias-types.ts. The real type resolver loads and parses that module, follows its nested repository alias, and the test requires ClientStateRepository.insertPrincipal to be reported for the fixture."
     },
     {
       "id": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
@@ -1363,9 +1453,9 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-a-missing-direct-group-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct group registration”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration",
-      "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
+      "summary": "Removing GROUP_CREATE from the imported live group registration collection disconnects that operation from its authoritative owner.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection",
+      "coverageRelation": "The test reads the shipped group-state inbox contracts, removes GROUP_CREATE from their live registration collection, proves the mutation changed the input, then runs validateMutationRouteInventory with the override and requires the missing-owner connection error."
     },
     {
       "id": "mutation-registration-collections--rejects-a-missing-direct-topology-registration",
@@ -1852,15 +1942,15 @@ moved or changed test.
       "id": "rtc-group-refresh-retries-after-failure",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A failed authoritative refresh releases its coalescing slot so the retained QueueBox retry can request authority again. Executable assertion: “leaves failed refreshes to the retained QueueBox retry”.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry",
-      "coverageRelation": "The test rejects the first injected group-refresh request, reports the retained recovery condition again, and observes a second request succeed.",
+      "summary": "A failed authoritative refresh releases its coalescing slot without re-entry so a later independent admission can request authority again.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#reports failure without re-entry and permits a later independent refresh",
+      "coverageRelation": "The test rejects the first injected group-refresh request and observes false, then independently reports the recovery condition again and observes true with two total refresh calls. It does not exercise or claim QueueBox redelivery.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "RtcGroupSnapshotRefresh authoritative group-refresh port",
-        "observableEffect": "Two sequential recovery reports separated by a failed refresh issue two authoritative refresh attempts.",
-        "requiredConstraint": "A settled failed refresh must not leave the scoped group permanently marked active.",
-        "failureRationale": "A retained failed task would suppress every later QueueBox recovery attempt and strand messages behind stale room authority."
+        "observableEffect": "Two sequential independent recovery reports separated by a failed refresh issue two authoritative refresh attempts.",
+        "requiredConstraint": "A settled failed refresh releases the scoped group slot without an inner retry; a later independent admission may refresh again.",
+        "failureRationale": "A retained failed task would suppress a later independent refresh, while an inner retry would spend authority requests not requested by that later admission."
       }
     },
     {
@@ -2316,21 +2406,6 @@ moved or changed test.
       }
     },
     {
-      "id": "shared-web-state-delta-conflict-recovery",
-      "domain": "Shared-web revision-conflict recovery",
-      "owner": "Shared Web maintainers",
-      "summary": "A revision conflict self-heals with one floored read. Executable assertion: “counts a revision conflict from the divergence oracle and self-heals with the floored pull”.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "count",
-        "ownedPort": "Group-state floored HTTP read port",
-        "observableEffect": "The conflict produces one recovery request and durable state.",
-        "requiredConstraint": "Exactly one floored recovery fetch occurs for the conflict.",
-        "failureRationale": "No read leaves divergence unresolved; duplicates race self-healing."
-      }
-    },
-    {
       "id": "shared-web-state-delta-missing-session-recovery",
       "domain": "Shared-web missing-session delta recovery",
       "owner": "Shared Web maintainers",
@@ -2519,76 +2594,67 @@ moved or changed test.
       "coverageRelation": "The helper unit suite executes parsing, normalization, resolution, graph traversal, and path-aware failures; this AST access is the implementation input for that repository test interface."
     },
     {
-      "id": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
-      "domain": "Clustered state-read convergence recipe",
-      "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “defines run-scoped identifiers as interpolated string values”.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values",
-      "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
-    },
-    {
-      "id": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
-      "domain": "Clustered state-read convergence recipe",
-      "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “proves tertiary scalar and causal floors with revision and source headers”.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers",
-      "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
-    },
-    {
       "id": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “executes the topology exact-revision assertions before every cleanup step”.",
+      "summary": "Topology exact event-revision assertions complete before websocket close or logout is admitted; a wrong event revision suppresses every trailing cleanup observation.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the validated topology recipe, derives assertion and cleanup stages from protocol fields, executes the actual assertion requests in recipe order with real executeBlackBox, and observes SET outputs for admitted trailing stages on success and their absence after a failing exact revision.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "executeBlackBox assertion execution and owned SET output admission in recipe order",
+        "observableEffect": "Successful exact revision assertions admit trailing cleanup observations; a failing revision leaves every cleanup observation absent.",
+        "requiredConstraint": "Complete all terminal exact revision assertions before admitting websocket close or logout stages, and stop their admission when an assertion fails.",
+        "failureRationale": "A passing report or a later failure alone could conceal cleanup admitted before evidence is checked, leaving a run without the required exact revision proof."
+      }
     },
     {
       "id": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “forbids literal SET values from claiming durable state-write evidence”.",
+      "summary": "Every selected state-write recipe obtains its stateWriteEvidence output through the asynchronous durable collector instead of a literal SET value.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads each schema-validated authored recipe and checks its evidence-output declaration uses set.state-write-evidence with a spec and has no literal value; the same suite separately executes the collector and rejects literal evidence in strict preflight."
     },
     {
       "id": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "CRDT AppInbox evidence selects only the commands owned by its recipe even when another recipe uses a containing update ID. Executable assertion: “isolates CRDT AppInbox evidence by recipe command prefixes”.",
+      "summary": "CRDT durable evidence is restricted to the delivery and update command prefixes owned by the recipe, rather than unrelated commands sharing a containing identifier.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes",
-      "coverageRelation": "The named recipe test reads the executable CRDT fixture and verifies that its broad durable selector is narrowed by the two exact command-ID prefixes owned by that recipe."
+      "coverageRelation": "The test loads the schema-validated CRDT recipe and checks its durable selector and two operation-specific command prefixes."
     },
     {
       "id": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “observes committed socket authorization before clustered WS effects”.",
+      "summary": "Clustered topology and CRDT recipes declare a committed socket snapshot wait before submitting the mutation whose websocket effects they observe.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads both schema-validated executable recipes and checks each websocket connection has a consuming client-state snapshot wait before the corresponding clustered mutation step."
     },
     {
       "id": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “selects auth ticket races by the redacted secret and exact durable digest”.",
+      "summary": "The auth recipe selects durable ticket evidence with its redacted ticket secret, whose exact persisted digest is independently checked.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the schema-validated executable auth fixture, checks its declared evidence selector, and calls the real digest boundary with a fixed authored ticket value."
     },
     {
       "id": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "Strict group evidence follows the scoped internal command identity while retaining operation-specific topology selectors.",
+      "summary": "Group contract, convergence and medium-scale recipes select durable group evidence through the scoped internal command identity while retaining their topology command selectors.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity",
-      "coverageRelation": "The named recipe test reads all three executable group state-write fixtures and verifies that their durable selectors use the scoped group AppInbox command prefix."
+      "coverageRelation": "The test loads all three schema-validated executable recipes and compares their configured command prefixes with an independently authored group AppInbox prefix and the operation-specific retained prefixes."
     },
     {
       "id": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “uses one bounded execution identity for the command and its evidence”.",
+      "summary": "The admin recipe binds the prune request path and durable evidence selector to one required operator-supplied execution token.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the schema-validated admin recipe and checks its command path, absent caller body requestId, durable selector, and required RALLAR_BB_EXECUTION_TOKEN binding against independent literals."
     },
     {
       "id": "tests-project-module-alias-parity",
@@ -2623,21 +2689,6 @@ moved or changed test.
       "coverageRelation": "The collections are hand-written HTTP paths that nothing executes in CI, so a wrong one is invisible until an operator clicks it and receives a 404. This assertion reads the shipped OpenAPI document — the published contract, not an internal structure — and requires a served path and method for every step. No behavioural test can substitute: the collections are operator inputs, never executed by the suite."
     },
     {
-      "id": "ws-invalid-application-command-skips-authorization",
-      "domain": "WS server typed ingress admission",
-      "owner": "Shared realtime maintainers",
-      "summary": "An application validator rejection must return the typed failure before invoking authorization or writing admission state. Executable assertion: “runs a typed application validator before authorization or admission”.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission",
-      "coverageRelation": "The test installs an application validator that rejects and an authority port, then calls public acceptIncomingMessage against a valid live authenticated connection.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Installed WsServerInboundAuthorizer.authorize capability",
-        "observableEffect": "The malformed command produces no authority-provider call and leaves admission metadata empty.",
-        "requiredConstraint": "An application validator rejection must return the typed failure before invoking authorization or writing admission state.",
-        "failureRationale": "Authorization can perform asynchronous authoritative reads or side effects and must not receive application commands already rejected by the typed ingress validator."
-      }
-    },
-    {
       "id": "ws-native-failure-one-attempt-accounting",
       "domain": "WS outbound native attempt accounting",
       "owner": "Shared realtime maintainers",
@@ -2651,8 +2702,7 @@ moved or changed test.
         "requiredConstraint": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt.",
         "failureRationale": "An inner resend may duplicate a message after an uncertain native failure and would misrepresent multiple submissions as one QueueBox attempt."
       }
-    }
-,
+    },
     {
       "id": "agent-launch-unavailable-clipboard-mints-no-links",
       "domain": "Recipe Console browser-agent launch authority",
@@ -2668,7 +2718,7 @@ moved or changed test.
         "failureRationale": "Links minted for a clipboard that cannot receive them leave short-lived agent credentials live on the control server with no operator holding them."
       }
     },
-{
+    {
       "id": "agent-launch-one-control-token-per-simulated-agent",
       "domain": "Recipe Console browser-agent launch authority",
       "owner": "Rallar Black Box maintainers",
@@ -2763,7 +2813,7 @@ moved or changed test.
       "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
       "domain": "Recipe Console Analyze evidence window pagination",
       "owner": "Rallar Black Box maintainers",
-      "summary": "While an evidence-window request is in flight the pager controls stay mounted and disabled, and clicking one issues no second window request. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "summary": "While an evidence-window request is in flight the pager controls stay mounted and disabled, and clicking one issues no second window request. Executable assertion: “keeps pending controls mounted, blocks repeat cursor requests, and reports failure”.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
       "coverageRelation": "The test renders the pending window, reads that both pager buttons are still mounted with aria-disabled=true, clicks each of them, and reads the window-request count; the rendered rows are identical whether the click was refused or served, so the absent request is the only witness that it was refused.",
       "interactionRequirement": {
@@ -2779,7 +2829,7 @@ moved or changed test.
       "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
       "domain": "Recipe Console Analyze evidence window failure recovery",
       "owner": "Rallar Black Box maintainers",
-      "summary": "The evidence-window failure banner's retry control reissues the evidence search exactly once per click. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "summary": "The evidence-window failure banner's retry control reissues the evidence search exactly once per click. Executable assertion: “keeps pending controls mounted, blocks repeat cursor requests, and reports failure”.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
       "coverageRelation": "The test renders the failed window, reads the operator failure sentence, clicks the retry control once and reads the search count; the controller is a test double that re-renders nothing, so the call count is the only witness that one search left the view.",
       "interactionRequirement": {
@@ -3283,18 +3333,93 @@ moved or changed test.
       }
     },
     {
-      "id": "browser-invalid-fallback-no-admission",
+      "id": "browser-invalid-scope-no-admission",
       "domain": "Typed message audience validation",
       "owner": "Rallar browser maintainers",
-      "summary": "An unsupported all-scope fallback with membership fencing rejects before either carrier can publish.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing",
-      "coverageRelation": "The public room channel rejects both independently specified validation issues and remains disconnected; both carrier admission ports are observed.",
+      "summary": "A WS send naming a scope outside room, world and principal rejects before the WS carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take",
+      "coverageRelation": "The public WS lane rejects the scope issue alone; the WS carrier admission port is observed.",
       "interactionRequirement": {
         "interactionKind": "absence",
-        "ownedPort": "WebSocketQueueBox and WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission ports",
+        "ownedPort": "WebSocketQueueBox enqueueOutboxIfAbsent carrier admission port",
         "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
-        "requiredConstraint": "Unsupported fallback scope or membership fencing must produce no WS or RTC admission.",
-        "failureRationale": "An error response can follow an illicit send; validation errors and disconnected facade state alone do not prove absence of publication."
+        "requiredConstraint": "A scope a browser may not address must produce no WS admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-rtc-invalid-scope-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An rtc-strategy send naming a scope outside room, world and principal rejects before the RTC carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission",
+      "coverageRelation": "The room channel's rtc strategy rejects the scope issue; the RTC carrier admission port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission port",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A scope a browser may not address must produce no RTC admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-world-send-on-rtc-refused-alone",
+      "domain": "Typed message audience routing",
+      "owner": "Rallar browser maintainers",
+      "summary": "A world send on the rtc strategy reaches only the RTC carrier, as the world broadcast it holds, and WS admits nothing.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal",
+      "coverageRelation": "The RTC carrier admission port receives the world broadcast with the hold gap admission and the WS port is never called. The RTC port double injects the unsupported refusal, so the pinned outcome is the ledger projection of that refusal: the handle ends rejected.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService and WebSocketQueueBox enqueueOutboxIfAbsent carrier admission ports",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "A world send whose strategy names RTC alone must offer RTC the world broadcast and must produce no WS admission.",
+        "failureRationale": "A rejected handle can follow a WS publication; the handle state alone does not prove which carriers admitted the send."
+      }
+    },
+    {
+      "id": "browser-roomless-exclusive-send-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An exclusive WS send to one peer that names no room rejects before the WS carrier can publish it.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#refuses an exclusive WS send to one peer that names no room, saying it names a room",
+      "coverageRelation": "The public WS lane rejects the room-audience issue alone; the WS carrier admission port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox enqueueOutboxIfAbsent carrier admission port",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "An exclusive send with no room to hold its claim must produce no WS admission.",
+        "failureRationale": "An error response can follow an illicit send; the validation error alone does not prove absence of publication."
+      }
+    },
+    {
+      "id": "game-local-director-intent-claims-nothing",
+      "domain": "Rallar Game director intents",
+      "owner": "Rallar browser maintainers",
+      "summary": "The fresh local director's own claiming intent reaches its own handler and never the director relay.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-game-match.test.ts#routes the fresh local director's own intent to its own handler, claiming nothing",
+      "coverageRelation": "The match result reads local and the handler receives the intent; the relay send port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarDirectorRelayHandle sendIntent relay port",
+        "observableEffect": "A relay send claims the intent's resource at the WS server for the claim's lifetime.",
+        "requiredConstraint": "An intent the local director handles must produce no relay send, so it claims nothing.",
+        "failureRationale": "A local result and a handled intent can follow a relay send; neither proves the claim was never sent."
+      }
+    },
+    {
+      "id": "browser-ai-principal-result-not-realtime",
+      "domain": "Browser AI result delivery",
+      "owner": "Rallar browser maintainers",
+      "summary": "A principal-scoped AI result is never broadcast over realtime, which reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime",
+      "coverageRelation": "The realtime transport rejects the principal scope and its send port is observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarFacade realtime.sendJson",
+        "observableEffect": "A realtime send reaches every live session of the room.",
+        "requiredConstraint": "A principal-scoped AI result must produce no realtime send.",
+        "failureRationale": "The validation error alone does not prove that no room-wide realtime send happened first."
       }
     },
     {
@@ -3325,21 +3450,6 @@ moved or changed test.
         "observableEffect": "acceptGroupUpdate updates a group and requests reconciliation; ensureAllGroupsConnected independently requests reconciliation of connections.",
         "requiredConstraint": "A cache-age-only authoritative refresh must invoke neither topology-update nor connection-reconciliation port.",
         "failureRationale": "An unchanged snapshot and a Refreshed event do not exclude unnecessary reconciliation or reconnection work. These port absences protect cache-only renewal from triggering topology work."
-      }
-    },
-    {
-      "id": "state-write-evidence-invalid-input-no-sql",
-      "domain": "API-v1 state-write evidence input validation",
-      "owner": "Rallar shared-test maintainers",
-      "summary": "Malformed raw evidence input is rejected before any query reaches the external database port.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts#keeps raw JSON evidence inputs untrusted until the SQL validator runs",
-      "coverageRelation": "The test passes a raw JSON object with an empty match to the real SQL evidence collector, verifies its validation error, and observes that the SQL query port receives no invocation.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "ApiV1StateWriteEvidenceSql database query callable",
-        "observableEffect": "A query invocation sends database work through the evidence collector's owned SQL port.",
-        "requiredConstraint": "An invalid empty match must reject before invoking the SQL query port.",
-        "failureRationale": "The final validation error alone permits an implementation to issue unintended database work before rejecting the raw input."
       }
     },
     {
@@ -3417,6 +3527,51 @@ moved or changed test.
         "observableEffect": "A command whose WS send returned a delivery makes no REST request.",
         "requiredConstraint": "The runtime falls back to REST only when the WS path returned no delivery (no server id known), never after a WS attempt.",
         "failureRationale": "The WS outcome reads the same whether or not a REST copy was also sent, and a REST copy after a WS command could apply the command twice on the server; the absent REST call is the only witness."
+      }
+    },
+    {
+      "id": "relic-unauthorized-auth-change-never-logs-out",
+      "domain": "Relic Hunters browser session",
+      "owner": "Relic Hunters maintainers",
+      "summary": "An auth change that reports the session unauthorized clears the browser runtime state without a manual logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout",
+      "coverageRelation": "The test connects the hook, emits an unauthorized auth state and checks the cleared session, room, snapshot and diagnostics, the cleared stored room id and the absent logout call.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "rallar.auth logout",
+        "observableEffect": "An unauthorized auth change makes no logout request.",
+        "requiredConstraint": "Only the player's own logout action calls the auth logout; the hook reacts to an unauthorized state by clearing its own state.",
+        "failureRationale": "The cleared hook state reads the same whether or not a logout was also requested, and a logout from inside the auth listener would re-enter the auth change it is reacting to; the absent call is the only witness."
+      }
+    },
+    {
+      "id": "relic-web-api-signed-out-requests-nothing",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Without a browser auth session the Relic REST client answers every read and command with no result and sends no request.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session",
+      "coverageRelation": "The test clears the session, calls the snapshot read, the command and the reset, and checks that each resolves undefined and that no request was sent.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "A signed-out client sends no Relic request.",
+        "requiredConstraint": "The client sends a Relic request only with the credentials of a browser auth session.",
+        "failureRationale": "Every call resolves undefined whether or not a request was also sent, and an unauthenticated request would reach the server without credentials; the absent call is the only witness."
+      }
+    },
+    {
+      "id": "relic-web-api-command-sends-one-request",
+      "domain": "Relic Hunters browser REST client",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A command submission is one POST to the game's encoded commands route carrying the session's credentials and the command.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers",
+      "coverageRelation": "The test submits one command and checks the single request's encoded URL, method, auth headers and body.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "browser fetch to the Relic REST API",
+        "observableEffect": "One command submission sends exactly one request.",
+        "requiredConstraint": "The server applies a REST command once per request, so the client sends one request per submission.",
+        "failureRationale": "The URL, headers and body read from the first request hold whether or not a second request followed it, and a second request would apply the command twice; the count is the only witness."
       }
     },
     {
@@ -3598,9 +3753,660 @@ moved or changed test.
         "requiredConstraint": "The request forwards to the browser once, bound to its storage manager.",
         "failureRationale": "A request that called persist more than once would prompt the user more than once."
       }
+    },
+    {
+      "id": "browser-rtc-capture-reentry-single-construction",
+      "domain": "Browser RTC capture reentry",
+      "owner": "Shared Web maintainers",
+      "summary": "An incompatible reentrant capture request constructs no second graph; the original accepted request constructs exactly one. Executable assertion: “holds the selected mode during synchronous setup reentry”.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts#holds the selected mode during synchronous setup reentry",
+      "coverageRelation": "The test invokes the real owned boundary and checks its visible result beside the required interaction count.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "initialiseMiddleware during BrowserTransportRuntime.init",
+        "observableEffect": "Middleware construction allocates the browser connection graph and native carrier resources.",
+        "requiredConstraint": "An incompatible reentrant capture request constructs no second graph; the original accepted request constructs exactly one.",
+        "failureRationale": "A duplicate initializer could allocate independent RTC resources even if one facade result is selected."
+      }
+    },
+    {
+      "id": "rallar-retry-classification-no-coercion",
+      "domain": "Rallar retry failure classification",
+      "owner": "Shared Web maintainers",
+      "summary": "Non-ApiHttpError failures return true without invoking user-defined coercion. Executable assertion: “classifies arbitrary retry failures without coercing them”.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them",
+      "coverageRelation": "The test invokes the real owned boundary and checks its visible result beside the required interaction absence.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Symbol.toPrimitive on an arbitrary failure passed to shouldRetryRallarOperation",
+        "observableEffect": "User-defined conversion can throw or execute application effects during retry classification.",
+        "requiredConstraint": "Non-ApiHttpError failures return true without invoking user-defined coercion.",
+        "failureRationale": "Coercion could replace the retry decision with an unrelated exception or side effect."
+      }
+    },
+    {
+      "id": "recipe-adapter-compatible-connection-one-ice-request",
+      "domain": "Recipe adapter connection cache suppression",
+      "owner": "Shared Test maintainers",
+      "summary": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt",
+      "coverageRelation": "The actual page adapter holds its initial SDK construction at the ICE HTTP port, queues incompatible intent, then rejects it with the original receipt and reuses compatible intent without a second request.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
+        "observableEffect": "Each call requests ICE configuration from the server for a browser connection construction.",
+        "requiredConstraint": "The held initial Off connection plus rejected Native request and later compatible Off reuse make exactly one ICE configuration request.",
+        "failureRationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original."
+      }
+    },
+    {
+      "id": "recipe-ws-fallback-single-retry",
+      "domain": "Recipe WebSocket fallback retry",
+      "owner": "Shared Test maintainers",
+      "summary": "A first not-connected rejection followed by a successful connection and send produces exactly two send attempts: the initial attempt and one retry.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once",
+      "coverageRelation": "The owned send port rejects the first attempt as not connected, the real SPA/SDK connection applies run Off, and the second send succeeds. The exact two-attempt assertion protects the existing retry-once contract.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RallarBlackBoxBrowserRallarRuntime.sendWs injected outbound send port",
+        "observableEffect": "Each sendWs invocation attempts the authored application message at the browser runtime boundary.",
+        "requiredConstraint": "A first not-connected rejection followed by a successful connection and send produces exactly two send attempts: the initial attempt and one retry.",
+        "failureRationale": "A successful result does not exclude additional sends after success. An extra retry can duplicate the application message; omission of the retry loses it."
+      }
+    },
+    {
+      "id": "sdk-pending-compatible-connection-one-ice-request",
+      "domain": "SDK pending connection reservation",
+      "owner": "Shared Web maintainers",
+      "summary": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition",
+      "coverageRelation": "The real SDK initializer is held at the HTTP port while compatible and incompatible connect requests arrive. Both accepted promises settle with the original host receipt; the literal one-request assertion precedes the separate explicit reconnect.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "readIceCandidates HTTP port during browser RTC transport initialization",
+        "observableEffect": "Each call performs an ICE configuration request before constructing the browser RTC graph.",
+        "requiredConstraint": "Before explicit disconnect, an initial held Native host request, a compatible Native run request and a rejected Off run request make exactly one ICE request.",
+        "failureRationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction."
+      }
+    },
+    {
+      "id": "auth-replacement-single-new-connection",
+      "domain": "Authentication replacement connection ownership",
+      "owner": "Shared Web maintainers",
+      "summary": "One initial explicit connection followed by a send after authentication replacement initializes exactly twice in total: once for each session.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#reconciles replaced authentication before acquiring a new connection",
+      "coverageRelation": "The public message send observes changed auth storage after an initial connection. The real auth/connection owners reconcile it, report the replacement session and product-default receipt, and cross the injected initializer exactly once for that replacement.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "initialiseMiddleware resource acquisition port of BrowserTransportRuntime",
+        "observableEffect": "Initialization allocates one browser middleware graph with its transport, queue and heartbeat resources.",
+        "requiredConstraint": "One initial explicit connection followed by a send after authentication replacement initializes exactly twice in total: once for each session.",
+        "failureRationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership."
+      }
+    },
+    {
+      "id": "browser-native-initialization-refusal-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required Native message whose acquired connection reports initialization-failed must be refused without queue admission; the business connection and its original receipt remain available.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses failed Native initialization without failing or replacing its connection",
+      "coverageRelation": "The SDK connects through the actual capture owner with the native observation capability unavailable, then sends with explicit Native intent. The test observes the typed refusal, retained original connection receipt and zero outbound admissions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "Native initialization unavailability must leave the WebSocket outbound queue untouched for the refused message.",
+        "failureRationale": "A typed refusal and a healthy connection do not exclude a message being queued first. Admission would send a message for which the required capture cannot be verified."
+      }
+    },
+    {
+      "id": "browser-missing-capture-sink-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required Native message whose original connection lacks a diagnostics sink is refused before any queue admission while its business connection remains usable.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses required unavailable capture while preserving the successful connection",
+      "coverageRelation": "The public SDK connects without a signaling sink, observes sink-unavailable on the actual receipt, then sends with explicit Native intent and checks both its typed refusal and the untouched WebSocket queue.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "A required capture request with sink-unavailable admits no message to the WebSocket outbound queue.",
+        "failureRationale": "Rejecting the caller after an admission would still send an unverified message. The refusal result cannot prove the absence of that effect."
+      }
+    },
+    {
+      "id": "browser-auth-changed-during-message-id-no-admission",
+      "domain": "Required message capture admission",
+      "owner": "Shared Web maintainers",
+      "summary": "A required message is refused before admission when its message-ID callback changes authentication after acquiring the original connection.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#does not admit a required send when its message ID callback replaces authentication",
+      "coverageRelation": "The SDK acquires an Off connection, then the injected UUID callback replaces auth storage during message creation. The test checks session-not-current and zero WebSocket queue admissions.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox.enqueueOutboxIfAbsent at the browser outbound admission boundary",
+        "observableEffect": "Each queue admission registers outbound message work that can be transmitted independently of the send promise result.",
+        "requiredConstraint": "After the ID callback replaces authentication, the original send must admit no message to the WebSocket outbound queue.",
+        "failureRationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session."
+      }
+    },
+    {
+      "id": "rtc-b05-diagnostic-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The diagnostic CLI test runs the real measurement lifecycle with its injected browser, verifies the resulting two-cycle diagnostic artifact, and witnesses one resource release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#preserves the diagnostic CLI while measuring only through an injected browser",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser resource acquired for diagnostic measurement",
+        "requiredConstraint": "Each acquired diagnostic browser is closed exactly once before the CLI returns.",
+        "failureRationale": "A correct diagnostic file can still leave its browser running; the release effect must occur once at the acquired resource port."
+      }
+    },
+    {
+      "id": "rtc-b05-raw-command-admission-before-launch",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The raw CLI receives invalid controller inputs and a changed real initialized manifest; rejection and absence of escaped output are asserted together with suppression of browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects bounds, overrides, path escapes, and changed accepted matrices before launch",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a browser process for an accepted raw measurement",
+        "requiredConstraint": "Invalid bounds, overrides, escaping output paths and changed initialized manifests must launch zero browsers.",
+        "failureRationale": "A refusal or absent escaped file alone would permit an invalid command to start a browser before rejecting it."
+      }
+    },
+    {
+      "id": "rtc-b05-controller-identity-before-launch",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The test changes the persisted initialized environment observation and calls the real raw CLI; its environment refusal must precede the injected browser launch effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects changed initialized B05 controller identity before browser launch",
+      "coverageRelation": "This executable CLI assertion proves the named effect constraint through the production admission or browser resource lifecycle.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser after initialized environment admission",
+        "requiredConstraint": "A changed initialized controller environment identity must launch zero browsers.",
+        "failureRationale": "An environment error returned after browser startup would still measure under incompatible initialized provenance."
+      }
+    },
+    {
+      "id": "rtc-b05-failed-producer-suppresses-staged-read",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The controller test first proves staged lifecycle refusal, then records producer status9 against the same owner and verifies producer failure with four failure-accounting artifacts and no staged read.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#projects lifecycle failures and the bridge preserves the exact causal remainder",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcBaselineEvidenceAcceptance readStagedJson dependency for recordBrowser",
+        "observableEffect": "Admission read of a B05 staged artifact after the producer has failed",
+        "requiredConstraint": "A nonzero B05 producer status must read zero staged artifacts and write canonical failure accounting.",
+        "failureRationale": "Reading a valid-looking staged file after a failed B05 producer could admit stale evidence or replace the canonical producer failure cause."
+      }
+    },
+    {
+      "id": "rtc-b05-incomplete-heap-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The test executes the raw CLI with one missing forced-GC value, verifies its failed raw sample and controller refusal, and observes one browser release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#fails raw evidence when Chromium exposes only one forced-GC heap value",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser acquired for an incomplete heap measurement",
+        "requiredConstraint": "An acquired browser is closed exactly once even when the raw sample and subsequent admission refuse incomplete heap evidence.",
+        "failureRationale": "The failed sample and rejected admission do not prove the browser resource was released after heap acquisition."
+      }
+    },
+    {
+      "id": "rtc-b05-thrown-evaluation-browser-release",
+      "domain": "RTC-B05 browser producer admission and resource ownership",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "The real raw CLI receives a throwing page evaluation; the original failure, absent output and single browser release prove cleanup on the exception exit.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#closes the browser and leaves no raw file when native execution throws",
+      "coverageRelation": "This executable CLI or controller assertion proves its named effect constraint through the production evidence or browser resource boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Injected browser.close capability acquired by measureBrowserLifecycle",
+        "observableEffect": "Release of the browser after a page evaluation exception",
+        "requiredConstraint": "An acquired browser is closed exactly once when evaluation throws, with the original exception propagated and no raw output written.",
+        "failureRationale": "Exception propagation and absent raw output can coexist with a leaked browser if the acquired resource is not released."
+      }
+    },
+    {
+      "id": "control-bootstrap-optional-single-socket",
+      "domain": "Black-box optional control connection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A successful bootstrap creates no control socket when autoConnect is false and exactly one at the configured control URL when true.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection",
+      "coverageRelation": "The test runs both autoConnect selections through the runtime store and observes the global WebSocket construction port alongside accepted runtime configuration and the public control snapshot.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Global WebSocket constructor used by the runtime store control client",
+        "observableEffect": "Zero external control connections for manual connection mode and one connection to ws://bootstrap.test/control for autoConnect.",
+        "requiredConstraint": "A successful bootstrap creates zero sockets when autoConnect is false and exactly one socket at its configured URL when true.",
+        "failureRationale": "Accepted configuration and a final connecting snapshot do not exclude an unwanted manual-mode connection or multiple external connections hidden behind the last socket snapshot."
+      }
+    },
+    {
+      "id": "control-bootstrap-refusal-no-socket",
+      "domain": "Black-box refused control bootstrap",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An invalid launch or rejected browser provider configuration creates no control WebSocket.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#contains launch and provider refusal before creating a control socket",
+      "coverageRelation": "The test supplies a malformed launch and then an unusable browser provider to the real runtime store, checking failed state, runtime evidence and the untouched global WebSocket port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Global WebSocket constructor used by the runtime store control client",
+        "observableEffect": "Neither refused bootstrap starts an external control connection.",
+        "requiredConstraint": "Launch and provider admission failures must not construct a control socket.",
+        "failureRationale": "A failed snapshot and provider diagnostic can be published after a connection was already created; those return and state assertions alone cannot exclude the forbidden network effect."
+      }
+    },
+    {
+      "id": "explicit-unavailable-fetch-no-ambient-request",
+      "domain": "Black-box explicit HTTP dependency availability",
+      "owner": "Shared Test maintainers",
+      "summary": "An HTTP command given an explicitly unavailable fetch capability fails without invoking an ambient global fetch implementation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts#capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation",
+      "coverageRelation": "The explicit browser runtime factory receives fetch undefined while an ambient fetch spy throws if invoked; the command failure and untouched ambient HTTP port are asserted independently.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Ambient global fetch HTTP port excluded by createRallarBlackBoxBrowserTestRuntime explicit input",
+        "observableEffect": "The refused HTTP request emits no ambient network request.",
+        "requiredConstraint": "Explicitly unavailable fetch remains unavailable even when global fetch exists.",
+        "failureRationale": "An implementation could invoke ambient HTTP and then return a failed result; only the absence assertion rules out that unintended external request independently of the reported fetch-unavailable error."
+      }
+    },
+    {
+      "id": "rtc-benchmark-finite-ice-fixture-dependency-isolation",
+      "domain": "Shared RTC benchmark package dependency isolation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The benchmark package may consume the canonical finite ICE fixture as dependency-free data while shared-test runner execution remains outside its approved dependency boundary.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports",
+      "coverageRelation": "The architecture test admits the exact canonical fixture import, rejects the neighboring runner runtime import, and reads the actual admitted fixture to verify that it imports no modules. The source read proves dependency isolation rather than a private helper name or incidental file layout."
+    },
+    {
+      "id": "rtc-b06-current-configuration-source-provenance",
+      "domain": "RTC-B06 observation configuration and source provenance",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The existing RTC-B06 observation reports the finite default/all-scenarios/retention policies and SHA256 fingerprints of the actual configuration and fixture owners used by the current source tree.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
+      "coverageRelation": "The test runs createRtcBaselineDenoObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
+    },
+    {
+      "id": "resource-inbox-guarded-winner-materialization",
+      "domain": "ResourceInbox guarded winner payload allocation",
+      "owner": "Shared Server maintainers",
+      "summary": "A guarded winning reservation invokes its supplied materializer exactly once; immutable replay returns the stored winner without invoking a replay materializer.",
+      "semanticCoverage": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts#prepares a supplied placeholder before opening winner materialization SQL",
+      "coverageRelation": "The test uses real PGlite SQL to insert one placeholder, captures the supplied winner callback, reads its durable payload, and replays the same identity with a throwing materializer that must remain unused.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "PSqlResourceInboxEntryRepository supplied guarded winner materializer",
+        "observableEffect": "One durable reservation allocates one winner payload; replay returns that exact stored payload without allocating a second one.",
+        "requiredConstraint": "Invoke the materializer once for the successful guarded winner and never for an existing immutable replay.",
+        "failureRationale": "Repeated winner invocation can allocate competing command identifiers or payloads for one reservation, while invoking replay allocation repeats work whose immutable winner already exists."
+      }
+    },
+    {
+      "id": "periodic-retry-successful-handler-interval-admission",
+      "domain": "Owned periodic retry handler admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A successful periodic handler runs once initially and once at each configured interval, rather than stopping after its first result or duplicating work at a deadline.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval",
+      "coverageRelation": "The test registers an owned handler with tryRunInIntervals, observes its first returned tick, advances the owned fake clock by each configured 50ms interval, and captures handler invocations at the public input port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "tryRunInIntervals input.handler callable",
+        "observableEffect": "The configured periodic work occurs once initially, then once at 50ms and once at 100ms.",
+        "requiredConstraint": "The successful first result must leave the periodic lifetime active; admit exactly one subsequent handler call per elapsed configured interval.",
+        "failureRationale": "The first promise result cannot detect missing recurring work or duplicate background effects, so the handler port must be observed across deadlines."
+      }
+    },
+    {
+      "id": "browser-expiry-cleanup-stop-prevents-late-listing",
+      "domain": "Browser expiry cleanup lifetime stop",
+      "owner": "Shared Web maintainers",
+      "summary": "Stopping expiry cleanup while a database listing is in flight allows that listing to finish but admits no new listing or recurring timer afterward.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts#does not re-arm when a stopped browser cleanup completes its in-flight database listing",
+      "coverageRelation": "The test starts real browser expiry cleanup over fake IndexedDB, holds its first interval listing open, stops the returned lifetime, releases that listing, then advances ten further intervals and observes no third listing and no timer.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IndexedDB factory.databases listing port used by the owned browser expiry cleanup lifetime",
+        "observableEffect": "After the initial and already-entered interval listings, stop prevents another external database listing even when the in-flight result arrives late.",
+        "requiredConstraint": "Once stop returns, late completion must not admit any further listing or re-arm a recurring timer.",
+        "failureRationale": "Zero remaining timers alone could miss an unwanted listing admitted by a late continuation; the listing-port count establishes absence of post-stop database work."
+      }
+    },
+    {
+      "id": "rtc-b05-command-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "One raw command has an override, invalid baseline and phase, missing case/input options, and an out-of-range ordinal. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "A raw command with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized manifest has independent identity, workload, repeat-link/multiplier, matrix, and requested-attempt failures. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized manifest with independent admission issues reports them together and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-b05-environment-issue-aggregation-before-launch",
+      "domain": "RTC-B05 command and artifact admission",
+      "owner": "Rallar RTC benchmark maintainers",
+      "summary": "A real initialized environment has an incompatible environment identity and runtime controller provenance. The real exported CLI must reject with every applicable issue before browser creation.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together",
+      "coverageRelation": "The test invokes the exported CLI with independently invalid input, checks each refusal meaning on its one rejection, and observes its injected launch port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "runRtcDataChannelBrowserSoakCli launchBrowser dependency",
+        "observableEffect": "Creation of a measurement browser process after admission",
+        "requiredConstraint": "An initialized environment with independent identity and provenance issues reports both and launches zero browsers.",
+        "failureRationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect."
+      }
+    },
+    {
+      "id": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "domain": "Shared RTC benchmark package dependency isolation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The benchmark package may consume the canonical portable browser recording protocol contract with only its shared JSON type dependency, while browser control and shared-test runner execution remain outside its approved dependency boundary.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency",
+      "coverageRelation": "The architecture test admits the exact canonical relative contract import and reads that actual module to assert its sole dependency is the canonical shared ApiJsonValue module. Independent negative controls reject the former browser owners, browser and runner runtimes, another fixture, and a shared-test alias. The source read supplies the dependency list needed to prove that an admitted contract cannot transitively reopen the excluded runtime boundary."
+    },
+    {
+      "id": "alm-sdk-replaced-consumed-ports-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "After an external connection consumes different diagnostics ports, a refused harness retry must leave SDK defaults untouched.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#refuses unverified $operation application when external $port replaces prepared $almDiagnostics",
+      "coverageRelation": "The test replaces each prepared ALM sink before actual SDK initialization, proves the frozen consumed fact reaches the real storage, WS and RTC consumers, rejects false certification, then retries and compares defaults writes.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "setDefaults changes the scope and diagnostics sinks used by a subsequent SDK connection.",
+        "requiredConstraint": "A retry refused as unverified adds zero defaults writes after the external replacement.",
+        "failureRationale": "A rejected promise and absent success event do not exclude a defaults mutation before refusal; that mutation can redirect the next SDK lifetime."
+      }
+    },
+    {
+      "id": "alm-sdk-unscoped-reuse-suppresses-defaults-write",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "An unscoped cached harness connection reuses its SDK lifetime without writing defaults again.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#preserves unscoped acquisition and reuse without certifying ALM intent %s",
+      "coverageRelation": "The first acquisition proves the undefined defaults payload, then the cached acquisition compares the prior write count and capture receipt while emitted events remain uncertified.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "An extra defaults reset would alter SDK defaults even though the cached middleware and receipt remain unchanged.",
+        "requiredConstraint": "Cached unscoped acquisition adds zero setDefaults writes; initial reset invocation count is unrestricted.",
+        "failureRationale": "The same cached receipt and absent certification events would still pass if reuse needlessly reset defaults used by a later connection."
+      }
+    },
+    {
+      "id": "alm-sdk-crdt-first-policy-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "A connection request conflicting with the policy first applied by CRDT must refuse before mutating SDK defaults.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#enforces the applied policy after CRDT establishes the first actual SDK connection",
+      "coverageRelation": "The test establishes a real SDK lifetime through CRDT with recording disabled, proves it is connected, and requests an incompatible enabled policy while observing defaults.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "A defaults write would change the sinks configured for the next SDK session despite the live CRDT session retaining its original sinks.",
+        "requiredConstraint": "The conflicting connect request performs zero setDefaults calls.",
+        "failureRationale": "The policy error alone could be raised after defaults were overwritten; connected state alone describes only the existing middleware."
+      }
+    },
+    {
+      "id": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "The harness must reject an externally created SDK lifetime without changing its defaults, both while connection is pending and after it becomes active.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration",
+      "coverageRelation": "The test blocks the real SDK connection at ICE discovery, refuses harness configuration, then releases connection and repeats refusal against the active lifetime beside the absence of application success events.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "Writing defaults would install harness scope or sinks in a lifetime whose consumed configuration it cannot verify.",
+        "requiredConstraint": "Neither the pending refusal nor the later active refusal may invoke setDefaults.",
+        "failureRationale": "Both calls could reject and emit no success while still poisoning the next SDK session through an earlier defaults write."
+      }
+    },
+    {
+      "id": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "Implicit CRDT attachment must preserve externally initialized SDK defaults, and a later explicit unverified policy request must refuse without changing them.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application",
+      "coverageRelation": "The test connects the real external SDK first, attaches CRDT without an API or ALM policy request, checks its original capture receipt and no application event, then rejects an explicit recording policy beside the same defaults observation.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "setDefaults would replace external SDK scope or diagnostic port choices for its future lifetime.",
+        "requiredConstraint": "Neither implicit attachment nor the subsequent explicit unverified refusal may invoke setDefaults.",
+        "failureRationale": "Receipt identity and absent ALM events only describe the current connection; they do not exclude a change to future SDK defaults."
+      }
+    },
+    {
+      "id": "alm-sdk-host-capture-refusal-preserves-defaults",
+      "domain": "Black-box ALM recording SDK lifetime ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "A HOST capture change requiring a new SDK connection must refuse before mutating defaults even when the ALM policy matches.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse",
+      "coverageRelation": "The test establishes the actual SDK with HOST capture off, requests native HOST capture during matching ALM reuse, and checks the typed new-connection-required error alongside zero defaults writes.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "BlackBoxBrowserRallarRuntimeDependency.setDefaults at the actual SDK facade boundary",
+        "observableEffect": "A defaults write can change future capture and diagnostics configuration without changing the current capture receipt.",
+        "requiredConstraint": "An incompatible HOST capture request performs zero setDefaults calls.",
+        "failureRationale": "The compatibility error can be returned after a write, so the typed error alone does not prove refusal occurred before mutation."
+      }
+    },
+    {
+      "id": "agent-leading-reload-admitted-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An admitted leading reload requests exactly one physical page replacement. Executable assertion: “admits configured inheritance before a leading reload replaces the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "One physical page replacement follows the admitted leading reload before the successor is constructed.",
+        "requiredConstraint": "An admitted leading reload requests exactly one physical page replacement.",
+        "failureRationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement."
+      }
+    },
+    {
+      "id": "agent-unowned-reload-before-page-replacement",
+      "domain": "Black-box agent admitted reload lifecycle",
+      "owner": "Shared Test maintainers",
+      "summary": "An unowned reload continuation must not request physical page replacement. Executable assertion: “refuses an unowned reload continuation before replacing the page”.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page",
+      "coverageRelation": "The test uses the real agent/runtime/control-client path and observes the owned physical location.reload port at the admitted or refused boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Owned window location.reload port",
+        "observableEffect": "Refusing an unowned continuation leaves the current page intact.",
+        "requiredConstraint": "An unowned reload continuation must not request physical page replacement.",
+        "failureRationale": "An error result or missing session record does not independently prove that the page destruction effect was absent."
+      }
+    },
+    {
+      "id": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "domain": "RTC topology queue conflict boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Incomparable RTC work remains retryable without entering a database transaction or observing an uncommitted topology. Executable assertion: “leaves incomparable work retryable without writing or observing a commit”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit",
+      "coverageRelation": "The test seeds a persisted topology and an incomparable queued causal revision, invokes the real queue handler, and checks RuntimeStateWriteConflictError, unchanged durable runtime state, and absence at the database transaction and committed-topology observation ports. Both absence assertions protect this one retry boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "PSqlSql.begin and GroupTopologyPlanningService.observeCommittedTopology owned ports supplied to createRtcTopologyWorkHandler",
+        "observableEffect": "Database.begin opens a database transaction; observeCommittedTopology updates or removes the in-memory committed topology through the topology service. Neither effect may occur for incomparable work that has no accepted prepared write.",
+        "requiredConstraint": "An incomparable-work retry exits before any Database.begin invocation and emits no observeCommittedTopology call during that queue attempt.",
+        "failureRationale": "The retry exception and unchanged durable rows do not exclude an unnecessary empty or rolled-back transaction, or an in-memory observation emitted before rejection. Either invocation would cross a commit boundary without an accepted prepared write."
+      }
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-96e1d9a2fd5d577f",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-retained-completion-single-report",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured default-sink report proves replacing and reusing the same retained completion cannot duplicate owner-visible failure effects.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#observes a retained completion once when its registration is replaced"
+    },
+    {
+      "id": "test-structure-coupling-bf617164d0219ff9",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-settled-failure-owned-before-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one captured report proves an already settled runnable failure reached its owner before stop, rather than disappearing when active-work retention is removed.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection"
+    },
+    {
+      "id": "test-structure-coupling-857570b127a2e737",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-settled-failure-owned-before-stop",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The unchanged single report after stop proves shutdown does not repeat the task failure that the preceding assertion already observed before shutdown.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a settled runnable failure once before stop without an unhandled rejection"
+    },
+    {
+      "id": "test-structure-coupling-9fbfeb7f4d16f815",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-reporter-exception-owned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one fallback report proves a throwing supplied sink preserves both errors without retrying its side effect or leaking a rejected observation.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#reports a failure-sink exception without creating an unhandled task rejection"
+    },
+    {
+      "id": "test-structure-coupling-889f8ee7e21a738e",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-report-follows-cleanup",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent report while the finally release gate is pending prevents recovery being announced before the failed runnable releases its owned resource.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once"
+    },
+    {
+      "id": "test-structure-coupling-21131c618da33553",
+      "path": "packages/tests/shared/engine.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-engine-failure-report-follows-cleanup",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The one post-release report proves the failed runnable reaches its failure owner exactly once after cleanup and beside the stop caller aggregate.",
+      "semanticCoverage": "packages/tests/shared/engine.test.ts#joins failing runnable cleanup during stop and reports the owned failure once"
+    },
+    {
+      "id": "test-structure-coupling-feb9d2bd497981ef",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-materializer-rename-refusal-preserves-input",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the test-owned valid input after actual CLI rename refusal and compares it with independently written source text, proving input preservation alongside destination preservation and temporary cleanup.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#removes its atomic temporary after rename refusal while preserving the existing destination"
+    },
+    {
+      "id": "test-structure-coupling-98f26fa7bd7adf53",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Acquires the authored 05a manifest bytes before two actual CLI executions; the independently captured input supplies the later exact source-preservation comparison.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-4777071ecb48b051",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Re-reads the same authored 05a JSON manifest after CLI execution and compares it with the independently acquired input bytes alongside repeated output and record equality.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-daffd5843912e07c",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the canonical smoke JSON fixture before independently injecting room, marked-request and canonical-path scope violations; the actual child diagnostic must identify each violation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects an executable command scoped outside the source manifest group"
+    },
+    {
+      "id": "test-structure-coupling-d42efd00615f3637",
+      "path": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts",
+      "kind": "production-source-read",
+      "contract": "alm-all-local-runner-provenance-source",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Reads the selected authored manifest before executing the workflow's admission and provenance commands so the resulting digest and frozen copy can be compared with the exact source that was admitted, even after the provenance command receives a substituted path.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#retains runner resources and exact source before service startup can fail"
+    },
+    {
+      "id": "test-structure-coupling-42a6da1c993e593c",
+      "path": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts",
+      "kind": "production-source-read",
+      "contract": "alm-all-local-source-admission-freeze",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Reads the canonical authored manifest as the positive input for an isolated source-admission test; invalid bytes are refused, canonical bytes are admitted, and the frozen copy stays unchanged after the selected path is overwritten.",
+      "semanticCoverage": "packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts#admits only canonical source bytes and retains them after the selected path changes"
+    },
     {
       "id": "test-structure-coupling-0ce4af5c7c62c033",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
@@ -3656,7 +4462,7 @@ moved or changed test.
       "rationale": "The unmade prepare call is the only witness that an unavailable clipboard stops the copy before the control server mints short-lived launch credentials.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#names an unavailable clipboard instead of minting links it cannot copy"
     },
-{
+    {
       "id": "test-structure-coupling-2156428ddf7703a1",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "symbol-assertion",
@@ -4218,92 +5024,103 @@ moved or changed test.
       "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes"
     },
     {
-      "id": "test-structure-coupling-3f87efb9ffdb8ee2",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-50e937a698c474eb",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Loads the manifest whose parallel label collides with its source room, letting the materializer prove labels and group identities are distinct fields.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room"
+      "rationale": "Decodes the same original fifteen-agent fixture used by the CLI; its commands supply corresponding outgoing traffic and unchanged policies for real matcher evaluation.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
-      "id": "test-structure-coupling-4cd9007c14d9f597",
+      "id": "test-structure-coupling-3f87efb9ffdb8ee2",
       "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the workflow job steps to establish that checkout preparation precedes, and is not repeated inside, each serial manifest execution.",
+      "rationale": "Reads the concrete supported manifests consumed by the named case and checks their authored metadata after full canonical validation.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix"
     },
     {
-      "id": "test-structure-coupling-5a80cb6ccad17309",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--persists-control-server-snapshots-with-an-atomic-temp-file-renam",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Inspects the snapshot writer used in the executed control-server process and verifies persistence crosses the temp-file rename boundary atomically.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename"
-    },
-    {
-      "id": "test-structure-coupling-8bee8864cd2dc720",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-007b6848c3460f16",
+      "path": "packages/tests/hetzner/playwright-browser-installation.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the workflow package-install steps and verifies both Playwright packages advance together beyond the known Node 24 hang combination.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression"
+      "rationale": "Reads actual package and lockfile dependency inputs, narrows the consumed versions to strings, and compares the three independently selected versions.",
+      "semanticCoverage": "packages/tests/hetzner/playwright-browser-installation.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression"
     },
     {
-      "id": "test-structure-coupling-9a1ba98a66c78c07",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-222daf3d9786f3ed",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Captures the source manifest before group materialization so the assertion can compare the generated execution copy without losing its immutable baseline.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Reads the checked-in original fifteen-agent JSON bytes before CLI execution; its fixed digest and later exact byte comparison bind the actual workload without depending on implementation text.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
-      "id": "test-structure-coupling-9d8dac3f600fee05",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-03bcfb46477d3a40",
+      "path": "packages/tests/hetzner/controller-deployment.test.ts",
       "kind": "production-source-read",
       "contract": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the rollout workflow order to verify the narrow lockfile repair occurs before the dirty-checkout guard evaluates operator changes.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
+      "rationale": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes.",
+      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
-      "id": "test-structure-coupling-d25b56efbb8aaefe",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-f27c417734abdf55",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "contract": "hetzner-original-scale-serialized-arrival-isolation",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Re-reads the source manifest after execution and proves isolation was materialized in a copy rather than persisted back into the operator input.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+      "rationale": "Re-reads the original fifteen-agent source after preserved and isolated CLI executions and compares it with its independently acquired bytes.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
     },
     {
-      "id": "test-structure-coupling-de62f83dc45c42c1",
-      "path": "packages/tests/hetzner/distributed-recipe-workflow.test.ts",
+      "id": "test-structure-coupling-006aa8cedfed3b9a",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
       "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
+      "contract": "hetzner-serialized-source-room-refusal",
       "disposition": "durable-boundary",
-      "boundary": "security",
+      "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "Reads the source manifest as the ownership baseline before injecting a command for another group; the validator must reject that executable scope escape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group"
+      "rationale": "Reads the test-created wrong-room source after actual validation refusal; exact authored byte equality proves refusal preserves input alongside absence of output artifacts.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#rejects a serialized source room mismatch before output writes"
+    },
+    {
+      "id": "test-structure-coupling-911706494df90df1",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-materializer-null-refusal-preserves-input",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the test-owned null input after actual CLI validation refusal and compares it with literal null bytes, proving refusal preserves input independently of the diagnostic and absent output artifacts.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#refuses null source as validation before materialization effects"
+    },
+    {
+      "id": "test-structure-coupling-49b2eb646cbcf30e",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Loads the fully validated composite JSON fixture consumed by the real materializer child; independent output assertions distinguish the parallel label from executable scope.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#preserves a parallel label that happens to equal the source room"
     },
     {
       "id": "test-structure-coupling-2fe7626b3fa35573",
@@ -4324,7 +5141,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Opens the SPA distributed-recipes integration module, the single consumer in which a local monitor fork could otherwise hide.",
+      "rationale": "Forbids a local deriveDistributedRunMonitor declaration, which is the primary duplicate implementation this boundary is intended to prevent.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
@@ -4335,7 +5152,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Reads each enumerated control-server module so the assertion covers the whole server import surface, including files added to the approved inventory.",
+      "rationale": "Checks the current server module against the forbidden SPA protocol specifier; this is the negative dependency edge that would expose reversed ownership.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
@@ -4346,7 +5163,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Forbids a local deriveDistributedRunMonitor declaration, which is the primary duplicate implementation this boundary is intended to prevent.",
+      "rationale": "Opens the SPA distributed-recipes integration module, the single consumer in which a local monitor fork could otherwise hide.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
@@ -4390,7 +5207,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "Checks the current server module against the forbidden SPA protocol specifier; this is the negative dependency edge that would expose reversed ownership.",
+      "rationale": "Reads each enumerated control-server module so the assertion covers the whole server import surface, including files added to the approved inventory.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
@@ -4885,8 +5702,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the shared-server barrel as the starting export graph, proving mutable capabilities remain traceable through the package public surface.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel"
+      "rationale": "Parses the canonical repository module reached by the receiver fixtures so the analyzer can recognize the imported ClientStateRepository as a mutable capability before reporting its mutation.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-provenance.test.ts#follows mutable capability provenance through production receiver shapes"
     },
     {
       "id": "test-structure-coupling-78bf1368cf214172",
@@ -4896,19 +5713,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
-    },
-    {
-      "id": "test-structure-coupling-70a87a1f1ea479cd",
-      "path": "packages/tests/repo/mutation-route-ownership/boundary/mutation-boundary-analysis.ts",
-      "kind": "exact-file-tree",
-      "contract": "mutation-boundary-analysis-interface",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Parses the analyzer module itself to enumerate its exported syntax-aware entrypoint; consumers need this stable repository-test interface for every supported import form.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
+      "rationale": "Parses alias-types.ts reached by the imported-object-alias fixture; resolving its nested imported repository type is required to report the concrete mutable receiver.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#resolves mutable capability provenance in %s"
     },
     {
       "id": "test-structure-coupling-0b58d02400285f7d",
@@ -5369,8 +6175,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Rebinds one group registration in the live owner and requires the audit to report that specific missing live route.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration"
+      "rationale": "Reads the live group registration collection before removing GROUP_CREATE; the executed inventory validator must report that operation as disconnected from its owner.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
       "id": "test-structure-coupling-8daaa2a7222a3e9c",
@@ -5736,28 +6542,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts#starts three API servers for every managed Postgres cluster command"
     },
     {
-      "id": "test-structure-coupling-8a8f9cd497a4e870",
-      "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "kind": "production-source-read",
-      "contract": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar server maintainers",
-      "rationale": "Loads the convergence recipe section containing tertiary value, revision, and source-header assertions so those causal floors remain executable data.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers"
-    },
-    {
-      "id": "test-structure-coupling-9e59573d3730f889",
-      "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "kind": "production-source-read",
-      "contract": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar server maintainers",
-      "rationale": "Parses the state-read convergence recipe and inspects its identifier values for run interpolation, rather than validating a copied fixture object.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values"
-    },
-    {
       "id": "test-structure-coupling-88e6a7ca47a24a20",
       "path": "packages/tests/shared-test/local-websocket-session.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -5945,80 +6729,80 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
     },
     {
-      "id": "test-structure-coupling-02a7c0341d254415",
+      "id": "test-structure-coupling-d21ee0508d100156",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the executable CRDT recipe and verifies that durable evidence is narrowed to the command prefixes owned by that recipe instead of a containing ID from another recipe.",
+      "rationale": "The test loads the schema-validated CRDT recipe and checks its durable selector and two operation-specific command prefixes. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes"
     },
     {
-      "id": "test-structure-coupling-43c0aec131666232",
+      "id": "test-structure-coupling-bb2a8190c613193f",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the bounded-execution recipe and compares the command identity with the evidence query identity in the same parsed fixture.",
+      "rationale": "The test loads the schema-validated admin recipe and checks its command path, absent caller body requestId, durable selector, and required RALLAR_BB_EXECUTION_TOKEN binding against independent literals. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
     },
     {
-      "id": "test-structure-coupling-59a8fed67f047251",
+      "id": "test-structure-coupling-12bcb85e34a3c139",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Loads the socket-authorization recipe to verify its commit observation precedes the clustered websocket effect assertion.",
+      "rationale": "The test loads both schema-validated executable recipes and checks each websocket connection has a consuming client-state snapshot wait before the corresponding clustered mutation step. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects"
     },
     {
-      "id": "test-structure-coupling-6677491d43bcda4f",
+      "id": "test-structure-coupling-4b5311fd770a8a41",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Parses the auth-ticket race recipe so candidate selection is tied to its redacted secret and computed durable digest together.",
+      "rationale": "The test loads the schema-validated executable auth fixture, checks its declared evidence selector, and calls the real digest boundary with a fixed authored ticket value. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest"
     },
     {
-      "id": "test-structure-coupling-95c57aee7329bbc5",
+      "id": "test-structure-coupling-e0cca2e5f3b38ea8",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads every state-write recipe selected by the evidence catalog and rejects literal SET payloads that bypass generated durable evidence.",
+      "rationale": "The test loads each schema-validated authored recipe and checks its evidence-output declaration uses set.state-write-evidence with a spec and has no literal value; the same suite separately executes the collector and rejects literal evidence in strict preflight. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence"
     },
     {
-      "id": "test-structure-coupling-982b926666e23ad4",
+      "id": "test-structure-coupling-3ebd1695e79f5aa8",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the executable contract, convergence, and medium-scale recipes to keep durable evidence aligned with the opaque scoped group AppInbox identity.",
+      "rationale": "The test loads all three schema-validated executable recipes and compares their configured command prefixes with an independently authored group AppInbox prefix and the operation-specific retained prefixes. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity"
     },
     {
-      "id": "test-structure-coupling-e59eda4bb5b12d9f",
+      "id": "test-structure-coupling-b9a1597224340ed0",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "disposition": "durable-boundary",
-      "boundary": "public",
+      "boundary": "interaction",
       "owner": "Shared Test maintainers",
-      "rationale": "Parses the topology state-write recipe and compares exact-revision assertion positions with each cleanup command.",
+      "rationale": "The test loads the validated topology recipe, derives assertion and cleanup stages from protocol fields, executes the actual assertion requests in recipe order with real executeBlackBox, and observes SET outputs for admitted trailing stages on success and their absence after a failing exact revision. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step"
     },
     {
@@ -6473,17 +7257,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
     },
     {
-      "id": "test-structure-coupling-1b3d4d2848352f1b",
-      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-state-delta-conflict-recovery",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Web maintainers",
-      "rationale": "The exactly-one recovery fetch assertion directly proves that exactly one conflict recovery fetch occurs.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull"
-    },
-    {
       "id": "test-structure-coupling-505ac7ff6ccdc8a1",
       "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -6557,8 +7330,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The two-call assertion proves the failed first refresh released its group slot and the next retained recovery report reached the authority port.",
-      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry"
+      "rationale": "Two calls across a rejected first report and a successful later independent report prove the failed slot is released without a hidden retry. This assertion makes no QueueBox redelivery claim.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#reports failure without re-entry and permits a later independent refresh"
     },
     {
       "id": "test-structure-coupling-8e9755e2fc1d5b45",
@@ -6702,17 +7475,6 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The single write invocation is what forbids an inner optimistic retry; the pending-control answer and the retained work row both hold either way.",
       "semanticCoverage": "packages/tests/shared/alm/al-outbound-control-admission.test.ts#answers pending-control for a backend conflict without an inner retry"
-    },
-    {
-      "id": "test-structure-coupling-11102ca02776726f",
-      "path": "packages/tests/shared/alm/outbound-runtime-test-fixture.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "alm-outbound-held-claim-quiescence",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar shared maintainers",
-      "rationale": "The spied claim count is the polled condition of a bounded wait rather than a product property: it is the only observable of “no batch is still asking for work” available to a fixture that receives stores and not a runtime, and the assertion is that wait's budget, failing loudly instead of restoring real claims inside a batch.",
-      "removalCondition": "Remove once the outbound owner exposes batch quiescence to a fixture, so holdOutboundClaims awaits an owner-side idle signal instead of polling the queue spy's call count.",
-      "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect"
     },
     {
       "id": "test-structure-coupling-1dca6ab0819a3459",
@@ -7010,17 +7772,6 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The surviving unretained row proves the run stopped before reaching it, but only the index-read count separates a run that stopped on its page budget from one that stopped for any other reason, such as a mis-sized page or an exhausted range.",
       "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#bounds one cleanup run by its page budget"
-    },
-    {
-      "id": "test-structure-coupling-e057b89986e7f609",
-      "path": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "ws-invalid-application-command-skips-authorization",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared realtime maintainers",
-      "rationale": "No authorization call proves validator failure short-circuits the owned external policy capability; empty admission state alone would allow unnecessary authority work.",
-      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission"
     },
     {
       "id": "test-structure-coupling-17044d7d640b79a9",
@@ -7716,26 +8467,81 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts#shares one bounded session observation owner across facades"
     },
     {
-      "id": "test-structure-coupling-15952e596b786253",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-78cc2cae7c81d48d",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-invalid-scope-no-admission",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The WS admission absence prevents fallback publication to an unsupported audience despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The WS admission absence proves an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#names the three scopes a browser WS send may take"
     },
     {
-      "id": "test-structure-coupling-63fb37f78610c2ea",
-      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "id": "test-structure-coupling-f157f20037eeae8e",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "browser-invalid-fallback-no-admission",
+      "contract": "browser-rtc-invalid-scope-no-admission",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Rallar browser maintainers",
-      "rationale": "The RTC admission absence prevents the preferred carrier from publishing despite the public validation rejection.",
-      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+      "rationale": "The RTC admission absence proves an rtc-strategy send with an unaddressable scope publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#an rtc-strategy send with an invalid scope produces no RTC admission"
+    },
+    {
+      "id": "test-structure-coupling-c050a5fee8ee1213",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-world-send-on-rtc-refused-alone",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission port's first call carries the world broadcast, the envelope the RTC carrier refuses as unsupported.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
+    },
+    {
+      "id": "test-structure-coupling-8342e0b1c624e7b8",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-world-send-on-rtc-refused-alone",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission port's first call names the hold gap admission: a world send on rtc has no fallback carrier.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#admits a world send on rtc over RTC alone and ends the handle rejected by the injected unsupported refusal"
+    },
+    {
+      "id": "test-structure-coupling-41fdf7fd054acc78",
+      "path": "packages/tests/shared-web/messages/browser-message-audiences.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-roomless-exclusive-send-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The WS admission absence proves a roomless exclusive send publishes nothing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-audiences.test.ts#refuses an exclusive WS send to one peer that names no room, saying it names a room"
+    },
+    {
+      "id": "test-structure-coupling-c032f9de37bfc1f0",
+      "path": "packages/tests/shared-web/rallar-game-match.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "game-local-director-intent-claims-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The relay port's absence proves the local director's own intent, routed to its handler, sends no claim to the server.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-game-match.test.ts#routes the fresh local director's own intent to its own handler, claiming nothing"
+    },
+    {
+      "id": "test-structure-coupling-c0a128e08129b94a",
+      "path": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ai-principal-result-not-realtime",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The realtime send absence proves a principal-scoped AI result never reaches the whole room.",
+      "semanticCoverage": "packages/tests/shared-web/ai/browser-rallar-ai.test.ts#broadcasts a principal-scoped result to the principal over a message transport, and never over realtime"
     },
     {
       "id": "test-structure-coupling-a11dc68fc52eaed6",
@@ -7769,17 +8575,6 @@ moved or changed test.
       "owner": "Rallar shared-web maintainers",
       "rationale": "The ensureAllGroupsConnected absence directly guards the owned topology side-effect boundary during cache-only freshness renewal; content and event assertions alone cannot establish that absence.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts#emits only truthful Refreshed and preserves content without downstream topology work"
-    },
-    {
-      "id": "test-structure-coupling-6725710d19e85de6",
-      "path": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "state-write-evidence-invalid-input-no-sql",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Rallar shared-test maintainers",
-      "rationale": "The absence assertion observes the external SQL port: invalid raw evidence input must not issue database work even if a later error is correct.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts#keeps raw JSON evidence inputs untrusted until the SQL validator runs"
     },
     {
       "id": "test-structure-coupling-3ec1adc4c7e8a4f2",
@@ -7967,6 +8762,39 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(deps.sendRestCommand).not.toHaveBeenCalled();` pins that a WS-delivered command is not repeated over REST, which could apply it twice (C13).",
       "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#sends gameplay commands to the server over WS and reports the receipt (D57 as applied)"
+    },
+    {
+      "id": "test-structure-coupling-a8b22d69e6c0d234",
+      "path": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-unauthorized-auth-change-never-logs-out",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(mockRallar.auth.logout).not.toHaveBeenCalled();` pins that an unauthorized auth change clears the hook without requesting a logout of its own.",
+      "semanticCoverage": "packages/tests/relic-hunters/use-relic-hunters-auth-lifecycle.test.ts#clears relic runtime state when auth is unauthorized outside manual logout"
+    },
+    {
+      "id": "test-structure-coupling-ac3ba88485ec04d8",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-signed-out-requests-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).not.toHaveBeenCalled();` pins that a signed-out client sends no Relic request for a snapshot read, a command or a reset.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#does not call relic endpoints without a browser auth session"
+    },
+    {
+      "id": "test-structure-coupling-bf4f16d3c0e6e3b9",
+      "path": "packages/tests/relic-hunters/relic-web-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-web-api-command-sends-one-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(fetch).toHaveBeenCalledTimes(1);` pins that one command submission sends one request, the one whose URL, headers and body the test then reads.",
+      "semanticCoverage": "packages/tests/relic-hunters/relic-web-api.test.ts#sends command requests with encoded game id and browser auth headers"
     },
     {
       "id": "test-structure-coupling-0f97b8e668773ecb",
@@ -8231,6 +9059,479 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "One request calls persist once.",
       "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks through the browser storage manager where it has persist"
+    },
+    {
+      "id": "test-structure-coupling-6a517f180d23dbd7",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-rtc-capture-reentry-single-construction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A duplicate initializer could allocate independent RTC resources even if one facade result is selected.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-reuse.test.ts#holds the selected mode during synchronous setup reentry"
+    },
+    {
+      "id": "test-structure-coupling-072167eabbe6b2a9",
+      "path": "packages/tests/shared-web/rallar-operation-options.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rallar-retry-classification-no-coercion",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Coercion could replace the retry decision with an unrelated exception or side effect.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-operation-options.test.ts#classifies arbitrary retry failures without coercing them"
+    },
+    {
+      "id": "test-structure-coupling-ac73e8d5e644dcb1",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-adapter-compatible-connection-one-ice-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A successful reused receipt alone could hide redundant server requests and connection construction. The incompatible request must not construct a replacement, and compatible adapter reuse must share the original.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#queues different source intent while construction is held and rejects it with the actual original receipt"
+    },
+    {
+      "id": "test-structure-coupling-702174bcf36881c2",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-ws-fallback-single-retry",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A successful result does not exclude additional sends after success. An extra retry can duplicate the application message; omission of the retry loses it.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#carries run Off through the WS fallback and retries exactly once"
+    },
+    {
+      "id": "test-structure-coupling-190b3ac3fc843b48",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "sdk-pending-compatible-connection-one-ice-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The final receipt can look correct even if pending callers performed duplicate network and graph initialization. Compatible callers share the reservation and an incompatible caller must add no construction.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/recipe-rtc-capture-application.test.ts#preserves host selection and actual pending receipt across compatible direct SDK acquisition"
+    },
+    {
+      "id": "test-structure-coupling-6e7f6eb997af2789",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "auth-replacement-single-new-connection",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Reporting the replacement session and receipt alone cannot rule out repeated initialization and leaked resources. Reusing the original graph or creating multiple replacement graphs violates session resource ownership.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#reconciles replaced authentication before acquiring a new connection"
+    },
+    {
+      "id": "test-structure-coupling-14f254bde6a6600d",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-native-initialization-refusal-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A typed refusal and a healthy connection do not exclude a message being queued first. Admission would send a message for which the required capture cannot be verified.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses failed Native initialization without failing or replacing its connection"
+    },
+    {
+      "id": "test-structure-coupling-4ff4fe1a0f22b809",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-missing-capture-sink-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Rejecting the caller after an admission would still send an unverified message. The refusal result cannot prove the absence of that effect.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#refuses required unavailable capture while preserving the successful connection"
+    },
+    {
+      "id": "test-structure-coupling-58ca4f3d43b5faa2",
+      "path": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-auth-changed-during-message-id-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "A typed session refusal can occur after an erroneous admission. Zero admission proves the stale owner never acquired outbound work under either session.",
+      "semanticCoverage": "packages/tests/shared-web/connection/browser-rtc-capture-acquisition.test.ts#does not admit a required send when its message ID callback replaces authentication"
+    },
+    {
+      "id": "test-structure-coupling-e6a5f7bebeed552f",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-diagnostic-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The close count is the browser resource release contract; it does not constrain page helper calls or evaluation decomposition.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#preserves the diagnostic CLI while measuring only through an injected browser"
+    },
+    {
+      "id": "test-structure-coupling-aaf8949f7e07280c",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-raw-command-admission-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The launch absence proves input and initialized-manifest admission precede expensive browser effects for all rejected commands in this test.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects bounds, overrides, path escapes, and changed accepted matrices before launch"
+    },
+    {
+      "id": "test-structure-coupling-756f4565df9e0257",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-controller-identity-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The launch absence protects controller provenance admission rather than the private functions used to reconcile that provenance.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#rejects changed initialized B05 controller identity before browser launch"
+    },
+    {
+      "id": "test-structure-coupling-23072b4b9df3349b",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-failed-producer-suppresses-staged-read",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "This read suppression is the B05 failed-producer admission policy at its owned evidence port, not a count of private validation helpers.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#projects lifecycle failures and the bridge preserves the exact causal remainder"
+    },
+    {
+      "id": "test-structure-coupling-1e8a53c00d21a319",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-incomplete-heap-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The close count protects resource cleanup on this incomplete-measurement exit; the sample refusal alone cannot witness browser release.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#fails raw evidence when Chromium exposes only one forced-GC heap value"
+    },
+    {
+      "id": "test-structure-coupling-2f76fac78c1151ca",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-thrown-evaluation-browser-release",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "The release count is the owned browser cleanup effect and does not pin evaluation helper decomposition or internal call ordering.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#closes the browser and leaves no raw file when native execution throws"
+    },
+    {
+      "id": "test-structure-coupling-0597f02793c1ce20",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-optional-single-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The false autoConnect branch must leave the WebSocket constructor untouched; accepted runtime configuration would not reveal a mistakenly opened external control connection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection"
+    },
+    {
+      "id": "test-structure-coupling-a8184383962107b2",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-optional-single-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The true autoConnect branch protects exactly one external socket at the configured URL; the final control snapshot cannot expose a duplicate connection or prove its destination by itself.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#publishes bootstrap setup and accepted configuration before optional control connection"
+    },
+    {
+      "id": "test-structure-coupling-e379689e54928796",
+      "path": "packages/tests/rallar-black-box/runtime-store.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "control-bootstrap-refusal-no-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Zero socket construction across launch and provider refusal is the required network suppression; failure state and recorded diagnostics do not exclude a preceding external connection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/runtime-store.test.ts#contains launch and provider refusal before creating a control socket"
+    },
+    {
+      "id": "test-structure-coupling-591ac9c577d77951",
+      "path": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "explicit-unavailable-fetch-no-ambient-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The ambient fetch spy must remain untouched when the explicit HTTP capability is unavailable; a failed result could otherwise conceal a forbidden ambient network invocation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-runtime/capabilities.test.ts#capture dependency fix1 keeps explicit unavailable fetch unavailable despite an ambient implementation"
+    },
+    {
+      "id": "test-structure-coupling-3a8e5b1bfbea42bd",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-benchmark-finite-ice-fixture-dependency-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reading the admitted canonical fixture is necessary to reject an import-bearing module that would pull runner execution into the approved data-only benchmark dependency. The exact allowlist and neighboring runner rejection keep this architecture boundary narrow; dependency-free implementations pass without pinning fixture values or internal symbols.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports"
+    },
+    {
+      "id": "test-structure-coupling-ac5e6841bb61346d",
+      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-b06-current-configuration-source-provenance",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "The independent read of each current configuration owner supplies the expected SHA256 for the emitted observation artifact. It catches missing, stale or substituted provenance even when policy values agree; changing source bytes remains valid when the observation records their current fingerprint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
+    },
+    {
+      "id": "test-structure-coupling-513f1333780dca6a",
+      "path": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-guarded-winner-materialization",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Server maintainers",
+      "rationale": "The exact once assertion observes the caller-supplied guarded winner allocation port required by the specialized ResourceInbox contract; result equality alone could hide duplicate allocation before the same payload is persisted. The replay branch separately supplies a throwing materializer and must return the original winner.",
+      "semanticCoverage": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts#prepares a supplied placeholder before opening winner materialization SQL"
+    },
+    {
+      "id": "test-structure-coupling-22f1d4767a8de4e9",
+      "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "The exact env name and required flag are operator-facing recipe configuration: they prevent fallback or missing execution identity while the command path and evidence query share that token. No implementation symbol or helper spelling is asserted.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
+    },
+    {
+      "id": "test-structure-coupling-87ec3e68772377c0",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The first successful tick must admit exactly one initial handler effect; returning tick alone could hide duplicate startup work.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-a29f0f6785d95861",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The first configured interval must admit exactly one additional handler effect, proving recurring work survives first-result settlement without a burst.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-bd58882a8c24b02d",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The second configured interval must admit exactly one additional handler effect, proving recurrence continues and does not duplicate deadline work.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-f4e1c97c55c1f1f4",
+      "path": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-expiry-cleanup-stop-prevents-late-listing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Both database listings have already entered before stop. Keeping the observed count at two after late completion and ten elapsed intervals directly proves no post-stop listing at the owned IndexedDB port, separately from timer readback.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts#does not re-arm when a stopped browser cleanup completes its in-flight database listing"
+    },
+    {
+      "id": "test-structure-coupling-5d72a75e78b20921",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-command-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports every independent raw-command admission issue before launch"
+    },
+    {
+      "id": "test-structure-coupling-816cf8ffd701175e",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-manifest-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports independent manifest identity, workload, repeat, and matrix issues together"
+    },
+    {
+      "id": "test-structure-coupling-ab8a4e6fa4e7eb7d",
+      "path": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-b05-environment-issue-aggregation-before-launch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar RTC benchmark maintainers",
+      "rationale": "Aggregated refusal messages can be returned after browser startup; only absence at the owned launch port proves admission completed before the expensive process effect.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts#reports environment identity and runtime provenance issues together"
+    },
+    {
+      "id": "test-structure-coupling-241b363ddfbea8ec",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts",
+      "kind": "production-source-read",
+      "contract": "rtc-benchmark-portable-browser-recording-dependency-isolation",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reading the admitted protocol owner is necessary to detect a browser or runner dependency hidden behind an otherwise permitted import. The assertion permits only its canonical shared JSON type dependency and separately rejects excluded consumers and neighboring modules; receipt semantics alone cannot prove package dependency isolation. It does not pin parser bodies, receipt values, or internal helper symbols.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the portable browser recording contract and its canonical JSON dependency"
+    },
+    {
+      "id": "test-structure-coupling-9f4d333d9b66fee9",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-replaced-consumed-ports-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The unchanged write count specifically proves the refused retry did not overwrite the externally supplied defaults; consumed-port identity and error assertions cannot detect a later defaults write.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#refuses unverified $operation application when external $port replaces prepared $almDiagnostics"
+    },
+    {
+      "id": "test-structure-coupling-c972dd52839a23b8",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unscoped-reuse-suppresses-defaults-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Only the difference from the first acquisition is constrained. The test permits equivalent initial configuration implementations while proving cached reuse performs no new defaults mutation.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-application.test.ts#preserves unscoped acquisition and reuse without certifying ALM intent %s"
+    },
+    {
+      "id": "test-structure-coupling-177d227faac9e6bf",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-crdt-first-policy-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This absence protects refusal before mutation for the distinct CRDT-first SDK lifetime; it does not pin which internal compatibility helper performs refusal.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#enforces the applied policy after CRDT establishes the first actual SDK connection"
+    },
+    {
+      "id": "test-structure-coupling-c37c17fae8dc69f5",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The first assertion proves no defaults mutation during the pending external SDK connection, before ICE discovery is released.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration"
+    },
+    {
+      "id": "test-structure-coupling-7e0b6b8fbaf00924",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-unverified-lifetime-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The second assertion extends that guarantee to the active external SDK connection after pending initialization settles; pending-only protection would miss this separate branch.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#rejects unverified SDK pending and active lifetimes before preparing a harness configuration"
+    },
+    {
+      "id": "test-structure-coupling-dee214000de75c1a",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This assertion proves successful implicit CRDT attachment leaves the external owner’s defaults untouched; successful attachment and receipt reuse do not prove that absence.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application"
+    },
+    {
+      "id": "test-structure-coupling-2e7a89a95432a9f8",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-external-crdt-attachment-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "This later assertion separately proves that an explicit unverified policy refusal does not mutate defaults after the permitted attachment.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#attaches no-api CRDT to externally initialized SDK ports without claiming new ALM application"
+    },
+    {
+      "id": "test-structure-coupling-8a5070ddc4fab99a",
+      "path": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-sdk-host-capture-refusal-preserves-defaults",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The absence assertion independently protects the capture-refusal boundary; it permits equivalent compatibility implementations without binding the test to their helper topology.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime/alm-recording-sdk-lifetime.test.ts#keeps changed HOST capture subject to actual SDK compatibility during matching ALM reuse"
+    },
+    {
+      "id": "test-structure-coupling-5cb6cc2126d09443",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-leading-reload-admitted-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "Invocation and persisted resume assertions can pass without replacing the page, and cannot independently exclude duplicate replacement.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#admits configured inheritance before a leading reload replaces the page"
+    },
+    {
+      "id": "test-structure-coupling-646b3a6e3d89a52f",
+      "path": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-unowned-reload-before-page-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "An error result or missing session record does not independently prove that the page destruction effect was absent.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-agent-reload.test.ts#refuses an unowned reload continuation before replacing the page"
+    },
+    {
+      "id": "test-structure-coupling-55b5e9afd2e8d707",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The begin absence assertion observes the owned database transaction entry port after the real handler rejects incomparable work. Unchanged runtime-state rows and the retry exception would also pass if an unnecessary empty or rolled-back transaction had opened; zero begin invocations proves the attempt exits before transaction entry.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit"
+    },
+    {
+      "id": "test-structure-coupling-db36bd5b6f5f44d9",
+      "path": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-topology-incomparable-work-no-transaction-or-commit-observation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The observeCommittedTopology absence assertion observes the owned committed-topology effect port after the real handler rejects incomparable work. The exception and unchanged durable state do not exclude a premature in-memory topology observation; zero observations proves uncommitted work cannot be advertised as committed.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-conflict.test.ts#leaves incomparable work retryable without writing or observing a commit"
     }
   ]
 }

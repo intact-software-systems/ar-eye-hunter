@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createDefaultRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 describe('loop send evidence', () => {
     it('preserves current simulated transport without inferring obsolete diagnostic statuses', async () => {
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => 100,
             commandExecutor: (command) =>
                 command.kind === 'rtc.send'
@@ -39,7 +39,7 @@ describe('loop send evidence', () => {
     });
 
     it('projects explicit send observations and generic WS identity independently', async () => {
-        const runtime = createRallarBlackBoxTestRuntime({
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
             now: () => 100,
             commandExecutor: (command) =>
                 command.kind === 'ws.send'

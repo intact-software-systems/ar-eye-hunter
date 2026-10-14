@@ -1,10 +1,4 @@
-import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import * as groups from '@shared/repository/group-state-snapshots-repository.ts';
-import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
-import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     beforeEach,
@@ -13,8 +7,24 @@ import {
     it,
     vi
 } from 'vitest';
+
+import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import * as groups from '@shared/repository/group-state-snapshots-repository.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
+
+interface LargeGroupPublication {
+    readonly memberIds: readonly string[];
+    readonly pages: readonly ALMessage[];
+    readonly entries: readonly ResourceEntry[];
+}
 
 describe('paged authoritative group snapshot adoption', () => {
     beforeEach(() => {
@@ -71,7 +81,7 @@ describe('paged authoritative group snapshot adoption', () => {
     });
 });
 
-function createLargeGroupPublication() {
+function createLargeGroupPublication(): LargeGroupPublication {
     const memberIds = Array.from({ length: 300 }, (_, index) => `session-${String(index).padStart(3, '0')}`);
     const snapshot = createGroupSnapshot({
         groupId: 'large-room',
@@ -108,6 +118,6 @@ function installInbox(): (message: ALMessage) => Promise<void> {
         if (!receiver) {
             throw new Error('Inbox was not installed');
         }
-        await receiver.onMessage(message, QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));
+        await receiver.onMessage(message, QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()));
     };
 }

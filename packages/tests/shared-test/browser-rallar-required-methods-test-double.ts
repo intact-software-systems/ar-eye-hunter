@@ -10,10 +10,12 @@ type BrowserRallarRequiredTestMethods = Pick<
     | 'submitControl'
     | 'injectFault'
     | 'readStorageCounters'
+    | 'readAlmUsage'
+    | 'readCongestionCounters'
     | 'waitForRoom'
 >;
 
-/** Supplies required browser-runtime methods that a focused test does not exercise. */
+/** Supplies required browser-runtime methods that a focused test does not exercise; its page never connects. */
 export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarRequiredTestMethods {
     const unsupported = (): Promise<never> => {
         return Promise.reject(
@@ -29,6 +31,8 @@ export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarReq
         submitControl: unsupported,
         injectFault: unsupported,
         readStorageCounters: unsupported,
+        readAlmUsage: async () => undefined,
+        readCongestionCounters: async () => undefined,
         waitForRoom: unsupported
     };
 }

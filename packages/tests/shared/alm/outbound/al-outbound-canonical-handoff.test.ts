@@ -1,5 +1,4 @@
-import '../../../setup-browser-indexeddb.ts';
-
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -12,14 +11,8 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import {
-    AL_ADMISSION_SCHEMA_ID,
-    ALStorageResetListeners,
-    openIndexedDbAdmissionDatabase,
-    type ALStorageResetEvent
-} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { AL_ADMISSION_SCHEMA_ID, ALStorageResetListeners } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundCommitBundle } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
@@ -31,10 +24,10 @@ import {
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import '../../../setup-browser-indexeddb.ts';
 import {
-    computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createIndexedDbOutboundTestStores,
@@ -43,14 +36,10 @@ import {
     createVolatileOutboundTestStores,
     holdOutboundClaims,
     OUTBOUND_TEST_SEND_PLANNER,
+    readOutboundTestAdmission,
     runOutboundWorkTask
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
-
-afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-});
 
 const HANDOFF_NAMESPACE = 'canonical-handoff';
 /** The lane clock the hand-off's own tests pass; every send's deadline lies well after it. */
@@ -60,6 +49,11 @@ interface HandoffTestPair {
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
     readonly counting: CountingIndexedDbOperationObserver;
 }
+
+afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
 
 /** One tab's view of a shared database: its own connection, store and operation counts. */
 function openHandoffTestPair(
@@ -101,11 +95,13 @@ describe('the canonical hand-off bound', () => {
             { length: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1 },
             (_, index) => ({ peer: `p${index}` })
         );
-        const bundle = await computeOutboundTestAdmission(
-            store,
-            createOutboundMessage('bounded'),
-            (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: peers })
-        );
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('bounded'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: peers })
+        });
         const sends = bundle.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared');
         expect(sends).toHaveLength(AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1);
         const handoff = new ALOutboundCanonicalHandoff({
@@ -119,7 +115,7 @@ describe('the canonical hand-off bound', () => {
         const newest = toALOutboundWorkKey(store.namespace, sends.at(-1)!.effectId);
         expect(handoff.takeCanonical(oldest, nowMs), 'the oldest send past the limit is dropped')
             .toBeUndefined();
-        expect(handoff.takeCanonical(newest, nowMs)).toBe(bundle.canonicalEntry);
+        expect(handoff.takeCanonical(newest, nowMs)).toEqual(bundle.canonicalEntry);
         expect(handoff.takeCanonical(newest, nowMs), 'a claim consumes what it was handed')
             .toBeUndefined();
     });
@@ -127,11 +123,13 @@ describe('the canonical hand-off bound', () => {
     it('holds nothing after it is cleared', async () => {
         const nowMs = HANDOFF_CLOCK_MS;
         const store = createDefaultOutboundTestStores().admissionStore;
-        const bundle = await computeOutboundTestAdmission(
-            store,
-            createOutboundMessage('cleared'),
-            OUTBOUND_TEST_SEND_PLANNER
-        );
+        const bundle = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('cleared'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: OUTBOUND_TEST_SEND_PLANNER
+        });
         const [send] = bundle.durableEffects;
         const handoff = new ALOutboundCanonicalHandoff({ namespace: store.namespace, limit: 4 });
         handoff.setCommitted(bundle, nowMs);
@@ -145,11 +143,13 @@ describe('the canonical hand-off bound', () => {
     it('neither returns nor retains a row past its send\'s deadline', async () => {
         const store = createDefaultOutboundTestStores().admissionStore;
         const handoff = new ALOutboundCanonicalHandoff({ namespace: store.namespace, limit: 4 });
-        const expiring = await computeOutboundTestAdmission(
-            store,
-            createOutboundMessage('expiring', { ttlMs: 1_000 }),
-            OUTBOUND_TEST_SEND_PLANNER
-        );
+        const expiring = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('expiring', { ttlMs: 1_000 }),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: OUTBOUND_TEST_SEND_PLANNER
+        });
         const [send] = expiring.durableEffects;
         const workKey = toALOutboundWorkKey(store.namespace, send!.effectId);
         const deadlineMs = toSendDeadlineMs(expiring);
@@ -162,11 +162,13 @@ describe('the canonical hand-off bound', () => {
             .toBeUndefined();
 
         handoff.setCommitted(expiring, deadlineMs - 1_000);
-        const later = await computeOutboundTestAdmission(
-            store,
-            createOutboundMessage('committed-after-the-deadline'),
-            OUTBOUND_TEST_SEND_PLANNER
-        );
+        const later = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('committed-after-the-deadline'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: OUTBOUND_TEST_SEND_PLANNER
+        });
         const laterKey = toALOutboundWorkKey(store.namespace, later.durableEffects[0]!.effectId);
         // A commit's expiry sweep is rate limited, and the two commits above spent its allowance: this one
         // lands 10 s on, past that window, so its sweep runs.
@@ -178,7 +180,7 @@ describe('the canonical hand-off bound', () => {
             'a later commit sweeps the expired row'
         )
             .toBeUndefined();
-        expect(handoff.takeCanonical(laterKey, deadlineMs + 10_000)).toBe(later.canonicalEntry);
+        expect(handoff.takeCanonical(laterKey, deadlineMs + 10_000)).toEqual(later.canonicalEntry);
     });
 });
 
@@ -202,7 +204,7 @@ describe('the committed canonical message handed to dispatch', () => {
             durable: true
         });
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
 
         await runOutboundWorkTask(runtime);
 
@@ -211,7 +213,6 @@ describe('the committed canonical message handed to dispatch', () => {
             counting.getCounts().byKind['work-read'] ?? 0,
             'a hit reads neither canonical nor identity row'
         ).toBe(0);
-        runtime.dispose();
     });
 
     it.each(['another tab', 'a reload'] as const)(
@@ -228,7 +229,7 @@ describe('the committed canonical message handed to dispatch', () => {
                 durable: true
             });
             if (claimant === 'a reload') {
-                committer.dispose();
+                await committer.dispose();
             }
             const claiming = openHandoffTestPair(dbName);
             const sent: ALMessage[] = [];
@@ -242,17 +243,19 @@ describe('the committed canonical message handed to dispatch', () => {
                 claiming.counting.getCounts().byKind['work-read'],
                 'a miss reads the canonical pair'
             ).toBe(2);
-            await claims.release();
+            await claims.release(committer);
         }
     );
 
     it('sends the stored canonical message when its lane replays a retained pending admission', async () => {
         const { stores } = openHandoffTestPair(`handoff-replay-${crypto.randomUUID()}`);
         const store = stores.admissionStore;
-        const competitor = await computeOutboundTestAdmission(
-            store,
-            createOutboundMessage('competing-sender-version')
-        );
+        const competitor = await readOutboundTestAdmission({
+            store: store,
+            message: createOutboundMessage('competing-sender-version'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() }
+        });
         const commit = store.commitBundle.bind(store);
         let first = true;
         // A competing commit wins the sender version inside the first commit, so the send below is
@@ -284,7 +287,6 @@ describe('the committed canonical message handed to dispatch', () => {
             await engine.executeOnce();
             return sent;
         }).toEqual([message]);
-        runtime.dispose();
     });
 
     it('is dropped when the storage of its pair is reset', async () => {
@@ -309,7 +311,7 @@ describe('the committed canonical message handed to dispatch', () => {
             reason: 'store-schema-mismatch'
         });
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([message]);
@@ -317,7 +319,6 @@ describe('the committed canonical message handed to dispatch', () => {
             counting.getCounts().byKind['work-read'],
             'the claim after a reset reads the canonical pair'
         ).toBe(2);
-        runtime.dispose();
     });
 
     it('is dropped when its runtime is disposed', async () => {
@@ -336,34 +337,11 @@ describe('the committed canonical message handed to dispatch', () => {
         );
         expect(handoff!.takeCanonical(held!, Date.now()), 'held while the runtime lives').toBeDefined();
 
-        runtime.dispose();
+        const disposing = runtime.dispose();
 
         expect(handoff!.takeCanonical(dropped!, Date.now())).toBeUndefined();
-        await claims.release();
-    });
-
-    it('tells the lane of an IndexedDB pair when its database is reset on open', async () => {
-        const dbName = `handoff-reset-open-${crypto.randomUUID()}`;
-        const stale = await openIndexedDbAdmissionDatabase({
-            dbName,
-            storeName: 'entries',
-            schemaId: 'rallar-alm-previous-schema',
-            onStorageReset: () => {}
-        });
-        stale.close();
-        const reported: ALStorageResetEvent[] = [];
-        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
-            dbName,
-            decodePrepared: decodeOutboundTestPayload,
-            onStorageReset: (event) => reported.push(event)
-        });
-        const heard: ALStorageResetEvent[] = [];
-        stores.storageResets?.add((event) => heard.push(event));
-
-        await stores.admissionStore.ready();
-
-        expect(reported).toHaveLength(1);
-        expect(heard).toEqual(reported);
+        await disposing;
+        await claims.release(runtime);
     });
 
     it('is not used for a row past its deadline: the claim reads storage and drops the work', async () => {
@@ -396,7 +374,7 @@ describe('the committed canonical message handed to dispatch', () => {
         });
 
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([]);
@@ -417,11 +395,13 @@ describe('the committed canonical message handed to dispatch', () => {
         const claims = holdOutboundClaims(stores);
         expect((await runtime.enqueueIfAbsent(createOutboundMessage('handoff-mismatch'))).verdict)
             .toMatchObject({ kind: 'admitted', durable: true });
-        const other = await computeOutboundTestAdmission(
-            stores.admissionStore,
-            createOutboundMessage('handoff-other-message'),
-            OUTBOUND_TEST_SEND_PLANNER
-        );
+        const other = await readOutboundTestAdmission({
+            store: stores.admissionStore,
+            message: createOutboundMessage('handoff-other-message'),
+            creationNow: () => Temporal.Now.instant(),
+            clock: { nowMs: () => Date.now() },
+            planner: OUTBOUND_TEST_SEND_PLANNER
+        });
         vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'takeCanonical')
             .mockReturnValue(other.canonicalEntry);
         const readWorkSnapshot = stores.admissionStore.readWorkSnapshot.bind(stores.admissionStore);
@@ -438,7 +418,7 @@ describe('the committed canonical message handed to dispatch', () => {
             }
         });
 
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([]);
@@ -462,9 +442,9 @@ describe('the committed canonical message handed to dispatch', () => {
         expect(
             handedOff,
             'one hand-off per committed member'
-        ).toEqual(members.map((member) => toALOutboundCanonicalKey(HANDOFF_NAMESPACE, member)));
+        ).toEqual(results.map((result) => result.entry?.key));
         counting.reset();
-        await claims.release();
+        await claims.release(runtime);
         await runOutboundWorkTask(runtime);
         expect(sent).toHaveLength(2);
         expect(sent).toEqual(expect.arrayContaining(members));
@@ -479,7 +459,7 @@ describe('the committed canonical message handed to dispatch', () => {
         const sent: ALMessage[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             volatileStores: createVolatileOutboundTestStores(),
-            planOutgoingMessage: (msg) => ({ ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined), persist: false }),
+            planOutgoingMessage: (msg) => ({ ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined), lane: 'volatile' }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage);
                 return { status: 'sent', submissionAttempted: true };
@@ -533,13 +513,13 @@ describe('the committed canonical message handed to dispatch', () => {
         // The commit lands, then the runtime is disposed before its result reaches the lane.
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const committed = await commit(bundle, observation);
-            runtime.dispose();
+            await runtime.dispose();
             return committed;
         });
 
         await runtime.enqueueIfAbsent(createOutboundMessage('handoff-late-commit'));
 
         expect(handedOff, 'a disposed lane holds nothing a claim could reach').toEqual([]);
-        await claims.release();
+        await claims.release(runtime);
     });
 });

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     expect,
@@ -16,14 +17,16 @@ import {
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { captureALOutboundCreationExpiry, toALOutboundMessageReference } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import type { RetainALOutboundPendingAdmissionInput } from '@shared/alm/outbound/al-outbound-pending-admission.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
-    computeOutboundTestAdmission,
     createOutboundCanonicalEntry,
-    createOutboundMessage
+    createOutboundMessage,
+    readOutboundTestAdmission
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -53,9 +56,14 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                 supersedenceTrackTtlMs: 60_000,
                 retention: normalizeALRuntimeStoreRetention()
             });
-            const input = pendingInput(store);
+            const input = createPendingAdmissionInput(store);
             const message = createOutboundMessage('initial', { ttlMs: 1_000 });
-            const bundle = await computeOutboundTestAdmission(store, message);
+            const bundle = await readOutboundTestAdmission({
+                store: store,
+                message: message,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() }
+            });
             const deadline = message.constraints!.expiresAtMs!;
             const original = IDBObjectStore.prototype[method];
             let crossed = false;
@@ -111,7 +119,7 @@ it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a t
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    const input = pendingInput(store);
+    const input = createPendingAdmissionInput(store);
     expect(await store.retainPendingAdmission(input)).toBe('pending');
     const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
     const pending = rows.find((row) => row?.resource.includes('"kind":"admit-message"'))!;
@@ -121,17 +129,16 @@ it.each([EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE])('does not call a t
     expect(await store.readSentMessage(input.payload.message.msgId)).toBeUndefined();
 });
 
-function pendingInput(store: ALOutboundAdmissionStore<OutboundTestPayload>) {
+function createPendingAdmissionInput(store: ALOutboundAdmissionStore<OutboundTestPayload>): RetainALOutboundPendingAdmissionInput<OutboundTestPayload> {
     const message = createOutboundMessage('pending', { ttlMs: 1_000 });
-    const canonicalEntry = createOutboundCanonicalEntry(store, message);
+    const canonicalEntry = createOutboundCanonicalEntry(store, message, Temporal.Now.instant());
     return {
         canonicalEntry,
         creationExpiry: captureALOutboundCreationExpiry(message),
-        decodePrepared: decodeOutboundTestPayload,
         payload: {
             kind: 'admit-message' as const,
             message: toALOutboundMessageReference(store.canonicalScope, canonicalEntry, message),
-            policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, persist: false, preparedMessages: [{ peer: 'captured' }] }),
+            policy: captureALOutboundPolicy({ msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ peer: 'captured' }] }),
             preparedMessages: [{ peer: 'captured' }]
         }
     };
@@ -150,7 +157,7 @@ it.each([EntityStatus.RETRY, EntityStatus.COMPLETED, EntityStatus.NON_RETRYABLE]
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        const input = pendingInput(store);
+        const input = createPendingAdmissionInput(store);
         expect(await store.retainPendingAdmission(input)).toBe('pending');
         const rows = await Promise.all((await backend.workQueue.getAllKeys()).map((key) => backend.workQueue.getItem(key)));
         const pending = rows.find((row) => row?.resource.includes('"kind":"admit-message"'))!;

@@ -6,7 +6,7 @@ import {
     vi
 } from 'vitest';
 
-import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { captureALOutboundPolicy, decodeALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -60,7 +60,7 @@ describe('public WS unicast scope', () => {
 
     it.each(['targets', 'resolved'] as const)('preserves decoded AL control delivery through %s without generic scope', (entry) => {
         const { native, live } = createLiveDelivery();
-        const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
+        const message = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
             fromPeerId: 'server',
             toPeerId: 'peer',
             ackedMsgId: 'message',
@@ -74,6 +74,42 @@ describe('public WS unicast scope', () => {
         expect(native.sent).toHaveLength(1);
     });
 
+    it('refuses a world send that names neither an inbound nor a recipient scope, as it refuses an unscoped unicast', () => {
+        const { native, live } = createLiveDelivery(Number.MAX_SAFE_INTEGER);
+        const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
+
+        expect(live.sendToTargetsWithResult({ message })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
+        expect(native.sent).toEqual([]);
+        expect(live.sendToTargetsWithResult({ message, inboundScope: SCOPE })).toMatchObject({ sentCount: 1 });
+        expect(live.sendToTargetsWithResult({ message, recipientScope: SCOPE })).toMatchObject({ sentCount: 1 });
+    });
+
+    it('refuses an admitted world row that captured no scope, as it refuses an unscoped unicast row', async () => {
+        const { socket, native } = createLiveDelivery(Number.MAX_SAFE_INTEGER);
+        const service = createDefaultWsQueueBoxServerService({
+            name: 'server',
+            socket,
+            outbox: new InMemoryQueueBox(),
+            readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
+            targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
+        });
+        onTestFinished(() => service.dispose());
+        const message = newALBroadcastMessage('sender', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', {});
+
+        const result = await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: undefined });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(result.verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
+        expect(native.sent).toEqual([]);
+        expect(() =>
+            decodeWsQueueBoxServerPreparedMessage(
+                { kind: 'recipient', peerId: 'peer', connectionId: 'peer', message: toALOutboundTransportMessage(message) },
+                message,
+                CANONICAL_ROW_KEY
+            )
+        ).toThrow();
+    });
+
     it('does not treat a control type ID alone as scope exemption at either live boundary', () => {
         const { native, live } = createLiveDelivery();
         const message = createMessage();
@@ -83,7 +119,7 @@ describe('public WS unicast scope', () => {
         expect(native.sent).toEqual([]);
     });
     it('preserves fully decoded internal control effects without a public scope', () => {
-        const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
+        const message = newALAckControlMessage({ v: 3, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
             fromPeerId: 'server',
             toPeerId: 'peer',
             ackedMsgId: 'message',
@@ -136,7 +172,7 @@ describe('public WS unicast scope', () => {
         const recipientScope = { ...SCOPE };
         const policy = captureALOutboundPolicy({
             msg: message,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             dropReasonCode: undefined,
             recipientScope
@@ -292,7 +328,10 @@ function createLiveDelivery(expiresAtEpochMs = 0): LiveDeliveryFixture {
         clock: { nowMs: Date.now },
         targetResolution: new WsQueueBoxServerTargetResolution({
             socket,
-            targetResolver: { resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
+            targetResolver: {
+                resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }],
+                resolveBroadcastRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }]
+            }
         }),
         deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs })

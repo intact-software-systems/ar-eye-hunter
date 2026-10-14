@@ -1,6 +1,21 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { Temporal } from '@js-temporal/polyfill';
+import { readFileSync } from 'node:fs';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import type {
+    PSqlParameter,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import {
     PSqlResourceInboxEntryRepository,
@@ -10,12 +25,16 @@ import {
     computeAppOutboxInsert,
     writeAppOutboxInsert
 } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
+import type { GroupMutationComputedWrite } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import {
+    GroupConnectTriggerLatchRepository,
+    type GroupConnectTriggerIdentity
+} from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     toRtcRttMutationReceiptId,
     toRtcRttTopologyOutboxId
@@ -28,19 +47,32 @@ import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topol
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { readFileSync } from 'node:fs';
-import { vi } from 'vitest';
-import { describe, expect, it } from 'vitest';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+
 import { createPGliteSqlClient } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
-import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
-import { createGroupAuthorityFacts, createGroupAuthorityRead } from './group-mutation-test-runtime.ts';
+import {
+    createLifecycleSql,
+    createRuntimeStatePostgresSql,
+    requirePostgresDatabaseUrl,
+    type PostgresSql
+} from '../../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
+import {
+    createGroupAuthorityFacts,
+    createGroupAuthorityRead
+} from './group-mutation-test-runtime.ts';
 
 describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%s)', (backend) => {
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
@@ -48,7 +80,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
     sqlIt('rolls back a late outbox collision, commits the exact latch with group/plan, and rejects stale replay', async () => {
         await withConnectSql(backend, async (sql, applicationId) => {
             const { computed, runtime, identity } = await seedConnectWrite(sql, applicationId);
-            const outbox = new PSqlResourceInboxEntryRepository(sql);
+            const outbox = new PSqlResourceInboxEntryRepository(sql, () => new Date());
             const entry = computed.outboxWrites[0]!.entry;
             await outbox.writeIfAbsentOrMatch({ ...entry, resource: 'collision' });
             const latches = new GroupConnectTriggerLatchRepository(runtime);
@@ -59,7 +91,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             expect(statements.filter((statement) => statement.includes('from resource_inbox'))).toEqual([]);
             expect((await latches.read(identity))?.latch.state).toBe('awaiting-publication');
             const batch = computed.persistence.guardedBatch;
-            expect(JSON.parse((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value).lifecycleState).toBe('planned');
+            expect(decodeJsonWireText((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value)).toMatchObject({ lifecycleState: 'planned' });
             await sql`delete from resource_inbox where fk_ext_bank_id = ${entry.key.contextId} and ri_resource_id = ${entry.key.resourceId}`;
             await sql.begin((tx) => writeGroupMutation(tx, computed));
             expect((await latches.read(identity))?.latch.state).toBe('consumed');
@@ -70,8 +102,11 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
     sqlIt('production publication and unchanged handlers durably wake retry intent, with atomic rollback', async () => {
         await withConnectSql(backend, async (sql, applicationId) => {
             const h = createPublicationHandlerHarness(sql, applicationId);
-            await enqueueTopologyWork(h, 'group-revision');
-            const first = await reserveTopologyWork(h);
+            const foreignKey = await enqueueTopologyWork(h, 'group-revision');
+            const firstKey = await enqueueTopologyWork(h, 'group-revision');
+            expect(foreignKey).not.toEqual(firstKey);
+            const first = await reserveTopologyWork(h, firstKey);
+            expect(first.key).toEqual(firstKey);
             const originalBegin = sql.begin.bind(sql);
             const fault = vi.spyOn(sql, 'begin').mockImplementation(async (write) => {
                 return await originalBegin(async (tx) => {
@@ -79,19 +114,21 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
                     throw new Error('after publication before commit');
                 });
             });
-            await expect(h.handler.onMessage(JSON.parse(first.resource), first)).rejects.toThrow('after publication before commit');
+            await expect(h.handler.onMessage(decodePersistedALMessage(first.resource), first)).rejects.toThrow('after publication before commit');
             fault.mockRestore();
             expect(await h.snapshots.findSnapshot(h.group.group)).toBeUndefined();
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(0);
-            await h.handler.onMessage(JSON.parse(first.resource), first);
+            await h.handler.onMessage(decodePersistedALMessage(first.resource), first);
             const planned = await h.snapshots.findSnapshot(h.group.group);
             expect(planned?.state).toBe('active');
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(1);
-            await enqueueTopologyWork(h, 'rtt-refresh');
-            const unchanged = await reserveTopologyWork(h);
-            await h.handler.onMessage(JSON.parse(unchanged.resource), unchanged);
+            const unchangedKey = await enqueueTopologyWork(h, 'rtt-refresh');
+            const unchanged = await reserveTopologyWork(h, unchangedKey);
+            expect(unchanged.key).toEqual(unchangedKey);
+            await h.handler.onMessage(decodePersistedALMessage(unchanged.resource), unchanged);
             expect(await h.snapshots.findSnapshot(h.group.group)).toEqual(planned);
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(2);
+            expect((await h.queue.getItem(foreignKey))?.status).toBe(EntityStatus.NEW);
         });
     }, 30_000);
 
@@ -126,6 +163,43 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
     }, 30_000);
 });
 
+describe('connect trigger PostgreSQL client disposal', () => {
+    it('preserves the body failure with cleanup and close failures', async () => {
+        const bodyFailure = new Error('connect body failed');
+        const cleanupFailure = new Error('connect cleanup failed');
+        const closeFailure = new Error('connect close failed');
+        let closeCalls = 0;
+        const sql = createLifecycleSql(
+            () => Promise.reject(cleanupFailure),
+            () => {
+                closeCalls += 1;
+                return Promise.reject(closeFailure);
+            }
+        );
+
+        await expect(withPostgresConnectSql(sql, 'connect-disposal', async () => {
+            throw bodyFailure;
+        })).rejects.toMatchObject({ errors: [bodyFailure, cleanupFailure, closeFailure], cause: bodyFailure });
+        expect(closeCalls).toBe(1);
+    });
+
+    it('reports cleanup failure and closes after a successful body', async () => {
+        const cleanupFailure = new Error('connect cleanup failed');
+        let closeCalls = 0;
+        const sql = createLifecycleSql(
+            () => Promise.reject(cleanupFailure),
+            () => {
+                closeCalls += 1;
+                return Promise.resolve();
+            }
+        );
+
+        await expect(withPostgresConnectSql(sql, 'connect-disposal', async () => {}))
+            .rejects.toMatchObject({ errors: [cleanupFailure] });
+        expect(closeCalls).toBe(1);
+    });
+});
+
 function observeStatements(transaction: PSqlSql, statements: string[]): PSqlSql {
     const observed = (<Result>(
         stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
@@ -141,7 +215,13 @@ function observeStatements(transaction: PSqlSql, statements: string[]): PSqlSql 
     return observed;
 }
 
-async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
+interface ConnectWriteFixture {
+    readonly computed: GroupMutationComputedWrite;
+    readonly runtime: PSqlRuntimeStateRepository;
+    readonly identity: GroupConnectTriggerIdentity;
+}
+
+async function seedConnectWrite(sql: PSqlSql, applicationId: string): Promise<ConnectWriteFixture> {
     const groupRef = { applicationId, workspaceId: 'ws', groupId: 'connect' };
     const identity = { groupRef, formationEpoch: 3, triggerGeneration: 'retry-plan' };
     const expectedLayout = { groupRevision: 4, presenceRevision: 0, version: 1, state: 'active' } as const;
@@ -209,28 +289,72 @@ async function withConnectSql(backend: 'memory' | 'postgres', run: (sql: PSqlSql
         return;
     }
     const sql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
+    await withPostgresConnectSql(sql, applicationId, run);
+}
+
+async function withPostgresConnectSql(
+    sql: PostgresSql,
+    applicationId: string,
+    run: (sql: PSqlSql, applicationId: string) => Promise<void>
+): Promise<void> {
+    let bodyFailure: Error | null = null;
     try {
         await run(sql, applicationId);
     }
+    catch (error) {
+        bodyFailure = toError(error);
+        throw bodyFailure;
+    }
     finally {
-        const contexts = [
-            { applicationId, workspaceId: 'ws', groupId: 'connect' },
-            { applicationId, workspaceId: 'ws', groupId: 'publication' },
-            { applicationId, workspaceId: 'workspace-1', groupId: 'pure-room' }
-        ].map((ref) => toAppQueueKey({ contextId: groupStateGroupStorageKey(ref), topicId: 'unused', resourceId: 'unused' }).contextId);
-        await sql`delete from runtime_state_store where store_key like ${`%${applicationId}%`} or store_value like ${`%${applicationId}%`}`;
-        await sql`delete from resource_inbox where fk_ext_bank_id in ${sql(contexts)} or ri_resource like ${`%${applicationId}%`}`;
-        await sql`delete from group_state_events where application_id = ${applicationId}`;
-        expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id in ${sql(contexts)} or ri_resource like ${`%${applicationId}%`}`)
-            .toHaveLength(0);
-        await sql.end();
+        let cleanupFailure: Error | undefined;
+        let closeFailure: Error | undefined;
+        try {
+            const contexts = [
+                { applicationId, workspaceId: 'ws', groupId: 'connect' },
+                { applicationId, workspaceId: 'ws', groupId: 'publication' },
+                { applicationId, workspaceId: 'workspace-1', groupId: 'pure-room' }
+            ].map((ref) => toAppQueueKey({ contextId: groupStateGroupStorageKey(ref), topicId: 'unused', resourceId: 'unused' }).contextId);
+            await sql`delete from runtime_state_store where store_key like ${`%${applicationId}%`} or store_value like ${`%${applicationId}%`}`;
+            await sql`delete from resource_inbox where fk_ext_bank_id in ${sql(contexts)} or ri_resource like ${`%${applicationId}%`}`;
+            await sql`delete from group_state_events where application_id = ${applicationId}`;
+            expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id in ${sql(contexts)} or ri_resource like ${`%${applicationId}%`}`)
+                .toHaveLength(0);
+        }
+        catch (error) {
+            cleanupFailure = toError(error);
+        }
+        finally {
+            try {
+                await sql.end();
+            }
+            catch (error) {
+                closeFailure = toError(error);
+            }
+        }
+        const secondaryFailures = [cleanupFailure, closeFailure].filter((error): error is Error => error !== undefined);
+        if (secondaryFailures.length > 0) {
+            const message = 'Failed to clean up connect trigger PostgreSQL resources';
+            if (bodyFailure !== null) {
+                throw new AggregateError([bodyFailure, ...secondaryFailures], message, { cause: bodyFailure });
+            }
+            throw new AggregateError(secondaryFailures, message);
+        }
     }
 }
 
-function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
+interface PublicationHandlerHarness {
+    readonly resources: PSqlResourceInboxRepository;
+    readonly queue: PSqlQueueBox;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly group: GroupSnapshot;
+    readonly snapshots: RtcTopologySnapshotRepository;
+    readonly handler: OnMessageCallback;
+}
+
+function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string): PublicationHandlerHarness {
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
-    const resources = createPSqlResourceInboxRepository(sql);
-    const queue = new PSqlQueueBox(resources);
+    const resources = createPSqlResourceInboxRepository(sql, () => new Date());
+    const queue = new PSqlQueueBox(resources, Temporal.Now.instant);
     const outboxQueueReader = new OutboxQueueReader(queue);
     const read = createGroupAuthorityRead({ applicationId, lifecycleState: 'planned', formationEpoch: 3 });
     const value = read.group!.value;
@@ -252,6 +376,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
         topologySnapshotRepository: snapshots
     });
     const handler = createRtcTopologyWorkHandler({
+        nowEpochMs: Date.now,
         outboxQueueReader,
         database: sql,
         topologyPlanning: topology.planning,
@@ -269,17 +394,10 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
     return { resources, queue, outboxQueueReader, group, snapshots, handler };
 }
 
-async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandlerHarness>) {
-    const entries = await Promise.all((await h.queue.getAllKeys()).map((key) => h.queue.getItem(key)));
-    // Against Postgres this queue is shared with every other suite, so the outbox type gates the
-    // scan: a foreign row must be skipped, not decoded.
-    const entry = entries.find((candidate) =>
-        candidate?.typeId === OutboxQueueReader.OUTBOX_ENQUEUE_TYPE &&
-        candidate.status === EntityStatus.NEW &&
-        JSON.parse(candidate.resource).payload.typeId === AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
-    );
-    if (!entry) {
-        throw new Error('Missing topology work');
+async function reserveTopologyWork(h: PublicationHandlerHarness, key: Key): Promise<ResourceEntry> {
+    const entry = await h.queue.getItem(key);
+    if (!entry || entry.status !== EntityStatus.NEW) {
+        throw new Error('Missing new topology work');
     }
     const reserved = await h.resources.reservations.startProcessingEntity(entry);
     if (!reserved.right) {
@@ -289,9 +407,9 @@ async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandler
 }
 
 async function enqueueTopologyWork(
-    h: ReturnType<typeof createPublicationHandlerHarness>,
+    h: PublicationHandlerHarness,
     payloadKind: 'group-revision' | 'rtt-refresh'
-): Promise<void> {
+): Promise<Key> {
     const nowEpochMs = Date.now();
     const common = {
         commandId: `publication-${payloadKind}-${nowEpochMs}`,
@@ -302,7 +420,7 @@ async function enqueueTopologyWork(
         createdAtEpochMs: nowEpochMs,
         expireAtEpochMs: nowEpochMs + 60_000,
         senderId: 'publication-test',
-        resourceId: `publication-${payloadKind}-${nowEpochMs}`,
+        resourceId: `publication-${payloadKind}-${nowEpochMs}-${crypto.randomUUID()}`,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
         publish: true
     };
@@ -328,12 +446,16 @@ async function enqueueTopologyWork(
             rtt: measurement,
             refinementObservationId: receiptId
         };
-    await h.outboxQueueReader.outbox.enqueueIfAbsent(
-        computeRtcTopologyOutboxInsert(computed).entry
-    );
+    const entry = computeRtcTopologyOutboxInsert(computed).entry;
+    await h.outboxQueueReader.outbox.enqueueIfAbsent(entry);
+    return entry.key;
 }
 
-async function readPublicationWakes(sql: PSqlSql, group: GroupSnapshot) {
+interface PublicationWakeRow {
+    readonly ri_resource_id: string;
+}
+
+async function readPublicationWakes(sql: PSqlSql, group: GroupSnapshot): Promise<PublicationWakeRow[]> {
     const key = toAppQueueKey({ contextId: groupStateGroupStorageKey(group.group), topicId: 'app-outbox.group-connect-trigger', resourceId: 'unused' });
-    return await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${key.contextId} and ri_topic_id = ${key.topicId}`;
+    return await sql<PublicationWakeRow[]>`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${key.contextId} and ri_topic_id = ${key.topicId}`;
 }

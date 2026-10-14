@@ -13,6 +13,7 @@ import {
     type RallarCrdtTransportStrategy,
     type RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type {
     BlackBoxRallarCrdtApplyInput,
     BlackBoxRallarCrdtConnectionInput,
@@ -106,7 +107,16 @@ function optionalJsonValue(value: unknown): RallarCrdtJsonValue | undefined {
     throw new TypeError('CRDT option must be a JSON value.');
 }
 
-function transport(value: unknown): RallarCrdtTransportStrategy | undefined {
+export interface BlackBoxRallarCrdtTransportSelection {
+    readonly transport: unknown;
+    readonly crdtTransport: unknown;
+}
+
+export interface BlackBoxRallarCrdtTransportResolution {
+    readonly transport: RallarCrdtTransportStrategy | undefined;
+}
+
+function parseCrdtTransport(value: unknown): Either<string, BlackBoxRallarCrdtTransportResolution> {
     switch (value) {
         case undefined:
         case 'local-only':
@@ -114,10 +124,35 @@ function transport(value: unknown): RallarCrdtTransportStrategy | undefined {
         case 'rtc':
         case 'ws-then-rtc':
         case 'rtc-with-ws-fallback':
-            return value;
+            return Either.ofRight({ transport: value });
         default:
-            throw new TypeError('CRDT transport is invalid.');
+            return Either.ofLeft('CRDT transport is invalid.');
     }
+}
+
+/** Configuration must be valid even when a valid top-level override takes precedence. */
+export function resolveBlackBoxRallarCrdtTransport(
+    input: BlackBoxRallarCrdtTransportSelection
+): Either<string, BlackBoxRallarCrdtTransportResolution> {
+    const configured = parseCrdtTransport(input.crdtTransport);
+    if (configured.left !== undefined) {
+        return configured;
+    }
+    const explicit = parseCrdtTransport(input.transport);
+    return explicit.left !== undefined
+        ? explicit
+        : Either.ofRight({ transport: explicit.right!.transport ?? configured.right!.transport });
+}
+
+function requireDecodedCrdtTransport(
+    resolution: Either<string, BlackBoxRallarCrdtTransportResolution>
+): RallarCrdtTransportStrategy | undefined {
+    return resolution.fold(
+        (message) => {
+            throw new TypeError(message);
+        },
+        (decoded) => decoded.transport
+    );
 }
 
 function scope(value: unknown): BlackBoxRallarCrdtScopeInput | undefined {
@@ -152,7 +187,7 @@ function connection(value: unknown): BlackBoxRallarCrdtConnectionInput {
         scope: scope(record.scope),
         roomId: optionalString(record.roomId),
         sessionId: optionalString(record.sessionId),
-        crdtTransport: transport(record.crdtTransport)
+        crdtTransport: requireDecodedCrdtTransport(parseCrdtTransport(record.crdtTransport))
     };
 }
 
@@ -316,7 +351,10 @@ export function decodeBlackBoxRallarCrdtOpenInput(value: unknown): BlackBoxRalla
         roomRef: decodeBlackBoxCommandRoomRef(record.roomRef) ?? rallar.roomRef,
         principalId: optionalString(record.principalId),
         customScope: optionalString(record.customScope),
-        transport: transport(record.transport) ?? rallar.crdtTransport,
+        transport: requireDecodedCrdtTransport(resolveBlackBoxRallarCrdtTransport({
+            transport: record.transport,
+            crdtTransport: rallar.crdtTransport
+        })),
         persist: optionalBoolean(record.persist),
         tabSync: optionalBoolean(record.tabSync),
         initialValue: optionalJsonValue(record.initialValue),
@@ -365,7 +403,10 @@ export function decodeBlackBoxRallarCrdtUndoRedoInput(value: unknown): BlackBoxR
 
 function syncOptions(value: unknown): RallarCrdtSyncOptions {
     const record = commandRecord(value);
-    return { reason: optionalString(record.reason), transport: transport(record.transport) };
+    return {
+        reason: optionalString(record.reason),
+        transport: requireDecodedCrdtTransport(parseCrdtTransport(record.transport))
+    };
 }
 
 export function decodeBlackBoxRallarCrdtSyncInput(value: unknown): BlackBoxRallarCrdtSyncInput {

@@ -17,16 +17,16 @@ import type { PersistedAuthSession } from '../persistence/persisted-auth-session
 import type { PersistedAgentSessionTicket, PersistedWebSocketTicket } from '../persistence/persisted-auth-ticket.ts';
 import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
 
-type CommandBase = Readonly<{
-    version: 1;
-    requestId: string;
-    capturedAtEpochMs: number;
-}>;
+interface CommandBase {
+    readonly version: 1;
+    readonly requestId: string;
+    readonly capturedAtEpochMs: number;
+}
 
-type IntentBase = Readonly<{
-    version: 1;
-    requestId: string;
-}>;
+interface IntentBase {
+    readonly version: 1;
+    readonly requestId: string;
+}
 
 export type AuthSessionAuthority =
     | Readonly<{
@@ -186,7 +186,9 @@ export type AuthMutationPublicResult =
     | AgentSessionTicketResponse
     | AuthSession;
 
-type AuthMutationResultIdentity = Readonly<{ requestId: string; }>;
+interface AuthMutationResultIdentity {
+    readonly requestId: string;
+}
 
 export type AuthMutationResult =
     & AuthMutationResultIdentity
@@ -230,12 +232,12 @@ export type AuthMutationResult =
         }>
     );
 
-export type AuthSessionEntries = Readonly<{
-    byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
-    bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
-    expiredByTokenEntry: RuntimeStateEntry | null;
-    expiredBySessionEntry: RuntimeStateEntry | null;
-}>;
+export interface AuthSessionEntries {
+    readonly byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    readonly bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    readonly expiredByTokenEntry: RuntimeStateEntry | null;
+    readonly expiredBySessionEntry: RuntimeStateEntry | null;
+}
 
 export type AuthMutationRead =
     | Readonly<{
@@ -261,6 +263,7 @@ export type AuthMutationRead =
     | Readonly<{
         kind: 'consume-ws-ticket';
         ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
+        expiredTicketEntry: RuntimeStateEntry | null;
         session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>
     | Readonly<{
@@ -276,24 +279,24 @@ export type AuthMutationRead =
         session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>;
 
-export type AuthMutationFacts = Readonly<{
-    kind: AuthMutationCommand['kind'];
-    serviceId: string;
-}>;
+export interface AuthMutationFacts {
+    readonly kind: AuthMutationCommand['kind'];
+    readonly serviceId: string;
+}
 
-export type AuthComputedSession = Readonly<{
-    session: PersistedAuthSession;
-}>;
+export interface AuthComputedSession {
+    readonly session: PersistedAuthSession;
+}
 
-export type AuthMutationDomainComputed = Readonly<{
-    command: AuthMutationCommand;
-    read: AuthMutationRead;
-    result: AuthMutationResult;
-    sessions: readonly AuthComputedSession[];
-    agentTickets: readonly PersistedAgentSessionTicket[];
-    logoutOutbox: ResourceEntry | null;
-    outcome: 'write' | 'replay' | 'no-op';
-}>;
+export interface AuthMutationDomainComputed {
+    readonly command: AuthMutationCommand;
+    readonly read: AuthMutationRead;
+    readonly result: AuthMutationResult;
+    readonly sessions: readonly AuthComputedSession[];
+    readonly agentTickets: readonly PersistedAgentSessionTicket[];
+    readonly logoutOutbox: ResourceEntry | null;
+    readonly outcome: 'write' | 'replay' | 'no-op';
+}
 
 export type AuthPersistenceOperation =
     | Readonly<{

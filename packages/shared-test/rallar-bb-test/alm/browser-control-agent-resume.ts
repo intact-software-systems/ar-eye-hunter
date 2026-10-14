@@ -1,5 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
 
+import {
+    decodeControlRecipeEventHistory,
+    type ControlRecipeEventHistory
+} from '../control-client/control-recipe-event-history.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 
@@ -11,6 +15,7 @@ export interface AgentResumeRecord {
     readonly runId: string;
     readonly agentId: string;
     readonly completedCommandIds: readonly string[];
+    readonly recipeExecutions: ControlRecipeEventHistory.Resume;
 }
 
 export interface AgentReloadResultInput {
@@ -84,11 +89,13 @@ function decodeAgentResumeRecordValue(value: unknown): Either<string, AgentResum
     }
 
     const { runId, agentId, completedCommandIds } = value;
+    const executions = decodeControlRecipeEventHistory(value.recipeExecutions);
     return typeof runId === 'string' &&
             typeof agentId === 'string' &&
             Array.isArray(completedCommandIds) &&
-            completedCommandIds.every((commandId): commandId is string => typeof commandId === 'string')
-        ? Either.ofRight({ runId, agentId, completedCommandIds })
+            completedCommandIds.every((commandId): commandId is string => typeof commandId === 'string') &&
+            executions.right !== undefined
+        ? Either.ofRight({ runId, agentId, completedCommandIds, recipeExecutions: executions.right })
         : Either.ofLeft('The stored agent resume record needs a run id, an agent id and completed command ids.');
 }
 

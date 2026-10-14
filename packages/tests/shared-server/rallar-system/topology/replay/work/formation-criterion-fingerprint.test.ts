@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
@@ -21,6 +25,7 @@ import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';
@@ -82,6 +87,16 @@ describe('formation criterion after unchanged topology inputs', () => {
             }]);
         }
     );
+
+    it('persists the supplied wall-clock instant when topology work completes', async () => {
+        const fixture = createCriterionFingerprintFixture();
+
+        const entry = await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
+
+        const completed = await fixture.queue.getItem(entry.key);
+        expect(completed?.status).toBe(EntityStatus.COMPLETED);
+        expect(completed?.dequeueAudit.endTs?.toString()).toBe('1970-01-01T00:00:01Z');
+    });
 
     it('applies computed planning metrics only after the topology transaction commits', async () => {
         const times = [10, 17, 20, 28];
@@ -261,6 +276,7 @@ function createCriterionFingerprintFixture(
         }
     });
     const handler = createRtcTopologyWorkHandler({
+        nowEpochMs: () => NOW,
         outboxQueueReader,
         database,
         topologyPlanning: planning,

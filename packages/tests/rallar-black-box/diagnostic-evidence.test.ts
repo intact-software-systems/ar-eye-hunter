@@ -26,6 +26,7 @@ import {
 import { optionalNumber } from '../../../apps/rallar-black-box/src/legacy/shared/finite-number.ts';
 import { deriveRallarBrowserStatus } from '../../../apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 function event(
     overrides: Partial<RallarBlackBoxTestEvent> = {}
@@ -56,6 +57,7 @@ function state(
     events: readonly RallarBlackBoxTestEvent[]
 ): RallarBlackBoxTestState {
     return {
+        ...createRuntimeStateFixture(events),
         status: 'completed',
         currentConfig: {
             roomId: 'config-room',

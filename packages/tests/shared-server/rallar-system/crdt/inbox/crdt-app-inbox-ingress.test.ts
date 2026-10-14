@@ -1,26 +1,27 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { AppCrdtInboxService, CRDT_APP_INBOX_TOPIC } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
+import {
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtUpdateEnvelope
+} from '@shared/crdt/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { AppCrdtInboxService, CRDT_APP_INBOX_TOPIC } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-
-type SqlValue = Parameters<PSqlSql>[0][number];
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -132,7 +133,7 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
     return new AppCrdtInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
+            resourceInboxRepository: createPSqlResourceInboxRepository(database, () => new Date()).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
             mutationReader: createCrdtMutationService({
@@ -147,8 +148,8 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
 }
 
 function createUnusedDatabase(): PSqlSql {
-    function query<T>(_strings: TemplateStringsArray, ..._values: SqlValue[]): Promise<T>;
-    function query(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
+    function query<T>(_strings: TemplateStringsArray, ..._values: PSqlParameter[]): Promise<T>;
+    function query(_values: readonly PSqlParameter[]): ReturnType<PSqlSql>;
     function query(): never {
         throw new Error('Unexpected SQL execution in ingress unit test');
     }

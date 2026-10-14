@@ -4,6 +4,7 @@ import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 
@@ -14,14 +15,23 @@ export class BrowserSessionDeliveries {
     readonly observers: BrowserDeliverySettlements.Observers;
     private sessionKey: string | undefined;
     private readonly deliveries: BrowserRallarDeliveryRegistry;
-    private readonly transport: Pick<BrowserTransportRuntimePort, 'deliverySettlements' | 'readMiddleware'>;
+    private readonly transport: Pick<
+        BrowserTransportRuntimePort,
+        'deliverySettlements' | 'readMiddleware' | 'readRtcCaptureReceipt'
+    >;
+    private readonly readSession: () => AuthSession | undefined;
 
     constructor(
         deliveries: BrowserRallarDeliveryRegistry,
-        transport: Pick<BrowserTransportRuntimePort, 'deliverySettlements' | 'readMiddleware'>
+        transport: Pick<
+            BrowserTransportRuntimePort,
+            'deliverySettlements' | 'readMiddleware' | 'readRtcCaptureReceipt'
+        >,
+        readSession: () => AuthSession | undefined
     ) {
         this.deliveries = deliveries;
         this.transport = transport;
+        this.readSession = readSession;
         this.settle = (event) => deliveries.record(event);
         this.observers = {
             ws: this.settle,
@@ -51,6 +61,24 @@ export class BrowserSessionDeliveries {
             return undefined;
         }
         return this.transport.deliverySettlements.capture();
+    }
+
+    readRtcCapture(context: ApiMiddleware): RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> {
+        if (this.captureOwnershipFailure(context) !== undefined) {
+            return Object.freeze({ status: 'unavailable', reason: 'scope-disposed' });
+        }
+        const receipt = this.transport.readRtcCaptureReceipt();
+        return Object.freeze(
+            receipt ? { status: 'observed', value: receipt } : { status: 'unavailable', reason: 'absent' }
+        );
+    }
+
+    captureOwnershipFailure(context: ApiMiddleware): 'session-not-current' | 'middleware-not-current' | undefined {
+        const session = this.readSession();
+        if (session === undefined || toAuthSessionKey(session) !== toAuthSessionKey(context.session)) {
+            return 'session-not-current';
+        }
+        return this.transport.readMiddleware() !== context ? 'middleware-not-current' : undefined;
     }
 
     private matches(session: AuthSession): boolean {

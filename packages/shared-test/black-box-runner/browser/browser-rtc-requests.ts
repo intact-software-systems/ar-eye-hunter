@@ -165,7 +165,6 @@ function isBrowserMessagesRtcSendEnvelope(message: any): boolean {
             Object.hasOwn(message, 'reliability') ||
             Object.hasOwn(message, 'ack') ||
             Object.hasOwn(message, 'ownership') ||
-            Object.hasOwn(message, 'membershipEpoch') ||
             Object.hasOwn(message, 'minSnapshotVersion') ||
             Object.hasOwn(message, 'seq') ||
             Object.hasOwn(message, 'orderingKey') ||

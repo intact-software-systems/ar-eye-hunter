@@ -5,7 +5,7 @@ import type {
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
-import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
+import type { ALReadyable, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
@@ -110,12 +110,20 @@ export type ALOutboundPlanner<TPrepared> = (
     authority: ALOutboundPlanningAuthority | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
+/** The sends a budgeted repair attempt commits, as their effect rows name them. */
+export interface ALOutboundRepairAttemptIdentity {
+    readonly attemptIdentity: string;
+    readonly phase: ALOutboundDispatchPhase;
+}
+
 export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly msg: ALMessage;
     readonly dequeueAuthority?: ALOutboundDequeueAuthority;
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
+    /** Present only for a dispatch that charges a repair budget: the read reports whether its sends are already committed. */
+    readonly repairAttempt?: ALOutboundRepairAttemptIdentity;
 }
 
 /** What one bundle's commit fences: the effect rows it may replace and the canonical pair it may write. */
@@ -152,6 +160,12 @@ export interface ALOutboundSupersedenceReadState {
     readonly replacesReplacement?: ALReplacementSupersedenceValue;
 }
 
+/** The sequence one admission minted on its track: the head its commit writes under the sender fence. */
+export interface ALOutboundOrderingHead {
+    readonly trackKey: string;
+    readonly seq: number;
+}
+
 export interface ALOutboundMessageReadDto<TPrepared> {
     readonly kind: 'outgoing';
     readonly storedMessage: ALStoredOutboundMessage | undefined;
@@ -163,9 +177,17 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
     readonly plan: ALOutboundDispatchPlan<TPrepared>;
+    /** The sequence `msg` was minted on this read; undefined when the read minted none. */
+    readonly orderingHead: ALOutboundOrderingHead | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
+    /**
+     * A send row of the read's `repairAttempt` identity already exists: the attempt was committed, and
+     * with it the one charge it makes, so a re-executed hint charges nothing more. False when the read
+     * names no repair attempt.
+     */
+    readonly repairAttemptCommitted: boolean;
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
     readonly repairs: readonly ALRepairPayload[];
@@ -189,11 +211,16 @@ export interface ALOutboundRepairReadDto<TPrepared> {
 }
 
 export interface ALOutboundRepairHint {
+    /**
+     * `ack-timeout` for the receipt schedule's retry. A peer's control names the hint's shape, not the
+     * control: `nack` for missing ranges, `repair` for the message itself, so one gap is one hint
+     * whichever controls report it.
+     */
     readonly trigger: ALOutboundRepairTrigger;
     readonly requestedByPeerId?: string;
     readonly failedPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
-    readonly missingSeqs: readonly number[];
+    readonly missingRanges: readonly ALSeqRange[];
 }
 
 export type ALOutboundDurableEffect<TPrepared> =
@@ -358,7 +385,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     /** The control-admission owner of this scope; the port carries the control it must replay. */
     readonly createControlAdmission: (
-        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
+        owner: Pick<
+            CreateALOutboundControlAdmissionInput<TPrepared>,
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+        >
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
@@ -368,10 +398,12 @@ export function createALOutboundAdmissionStore<TPrepared>(
     return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'durable' });
 }
 
+/** A memory pair's store: the volatile lane's, or the checkpoint lane's, whose rows a checkpoint saves. */
 export function createVolatileALOutboundAdmissionStore<TPrepared>(
-    input: CreateALOutboundAdmissionStoreInput<TPrepared>
+    input: CreateALOutboundAdmissionStoreInput<TPrepared>,
+    durability: Exclude<ALStoreDurability, 'durable'>
 ): ALOutboundAdmissionStore<TPrepared> {
-    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'volatile' });
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability });
 }
 
 interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
@@ -429,7 +461,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     createControlAdmission(
-        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
+        owner: Pick<
+            CreateALOutboundControlAdmissionInput<TPrepared>,
+            'port' | 'clock' | 'settlements' | 'carrier' | 'hopPeerIds'
+        >
     ): ALOutboundControlAdmission<TPrepared> {
         return new ALOutboundControlAdmission({
             ...owner,

@@ -21,10 +21,12 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 /**
- * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
+ * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
  * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
+ * The membership fence runs where one hop judges the roster, its rejection only where the WS server does.
+ * The leader refusal runs where one carrier judges the leader, its list refusal only where the WS server does.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -36,12 +38,33 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'ws-unicast-receipt',
         'server-command',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
+        'backpressure-deferred',
+        'own-share-under-inbound',
+        'buffered-track-drains',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
-        'durable-takeover'
+        'fenced-delivery',
+        'fenced-catch-up',
+        'fenced-rejection',
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
+        'leader-confirms',
+        'no-leader-refused',
+        'leader-outside-list',
+        'claim-first-wins',
+        'claim-expires-reclaims',
+        'durable-takeover',
+        'flush-on-hide'
     ],
     rtc: [
         'volatile-default',
@@ -52,13 +75,32 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
-        'not-yet-in-sync',
+        'ordering-gap-repair',
+        'repair-exhausted',
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
+        'backpressure-refused',
+        'backpressure-deferred',
+        'own-share-under-inbound',
+        'buffered-track-drains',
+        'churn-bounded-tracks',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
-        'durable-takeover'
+        'fenced-delivery',
+        'fenced-catch-up',
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
+        'leader-confirms',
+        'no-leader-refused',
+        'claim-refused-on-rtc',
+        'durable-takeover',
+        'flush-on-hide'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -69,10 +111,12 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
+        'repair-exhausted',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
-        'not-yet-in-sync',
         'not-yet-in-sync',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
@@ -80,7 +124,15 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'unicast-fallback',
         'capacity',
+        'capacity-age',
+        'capacity-tracks',
+        'backpressure-hands-over',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
+        'principal-delivery',
+        'fixed-list-delivery',
+        'world-routing',
+        'leader-confirms',
+        'claim-first-wins',
         'durable-takeover'
     ]
 } as const;
@@ -100,7 +152,7 @@ function toConformanceInput(
 
 function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) =>
-        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor]
+        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor, scenario.sibling]
             .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
     );
 }
@@ -110,9 +162,16 @@ const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
 /**
  * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
- * The takeover's sender holds its carrier until the lane closes its page, which no later block shares.
+ * The takeover's and the flush's senders hold their carrier until the lane ends their page, which no later block shares.
+ * The exhausted repair's sender holds its second message through every retransmission: a release would let it reach
+ * the receiver inside the absence window; the hold matches that one message id, so no later block sees it.
  */
-const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = ['-frozen-audience-membership-recipient-b', '-durable-takeover-sender'];
+const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
+    '-frozen-audience-membership-recipient-b',
+    '-durable-takeover-sender',
+    '-flush-on-hide-sender',
+    '-repair-exhausted-sender'
+];
 
 /**
  * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before
@@ -168,7 +227,8 @@ describe('ALM conformance recipe validation', () => {
                     config: { runId, agentId: `${recipe.metadata?.role}-${'a'.repeat(1_000)}` }
                 };
                 for (const command of recipe.commands) {
-                    if (command.kind !== 'http.request') {
+                    // A read writes nothing, so its path ends in no mutation request id.
+                    if (command.kind !== 'http.request' || command.request.method === 'GET') {
                         continue;
                     }
                     const template = command.request.path!.split('/').at(-1)!;

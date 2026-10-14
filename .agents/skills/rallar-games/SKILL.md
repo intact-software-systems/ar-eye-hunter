@@ -1,6 +1,6 @@
 ---
 name: rallar-games
-description: Use when changing AR Eye Hunter, Relic Hunters, Rallar Game authority, Rallar Motion consumers, game room creation, game UI flows, browser game realtime behavior, or greenfield browser game architecture.
+description: Changes existing AR Eye Hunter, Relic Hunters, Rallar Game, and Rallar Motion behavior. Use when editing those games, game rooms, or game UI. A new app belongs to building-rallar-apps. GroupRef, WS, and RTC routing belong to rallar-realtime.
 ---
 
 # Rallar Games

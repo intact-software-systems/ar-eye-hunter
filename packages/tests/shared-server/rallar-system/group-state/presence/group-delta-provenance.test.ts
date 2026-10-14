@@ -15,7 +15,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -197,9 +197,12 @@ function createGroupDeltaReceiver(producer: GroupDeltaProducerFixture): GroupDel
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry),
         readAuthenticatedConnectionScope: () => ({ scope: authentication.scope, expiresAtEpochMs: producer.now + 60_000 })
     });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
+    onTestFinished(async () => {
+        const cleanup = await Promise.allSettled([service.dispose(), engine.stop()]);
+        const failure = cleanup.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     });
     return { reader, socket, native, stores, engine, authentication };
 }

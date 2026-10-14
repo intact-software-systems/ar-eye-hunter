@@ -114,16 +114,9 @@ export function normalizeRallarGroupDirectorHeartbeatTtlMs(
 
 export function mergeRallarGroupDirectorMetadata(
     metadata: ApiJsonObject | undefined,
-    appointment: RallarGroupDirectorAppointment | undefined
+    appointment: RallarGroupDirectorAppointment
 ): ApiJsonObject {
-    const next: Record<string, ApiJsonValue> = { ...(metadata ?? {}) };
-    if (appointment) {
-        next[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = appointment;
-    }
-    else {
-        delete next[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
-    }
-    return next;
+    return { ...metadata, [RALLAR_GROUP_DIRECTOR_METADATA_KEY]: appointment };
 }
 
 export function isRallarGroupDirectorSessionActive(
@@ -138,6 +131,12 @@ export function isRallarGroupDirectorSessionActive(
         session.sessionId === appointment.sessionId &&
         session.principalId === appointment.principalId
     );
+}
+
+/** The room's leader: the appointed director session while the snapshot holds it present, else none (D164). */
+export function resolveRallarGroupLeaderSessionId(snapshot: GroupSnapshot): string | undefined {
+    const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+    return isRallarGroupDirectorSessionActive(snapshot, appointment) ? appointment?.sessionId : undefined;
 }
 
 export function resolveRallarGroupDirectorAppointmentEligibility(

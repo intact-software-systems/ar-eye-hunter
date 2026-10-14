@@ -1,4 +1,4 @@
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { assembleRallarMiddlewareRuntime } from './assemble-rallar-middleware-runtime.ts';
 import { createRallarMiddlewareInboxServices } from './create-rallar-middleware-inbox-services.ts';
 import { createRallarMiddlewareInfrastructure } from './create-rallar-middleware-infrastructure.ts';

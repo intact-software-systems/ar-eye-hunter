@@ -1,15 +1,21 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    newALUnicastMessage,
+    toALGroupTargetKey,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { toALOutboundSentMessageKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
@@ -141,6 +147,91 @@ describe('WS server outbound planning', () => {
         expect(fixture.sockets.get('e')!.sent).toEqual([]);
     });
 
+    it('expects the leader its admitted audience names for a group-leader room send whose leader is connected to another instance', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'leader-elsewhere' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'group-leader' }
+        );
+
+        const plan = planning.planOutboundMessage({
+            message,
+            phase: 'dequeue',
+            clusterPublisherRegistered: true,
+            admittedAudience: ['a', 'c']
+        });
+
+        expect(plan.ackTracking).toMatchObject({ mode: 'leader', expectedPeerIds: ['c'] });
+        expect(plan.preparedMessages).toMatchObject([{ kind: 'cluster-local-complete' }]);
+    });
+
+    it('mints the sequence of its own keyed publication and leaves a relayed keyed send unsequenced', async () => {
+        const fixture = createPlanningFixture(['b']);
+        const keyedSend = (senderId: string, resourceId: string, orderingKey: string) =>
+            newALMulticastMessage(
+                senderId,
+                { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId },
+                ROOM,
+                'app.event.v1',
+                {},
+                { ttlMs: 30_000, orderingKey }
+            );
+        const relayed = keyedSend('a', 'relayed', toALGroupTargetKey(ROOM));
+
+        const first = await fixture.service.enqueueOutboxIfAbsent(keyedSend('server', 'own-1', 'game-1'));
+        const second = await fixture.service.enqueueOutboxIfAbsent(keyedSend('server', 'own-2', 'game-1'));
+        const passed = await fixture.service.enqueueOutboxIfAbsent(relayed);
+        await drainEngine(fixture.engine);
+        await expect.poll(() => fixture.sockets.get('b')!.sent.length).toBe(3);
+
+        expect([first, second].map((result) => result.message.ordering)).toEqual([
+            { orderingKey: 'game-1', seq: 1 },
+            { orderingKey: 'game-1', seq: 2 }
+        ]);
+        expect(passed.message.ordering?.seq).toBeUndefined();
+        expect(fixture.backend.peek(toALOutboundSentMessageKey('ws-planning-frozen', relayed.id.msgId))?.value)
+            .toMatchObject({ orderingTrackKey: null, orderingSeq: null });
+        expect(fixture.sockets.get('b')!.sent.map((frame) => (JSON.parse(frame) as ALMessage).ordering?.seq))
+            .toEqual([1, 2, undefined]);
+    });
+
+    it('mints no sequence for its own keyed, unsequenced message planned at dequeue', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.app.event', contextId: ROOM.groupId, resourceId: 'dequeued-keyed' },
+            ROOM,
+            'app.event.v1',
+            {},
+            { ttlMs: 30_000, orderingKey: 'game-1' }
+        );
+        const planAt = (phase: 'immediate' | 'dequeue') =>
+            planning.planOutboundMessage({ message, phase, clusterPublisherRegistered: false, admittedAudience: ['b'] });
+
+        expect(planAt('dequeue').mintsSequence).toBeUndefined();
+        expect(planAt('immediate').mintsSequence).toBe(true);
+    });
+
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
         const server = new JsonWebSocketServer();
         const planning = new WsQueueBoxServerOutboundPlanning({
@@ -168,7 +259,7 @@ describe('WS server outbound planning', () => {
             admittedAudience: undefined
         });
 
-        expect(plan).toMatchObject({ dropReasonCode: undefined, persist: true, preparedMessages: [] });
+        expect(plan).toMatchObject({ dropReasonCode: undefined, lane: 'durable', preparedMessages: [] });
     });
 
     it('repairs a room message only to a requester of the audience it was admitted to, never to a later joiner (D24, D43)', () => {
@@ -200,7 +291,7 @@ describe('WS server outbound planning', () => {
                 requestedByPeerId,
                 failedPeerIds: [],
                 completedHopPeerIds: [],
-                missingSeqs: [],
+                missingRanges: [],
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
                 admittedAudience: ['b']
             });
@@ -233,7 +324,7 @@ describe('WS server outbound planning', () => {
             requestedByPeerId: 'b',
             failedPeerIds: [],
             completedHopPeerIds: [],
-            missingSeqs: [],
+            missingRanges: [],
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
             admittedAudience: ['b', 'c']
         });
@@ -247,6 +338,7 @@ describe('WS server outbound planning', () => {
 });
 
 interface PlanningFixture {
+    readonly backend: InMemoryAdmissionBackend;
     readonly service: WsQueueBoxServerService;
     readonly store: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
     readonly engine: InboxOutboxEngine;
@@ -285,5 +377,5 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
         targetResolver: { resolveGroupRecipients: () => roomRecipients }
     });
     onTestFinished(() => service.dispose());
-    return { service, store, engine, sockets };
+    return { backend, service, store, engine, sockets };
 }

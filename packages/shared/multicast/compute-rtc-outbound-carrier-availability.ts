@@ -1,8 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
-import {
-    resolveALFrozenMulticastAudience,
-    toALFrozenMulticastMessage
-} from '../al-contracts/al-frozen-multicast-audience.ts';
+import { resolveALFrozenMulticastAudience } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALOutboundMessageRuntime } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { isOverlayForGroupRef } from '../api/api-type-utils.ts';
@@ -13,7 +10,7 @@ import {
     computeRtcRoomSnapshotAdmission,
     type RtcRoomSnapshotAdmission
 } from './rtc-room-snapshot-admission.ts';
-import { computeFrozenAudience } from './web-rtc-overlay-frozen-audience.ts';
+import { isRtcUnfrozenRoomMessage, toRtcFrozenRoomMessage } from './web-rtc-overlay-frozen-audience.ts';
 
 export type RtcCarrierGapAdmission = 'hand-over' | 'hold';
 
@@ -90,15 +87,11 @@ export function toRtcCarrierGapFrozenMessage(
 ): ALMessage | undefined {
     if (
         availability.kind !== 'unavailable' || availability.admission.kind !== 'authorized' ||
-        message.id.senderId !== selfPeerId || message.targets?.mode !== 'multicast' ||
-        resolveALFrozenMulticastAudience(message.targets) !== undefined
+        message.id.senderId !== selfPeerId || !isRtcUnfrozenRoomMessage(message)
     ) {
         return undefined;
     }
-    return toALFrozenMulticastMessage(
-        message,
-        computeFrozenAudience({ admission: availability.admission, selfPeerId })
-    );
+    return toRtcFrozenRoomMessage(message, availability.admission, selfPeerId);
 }
 
 export interface IsRtcCarrierGapHeldInput {
@@ -114,8 +107,6 @@ export function isRtcCarrierGapHeld(input: IsRtcCarrierGapHeldInput): boolean {
     const recipientsKnown = input.admission.kind === 'authorized';
     return message.id.senderId === input.selfPeerId &&
         readALTargetGroupRef(message) !== undefined &&
-        !(message.targets?.mode === 'broadcast' &&
-            message.targets.recipientPeerIds !== undefined) &&
         !handling.dropReason && handling.forwarding.persist &&
         (!recipientsKnown || handling.forwarding.nextHopPeerIds.length > 0);
 }

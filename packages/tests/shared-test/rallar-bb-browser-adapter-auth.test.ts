@@ -1,44 +1,27 @@
 // @vitest-environment happy-dom
 
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { isApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+    RallarBlackBoxBrowserRallarConnectionConfig,
+    RallarBlackBoxBrowserWebSocketData
+} from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import { createDefaultRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
-
-function installStorage(): Storage {
-    const values = new Map<string, string>();
-    const storage = {
-        get length() {
-            return values.size;
-        },
-        clear: () => values.clear(),
-        getItem: (key: string) => values.get(key) ?? null,
-        key: (index: number) => [...values.keys()][index] ?? null,
-        removeItem: (key: string) => {
-            values.delete(key);
-        },
-        setItem: (key: string, value: string) => {
-            values.set(key, value);
-        }
-    } satisfies Storage;
-    Object.defineProperty(globalThis, 'localStorage', {
-        configurable: true,
-        value: storage
-    });
-    Object.defineProperty(window, 'localStorage', {
-        configurable: true,
-        value: storage
-    });
-    return storage;
-}
+import { createBrowserTestStorage } from './browser-test-storage.ts';
 
 describe('rallar-bb browser adapter auth', () => {
     let storage: Storage;
 
     beforeEach(() => {
-        storage = installStorage();
+        storage = createBrowserTestStorage();
+        vi.stubGlobal('localStorage', storage);
     });
+
+    afterEach(() => vi.unstubAllGlobals());
 
     it('adds current Rallar auth headers to configured API HTTP requests', async () => {
         storage.setItem(
@@ -55,8 +38,8 @@ describe('rallar-bb browser adapter auth', () => {
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response(JSON.stringify({ ok: true }), {
                     status: 200,
@@ -64,7 +47,7 @@ describe('rallar-bb browser adapter auth', () => {
                         'content-type': 'application/json'
                     }
                 });
-            }) as typeof fetch
+            }
         });
 
         await runtime.execute({
@@ -97,12 +80,12 @@ describe('rallar-bb browser adapter auth', () => {
     });
 
     it('fails an HTTP command when its status is outside the accepted set', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async () =>
                 new Response('{"error":"invalid"}', {
                     status: 400,
                     headers: { 'content-type': 'application/json' }
-                })) as typeof fetch
+                })
         });
 
         const result = await runtime.execute({
@@ -120,12 +103,12 @@ describe('rallar-bb browser adapter auth', () => {
     });
 
     it('keeps HTTP error responses observable when no accepted set is configured', async () => {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async () =>
                 new Response('{"error":"diagnostic"}', {
                     status: 400,
                     headers: { 'content-type': 'application/json' }
-                })) as typeof fetch
+                })
         });
 
         const result = await runtime.execute({
@@ -144,10 +127,10 @@ describe('rallar-bb browser adapter auth', () => {
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const authenticateConfigs: unknown[] = [];
+        const authenticateConfigs: RallarBlackBoxBrowserRallarConnectionConfig[] = [];
         let connectCalls = 0;
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response(JSON.stringify({ ok: true }), {
                     status: 201,
@@ -155,7 +138,7 @@ describe('rallar-bb browser adapter auth', () => {
                         'content-type': 'application/json'
                     }
                 });
-            }) as typeof fetch,
+            },
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 authenticate: async (config) => {
@@ -231,21 +214,21 @@ describe('rallar-bb browser adapter auth', () => {
         'preserves bootstrap Rallar credentials when recipe configure ' +
             'narrows live scope',
         async () => {
-            const authenticateConfigs: unknown[] = [];
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
-                fetch: (async () =>
+            const authenticateConfigs: RallarBlackBoxBrowserRallarConnectionConfig[] = [];
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                fetch: async () =>
                     new Response(JSON.stringify({ ok: true }), {
                         status: 201,
                         headers: {
                             'content-type': 'application/json'
                         }
-                    })) as typeof fetch,
+                    }),
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     authenticate: async (config) => {
                         authenticateConfigs.push(config);
-                        const rallar = (config as { rallar?: { username?: string; password?: string; }; }).rallar;
-                        if (!rallar?.username || !rallar.password) {
+                        const rallar = isJsonRecordValue(config.rallar) ? config.rallar : undefined;
+                        if (typeof rallar?.username !== 'string' || !rallar.username || typeof rallar.password !== 'string' || !rallar.password) {
                             throw new Error('missing Rallar credentials');
                         }
                         storage.setItem(
@@ -360,8 +343,8 @@ describe('rallar-bb browser adapter auth', () => {
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response(JSON.stringify({ ok: true }), {
                     status: 200,
@@ -369,7 +352,7 @@ describe('rallar-bb browser adapter auth', () => {
                         'content-type': 'application/json'
                     }
                 });
-            }) as typeof fetch
+            }
         });
 
         await runtime.execute({
@@ -417,10 +400,10 @@ describe('rallar-bb browser adapter auth', () => {
                 input: RequestInfo | URL;
                 init?: RequestInit;
             }> = [];
-            const authenticateConfigs: unknown[] = [];
+            const authenticateConfigs: RallarBlackBoxBrowserRallarConnectionConfig[] = [];
             let connectCalls = 0;
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
-                fetch: (async (input, init) => {
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                fetch: async (input, init) => {
                     fetchCalls.push({ input, init });
                     return new Response(JSON.stringify({ ok: true }), {
                         status: 200,
@@ -428,7 +411,7 @@ describe('rallar-bb browser adapter auth', () => {
                             'content-type': 'application/json'
                         }
                     });
-                }) as typeof fetch,
+                },
                 rallarRuntime: {
                     ...createBrowserRallarRequiredMethodsTestDouble(),
                     authenticate: async (config) => {
@@ -524,11 +507,11 @@ describe('rallar-bb browser adapter auth', () => {
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response('{}', { status: 200 });
-            }) as typeof fetch
+            }
         });
 
         await runtime.execute({
@@ -558,11 +541,11 @@ describe('rallar-bb browser adapter auth', () => {
 
     it('creates stable bounded identities from long run and agent ids', async () => {
         const requestIds: string[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input) => {
                 requestIds.push(new URL(String(input)).pathname.split('/').at(-1) ?? '');
                 return new Response('{}', { status: 200 });
-            }) as typeof fetch
+            }
         });
         const runId = 'rallar-live-three-browser-live3-1787338266520-7060e2f6c24808';
 
@@ -601,11 +584,11 @@ describe('rallar-bb browser adapter auth', () => {
 
     it('pads runtime identities to a fixed width', async () => {
         const fetchCalls: Array<RequestInfo | URL> = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input) => {
                 fetchCalls.push(input);
                 return new Response('{}', { status: 200 });
-            }) as typeof fetch
+            }
         });
 
         await runtime.execute({
@@ -637,11 +620,11 @@ describe('rallar-bb browser adapter auth', () => {
             'configured value',
         async () => {
             let fetchCalls = 0;
-            const runtime = createRallarBlackBoxBrowserTestRuntime({
-                fetch: (async () => {
+            const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+                fetch: async () => {
                     fetchCalls += 1;
                     return new Response('{}', { status: 200 });
-                }) as typeof fetch
+                }
             });
 
             await runtime.execute({
@@ -686,8 +669,8 @@ describe('rallar-bb browser adapter auth', () => {
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 operations.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`);
                 return new Response(JSON.stringify({ ok: true }), {
@@ -696,7 +679,7 @@ describe('rallar-bb browser adapter auth', () => {
                         'content-type': 'application/json'
                     }
                 });
-            }) as typeof fetch,
+            },
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => {
@@ -779,8 +762,8 @@ describe('rallar-bb browser adapter auth', () => {
     });
 
     it('resolves rtc.send ready peer placeholders from runtime health', async () => {
-        const sentPayloads: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const sentPayloads: RallarMessagePayload[] = [];
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -841,8 +824,8 @@ describe('rallar-bb browser adapter auth', () => {
             init?: RequestInit;
         }> = [];
         const openedSockets: string[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async (input, init) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async (input, init) => {
                 fetchCalls.push({ input, init });
                 return new Response(
                     JSON.stringify({
@@ -857,7 +840,7 @@ describe('rallar-bb browser adapter auth', () => {
                         }
                     }
                 );
-            }) as typeof fetch,
+            },
             webSocketFactory: (url) => {
                 openedSockets.push(url);
                 return {
@@ -908,8 +891,8 @@ describe('rallar-bb browser adapter auth', () => {
             })
         );
         const openedSockets: string[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async () =>
                 new Response(
                     JSON.stringify({
                         ticket: 'ticket-rotated',
@@ -922,7 +905,7 @@ describe('rallar-bb browser adapter auth', () => {
                             'content-type': 'application/json'
                         }
                     }
-                )) as typeof fetch,
+                ),
             webSocketFactory: (url) => {
                 openedSockets.push(url);
                 return {
@@ -967,8 +950,8 @@ describe('rallar-bb browser adapter auth', () => {
             })
         );
         const openedSockets: string[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () =>
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            fetch: async () =>
                 new Response(
                     JSON.stringify({
                         ticket: 'ticket-1',
@@ -981,7 +964,7 @@ describe('rallar-bb browser adapter auth', () => {
                             'content-type': 'application/json'
                         }
                     }
-                )) as typeof fetch,
+                ),
             webSocketFactory: (url) => {
                 openedSockets.push(url);
                 return {
@@ -1025,8 +1008,8 @@ describe('rallar-bb browser adapter auth', () => {
                 expiresAtEpochMs: Date.now() + 60_000
             })
         );
-        const sent: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const sent: RallarBlackBoxBrowserWebSocketData[] = [];
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             webSocketFactory: (url) => ({
                 readyState: 1,
                 protocol: '',
@@ -1071,8 +1054,8 @@ describe('rallar-bb browser adapter auth', () => {
                 expiresAtEpochMs: Date.now() + 60_000
             })
         );
-        const sends: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const sends: RallarMessagePayload[] = [];
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
@@ -1126,8 +1109,8 @@ describe('rallar-bb browser adapter auth', () => {
                 expiresAtEpochMs: Date.now() + 60_000
             })
         );
-        const sends: unknown[] = [];
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
+        const sends: RallarMessagePayload[] = [];
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),

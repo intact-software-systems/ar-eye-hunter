@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import assert from 'node:assert/strict';
+
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -8,18 +10,27 @@ import {
     toAdminPruneOutbox
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { AdminPrunePageWorker } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
-import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
+import {
+    createAdminPruneAggregate,
+    toAdminPruneAggregateEntry
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResourceInboxLostReservationError } from '@shared/queuebox/queue-box-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import assert from 'node:assert/strict';
-import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import {
+    EntityStatus,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
+
+import {
+    readPGliteDatabaseEpochMs,
+    withUtcPGliteSql
+} from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('PSQL queue release accepts the exact admin page completed in its deletion transaction', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const repository = createPSqlResourceInboxRepository(sql);
-        const queue = new PSqlQueueBox(repository);
+        const repository = createPSqlResourceInboxRepository(sql, () => new Date());
+        const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
         const entry = toAdminPruneOutbox({
             kind: 'page',
             jobId: 'atomic-prune-release',
@@ -63,7 +74,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
             repository: new PSqlAdminPruneRepository(sql),
             serviceId: 'server-1',
             pageSize: 2,
-            now: () => now,
+            now: Date.now,
             readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
         });
         await worker.processReservedEntry(page);
@@ -107,8 +118,8 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
 Deno.test('admin prune conflicts and preserves runtime state replaced after the page read', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const queueRepository = createPSqlResourceInboxRepository(sql);
-        const queue = new PSqlQueueBox(queueRepository);
+        const queueRepository = createPSqlResourceInboxRepository(sql, () => new Date());
+        const queue = new PSqlQueueBox(queueRepository, Temporal.Now.instant);
         const entry = toAdminPruneOutbox({
             kind: 'page',
             jobId: 'stale-runtime-page',
@@ -150,7 +161,7 @@ Deno.test('admin prune conflicts and preserves runtime state replaced after the 
             repository: new PSqlAdminPruneRepository(sql),
             serviceId: 'server-1',
             pageSize: 1,
-            now: () => now,
+            now: Date.now,
             readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
         });
         const command = decodeAdminPruneWork(reserved);

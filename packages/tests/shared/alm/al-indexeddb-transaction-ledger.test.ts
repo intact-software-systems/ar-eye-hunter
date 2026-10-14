@@ -201,7 +201,7 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [{ kind: 'send' }]
         }),
         sendPreparedMessage: async () => {

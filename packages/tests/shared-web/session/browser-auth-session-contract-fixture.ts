@@ -5,6 +5,8 @@ import { vi } from 'vitest';
 import { installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
+
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     const ctx = createDefaultApiMiddlewareTestDouble();
@@ -18,7 +20,9 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
+        initialiseMiddleware: vi.fn<ContractModules.BrowserMiddlewareModule['initialiseMiddleware']>(() =>
+            Promise.resolve({ middleware: ctx.middleware, rtcCaptureReceipt, checkpoints: [] })
+        ),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         readSession: vi.fn<ContractModules.Auth['readSession']>(() => session),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>(),
@@ -180,7 +184,7 @@ function resetSessionAndRoomMocks(): void {
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     installGroupSnapshotRepositoryMocks(mocks, []);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-    mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+    mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
     mocks.clearSession.mockImplementation(() => undefined);
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
@@ -272,6 +276,7 @@ function resetWebSocketTransportMocks(): void {
     });
     mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
         mocks.webSocket.close(code, reason);
+        return Promise.resolve();
     });
     mocks.webSocket.onWebsocketCallbacksDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox.socket

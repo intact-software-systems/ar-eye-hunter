@@ -23,6 +23,7 @@ import {
 } from './decode-alm-runtime-result.ts';
 import type { RallarBlackBoxTestMessagesObserveResultValue } from './rallar-black-box-alm-result-values.ts';
 import { resolveAlmControlReferences } from './resolve-alm-control-references.ts';
+import { resolveAlmFaultMatchReferences } from './resolve-alm-fault-match-references.ts';
 import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
 export type RallarBlackBoxAlmCommandWithId =
@@ -261,10 +262,15 @@ async function readAlmDeliveryObservation(
     }
 }
 
+/**
+ * A transport fault may match one message by the id its send returned, so `match.msgId` may name a
+ * `{resultCache.<commandId>.<path>}` token, as a raw control's identities do.
+ */
 function injectAlmFault(
     input: AlmBrowserCommandInput<'fault.inject'>
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const fault = input.port.resolveCommandFields(input.command, input.context);
+    const match = resolveAlmFaultMatchReferences(input.command, input.context.state().resultCache);
     const faultId = input.command.faultId;
     return runAlmRuntimeCommand({
         port: input.port,
@@ -272,10 +278,14 @@ function injectAlmFault(
         context: input.context,
         connection: undefined,
         topic: 'rallar.bb.fault.injected',
-        invoke: async (runtime) => {
-            await runtime.injectFault(fault);
-            return { faultId, injected: true };
-        }
+        invoke: async (runtime) =>
+            match.fold(
+                (message) => Promise.reject(new TypeError(message)),
+                async (resolved) => {
+                    await runtime.injectFault({ ...fault, match: resolved });
+                    return { faultId, injected: true };
+                }
+            )
     });
 }
 

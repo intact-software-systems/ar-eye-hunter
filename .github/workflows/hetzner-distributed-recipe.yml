@@ -43,6 +43,11 @@ on:
         description: Public black-box control HTTP URL
         required: true
         default: https://control.rallar.intactss.com
+      rtc_capture_mode:
+        description: Optional RUN RTC capture mode (off, signaling or native); blank preserves the authored manifest
+        required: false
+        type: string
+        default: ''
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -127,6 +132,7 @@ jobs:
       control_url: ${{ inputs.control_url }}
       control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
+      rtc_capture_mode: ${{ inputs.rtc_capture_mode }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}
       register_before_login: ${{ inputs.register_before_login }}

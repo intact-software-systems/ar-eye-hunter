@@ -199,7 +199,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const delivery = { reliability: 'at-least-once', ack: 'receiver' } as const;
 
         const world = await service.enqueueOutboxIfAbsent(
-            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery)
+            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery),
+            { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         expect(world.verdict).toEqual({
@@ -546,7 +547,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-2']);
         await socket.receive(
             shared.newALRepairControlMessage(
-                { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
                 {
                     msgId: msg.id.msgId,
                     fromPeerId: 'peer-2',

@@ -20,6 +20,7 @@ import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-rec
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
+    toALOutboundOrderingHeadKey,
     toALOutboundOrderingMessageKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
@@ -27,16 +28,19 @@ import {
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey
 } from './al-outbound-admission-keys.ts';
+import type { ALOutboundOrderingHead } from './al-outbound-admission-store.ts';
 import {
     decodeALOutboundSentMessage,
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import type { ALOutboundOrderingHeadRow } from './decode-al-outbound-ordering-head.ts';
 
 export type ALOutboundAdmissionMutation =
     | Readonly<
         { kind: 'set-ordering-message'; trackKey: string; seq: number; msgId: string; expireAtTimestamp: number; }
     >
+    | Readonly<{ kind: 'set-ordering-head'; trackKey: string; seq: number; expireAtTimestamp: number; }>
     | Readonly<{
         kind: 'set-msg-owner';
         msgId: string;
@@ -97,6 +101,7 @@ export interface ALOutboundStateWrite {
         | ALStoredOutboundMessage
         | ALOutboundPendingAckSnapshot
         | ALOutboundRepairAttemptSnapshot
+        | ALOutboundOrderingHeadRow
         | ALLatestSupersedenceValue
         | ALReplacementSupersedenceValue
         | undefined;
@@ -116,6 +121,15 @@ export interface CreateALOutboundAdmissionMutationsInput {
 export type ALOutboundCommitFenceIssue =
     | Readonly<{ kind: 'conflict'; message: string; }>
     | Readonly<{ kind: 'corruption'; key: string; message: string; }>;
+
+export function toALOutboundOrderingHeadMutations(
+    head: ALOutboundOrderingHead | undefined,
+    expireAtTimestamp: number
+): readonly ALOutboundAdmissionMutation[] {
+    return head === undefined
+        ? []
+        : [{ kind: 'set-ordering-head', trackKey: head.trackKey, seq: head.seq, expireAtTimestamp }];
+}
 
 /** Owns the outbound mutation vocabulary: the state write each mutation names, its guards, and its apply. */
 export class ALOutboundAdmissionMutations {
@@ -211,6 +225,17 @@ export class ALOutboundAdmissionMutations {
                     key: toALOutboundOrderingMessageKey(this.namespace, mutation.trackKey, mutation.seq),
                     value: mutation.msgId,
                     expireAtTimestamp: mutation.expireAtTimestamp,
+                    supersedenceGuard: undefined
+                };
+            case 'set-ordering-head':
+                return {
+                    key: toALOutboundOrderingHeadKey(this.namespace, mutation.trackKey),
+                    value: { seq: mutation.seq },
+                    expireAtTimestamp: this.computeMessageRowExpiryMs(
+                        mutation.expireAtTimestamp,
+                        nowMs,
+                        this.retention.sentMessageTtlMs
+                    ),
                     supersedenceGuard: undefined
                 };
             case 'set-msg-owner':
@@ -323,15 +348,18 @@ export class ALOutboundAdmissionMutations {
     }
 
     /**
-     * A durable pair answers a late control for the row's TTL past the send; the volatile pair only until the message
-     * deadline plus the receipt grace (D74). An admission always names the deadline, so only a bare store write
-     * reaches the volatile branch without one, and keeps just the grace.
+     * A durable pair answers a late control for the row's TTL past the send; a memory pair, volatile or
+     * checkpointed, only until the message deadline plus the receipt grace (D74). An admission always names
+     * the deadline, so only a bare store write reaches the memory branch without one, and keeps just the grace.
      */
     private computeMessageRowExpiryMs(deadlineAtMs: number | undefined, nowMs: number, rowTtlMs: number): number {
-        if (this.durability === 'volatile') {
-            return computeALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+        switch (this.durability) {
+            case 'volatile':
+            case 'checkpoint':
+                return computeALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+            case 'durable':
+                return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
         }
-        return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
     }
 
     private computeSupersedenceWrite(

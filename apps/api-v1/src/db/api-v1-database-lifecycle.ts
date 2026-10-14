@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
+import postgres from 'postgres';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
-import { tryWith } from '@shared/resilience/TryWith.ts';
-import postgres from 'postgres';
+import { tryWith } from '@shared/resilience/try-with-policy.ts';
 
 import type {
     ApiV1DatabaseConfiguration,
@@ -70,13 +71,13 @@ export interface CreateApiV1DatabaseLifecycleInput {
     readonly pgliteEvidence: ApiV1PGliteEvidenceConfiguration;
 }
 
-export async function createApiV1DatabaseLifecycle(
+export async function createDefaultApiV1DatabaseLifecycle(
     input: CreateApiV1DatabaseLifecycleInput
 ): Promise<ApiV1DatabaseLifecycle> {
-    return await constructApiV1DatabaseLifecycle(input, PRODUCTION_OPERATIONS);
+    return await createApiV1DatabaseLifecycle(input, PRODUCTION_OPERATIONS);
 }
 
-export async function constructApiV1DatabaseLifecycle(
+export async function createApiV1DatabaseLifecycle(
     input: CreateApiV1DatabaseLifecycleInput,
     operations: ApiV1DatabaseLifecycleOperations
 ): Promise<ApiV1DatabaseLifecycle> {
@@ -184,7 +185,12 @@ function createPostgresNotificationPort(
             await application.notify(channel, payload);
         },
         listen: async (channel, onMessage) => {
-            await tryWith(async () => await listener.listen(channel, onMessage));
+            await tryWith({
+                handler: async () => await listener.listen(channel, onMessage),
+                retryIntervalMsecs: 500,
+                maxAttempts: Number.MAX_VALUE,
+                maxRetryIntervalMsecs: 20_000
+            });
         }
     };
 }

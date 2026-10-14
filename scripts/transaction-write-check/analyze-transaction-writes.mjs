@@ -16,7 +16,6 @@ import {
     isSpecializedTransactionImplementation,
     isTransactionParameter,
     isTransactionWriteDeclaration,
-    isUnresolvedCallableParameterInvocation,
     isUpgradeCallbackAssignment,
     transactionBoundary,
     transactionExecutedCallbackArguments
@@ -24,6 +23,7 @@ import {
 import {
     assignedOutputDeclarations,
     declarationInitializer,
+    executionBindingIdentity,
     expressionIdentifiers,
     functionBody,
     identifierDependsOnDeclarations,
@@ -33,6 +33,8 @@ import {
     resolveCallableBodies,
     resolveCallTargets,
     resolvedDeclarations,
+    resolveExecutionCallbacks,
+    resolveExecutionTargets,
     sourcePath,
     unwrapValueExpression
 } from './typescript-provenance.mjs';
@@ -52,6 +54,46 @@ const PRECOMPUTABLE_METHODS = new Set(['sort', 'toSorted']);
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
     const findings = new Map();
+    const roots = collectTransactionRoots({ project, sourceFiles, findings });
+    const visited = new Set();
+    for (const root of roots) {
+        analyzeBody({
+            root: root.node,
+            start: root.start,
+            end: root.end,
+            findings,
+            visited,
+            boundary: root.boundary,
+            project
+        });
+    }
+    return [...findings.values()].sort(compareFindings);
+}
+
+/**
+ * @typedef {object} TransactionWriteFinding
+ * @property {string} rule
+ * @property {string} path
+ * @property {number} line
+ * @property {number} column
+ * @property {string} operation
+ * @property {string} boundary
+ *
+ * @typedef {object} TransactionAnalysisRoot
+ * @property {import('ts-morph').Node} node
+ * @property {number} start
+ * @property {number} end
+ * @property {import('ts-morph').Node} boundary
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} bindings
+ *
+ * @typedef {object} TransactionRootCollectionInput
+ * @property {import('ts-morph').Project} project
+ * @property {readonly import('ts-morph').SourceFile[]} sourceFiles
+ * @property {Map<string, TransactionWriteFinding>} findings
+ */
+
+/** @param {TransactionRootCollectionInput} input */
+function collectTransactionRoots({ project, sourceFiles, findings }) {
     const roots = [];
 
     for (const sourceFile of sourceFiles) {
@@ -87,51 +129,48 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             }
         }
         for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-            const upgradeCallback = indexedDbUpgradeListener(call);
-            if (upgradeCallback) {
-                addCallbackRoots({ callback: upgradeCallback, call, roots, findings, project });
-            }
-            const appInboxCallback = appInboxWriteBoundary(call);
-            if (appInboxCallback) {
-                addCallbackRoots({ callback: appInboxCallback, call, roots, findings, project });
-            }
-            const boundary = transactionBoundary(call);
-            if (!boundary) {
-                continue;
-            }
-            reportTransactionLoop(call, findings, project);
-            if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
-                continue;
-            }
-            if (boundary.kind === 'indexed-db') {
-                const owner = call.getFirstAncestor(isFunctionDeclaration);
-                if (owner) {
-                    roots.push(analysisRoot({
-                        node: owner,
-                        start: call.getEnd(),
-                        boundary: call,
-                        end: indexedDbTransactionAnalysisEnd(owner, call, project)
-                    }));
-                }
-                continue;
-            }
-            addCallbackRoots({ callback: boundary.callback, call, roots, findings, project });
+            collectCallTransactionRoots({ call, roots, findings, project });
         }
     }
+    return roots;
+}
 
-    const visited = new Set();
-    for (const root of roots) {
-        analyzeBody({
-            root: root.node,
-            start: root.start,
-            end: root.end,
-            findings,
-            visited,
-            boundary: root.boundary,
-            project
-        });
+/**
+ * @typedef {object} CallTransactionRootCollectionInput
+ * @property {import('ts-morph').CallExpression} call
+ * @property {TransactionAnalysisRoot[]} roots
+ * @property {Map<string, TransactionWriteFinding>} findings
+ * @property {import('ts-morph').Project} project
+ */
+
+/** @param {CallTransactionRootCollectionInput} input */
+function collectCallTransactionRoots({ call, roots, findings, project }) {
+    for (const callback of [indexedDbUpgradeListener(call), appInboxWriteBoundary(call)]) {
+        if (callback) {
+            addCallbackRoots({ callback, call, roots, findings, project });
+        }
     }
-    return [...findings.values()].sort(compareFindings);
+    const boundary = transactionBoundary(call);
+    if (!boundary) {
+        return;
+    }
+    reportTransactionLoop(call, findings, project);
+    if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
+        return;
+    }
+    if (boundary.kind === 'indexed-db') {
+        const owner = call.getFirstAncestor(isFunctionDeclaration);
+        if (owner) {
+            roots.push(analysisRoot({
+                node: owner,
+                start: call.getEnd(),
+                boundary: call,
+                end: indexedDbTransactionAnalysisEnd(owner, call, project)
+            }));
+        }
+        return;
+    }
+    addCallbackRoots({ callback: boundary.callback, call, roots, findings, project });
 }
 
 function addCallbackRoots(input) {
@@ -176,7 +215,8 @@ function analyzeBody(input) {
             body.getStart(),
             callable.start,
             callable.end,
-            boundaryLabel(boundary)
+            boundaryLabel(boundary),
+            executionBindingIdentity(callable.bindings)
         ].join(':');
         if (visited.has(identity)) {
             continue;
@@ -191,25 +231,26 @@ function analyzeBody(input) {
             findings,
             boundary,
             project,
-            callables
+            callables,
+            bindings: callable.bindings
         });
     }
 }
 
 function analyzeCallableBody(input) {
-    const { root, body, start, end, findings, boundary, project, callables } = input;
-    analyzeExecutionNode({ root, node: body, start, end, findings, boundary, project, callables });
+    const { root, body, start, end, findings, boundary, project, callables, bindings } = input;
+    analyzeExecutionNode({ root, node: body, start, end, findings, boundary, project, callables, bindings });
     body.forEachDescendant((node, traversal) => {
         if (isFunctionDeclaration(node)) {
             traversal.skip();
             return;
         }
-        analyzeExecutionNode({ root, node, start, end, findings, boundary, project, callables });
+        analyzeExecutionNode({ root, node, start, end, findings, boundary, project, callables, bindings });
     });
 }
 
 function analyzeExecutionNode(input) {
-    const { root, node, start, end, findings, boundary, project, callables } = input;
+    const { root, node, start, end, findings, boundary, project, callables, bindings } = input;
     if (node.getStart() < start || node.getStart() >= end) {
         return;
     }
@@ -223,6 +264,9 @@ function analyzeExecutionNode(input) {
                 operation,
                 boundary
             });
+        }
+        for (const invocation of resolveExecutionTargets(node, project, bindings).invocations) {
+            callables.push(analysisRoot(invocation));
         }
         return;
     }
@@ -240,15 +284,15 @@ function analyzeExecutionNode(input) {
         return;
     }
 
-    analyzeCall({ root, call: node, findings, boundary, project, callables });
+    analyzeCall({ root, call: node, findings, boundary, project, callables, bindings });
 }
 
 function analyzeCall(input) {
-    const { root, call, findings, boundary, project, callables } = input;
+    const { root, call, findings, boundary, project, callables, bindings } = input;
     const operation = callOperation(call);
     reportProhibitedCall({ root, call, findings, boundary, project, operation });
-    followCallTarget({ call, findings, boundary, project, callables, operation });
-    followTransactionCallbacks({ call, findings, boundary, project, callables });
+    followCallTarget({ call, findings, boundary, project, callables, operation, bindings });
+    followTransactionCallbacks({ call, findings, boundary, project, callables, bindings });
     for (const callback of indexedDbRequestListenerCallbacks(call, project)) {
         callables.push(analysisRoot({ node: callback }));
     }
@@ -332,23 +376,13 @@ function isAllowedSqlParameterNormalization(expression, root) {
 }
 
 function followCallTarget(input) {
-    const { call, findings, boundary, project, callables, operation } = input;
+    const { call, findings, boundary, project, callables, operation, bindings } = input;
     if (isReviewedCallableParameterInvocation(call)) {
         return;
     }
-    if (isUnresolvedCallableParameterInvocation(call)) {
-        addFinding({
-            findings,
-            node: call,
-            rule: 'transaction.unresolved-provenance',
-            operation,
-            boundary
-        });
-        return;
-    }
-    const targets = resolveCallTargets(call, project);
-    for (const callable of targets.bodies) {
-        callables.push(analysisRoot({ node: callable }));
+    const targets = resolveExecutionTargets(call, project, bindings);
+    for (const invocation of targets.invocations) {
+        callables.push(analysisRoot(invocation));
     }
     if (targets.unresolved && !isDirectTransactionOperation(call)) {
         addFinding({
@@ -362,9 +396,9 @@ function followCallTarget(input) {
 }
 
 function followTransactionCallbacks(input) {
-    const { call, findings, boundary, project, callables } = input;
-    for (const callback of transactionExecutedCallbackArguments(call)) {
-        const callbackBodies = resolveCallableBodies(callback, project);
+    const { call, findings, boundary, project, callables, bindings } = input;
+    for (const callback of transactionExecutedCallbackArguments(call, project)) {
+        const callbackBodies = resolveExecutionCallbacks(callback, project, bindings);
         if (callbackBodies.length === 0) {
             addFinding({
                 findings,
@@ -376,7 +410,7 @@ function followTransactionCallbacks(input) {
             continue;
         }
         for (const callbackBody of callbackBodies) {
-            callables.push(analysisRoot({ node: callbackBody }));
+            callables.push(analysisRoot(callbackBody));
         }
     }
 }
@@ -510,88 +544,75 @@ function referencesDatabaseResult(expression, project) {
     });
 }
 
+/**
+ * @typedef {object} DatabaseDerivedExpressionInput
+ * @property {import('ts-morph').Node} expression
+ * @property {import('ts-morph').Project} project
+ * @property {Set<import('ts-morph').Node>} visited
+ * @property {Set<string>} visitedCallables
+ * @property {Map<import('ts-morph').Node, import('ts-morph').Node>} parameterValues
+ */
+
+/** @param {DatabaseDerivedExpressionInput} input */
 function isDatabaseDerivedExpression(input) {
-    const { expression, project, visited, visitedCallables, parameterValues } = input;
+    const { expression } = input;
     const value = unwrapValueExpression(expression);
     if (Node.isTaggedTemplateExpression(value)) {
         return isKnownTransactionType(value.getTag());
     }
     if (Node.isIdentifier(value)) {
-        return resolvedDeclarations(value).some((declaration) => {
-            const parameterValue = parameterValues.get(declaration);
-            if (parameterValue) {
-                return isDatabaseDerivedExpression({
-                    expression: parameterValue,
-                    project,
-                    visited,
-                    visitedCallables,
-                    parameterValues
-                });
-            }
-            if (visited.has(declaration)) {
-                return false;
-            }
-            const initializer = declarationInitializer(declaration);
-            if (!initializer) {
-                return false;
-            }
-            visited.add(declaration);
-            return isDatabaseDerivedExpression({
-                expression: initializer,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            });
-        });
+        return isDatabaseDerivedIdentifier({ ...input, expression: value });
     }
     if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
-        return isDatabaseDerivedExpression({
-            expression: value.getExpression(),
+        return isDatabaseDerivedExpression({ ...input, expression: value.getExpression() });
+    }
+    if (Node.isCallExpression(value)) {
+        return isDatabaseDerivedCall({ ...input, expression: value });
+    }
+    return directValueExpressions(value).some((child) => isDatabaseDerivedExpression({ ...input, expression: child }));
+}
+
+/** @param {DatabaseDerivedExpressionInput} input */
+function isDatabaseDerivedIdentifier(input) {
+    const { expression, visited, parameterValues } = input;
+    return resolvedDeclarations(expression).some((declaration) => {
+        const parameterValue = parameterValues.get(declaration);
+        if (parameterValue) {
+            return isDatabaseDerivedExpression({ ...input, expression: parameterValue });
+        }
+        if (visited.has(declaration)) {
+            return false;
+        }
+        const initializer = declarationInitializer(declaration);
+        if (!initializer) {
+            return false;
+        }
+        visited.add(declaration);
+        return isDatabaseDerivedExpression({ ...input, expression: initializer });
+    });
+}
+
+/** @param {DatabaseDerivedExpressionInput} input */
+function isDatabaseDerivedCall(input) {
+    const { expression, project, visited, visitedCallables, parameterValues } = input;
+    if (isDirectDatabaseResultCall(expression)) {
+        return true;
+    }
+    const targets = resolveCallTargets(expression, project);
+    if (targets.bodies.length > 0) {
+        return callReturnsDatabaseResult({
+            call: expression,
+            targets: targets.bodies,
             project,
             visited,
             visitedCallables,
             parameterValues
         });
     }
-    if (Node.isCallExpression(value)) {
-        if (isDirectDatabaseResultCall(value)) {
-            return true;
-        }
-        const targets = resolveCallTargets(value, project);
-        if (targets.bodies.length > 0) {
-            return callReturnsDatabaseResult({
-                call: value,
-                targets: targets.bodies,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            });
-        }
-        if (targets.unresolved) {
-            return false;
-        }
-        return value.getArguments().some((argument) =>
-            !isCallbackReference(argument) &&
-            isDatabaseDerivedExpression({
-                expression: argument,
-                project,
-                visited,
-                visitedCallables,
-                parameterValues
-            })
+    return !targets.unresolved &&
+        expression.getArguments().some((argument) =>
+            !isCallbackReference(argument) && isDatabaseDerivedExpression({ ...input, expression: argument })
         );
-    }
-    return directValueExpressions(value).some((child) =>
-        isDatabaseDerivedExpression({
-            expression: child,
-            project,
-            visited,
-            visitedCallables,
-            parameterValues
-        })
-    );
 }
 
 function callReturnsDatabaseResult(input) {
@@ -863,8 +884,8 @@ function isWithinPersistedValuePosition(node) {
 }
 
 function analysisRoot(input) {
-    const { node, start = node.getStart(), boundary = node, end = node.getEnd() } = input;
-    return { node, start, end, boundary };
+    const { node, start = node.getStart(), boundary = node, end = node.getEnd(), bindings = new Map() } = input;
+    return { node, start, end, boundary, bindings };
 }
 
 function precomputableOperation(call, operation) {

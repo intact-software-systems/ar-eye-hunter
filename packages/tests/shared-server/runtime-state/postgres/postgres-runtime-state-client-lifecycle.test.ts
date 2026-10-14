@@ -4,9 +4,52 @@ import {
     it
 } from 'vitest';
 
-import { createLifecycleSql, withPostgresClients } from './postgres-runtime-state-client-fixtures.ts';
+import {
+    createLifecycleSql,
+    withPostgresClients
+} from './postgres-runtime-state-client-fixtures.ts';
 
 describe('Postgres runtime-state client lifecycle', () => {
+    it.each(['body failure', 'cleanup failure'] as const)('closes every client without unrelated namespace work after %s', async (failure) => {
+        const primaryFailure = new Error('body failed');
+        const cleanupFailure = new Error('first close failed');
+        let queryCalls = 0;
+        const closed: number[] = [];
+        const clients = [0, 1].map((index) =>
+            createLifecycleSql(
+                () => {
+                    queryCalls += 1;
+                    return Promise.resolve([]);
+                },
+                async () => {
+                    closed.push(index);
+                    if (index === 0) {
+                        throw cleanupFailure;
+                    }
+                }
+            )
+        );
+        let nextClient = 0;
+        const result = withPostgresClients({
+            namespace: null,
+            clientCount: 2,
+            createClient: async () => clients[nextClient++]!
+        }, async () => {
+            if (failure === 'body failure') {
+                throw primaryFailure;
+            }
+        });
+
+        if (failure === 'body failure') {
+            await expect(result).rejects.toBe(primaryFailure);
+        }
+        else {
+            await expect(result).rejects.toMatchObject({ errors: [cleanupFailure] });
+        }
+        expect(new Set(closed)).toEqual(new Set([0, 1]));
+        expect(queryCalls).toBe(0);
+    });
+
     it('closes acquired clients and preserves an acquisition failure', async () => {
         const setupFailure = new Error('second client failed');
         let createCalls = 0;

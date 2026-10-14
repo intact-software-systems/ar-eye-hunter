@@ -1,3 +1,11 @@
+import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -6,8 +14,13 @@ import {
     newALRepairControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
-import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { toALOrderingTrackKey, type ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import { toALSeqRangesText } from '@shared/al-contracts/al-seq-range.ts';
+import {
+    createInMemoryALAdmissionState,
+    InMemoryAdmissionBackend,
+    type ALAdmissionMemoryState
+} from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
@@ -28,20 +41,16 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+
 import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-import {
-    computeOutboundTestAdmission,
     createOutboundTestRuntimeFor,
+    readOutboundTestAdmission,
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 
@@ -53,12 +62,31 @@ interface OutboundObligationInput {
     readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
 }
 
-const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
+interface ControlAdmissionFixture {
+    readonly backend: InMemoryAdmissionBackend;
+    readonly admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>;
+    readonly state: ALAdmissionMemoryState;
+    readonly workQueue: InMemoryQueueBox;
+    readonly control: ALOutboundControlAdmission<ALOutboundTransportMessage>;
+}
+
+interface ALOutboundCommitObservation {
+    readonly storeKeys: string[];
+    readonly workKinds: string[];
+}
+
+interface ResyncNackInput {
+    readonly toPeerId?: string;
+    /** The ordering hints the NACK carries: the track of the retained send, a foreign track, or none. */
+    readonly hints?: 'retained-track' | 'foreign-track' | 'none';
+}
+
+const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale', 'membership-fenced'] as const;
 
 /** A NACK by which the receiving hop refuses the message for good. */
 function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -85,14 +113,19 @@ describe('outbound control admission identity', () => {
             const { admissionStore, workQueue, control, state } = createFixture();
             const msgId = 'runtime-message/'.repeat(20);
             const message: ALMessage = {
-                id: { v: 2, msgId, senderId: 'sender', ts: Date.now() },
+                id: { v: 3, msgId, senderId: 'sender', ts: Date.now() },
                 route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
                 payload: { typeId: 'command.v1', resource: '{}' },
                 targets: { mode: 'unicast', toPeerId: 'receiver' },
                 constraints: { expiresAtMs: Date.now() + 30_000 },
                 ordering: { orderingKey: 'ordered-stream/'.repeat(20), seq: 10, epoch: 7 }
             };
-            const admission = await computeOutboundTestAdmission(admissionStore, message);
+            const admission = await readOutboundTestAdmission({
+                store: admissionStore,
+                message: message,
+                creationNow: () => Temporal.Now.instant(),
+                clock: { nowMs: () => Date.now() }
+            });
             await admissionStore.commitBundle({
                 ...admission,
                 mutations: [...admission.mutations, {
@@ -111,9 +144,9 @@ describe('outbound control admission identity', () => {
                     expireAtTimestamp: Date.now() + 30_000
                 }]
             });
-            const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
+            const id: ALMessage['id'] = { v: 3, msgId: 'control', senderId: 'receiver', ts: Date.now() };
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
-            const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
+            const ordering = { orderingKey: toALOrderingTrackKey(message), missingRanges: [{ from: 2, to: 2 }], expectedSeq: 2 };
             const accepted = type === 'ack'
                 ? newALAckControlMessage(id, {
                     ...common,
@@ -184,7 +217,10 @@ describe('outbound control admission identity', () => {
                 expect(retained).toContainEqual(expect.objectContaining({
                     kind: 'repair-hint',
                     msgId,
-                    request: expect.objectContaining({ orderingTrackKey: toALOrderingTrackKey(message), missingSeqs: [2] })
+                    request: expect.objectContaining({
+                        orderingTrackKey: toALOrderingTrackKey(message),
+                        missingRanges: [{ from: 2, to: 2 }]
+                    })
                 }));
             }
         }
@@ -211,7 +247,7 @@ describe('outbound control admission identity', () => {
         const { admissionStore, control, state } = createFixture();
         await seedDirectObligation(admissionStore);
         const ack = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: Date.now() },
             {
                 ackedMsgId: 'message',
                 originPeerId: 'sender',
@@ -248,7 +284,7 @@ describe('outbound control admission identity', () => {
         await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const forged = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: 1 },
             {
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
@@ -274,7 +310,7 @@ describe('outbound control admission identity', () => {
         await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
-            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control', senderId: 'receiver', ts: 1 },
             {
                 fromPeerId: 'receiver',
                 toPeerId: 'other-sender',
@@ -306,7 +342,7 @@ describe('outbound control admission identity', () => {
             request: {
                 trigger: 'repair',
                 requestedByPeerId: 'receiver',
-                missingSeqs: [],
+                missingRanges: [],
                 failedPeerIds: []
             }
         }]);
@@ -318,7 +354,7 @@ describe('outbound control admission identity', () => {
 
         for (let serverSnapshotVersion = 0; serverSnapshotVersion <= 256; serverSnapshotVersion++) {
             const nack = newALNackControlMessage(
-                { v: 2, msgId: `control-${serverSnapshotVersion}`, senderId: 'receiver', ts: serverSnapshotVersion },
+                { v: 3, msgId: `control-${serverSnapshotVersion}`, senderId: 'receiver', ts: serverSnapshotVersion },
                 {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
@@ -353,11 +389,42 @@ describe('outbound control admission identity', () => {
         await seedOrderedObligation(admissionStore);
         const baseline = [...state.data];
 
-        expect((await control.admit(orderedRepairControl('other-track', [2]), 'peer')).kind).toBe('rejected');
+        expect((await control.admit(orderedRepairControl('other-track', [{ from: 2, to: 2 }]), 'peer')).kind)
+            .toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect((await control.admit(orderedRepairControl('stream:sender:7', [11]), 'peer')).kind).toBe('rejected');
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 11, to: 11 }]), 'peer')).kind)
+            .toBe('rejected');
         expect([...state.data]).toEqual(baseline);
-        expect(await control.admit(orderedRepairControl('stream:sender:7', [2, 3]), 'peer')).toEqual({ kind: 'committed' });
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 10 }]), 'peer')).kind)
+            .toBe('rejected');
+        expect((await control.admit(orderedRepairControl('stream:sender:7', [{ from: 1, to: 2 }]), 'peer')).kind)
+            .toBe('rejected');
+        expect([...state.data]).toEqual(baseline);
+        expect(await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 3 }]), 'peer'))
+            .toEqual({ kind: 'committed' });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', [{ from: 2, to: 3 }, { from: 5, to: 9 }]), 'peer'))
+            .toEqual({ kind: 'committed' });
+    });
+
+    it('commits a gap NACK and a repair request naming the same gap as one repair hint', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedOrderedObligation(admissionStore);
+        const gap: readonly ALSeqRange[] = [{ from: 2, to: 3 }];
+
+        expect(await control.admit(orderedGapNack('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(orderedRepairControl('stream:sender:7', gap), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([{
+            kind: 'repair-hint',
+            msgId: 'message',
+            request: {
+                trigger: 'nack',
+                requestedByPeerId: 'receiver',
+                orderingTrackKey: 'stream:sender:7',
+                missingRanges: gap,
+                failedPeerIds: []
+            }
+        }]);
     });
 
     it('completes a frozen 256-peer audience after diagnostic ACK history is already full', async () => {
@@ -435,7 +502,7 @@ describe('outbound control admission identity', () => {
             stores: { admissionStore, workQueue },
             decodePreparedMessage: decodeALOutboundTransportMessage,
             // The admitted policy carries the retry budget; the planner only re-plans the stored message.
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
@@ -458,18 +525,17 @@ describe('outbound control admission identity', () => {
             // An engine the runtime does not own never ticks, so a claim proves the commit woke a batch.
             queueEngine: new InboxOutboxEngine(),
             decodePreparedMessage: decodeALOutboundTransportMessage,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         const claimed = vi.spyOn(workQueue, 'reserveEntries');
 
         const foreign = newALRepairControlMessage(
-            { v: 2, msgId: 'control-foreign', senderId: 'receiver', ts: 1 },
+            { v: 3, msgId: 'control-foreign', senderId: 'receiver', ts: 1 },
             { fromPeerId: 'receiver', toPeerId: 'sender', msgId: 'unowned', reason: 'retransmit', observedAtEpochMs: 1 }
         );
         expect(await runtime.acceptControlMessage(foreign, 'peer')).toEqual({ kind: 'not-handled' });
-        await settleOutboundBatches();
         expect(claimed).not.toHaveBeenCalled();
 
         expect(await runtime.acceptControlMessage(repairControl(1), 'peer')).toEqual({ kind: 'committed' });
@@ -506,11 +572,18 @@ describe('outbound control admission identity', () => {
     });
 
     it('states the not-yet-in-sync exhaustion when its retry budget is spent (D56)', async () => {
-        const { admissionStore, workQueue } = createFixture();
+        const { backend, admissionStore, workQueue } = createFixture();
         await seedDirectObligation(admissionStore, {
             enabled: true,
             maxAttempts: 2,
             retryDelayMs: 5_000
+        });
+        await backend.write(async (transaction) => {
+            await transaction.set('outbound-control:not-yet-in-sync-retry:message', {
+                msgId: 'message',
+                attempts: 2,
+                pendingEffectId: toALOutboundEffectId(['nack-retry', 'message', 'not-yet-in-sync', 2])
+            }, Date.now() + 30_000);
         });
         const settlements: ALDeliverySettlement[] = [];
         const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
@@ -521,15 +594,12 @@ describe('outbound control admission identity', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
-        const exhausted = vi.spyOn(ALOutboundControlAdmission.prototype, 'scheduleNotYetInSyncRetry')
-            .mockResolvedValue({ status: 'exhausted' });
-        onTestFinished(() => exhausted.mockRestore());
 
         expect(await runtime.acceptControlMessage(notYetInSyncNack(), 'peer')).toEqual({
             kind: 'committed'
@@ -642,8 +712,54 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'message',
             relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-            detail: 'The server refused the message: unauthorized.'
+            detail: 'The server relay refused the message: unauthorized.'
         }]);
+    });
+
+    it('admits the trusted server membership-fenced NACK for a sent message with no receipt row, stating the fence', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedReceiptlessRoomObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('ws-server-1', 'membership-fenced'), 'trusted-server')).toEqual({
+            kind: 'committed'
+        });
+
+        expect(settlements).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'message',
+            relayRejection: { relay: 'trusted-server', reason: 'membership-fenced' },
+            detail: 'The server relay refused the message: membership-fenced.'
+        }]);
+    });
+
+    it('states a peer membership-fenced NACK before any receipt row as rejected by that peer', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedReceiptlessUnicastObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('receiver', 'membership-fenced'), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(settlements).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'message',
+            relayRejection: { relay: 'peer', peerId: 'receiver', reason: 'membership-fenced' },
+            detail: 'Hop receiver refused the message: membership-fenced.'
+        }]);
+    });
+
+    it('still refuses a membership-fenced NACK from a peer the send owes nothing', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control, state } = createFixture(settlements);
+        await seedReceiptlessRoomObligation(admissionStore);
+        const seeded = [...state.data];
+
+        expect(await control.admit(refusalNack('other-session', 'membership-fenced'), 'peer')).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect([...state.data]).toEqual(seeded);
+        expect(settlements).toEqual([]);
     });
 
     it.each(
@@ -717,7 +833,7 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
     });
 });
 
-function createFixture(settlements?: ALOutboundSettlementFact[]) {
+function createFixture(settlements?: ALOutboundSettlementFact[]): ControlAdmissionFixture {
     const state = createInMemoryALAdmissionState();
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const admissionStore = createALOutboundAdmissionStore({
@@ -744,13 +860,6 @@ function createFixture(settlements?: ALOutboundSettlementFact[]) {
     };
 }
 
-/** Lets every already-started work batch settle, so "no batch ran" is a claim about a quiet queue. */
-async function settleOutboundBatches(): Promise<void> {
-    for (let pass = 0; pass < 5; pass += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-}
-
 /** The work rows the owner retained for this scope, decoded the way its worker decodes them. */
 async function readRetainedWork(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>,
@@ -772,11 +881,6 @@ function toPendingControl(payload: ALOutboundDurableEffect<ALOutboundTransportMe
         throw new Error(`Expected retained admit-control work, received ${payload.kind}`);
     }
     return payload;
-}
-
-interface ALOutboundCommitObservation {
-    readonly storeKeys: string[];
-    readonly workKinds: string[];
 }
 
 /** Records what each backend write commits, so a commit boundary can be asserted rather than coexistence. */
@@ -859,18 +963,41 @@ async function seedReceiptlessRoomObligation(
     admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
 ): Promise<void> {
     const msg: ALMessage = {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: { orderingKey: 'stream', epoch: 0, seq: 300 }
     };
-    const admission = await computeOutboundTestAdmission(
-        admissionStore,
-        msg,
-        (planned) => ({ msg: planned, dropReasonCode: undefined, persist: true, preparedMessages: [] })
-    );
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
+    await admissionStore.commitBundle(admission);
+}
+
+/** A unicast that requested no receipt: only its addressee may answer it. */
+async function seedReceiptlessUnicastObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    const msg: ALMessage = {
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
+        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
+        payload: { typeId: 'command.v1', resource: '{}' },
+        targets: { mode: 'unicast', toPeerId: 'receiver' },
+        constraints: { expiresAtMs: Date.now() + 30_000 }
+    };
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
+    });
     await admissionStore.commitBundle(admission);
 }
 
@@ -891,18 +1018,20 @@ async function seedObligation(
     input: OutboundObligationInput
 ): Promise<void> {
     const msg: ALMessage = {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
+        id: { v: 3, msgId: 'message', senderId: 'sender', ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
         targets: input.targets,
         constraints: { expiresAtMs: Date.now() + 30_000 },
         ordering: input.ordering
     };
-    const admission = await computeOutboundTestAdmission(
-        admissionStore,
-        msg,
-        (planned) => ({ msg: planned, dropReasonCode: undefined, persist: true, preparedMessages: [], retryTracking: input.retryTracking })
-    );
+    const admission = await readOutboundTestAdmission({
+        store: admissionStore,
+        message: msg,
+        creationNow: () => Temporal.Now.instant(),
+        clock: { nowMs: () => Date.now() },
+        planner: (planned) => ({ msg: planned, dropReasonCode: undefined, lane: 'durable', preparedMessages: [], retryTracking: input.retryTracking })
+    });
     await admissionStore.commitBundle({
         ...admission,
         mutations: [
@@ -929,7 +1058,7 @@ async function seedObligation(
 
 function repairControl(observedAtEpochMs: number): ALMessage {
     return newALRepairControlMessage(
-        { v: 2, msgId: `control-${observedAtEpochMs}`, senderId: 'receiver', ts: observedAtEpochMs },
+        { v: 3, msgId: `control-${observedAtEpochMs}`, senderId: 'receiver', ts: observedAtEpochMs },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -940,9 +1069,25 @@ function repairControl(observedAtEpochMs: number): ALMessage {
     );
 }
 
-function orderedRepairControl(orderingKey: string, missingSeqs: readonly number[]): ALMessage {
+function orderedGapNack(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
+    return newALNackControlMessage(
+        { v: 3, msgId: `control-gap-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason: 'gap',
+            observedAtEpochMs: 1,
+            orderingKey,
+            expectedSeq: 2,
+            missingRanges
+        }
+    );
+}
+
+function orderedRepairControl(orderingKey: string, missingRanges: readonly ALSeqRange[]): ALMessage {
     return newALRepairControlMessage(
-        { v: 2, msgId: `control-${orderingKey}-${missingSeqs.join('-')}`, senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: `control-${orderingKey}-${toALSeqRangesText(missingRanges)}`, senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -951,22 +1096,16 @@ function orderedRepairControl(orderingKey: string, missingSeqs: readonly number[
             observedAtEpochMs: 1,
             orderingKey,
             expectedSeq: 2,
-            missingSeqs
+            missingRanges
         }
     );
-}
-
-interface ResyncNackInput {
-    readonly toPeerId?: string;
-    /** The ordering hints the NACK carries: the track of the retained send, a foreign track, or none. */
-    readonly hints?: 'retained-track' | 'foreign-track' | 'none';
 }
 
 /** The resync-required NACK a relay sends the origin, with the ordering hints the WS server attaches to it. */
 function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage {
     const hints = input.hints ?? 'retained-track';
     return newALNackControlMessage(
-        { v: 2, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { v: 3, msgId: `control-resync-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         {
             fromPeerId,
             toPeerId: input.toPeerId ?? 'sender',
@@ -978,23 +1117,23 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
                 : {
                     orderingKey: hints === 'retained-track' ? 'stream:sender:0' : 'foreign-track',
                     expectedSeq: 2,
-                    missingSeqs: []
+                    missingRanges: []
                 })
         }
     );
 }
 
 /** A NACK by which a relay refuses the message for good, with no ordering hints. */
-function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired'): ALMessage {
+function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired' | 'membership-fenced'): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { v: 3, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
         { fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
     );
 }
 
 function notYetInSyncNack(): ALMessage {
     return newALNackControlMessage(
-        { v: 2, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1 },
+        { v: 3, msgId: 'control-not-yet-in-sync', senderId: 'receiver', ts: 1 },
         {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
@@ -1007,7 +1146,7 @@ function notYetInSyncNack(): ALMessage {
 }
 
 function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'receiver'): ALMessage {
-    const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: peerId, ts: 1 };
+    const id: ALMessage['id'] = { v: 3, msgId: 'control', senderId: peerId, ts: 1 };
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':

@@ -42,11 +42,18 @@ interface ComputedIndexedDbQueueUnconditionalDelete {
     readonly keyString: ResourceEntryKeyString;
 }
 
+interface ComputedIndexedDbQueueUnconditionalPut {
+    readonly kind: 'put-unconditionally';
+    readonly keyString: ResourceEntryKeyString;
+    readonly value: StoredResourceEntry;
+}
+
 export type ComputedIndexedDbQueueMutation =
     | ComputedIndexedDbQueuePut
     | ComputedIndexedDbQueueGuard
     | ComputedIndexedDbQueueDelete
-    | ComputedIndexedDbQueueUnconditionalDelete;
+    | ComputedIndexedDbQueueUnconditionalDelete
+    | ComputedIndexedDbQueueUnconditionalPut;
 
 export function computeIndexedDbQueuePut(
     stored: StoredResourceEntry | undefined,
@@ -85,6 +92,15 @@ export function computeIndexedDbQueueUnconditionalDelete(
     return { kind: 'delete-unconditionally', keyString };
 }
 
+/** A row written whole by its only writer, which never reads it first: it restarts at revision 0. */
+export function computeIndexedDbQueueUnconditionalPut(entry: ResourceEntry): ComputedIndexedDbQueueUnconditionalPut {
+    return {
+        kind: 'put-unconditionally',
+        keyString: toKeyAsString(entry.key),
+        value: encodeStoredResourceEntry(entry, 0)
+    };
+}
+
 export function validateComputedIndexedDbQueueMutations(
     mutations: readonly ComputedIndexedDbQueueMutation[]
 ): Either<Error, readonly ComputedIndexedDbQueueMutation[]> {
@@ -93,7 +109,7 @@ export function validateComputedIndexedDbQueueMutations(
         for (const mutation of mutations) {
             if (
                 mutation.kind !== 'put' && mutation.kind !== 'delete' && mutation.kind !== 'guard' &&
-                mutation.kind !== 'delete-unconditionally'
+                mutation.kind !== 'delete-unconditionally' && mutation.kind !== 'put-unconditionally'
             ) {
                 return Either.ofLeft(new TypeError('IndexedDB queue mutation kind is unsupported'));
             }
@@ -105,6 +121,13 @@ export function validateComputedIndexedDbQueueMutations(
             }
             keys.add(mutation.keyString);
             if (mutation.kind === 'delete-unconditionally') {
+                continue;
+            }
+            if (mutation.kind === 'put-unconditionally') {
+                const issue = validateStoredQueueValue(mutation);
+                if (issue) {
+                    return Either.ofLeft(issue);
+                }
                 continue;
             }
             if (!isValidIndexedDbQueueExpectedState(mutation.expected)) {
@@ -121,9 +144,9 @@ export function validateComputedIndexedDbQueueMutations(
                 }
                 continue;
             }
-            decodeStoredResourceEntryValue(mutation.value);
-            if (mutation.value.keyString !== mutation.keyString) {
-                return Either.ofLeft(new TypeError('IndexedDB queue mutation key differs from its stored value'));
+            const issue = validateStoredQueueValue(mutation);
+            if (issue) {
+                return Either.ofLeft(issue);
             }
             const expectedRevision = mutation.expected.kind === 'missing'
                 ? 0
@@ -137,6 +160,15 @@ export function validateComputedIndexedDbQueueMutations(
     catch (error) {
         return Either.ofLeft(toError(error));
     }
+}
+
+function validateStoredQueueValue(
+    mutation: ComputedIndexedDbQueuePut | ComputedIndexedDbQueueUnconditionalPut
+): TypeError | undefined {
+    decodeStoredResourceEntryValue(mutation.value);
+    return mutation.value.keyString === mutation.keyString
+        ? undefined
+        : new TypeError('IndexedDB queue mutation key differs from its stored value');
 }
 
 export function computeReservedQueueEntry(

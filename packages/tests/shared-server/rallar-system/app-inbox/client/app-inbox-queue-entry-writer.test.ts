@@ -1,20 +1,21 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
-    toKeyAsString,
-    type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
+import { TestResourceInbox } from '../test-support/app-inbox-resource-fixtures.ts';
+import { createAppInboxQueueMessageFixture } from '../test-support/create-app-inbox-queue-message-fixture.ts';
 
 const COMMAND = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -24,49 +25,63 @@ const COMMAND = {
     data: { requestId: 'durable-command-1', principalId: 'principal' }
 } as const;
 
-class DurableEnqueueQueue extends InMemoryQueueBox {
-    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
-
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
-        const entry = await this.getItem(key);
-        return entry !== undefined && statuses.includes(entry.status);
-    }
-
-    async writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const key = toKeyAsString(placeholder.key);
-        const active = this.materializations.get(key);
-        if (active !== undefined) {
-            return await active;
-        }
-        const pending = this.materializeEntry(placeholder, materialize);
-        this.materializations.set(key, pending);
-        try {
-            return await pending;
-        }
-        finally {
-            this.materializations.delete(key);
-        }
-    }
-
-    private async materializeEntry(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry> {
-        const existing = await this.getItem(placeholder.key);
-        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
-            return existing;
-        }
-        const materialized = await materialize();
-        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
-    }
-}
-
 describe('AppInbox durable enqueue', () => {
+    it('generates one resource ID for a sparse command and preserves supplied IDs', async () => {
+        const queue = new TestResourceInbox(new Map());
+        const createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const creationNow = () => createdAt;
+        const newResourceId = vi.fn((): string => {
+            throw new Error('A supplied resource ID must not require another generated ID');
+        }).mockReturnValueOnce('generated-command');
+        const writer = new AppInboxQueueEntryWriter({
+            repository: queue,
+            inboxQueueReader: new InboxQueueReader(queue, undefined, creationNow),
+            creationNow,
+            newResourceId,
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
+
+        const generated = await writer.enqueue({ ...COMMAND, resourceId: undefined });
+        const supplied = await writer.enqueue(COMMAND);
+
+        expect(generated.key).toEqual({
+            topicId: 'app-inbox.client-state',
+            resourceId: 'generated-command',
+            contextId: 'app:workspace:principal'
+        });
+        expect(supplied.key.resourceId).toBe('durable-command-1');
+        expect(generated.audit.createdTs.toString()).toBe('2026-10-13T23:59:59.123456789');
+        expect(generated.dequeueAudit).toEqual({ attempts: 0 });
+    });
+
+    it('captures a new precise replacement instant and resets attempts while leaving an active replay unchanged', async () => {
+        const queue = new TestResourceInbox(new Map());
+        let createdAt = Temporal.Instant.from('2026-10-13T23:59:59.123456789Z');
+        const writer = new AppInboxQueueEntryWriter({
+            repository: queue,
+            inboxQueueReader: new InboxQueueReader(queue),
+            creationNow: () => createdAt,
+            newResourceId: () => 'unused-command',
+            createMessage: createAppInboxQueueMessageFixture
+        }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
+        const key = await writer.enqueueReplacingTerminal(COMMAND);
+        const initial = await queue.getItem(key);
+        if (initial === undefined) {
+            throw new Error('Expected the inserted AppInbox row.');
+        }
+        createdAt = Temporal.Instant.from('2026-10-14T00:00:00.987654321Z');
+        await writer.enqueueReplacingTerminal(COMMAND);
+        expect(await queue.getItem(key)).toEqual(initial);
+        await queue.enqueue({ ...initial, status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 15 } });
+
+        await writer.enqueueReplacingTerminal(COMMAND);
+
+        expect((await queue.getItem(key))?.audit.createdTs.toString()).toBe('2026-10-14T00:00:00.987654321');
+        expect((await queue.getItem(key))?.dequeueAudit).toEqual({ attempts: 0 });
+    });
+
     it('returns the exact persisted row without waiting for command completion', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         const service = createService(queue);
 
         const entry = await service.enqueue(COMMAND);
@@ -93,7 +108,7 @@ describe('AppInbox durable enqueue', () => {
     });
 
     it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         let wakeSignals = 0;
         const service = createService(queue, () => {
             wakeSignals += 1;
@@ -107,7 +122,7 @@ describe('AppInbox durable enqueue', () => {
     });
 
     it('replaces terminal work and wakes only when the durable row changes', async () => {
-        const queue = new DurableEnqueueQueue(new Map());
+        const queue = new TestResourceInbox(new Map());
         let wakeSignals = 0;
         const service = createService(queue, () => {
             wakeSignals += 1;
@@ -164,11 +179,14 @@ describe('AppInbox durable enqueue', () => {
 });
 
 function createService(
-    queue: DurableEnqueueQueue,
+    queue: TestResourceInbox,
     wakeQueue?: () => void
 ): AppInboxQueueEntryWriter {
     return new AppInboxQueueEntryWriter(
         {
+            creationNow: Temporal.Now.instant,
+            createMessage: createAppInboxQueueMessageFixture,
+            newResourceId: crypto.randomUUID.bind(crypto),
             inboxQueueReader: new InboxQueueReader(queue),
             repository: queue
         },
@@ -180,7 +198,7 @@ function createService(
     );
 }
 
-class LosingTerminalReplacementQueue extends DurableEnqueueQueue {
+class LosingTerminalReplacementQueue extends TestResourceInbox {
     static readonly WINNER_RESOURCE = JSON.stringify({ winner: true });
 
     override async replaceIfObserved(
@@ -195,7 +213,7 @@ class LosingTerminalReplacementQueue extends DurableEnqueueQueue {
     }
 }
 
-class FailingQueueBox extends DurableEnqueueQueue {
+class FailingQueueBox extends TestResourceInbox {
     private readonly failure: Error;
 
     constructor(failure: Error) {

@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
@@ -44,7 +45,14 @@ vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const state: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const authSession: AuthSession = { clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test-token', expiresAtEpochMs: 100_000 };
 const globalValues: CommandCenterGlobalValues = {
     apiBaseUrl: 'http://localhost',

@@ -5,8 +5,7 @@ import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
-    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    AL_VOLATILE_SESSION_MAX_BYTES,
+    AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import {
@@ -21,6 +20,8 @@ import {
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
+
+const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -60,7 +61,7 @@ describe('browser runtime construction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         configureTestCacheRepositories();
-        runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
+        runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });
 
@@ -96,7 +97,7 @@ describe('browser runtime construction', () => {
                 normalizeALQosPolicy(message, resolveALQosNormalizationInput(message, { direction: 'outbound' }, options.qosProvider)).effective.supersedence
                     .algo
             );
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
             readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get
@@ -120,7 +121,7 @@ describe('browser runtime construction', () => {
         const read: (ALVolatileSessionLimits | undefined)[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             read.push(options.readVolatileSessionLimits?.());
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
             readVolatileSessionLimits: volatileLimits.get
@@ -129,7 +130,7 @@ describe('browser runtime construction', () => {
 
         volatileLimits.set({
             ...config,
-            rallar: { ...config.rallar, almVolatileLimits: { maxAdmissions: 3, maxBytes: 4_096 } }
+            rallar: { ...config.rallar, almVolatileLimits: { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 } }
         });
         await blackBox.connect();
         await blackBox.disconnect();
@@ -138,11 +139,8 @@ describe('browser runtime construction', () => {
         await blackBox.disconnect();
 
         expect(read).toEqual([
-            { maxAdmissions: 3, maxBytes: 4_096 },
-            {
-                maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-                maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
-            }
+            { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 },
+            AL_VOLATILE_SESSION_LIMITS
         ]);
     });
 
@@ -151,12 +149,12 @@ describe('browser runtime construction', () => {
         const sinks: ALDeliverySettlementSink[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             sinks.push(options.deliverySettlements.ws);
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const first = createRallarFacade();
         const second = createRallarFacade();
-        const firstHandle = await first.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
-        const secondHandle = await second.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const firstHandle = await first.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const secondHandle = await second.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         expect(runtime.initialiseMiddleware).toHaveBeenCalledTimes(1);
         sinks[0]({
             kind: 'acknowledgement',
@@ -195,7 +193,7 @@ describe('browser runtime construction', () => {
         const first = createRallarFacade();
         const second = createRallarFacade();
         const handle = await first.messages.ws.send({
-            scope: 'all',
+            scope: 'world',
             typeId: 'app.ready',
             payload: true,
             ack: 'receiver'
@@ -217,7 +215,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         await second.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -236,7 +234,7 @@ describe('browser runtime construction', () => {
             const second = createRallarFacade();
             await first.connect();
             const handle = await second.messages.ws.send({
-                scope: 'all',
+                scope: 'world',
                 typeId: 'app.ready',
                 payload: true,
                 ack: 'receiver'
@@ -264,9 +262,9 @@ describe('browser runtime construction', () => {
         let oldSink: ALDeliverySettlementSink | undefined;
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             oldSink = options.deliverySettlements.ws;
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         await facade.disconnect();
         oldSink?.({
@@ -298,7 +296,7 @@ describe('browser runtime construction', () => {
                 complete: true
             });
             expect(handle.lifecycle().state).toBe('acknowledged');
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['current']);
@@ -322,7 +320,7 @@ describe('browser runtime construction', () => {
             };
             return admission.promise;
         };
-        const handle = await second.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const handle = await second.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         await first.disconnect();
         if (!result) {
             throw new Error('Expected pending carrier admission');
@@ -346,7 +344,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         await first.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -357,7 +355,7 @@ describe('browser runtime construction', () => {
     it('fences failed initialization and registers again before retry initialization', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         await facade.disconnect();
         let failedSink: ALDeliverySettlementSink | undefined;
@@ -394,7 +392,7 @@ describe('browser runtime construction', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             });
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['retry']);
@@ -404,7 +402,7 @@ describe('browser runtime construction', () => {
     it('releases observations when connect discovers a replacement auth session', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const handle = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true, ack: 'receiver' });
+        const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
         runtime.readSession.mockReturnValue({ ...runtime.middleware.session, sessionId: 'replacement-session' });
         await facade.connect();
@@ -424,11 +422,11 @@ describe('browser runtime construction', () => {
         };
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
-        const cancelled = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const cancelled = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         cancelled.cancel();
         expect(cancelled.lifecycle().state).toBe('cancelled');
         expect(cancellations.sort()).toEqual([`rtc:${cancelled.msgId}`, `ws:${cancelled.msgId}`]);
-        const pending = await facade.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });
+        const pending = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true });
         vi.spyOn(authApi, 'logoutFromApi').mockResolvedValue({ loggedOut: true });
         await facade.auth.logout();
         expect((await pending.wait()).lifecycle.state).toBe('unobservable');
@@ -446,7 +444,7 @@ describe('browser runtime construction', () => {
             if (!facadeConstructionCompleted) {
                 throw new Error('Transport dependency was used before facade construction completed.');
             }
-            return runtime.middleware.middleware;
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

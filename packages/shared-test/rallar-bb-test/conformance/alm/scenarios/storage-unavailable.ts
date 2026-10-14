@@ -42,7 +42,7 @@ export const storageUnavailable: AlmConformanceScenarioDefinition = {
 function toStorageUnavailableSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toStorageQuotaFaultCommands(sender, 'hold'),
-        ...toRefusedSendCommands({ ...sender, index: 1 }),
+        ...toStorageRefusedSendCommands({ ...sender, index: 1 }, { durability: 'local-outbox', cause: 'quota' }),
         toQuotaHealthWait(sender, 'health-failing', 'failing'),
         ...toDowngradedSendCommands({ ...sender, index: 2 }),
         ...toStorageQuotaFaultCommands(sender, 'release'),
@@ -51,21 +51,34 @@ function toStorageUnavailableSenderCommands(sender: AlmConformanceStepInput): re
     ];
 }
 
+export interface AlmConformanceStorageRefusal {
+    readonly durability: 'local-checkpoint' | 'local-outbox';
+    readonly cause: 'checkpoint-lag' | 'quota';
+}
+
 /** The default channel refuses: the handle fails with the storage cause and nothing is sent. */
-function toRefusedSendCommands(send: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+export function toStorageRefusedSendCommands(
+    send: AlmConformanceMessageStepInput,
+    refusal: AlmConformanceStorageRefusal
+): readonly RallarBlackBoxTestCommand[] {
     return [
-        toSendCommand({ ...send, payload: toPayload(send), delivery: { durability: 'local-outbox' } }),
+        toSendCommand({
+            ...send,
+            payload: toStorageScenarioPayload(send),
+            delivery: { durability: refusal.durability }
+        }),
         toObserveCommand({ ...send, state: 'failed' }),
-        ...([['failure.kind', 'storage-unavailable'], ['failure.cause', 'quota'], ['submitted', false]] as const).map((
-            [field, expected]
-        ) => toResultAssertion({
-            step: send,
-            name: `assert-refused-${field.replace('.', '-')}-${send.index}`,
-            resultName: `observe-failed-${send.index}`,
-            field,
-            operator: 'equals',
-            expected
-        }))
+        ...([['failure.kind', 'storage-unavailable'], ['failure.cause', refusal.cause], ['submitted', false]] as const)
+            .map((
+                [field, expected]
+            ) => toResultAssertion({
+                step: send,
+                name: `assert-refused-${field.replace('.', '-')}-${send.index}`,
+                resultName: `observe-failed-${send.index}`,
+                field,
+                operator: 'equals',
+                expected
+            }))
     ];
 }
 
@@ -79,7 +92,7 @@ function toDowngradedSendCommands(send: AlmConformanceMessageStepInput): readonl
     return [
         toSendCommand({
             ...send,
-            payload: toPayload(send),
+            payload: toStorageScenarioPayload(send),
             delivery: { durability: 'local-outbox', onStorageUnavailable: 'volatile' }
         }),
         ...toAdmissionCommands(send),
@@ -98,7 +111,7 @@ function toDowngradedSendCommands(send: AlmConformanceMessageStepInput): readonl
 
 function toDurableSendCommands(send: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toSendCommand({ ...send, payload: toPayload(send), delivery: { durability: 'local-outbox' } }),
+        toSendCommand({ ...send, payload: toStorageScenarioPayload(send), delivery: { durability: 'local-outbox' } }),
         ...toAdmissionCommands(send),
         toResultAssertion({
             step: send,
@@ -117,24 +130,29 @@ function toStorageUnavailableReceiverCommands(receiver: AlmConformanceStepInput)
         toPayloadWait({
             step: receiver,
             name: 'receive-2',
-            payload: toPayload({ ...receiver, index: 2 }),
+            payload: toStorageScenarioPayload({ ...receiver, index: 2 }),
             absent: false
         }),
         {
             ...toPayloadWait({
                 step: receiver,
                 name: 'receive-3',
-                payload: toPayload({ ...receiver, index: 3 }),
+                payload: toStorageScenarioPayload({ ...receiver, index: 3 }),
                 absent: false
             }),
             timeoutMs: receiver.input.deadlineMs + 2 * NON_EXPIRING_SEND_TIMEOUT_MS
         },
-        toPayloadWait({ step: receiver, name: 'absent-1', payload: toPayload({ ...receiver, index: 1 }), absent: true })
+        toPayloadWait({
+            step: receiver,
+            name: 'absent-1',
+            payload: toStorageScenarioPayload({ ...receiver, index: 1 }),
+            absent: true
+        })
     ];
 }
 
 /** One receiver page hears every carrier's cell, so the payload names the carrier. */
-function toPayload(step: AlmConformanceMessageStepInput): Readonly<Record<string, string>> {
+export function toStorageScenarioPayload(step: AlmConformanceMessageStepInput): Readonly<Record<string, string>> {
     return { marker: step.scenarioId, carrier: step.input.carrier, send: String(step.index) };
 }
 

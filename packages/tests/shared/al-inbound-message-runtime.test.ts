@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
     describe,
@@ -101,8 +102,8 @@ describe('ALInboundMessageRuntime', () => {
         });
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.nack.v1',
-            'al.control.repair.v1'
+            'al.control.nack.v2',
+            'al.control.repair.v2'
         ]);
         expect(dispatchedTexts).toEqual([]);
 
@@ -164,15 +165,19 @@ describe('ALInboundMessageRuntime', () => {
         });
         const first = createInboundHarness(stores);
         const enqueue = stores.workQueue.enqueueIfAbsent.bind(stores.workQueue);
+        let disposal: Promise<void> | undefined;
         const retention = vi.spyOn(stores.workQueue, 'enqueueIfAbsent').mockImplementationOnce(async (entry) => {
             const stored = await enqueue(entry);
-            first.runtime.dispose(); // Stop after durable retention, before its first claim.
+            disposal = first.runtime.dispose(); // Stop after durable retention, before its first claim.
+            void disposal.catch(() => undefined);
             return stored;
         });
         const seq2 = { ...createOrderedMessage(2, 'two'), constraints: { expiresAtMs: Date.now() + 60_000 } };
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
 
         const queued = await first.runtime.admitIncomingMessage(seq2, source);
+        expect(disposal).toBeDefined();
+        await disposal;
 
         expect(queued.right).toEqual({ kind: 'pending-admission' });
         expect(conflict).toHaveBeenCalledTimes(1);
@@ -261,11 +266,19 @@ describe('ALInboundMessageRuntime', () => {
             peerId: 'peer-1',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
+        onTestFinished(async () => {
+            releaseFirstDelivery.resolve();
+            await firstAdmission;
+        });
         await firstDeliveryStarted.promise;
         const secondAdmission = runtime.admitIncomingMessage(second, {
             kind: 'ws-client',
             peerId: 'peer-2',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
+        onTestFinished(async () => {
+            releaseFirstDelivery.resolve();
+            await secondAdmission;
         });
         await secondAdmissionCommitted.promise;
         releaseFirstDelivery.resolve();
@@ -333,7 +346,7 @@ describe('ALInboundMessageRuntime', () => {
         const { runtime, controlAcceptances } = createInboundHarness(stores);
 
         const control = newALAckControlMessage(
-            { v: 2, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
+            { v: 3, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
             {
                 ackedMsgId: 'missing-msg',
                 originPeerId: 'peer-1',
@@ -415,11 +428,15 @@ describe('ALInboundMessageRuntime', () => {
             peerId: 'peer-1',
             authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
         });
+        onTestFinished(async () => {
+            releaseCommitBlocked.resolve();
+            await pendingRelease;
+        });
         await releaseCommitReady.promise;
 
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: seq2.id.msgId,
                     originPeerId: 'peer-1',
@@ -495,7 +512,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
 
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -545,7 +562,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await forwardingStarted.promise;
         const accepted = await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -619,7 +636,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         nowMs += 100;
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -669,14 +686,14 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         // The round carried both and failed; each claim then answered for its own message alone, so
         // the repair went out and only the claim of the NACK waits for its retry.
-        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v1']);
-        expect(attemptedControls[0]).toEqual(['al.control.nack.v1', 'al.control.repair.v1']);
+        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v2']);
+        expect(attemptedControls[0]).toEqual(['al.control.nack.v2', 'al.control.repair.v2']);
 
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v1',
-            'al.control.repair.v1'
+            'al.control.nack.v2',
+            'al.control.repair.v2'
         ]);
     });
 
@@ -842,7 +859,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
             createOrderedMessage(2, 'two'),
             { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
             persistence.openStores()
@@ -851,8 +868,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
         vi.setSystemTime(Date.now() + 100);
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
-            'al.control.nack.v1',
-            'al.control.repair.v1'
+            'al.control.nack.v2',
+            'al.control.repair.v2'
         ]);
     });
 
@@ -884,7 +901,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await runtime1.admitIncomingMessage(
             newALAckControlMessage(
-                { v: 2, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
+                { v: 3, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
                     originPeerId: 'peer-1',
@@ -902,7 +919,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         // disposed while its batch still holds a claim leaves that row reserved until its lease ends,
         // which the frozen clock never reaches.
         await expect.poll(() => countWorkRowsWithStatus(stores.workQueue, EntityStatus.RETRY)).toBe(2);
-        runtime1.dispose();
+        await runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
             persistence.openStores()
@@ -966,7 +983,7 @@ function createInboundHarness(
                 overlayNeighborPeerIds: ['peer-2'],
                 ...observations
             }),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox', Temporal.Now.instant()),
         dispatchInboxEntry: overrides.dispatchInboxEntry ?? (async (
             entry: ResourceEntry,
             _plan?: ALMessageHandlingPlan
@@ -998,12 +1015,15 @@ function createInboundHarness(
 
 function toDeliveredMessageText(entry: ResourceEntry): string {
     const msg = decodePersistedALMessage(entry.resource);
-    const payload: unknown = JSON.parse(msg.payload.resource);
+    return decodeMessageText(JSON.parse(msg.payload.resource)) ?? msg.id.msgId;
+}
+
+function decodeMessageText(payload: unknown): string | undefined {
     const text = typeof payload === 'object' && payload !== null && 'text' in payload ? payload.text : undefined;
     if (text !== undefined && typeof text !== 'string') {
         throw new TypeError('Test message text must be a string');
     }
-    return text ?? msg.id.msgId;
+    return text;
 }
 
 async function countWorkRowsWithStatus(
@@ -1089,7 +1109,8 @@ function createInboundBackedStores(namespace: string, state: ALAdmissionMemorySt
                 backend,
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
-                retention: normalizeALRuntimeStoreRetention()
+                retention: normalizeALRuntimeStoreRetention(),
+                maxOrderingTracks: undefined
             }),
             workQueue: backend.workQueue
         }

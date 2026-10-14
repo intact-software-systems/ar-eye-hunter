@@ -3,6 +3,7 @@ import {
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { reportBrowserStartupCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -10,15 +11,21 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
-import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
@@ -45,6 +52,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
         readonly volatileBudget: ALVolatileSessionBudget;
+        /** The connect's checkpoint pair of the WS client, which its `local-checkpoint` admissions go to. */
+        readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
         /** The connect's claim on its session's durable work, which only the durable lanes take. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
         readonly signal?: AbortSignal;
@@ -52,6 +61,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly newConnectionRequestId: (() => string) | undefined;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** Absent, no recovery owner is told of a track this client can no longer order: a transport built without the messaging composition. */
+        readonly onResyncRequired?: (resync: ALInboundResyncRequired) => void;
     }
 }
 
@@ -59,7 +70,14 @@ export async function createBrowserWebSocketQueueBox(
     input: CreateBrowserWebSocketQueueBox.Input
 ): Promise<WsQueueBoxClientService> {
     const wsQueueBox = createBrowserWebSocketQueueBoxService(input);
-    await connectInitialSocket(wsQueueBox.socket, input);
+    try {
+        await connectInitialSocket(wsQueueBox.socket, input);
+    }
+    catch (caught) {
+        await wsQueueBox.close(1000, 'initial-connect-failed')
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        throw caught;
+    }
     wsQueueBox
         .enableReconnect()
         .enableDefaultCallbacks();
@@ -100,9 +118,11 @@ function createBrowserWebSocketQueueBoxService(
             toBrowserWsClientALRuntimeStoreId(clientData.sessionId),
             input.volatileBudget
         ),
+        outboundCheckpointStores: input.checkpointStores,
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
+        onResyncRequired: input.onResyncRequired,
         durableWorkOwnership: input.durableWorkOwnership,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {

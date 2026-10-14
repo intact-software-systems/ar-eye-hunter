@@ -22,17 +22,29 @@ import {
     AL_MESSAGE_RESOURCE_LIMITS,
     computeALMessageEnvelopeBytes
 } from '@shared/al-contracts/al-message-resource-limits.ts';
-import { AL_VOLATILE_SESSION_MAX_ADMISSIONS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    AL_VOLATILE_SESSION_LIMITS,
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_AGE_MS
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
-const ADDRESSED_KEYS = ['ws-unicast-receipt', 'unicast-fallback', 'server-command', 'capacity'];
+const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'];
+const ADDRESSED_KEYS = ['ws-unicast-receipt', 'unicast-fallback', 'server-command', ...VOLATILE_BOUND_KEYS];
 const ADDRESSED_KEYS_BY_CARRIER: Readonly<Record<AlmConformanceCarrier, readonly string[]>> = {
-    ws: ['ws-unicast-receipt', 'server-command', 'capacity'],
-    rtc: ['ws-unicast-receipt', 'capacity'],
-    'rtc-with-ws-fallback': ['ws-unicast-receipt', 'unicast-fallback', 'capacity']
+    ws: ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS],
+    rtc: ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS],
+    'rtc-with-ws-fallback': ['ws-unicast-receipt', 'unicast-fallback', ...VOLATILE_BOUND_KEYS]
 };
 const ADMITTED = 'state matches ^(accepted|queued|transport-accepted|acknowledged)$';
+const REFUSED_AT_THE_BOUND = (limit: string) => [
+    'status equals rejected',
+    'failure.kind equals refused',
+    'failure.reason equals capacity',
+    'attempts equals 0',
+    `failure.limit equals ${limit}`
+];
 const ADDRESSEE_RECEIPT = [
     'state equals acknowledged',
     'receiptMode equals receiver',
@@ -258,5 +270,83 @@ describe('the addressed-send family (C11)', () => {
         const headroom = CAPACITY_LIMITS.maxBytes - 2 * (CAPACITY_FILLER_BYTES + PLANNED_ENVELOPE_OVERHEAD_BYTES);
         expect(headroom).toBe(9_180);
         expect(headroom).toBeGreaterThanOrEqual(BACKGROUND_HEADROOM_BYTES);
+    });
+
+    it('refuses a send whose deadline lies past the age bound capacity/age with no attempt, under the constants', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = scenarioOf(carrier, 'capacity-age');
+            const body = bodyOf(scenario.sender);
+
+            expect(body.map(shapeOf), carrier).toEqual([
+                'messages.send',
+                'messages.observe',
+                'assert',
+                'assert',
+                'assert',
+                'assert',
+                'assert'
+            ]);
+            expect(assertionsOf(scenario.sender), carrier).toEqual(REFUSED_AT_THE_BOUND('age'));
+            expect(body[0], carrier).toMatchObject({
+                kind: 'messages.send',
+                ack: 'receiver',
+                ttlMs: AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000,
+                timeoutMs: 10_000
+            });
+            expect(bodyOf(scenario.receiver).map(shapeOf), carrier).toEqual(['received:1:absent']);
+        }
+    });
+
+    it('reconnects with two tracks, refuses the send opening a third capacity/tracks with no attempt, reads the ledger at the bound, and restores them', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = scenarioOf(carrier, 'capacity-tracks');
+            const body = bodyOf(scenario.sender);
+
+            expect(body.map(shapeOf), carrier).toEqual([
+                'close',
+                'rtc.connect',
+                ...['messages.send', 'messages.observe', 'assert'],
+                ...['messages.send', 'messages.observe', 'assert'],
+                ...['messages.send', 'messages.observe', 'assert', 'assert', 'assert', 'assert', 'assert'],
+                ...['stats', 'assert', 'assert', 'assert'],
+                ...['messages.observe', 'assert', 'messages.observe', 'assert'],
+                'close',
+                'rtc.connect'
+            ]);
+            expect(assertionsOf(scenario.sender), carrier).toEqual([
+                ADMITTED,
+                ADMITTED,
+                ...REFUSED_AT_THE_BOUND('tracks'),
+                // The ledger's own reading at the bound: both admitted sends still hold their tracks.
+                'rallar.alm.usage.tracks equals 2',
+                'rallar.alm.limits.maxTracks equals 2',
+                'rallar.alm.overloaded equals false',
+                'state equals acknowledged',
+                'state equals acknowledged'
+            ]);
+            const connects = body.flatMap((command) => command.kind === 'rtc.connect' ? [command] : []);
+            expect(connects.map((command) => command.rallar?.almVolatileLimits), carrier)
+                .toEqual([{ ...AL_VOLATILE_SESSION_LIMITS, maxTracks: 2 }, undefined]);
+            // Each send is the first of its own ordering key, so each would open one track.
+            expect(
+                body.filter(isRallarBlackBoxTestMessagesSendCommand)
+                    .map((send) => [send.orderingKey, send.seq, send.reliability, send.ack]),
+                carrier
+            ).toEqual([1, 2, 3].map((index) => [
+                `alm-${carrier}-capacity-tracks-${index}`,
+                1,
+                'at-least-once',
+                'receiver'
+            ]));
+            const [arrivals, ...rest] = bodyOf(scenario.receiver);
+            expect(rest, carrier).toEqual([]);
+            // The sender reconnects before it sends, so the receiver's positive wait owns one readiness budget.
+            expect(arrivals, carrier).toMatchObject({
+                kind: 'messages.received',
+                count: 2,
+                windowMs: 57_000,
+                timeoutMs: 58_000
+            });
+        }
     });
 });

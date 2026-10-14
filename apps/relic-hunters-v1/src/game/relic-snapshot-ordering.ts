@@ -3,6 +3,7 @@ import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 export type RelicSnapshotSource =
     | 'bootstrap'
     | 'room-hydration'
+    | 'resync-recovery'
     | 'timeout-repair'
     | 'rest-command'
     | 'rest-reset'

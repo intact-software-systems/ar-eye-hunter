@@ -3,6 +3,7 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import { BrowserRallarMessageDispatch } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
@@ -47,6 +48,67 @@ function createFallbackFixture(
     wsVerdict: ALDeliveryAdmissionVerdict = ADMITTED,
     handOverError?: Error
 ): FallbackFixture {
+    const { context, admissions, handedOver } = createFallbackCarrierDoubles(wsVerdict, handOverError);
+    const deliveries = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 512,
+        cancel: () => {}
+    });
+    const feed = new BrowserDeliverySettlements();
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
+        deliverySettlements: feed,
+        readMiddleware: () => context,
+        readRtcCaptureReceipt: () => undefined
+    }, () => context.session);
+    sessionDeliveries.beginSession(context.session);
+    const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
+    const dispatch = new BrowserRallarMessageDispatch({
+        deliveries,
+        sessionDeliveries,
+        nowMs: Date.now
+    });
+    return {
+        admissions,
+        handedOver,
+        settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
+        send: async (firstCarrier, ttlMs, canFallback = true) => {
+            const message = newALMulticastMessage(
+                context.session.sessionId,
+                { topicId: 'room.command', resourceId: crypto.randomUUID(), contextId: 'room-1' },
+                ROOM,
+                'room.command.v1',
+                { action: 'ready' },
+                { reliability: 'at-least-once', ack: 'receiver', ttlMs }
+            );
+            const handle = deliveries.open(message, firstCarrier);
+            dispatch.send({
+                requestedConfiguration: undefined,
+                rtcCapture: { status: 'unavailable', reason: 'absent' },
+                context,
+                carrier: firstCarrier,
+                message,
+                canFallback,
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
+            });
+            await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+            return handle;
+        }
+    };
+}
+
+interface FallbackCarrierDoubles {
+    readonly context: ApiMiddleware;
+    readonly admissions: FallbackAdmission[];
+    readonly handedOver: string[];
+}
+
+/** The queue ports record admission, freeze the RTC envelope, and model the selected carrier failure. */
+function createFallbackCarrierDoubles(
+    wsVerdict: ALDeliveryAdmissionVerdict,
+    handOverError: Error | undefined
+): FallbackCarrierDoubles {
     const admissions: FallbackAdmission[] = [];
     const handedOver: string[] = [];
     const admit = async (
@@ -79,50 +141,7 @@ function createFallbackFixture(
             webSocketQueueBox: { enqueueOutboxIfAbsent: (message) => admit('ws', message) }
         }
     });
-    const deliveries = new BrowserRallarDeliveryRegistry({
-        nowMs: Date.now,
-        retainTerminalMs: 60_000,
-        maxEntries: 512,
-        cancel: () => {}
-    });
-    const feed = new BrowserDeliverySettlements();
-    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
-        deliverySettlements: feed,
-        readMiddleware: () => context
-    });
-    sessionDeliveries.beginSession(context.session);
-    const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-    const dispatch = new BrowserRallarMessageDispatch({
-        deliveries,
-        sessionDeliveries,
-        nowMs: Date.now
-    });
-    return {
-        admissions,
-        handedOver,
-        settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
-        send: async (firstCarrier, ttlMs, canFallback = true) => {
-            const message = newALMulticastMessage(
-                context.session.sessionId,
-                { topicId: 'room.command', resourceId: crypto.randomUUID(), contextId: 'room-1' },
-                ROOM,
-                'room.command.v1',
-                { action: 'ready' },
-                { reliability: 'at-least-once', ack: 'receiver', ttlMs }
-            );
-            const handle = deliveries.open(message, firstCarrier);
-            dispatch.send({
-                context,
-                carrier: firstCarrier,
-                message,
-                canFallback,
-                payloadIssues: [],
-                onStorageUnavailable: 'refuse'
-            });
-            await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-            return handle;
-        }
-    };
+    return { context, admissions, handedOver };
 }
 
 function toNotReady(

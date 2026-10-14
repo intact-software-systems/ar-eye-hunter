@@ -17,7 +17,7 @@ export function createMessageDelivery(
 ): MessageDeliveryFixture {
     const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1, cancel: () => {} });
     const handle = registry.open({
-        id: { v: 2, msgId: `test-message-${++messageSequence}`, ts: Date.now(), senderId: 'client-1' },
+        id: { v: 3, msgId: `test-message-${++messageSequence}`, ts: Date.now(), senderId: 'client-1' },
         route: { topicId: 'test', contextId: 'test', resourceId: 'test' },
         payload: { typeId: 'test', contentType: 'application/json', resource: '{}' },
         delivery: ack === 'none' ? undefined : { reliability: 'at-least-once', ack }

@@ -156,7 +156,8 @@ function toStoreInput(backend: InMemoryAdmissionBackend): CreateALInboundAdmissi
         backend,
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined
     };
 }
 
@@ -299,7 +300,7 @@ async function seedRelayRow(
 function toSenderAck(tracked: ALMessage): ALMessage {
     return newALAckControlMessage(
         {
-            v: 2,
+            v: 3,
             msgId: `ack-${tracked.id.msgId}`,
             senderId: INBOUND_TEST_SENDER_PEER_ID,
             ts: Date.now()

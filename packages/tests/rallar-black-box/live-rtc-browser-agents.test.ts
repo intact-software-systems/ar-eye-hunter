@@ -10,6 +10,7 @@ import {
     closeLiveRtcBrowserAgentContexts,
     openLiveRtcBrowserAgent,
     refreshLiveRtcBrowserRoom,
+    toLiveRtcBrowserAgentQuery,
     type OpenLiveRtcBrowserAgentInput
 } from '../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts';
 
@@ -25,6 +26,13 @@ const agentInput: OpenLiveRtcBrowserAgentInput = {
 };
 
 describe('live RTC browser agent startup', () => {
+    it.each(['enabled', 'disabled'] as const)('emits explicit %s selection before navigating the fresh browser', (mode) => {
+        const query = toLiveRtcBrowserAgentQuery({ ...agentInput, config: { ...agentInput.config, routineBrowserDiagnostics: mode } });
+        expect(Object.fromEntries(query)).toMatchObject({ routineBrowserDiagnostics: mode, provider: 'browser-rallar', transport: 'realtime' });
+        expect(query.has('rtcCaptureMode')).toBe(false);
+        expect(query.has('almDiagnostics')).toBe(false);
+    });
+
     it('fails room refresh when the browser runtime is absent', async () => {
         vi.stubGlobal('window', {});
         onTestFinished(() => {

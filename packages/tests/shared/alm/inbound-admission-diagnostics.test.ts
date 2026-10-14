@@ -6,7 +6,7 @@ import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-mes
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS } from '@shared/alm/inbound/lane/al-inbound-store-lane.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
 import {
     createInboundTestMessage,
@@ -202,6 +202,8 @@ it.each(['memory', 'indexeddb'] as const)(
         await expect.poll(() => delivered).toEqual(['dispatched']);
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
 
+        // The batch reports its drain after its last claim; wait for that event.
+        await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         // The row goes back to the queue, so the drain counts it rescheduled and the claim says why.
         expect(claimsOf(diagnostics)[0]?.outcome).toBe('retry');
         expect(drainsOf(diagnostics)[0]).toMatchObject({ claimedCount: 1, completedCount: 0, rescheduledCount: 1 });
@@ -255,7 +257,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReason: 'unauthorized',
                 dropReasonCode: 'unauthorized',
                 localDelivery: { enabled: false, persist: false, deferred: false },
-                nack: { enabled: false, reason: 'unauthorized', missingSeqs: [] }
+                nack: { enabled: false, reason: 'unauthorized', missingRanges: [] }
             })
         });
         const message = createInboundTestMessage({ msgId: 'unauthorized-drop' });

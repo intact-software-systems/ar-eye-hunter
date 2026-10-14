@@ -3,6 +3,7 @@ import {
     INDEXED_DB_OPERATION_KINDS,
     INDEXED_DB_OPERATION_OWNERS
 } from '@shared/persistence/indexed-db-operation-observer.ts';
+
 import type { RallarBlackBoxTestCommandKind } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxCommandFieldSet {
@@ -25,7 +26,7 @@ export const RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS = [
 export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     configure: { required: ['config'], optional: [] },
     'recipe.load': { required: ['recipe'], optional: [] },
-    'recipe.run': { required: [], optional: ['recipe'] },
+    'recipe.run': { required: [], optional: ['recipe', 'rtcCaptureMode', 'eventHistory', 'expectedRecipeBodyId'] },
     'recipe.cancel': { required: [], optional: ['reason', 'targetCommandId'] },
     loop: {
         required: ['commands'],
@@ -43,7 +44,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     },
     parallel: { required: ['groups'], optional: ['maxConcurrency', 'failFast', 'continueOnFailure'] },
     wait: { required: ['match'], optional: ['absent'] },
-    assert: { required: ['source', 'operator'], optional: ['expected'] },
+    assert: { required: ['source', 'operator'], optional: ['expected', 'comparisonSource'] },
     barrier: { required: ['barrierId', 'timeoutMs'], optional: ['participants'] },
     'rtc.connect': {
         required: [],
@@ -105,6 +106,10 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'topicId',
             'roomRef',
             'scope',
+            'principalId',
+            'recipientPeer',
+            'ownership',
+            'resourceId',
             'reliability',
             'ack',
             'durability',
@@ -137,6 +142,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'crdt.open': {
         required: ['name'],
         optional: [
+            'rallar',
             'handle',
             'applicationId',
             'workspaceId',
@@ -208,7 +214,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
 export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     recipe: {
         required: ['schemaVersion', 'recipeId', 'commands'],
-        optional: ['name', 'description', 'continueOnFailure', 'metadata']
+        optional: ['name', 'description', 'continueOnFailure', 'metadata', 'rtcCaptureMode', 'eventHistory']
     },
     parallelGroup: { required: ['commands'], optional: ['groupId', 'label', 'metadata'] },
     loopThresholds: {
@@ -232,6 +238,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'transport',
             'severity',
             'payloadPath',
+            'payloadFields',
             'equals',
             'contains',
             'exists',
@@ -293,7 +300,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     formationCommand: ['plan', 'connect', 'activate', 'reconfigure', 'pause', 'resume', 'reset', 'start'],
     httpResponseBody: ['none', 'text', 'json'],
     messagesCarrier: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-    messagesScope: ['room', 'world', 'all'],
+    messagesScope: ['room', 'world', 'principal'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesDurability: AL_DURABILITY_ALGOS,
@@ -301,6 +308,9 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** Roles, not session ids: no session exists when a recipe is written. */
     messagesToPeer: ['server', 'receiver'],
+    /** A role, as `messagesToPeer`: the page resolves it to the one session of a fixed audience. */
+    messagesRecipientPeer: ['receiver', 'recipient-b'],
+    messagesOwnership: ['shared', 'exclusive'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc', 'storage'],

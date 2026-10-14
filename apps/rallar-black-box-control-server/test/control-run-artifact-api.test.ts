@@ -1,3 +1,4 @@
+import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForJsonl, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
@@ -309,7 +310,15 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
         RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: '0'
     });
     let socket: WebSocket | undefined;
+    let dispatchTimeout: number | undefined;
     try {
+        socket = await registerAgent(server.baseUrl, 'metadata-run', 'agent-a');
+        const dispatched = Promise.withResolvers<MessageEvent>();
+        dispatchTimeout = setTimeout(() => dispatched.reject(new Error('Queued metadata command was not dispatched.')), 5_000);
+        socket.addEventListener('message', (event) => {
+            clearTimeout(dispatchTimeout);
+            dispatched.resolve(event);
+        }, { once: true });
         const commandResponse = await fetch(
             `${server.baseUrl}/runs/metadata-run/agents/agent-a/commands`,
             {
@@ -329,7 +338,15 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
         );
         assertEquals(commandResponse.status, 202);
 
-        socket = await registerAgent(server.baseUrl, 'metadata-run', 'agent-a');
+        const command = parseControlServerMessage((await dispatched.promise).data, {
+            runId: 'metadata-run',
+            agentId: 'agent-a'
+        });
+        assert(command.ok && command.envelope.kind === 'command');
+        assertEquals(command.envelope.commandId, 'rtc-send-1');
+        assertEquals(command.envelope.command.kind, 'rtc.send');
+        const startedAtEpochMs = Date.now();
+        const endedAtEpochMs = Date.now();
         socket.send(JSON.stringify({
             kind: 'result',
             protocolVersion: 1,
@@ -342,6 +359,9 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
                 kind: 'rtc.send',
                 status: 'ok',
                 ok: true,
+                startedAtEpochMs,
+                endedAtEpochMs,
+                durationMs: endedAtEpochMs - startedAtEpochMs,
                 value: { delivered: true }
             }
         }));
@@ -379,8 +399,19 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
         assert(stepResult);
         assertEquals(stepResult.action, 'rtc.send');
         assertEquals(stepResult.transport, 'messages.rtc');
+        const snapshot = await getJson<{
+            commands: readonly object[];
+            results: readonly object[];
+            events: readonly object[];
+            agents: readonly { agentId: string; completedCommandIds: readonly string[]; }[];
+        }>(server.baseUrl, '/runs/metadata-run');
+        assertEquals(snapshot.commands.length, 0);
+        assertEquals(snapshot.results.length, 0);
+        assertEquals(snapshot.events.length, 0);
+        assertEquals(snapshot.agents.find((agent) => agent.agentId === 'agent-a')?.completedCommandIds, ['rtc-send-1']);
     }
     finally {
+        clearTimeout(dispatchTimeout);
         socket?.close();
         await server.stop();
         await Deno.remove(storageDir, { recursive: true });

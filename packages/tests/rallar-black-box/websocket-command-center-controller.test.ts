@@ -1,3 +1,4 @@
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -23,7 +24,14 @@ vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+const state: RallarBlackBoxTestState = {
+    ...createRuntimeStateFixture([]),
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {}
+};
 const authSession: AuthSession = { clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test-token', expiresAtEpochMs: 100_000 };
 const input: UseWebSocketCommandCenterControllerInput = {
     state,
@@ -103,9 +111,9 @@ describe('WebSocket command-center controller actions', () => {
             payload: JSON.parse(websocket.values.payloadText)
         }).toEqual({
             payloadPresetId: 'ping',
-            wsScope: 'all',
+            wsScope: 'world',
             typeId: 'app.black-box.ws.ping',
-            contextId: 'all',
+            contextId: 'world',
             payload: { seq: 1, text: 'ping from rallar-black-box' }
         });
     });
