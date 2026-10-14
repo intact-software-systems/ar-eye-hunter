@@ -83,23 +83,23 @@ describe('API-v1 state-write recipe evidence', () => {
             recipeRoot,
             'api-v1-rtc-topology-convergence.json'
         ));
-        const terminalNames = [
-            'assertPrimaryExactRevisions',
-            'assertTertiaryExactRevisions',
-            'assertEnvelopePayloadsAcrossPrimaryAndTertiary',
-            'heldLandingLeftAcceptedLayoutUnpromoted',
-            'closeAliceWebSocket',
-            'closeBobWebSocket',
-            'logoutAliceThroughPrimary',
-            'logoutBobThroughSecondary'
-        ];
-        // The held-landing read and the four cleanup steps are not assert
-        // steps, so the synthetic execution below stands them in as SETs.
-        const trailingNonAssertCount = 5;
-        expect(recipe.steps.slice(-terminalNames.length).map((step) => step.name))
-            .toEqual(terminalNames);
-
-        const assertionSteps = recipe.steps.slice(-terminalNames.length, -trailingNonAssertCount);
+        const firstExactRevision = recipe.steps.findIndex((step) => step.type === 'assert' && toPreflightJsonObject(step.actual).firstRevision !== undefined);
+        expect(firstExactRevision).toBeGreaterThan(-1);
+        const terminalSteps = recipe.steps.slice(firstExactRevision);
+        const assertionSteps = terminalSteps.filter((step) => step.type === 'assert');
+        const cleanupSteps = terminalSteps.filter((step) =>
+            step.type === 'ws.close' ||
+            (step.type === 'http' &&
+                toPreflightJsonObject(step.request).method === 'POST' &&
+                String(toPreflightJsonObject(step.request).path).startsWith('/api/auth/logout/requests/'))
+        );
+        expect(assertionSteps).toHaveLength(3);
+        expect(cleanupSteps).toHaveLength(4);
+        for (const assertion of assertionSteps) {
+            for (const cleanup of cleanupSteps) {
+                expect(terminalSteps.indexOf(assertion)).toBeLessThan(terminalSteps.indexOf(cleanup));
+            }
+        }
         expect(assertionSteps[0].actual).toEqual({
             firstRevision: '{primaryFirstEnvelope.event.causalRevision.groupRevision}',
             secondRevision: '{primarySecondEnvelope.event.causalRevision.groupRevision}'
@@ -128,11 +128,11 @@ describe('API-v1 state-write recipe evidence', () => {
             tertiaryFirstEnvelope: toEnvelope(4, 8),
             tertiarySecondEnvelope: toEnvelope(3, 7)
         };
-        const interactions = [
-            ...assertionSteps.map((step, index) => {
-                if (typeof step.name !== 'string') {
-                    throw new TypeError('The selected assertion fixture needs its explicit name');
-                }
+        const interactions = terminalSteps.map((step, index) => {
+            if (typeof step.name !== 'string') {
+                throw new TypeError('The selected terminal fixture needs its explicit name');
+            }
+            if (step.type === 'assert') {
                 return {
                     ASSERT: {
                         request: {
@@ -144,28 +144,41 @@ describe('API-v1 state-write recipe evidence', () => {
                     },
                     [step.name]: { type: 'assert' }
                 };
-            }),
-            ...terminalNames.slice(-trailingNonAssertCount).map((name, index) => ({
+            }
+            // The owned SET output observes whether the real runner admitted a
+            // trailing read or cleanup after its preceding exact assertions.
+            return {
                 SET: {
                     request: {
-                        output: `${name}Observed`,
+                        output: `${step.name}Observed`,
                         value: true,
                         scenarioExecutionNumber: 1,
-                        interactionExecutionNumber: assertionSteps.length + index + 1
+                        interactionExecutionNumber: index + 1
                     },
                     response: {}
                 },
-                [name]: { type: 'set' }
-            }))
-        ];
+                [step.name]: { type: 'set' }
+            };
+        });
         const report = await executeBlackBox(interactions, 0, {
             failFast: true,
             variables
         });
 
         expect(report.summary).toMatchObject({ total: 8, success: 8, failure: 0 });
-        for (const name of terminalNames) {
-            expect(report.resultsByName[name], name).toHaveLength(1);
+        for (const step of terminalSteps) {
+            expect(report.resultsByName[String(step.name)], String(step.name)).toHaveLength(1);
+        }
+        const failed = await executeBlackBox(interactions, 0, {
+            failFast: true,
+            variables: {
+                ...variables,
+                primarySecondEnvelope: toEnvelope(99, 8)
+            }
+        });
+        expect(failed.summary.failure).toBe(1);
+        for (const step of cleanupSteps) {
+            expect(failed.outputs).not.toHaveProperty(`${step.name}Observed`);
         }
     });
 

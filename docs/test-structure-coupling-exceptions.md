@@ -2613,57 +2613,64 @@ moved or changed test.
       "id": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “executes the topology exact-revision assertions before every cleanup step”.",
+      "summary": "Topology exact event-revision assertions complete before websocket close or logout is admitted; a wrong event revision suppresses every trailing cleanup observation.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the validated topology recipe, derives assertion and cleanup stages from protocol fields, executes the actual assertion requests in recipe order with real executeBlackBox, and observes SET outputs for admitted trailing stages on success and their absence after a failing exact revision.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "executeBlackBox assertion execution and owned SET output admission in recipe order",
+        "observableEffect": "Successful exact revision assertions admit trailing cleanup observations; a failing revision leaves every cleanup observation absent.",
+        "requiredConstraint": "Complete all terminal exact revision assertions before admitting websocket close or logout stages, and stop their admission when an assertion fails.",
+        "failureRationale": "A passing report or a later failure alone could conceal cleanup admitted before evidence is checked, leaving a run without the required exact revision proof."
+      }
     },
     {
       "id": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “forbids literal SET values from claiming durable state-write evidence”.",
+      "summary": "Every selected state-write recipe obtains its stateWriteEvidence output through the asynchronous durable collector instead of a literal SET value.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads each schema-validated authored recipe and checks its evidence-output declaration uses set.state-write-evidence with a spec and has no literal value; the same suite separately executes the collector and rejects literal evidence in strict preflight."
     },
     {
       "id": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "CRDT AppInbox evidence selects only the commands owned by its recipe even when another recipe uses a containing update ID. Executable assertion: “isolates CRDT AppInbox evidence by recipe command prefixes”.",
+      "summary": "CRDT durable evidence is restricted to the delivery and update command prefixes owned by the recipe, rather than unrelated commands sharing a containing identifier.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes",
-      "coverageRelation": "The named recipe test reads the executable CRDT fixture and verifies that its broad durable selector is narrowed by the two exact command-ID prefixes owned by that recipe."
+      "coverageRelation": "The test loads the schema-validated CRDT recipe and checks its durable selector and two operation-specific command prefixes."
     },
     {
       "id": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “observes committed socket authorization before clustered WS effects”.",
+      "summary": "Clustered topology and CRDT recipes declare a committed socket snapshot wait before submitting the mutation whose websocket effects they observe.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads both schema-validated executable recipes and checks each websocket connection has a consuming client-state snapshot wait before the corresponding clustered mutation step."
     },
     {
       "id": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “selects auth ticket races by the redacted secret and exact durable digest”.",
+      "summary": "The auth recipe selects durable ticket evidence with its redacted ticket secret, whose exact persisted digest is independently checked.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the schema-validated executable auth fixture, checks its declared evidence selector, and calls the real digest boundary with a fixed authored ticket value."
     },
     {
       "id": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "Strict group evidence follows the scoped internal command identity while retaining operation-specific topology selectors.",
+      "summary": "Group contract, convergence and medium-scale recipes select durable group evidence through the scoped internal command identity while retaining their topology command selectors.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity",
-      "coverageRelation": "The named recipe test reads all three executable group state-write fixtures and verifies that their durable selectors use the scoped group AppInbox command prefix."
+      "coverageRelation": "The test loads all three schema-validated executable recipes and compares their configured command prefixes with an independently authored group AppInbox prefix and the operation-specific retained prefixes."
     },
     {
       "id": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “uses one bounded execution identity for the command and its evidence”.",
+      "summary": "The admin recipe binds the prune request path and durable evidence selector to one required operator-supplied execution token.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence",
-      "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+      "coverageRelation": "The test loads the schema-validated admin recipe and checks its command path, absent caller body requestId, durable selector, and required RALLAR_BB_EXECUTION_TOKEN binding against independent literals."
     },
     {
       "id": "tests-project-module-alias-parity",
@@ -4062,6 +4069,36 @@ moved or changed test.
         "observableEffect": "One durable reservation allocates one winner payload; replay returns that exact stored payload without allocating a second one.",
         "requiredConstraint": "Invoke the materializer once for the successful guarded winner and never for an existing immutable replay.",
         "failureRationale": "Repeated winner invocation can allocate competing command identifiers or payloads for one reservation, while invoking replay allocation repeats work whose immutable winner already exists."
+      }
+    },
+    {
+      "id": "periodic-retry-successful-handler-interval-admission",
+      "domain": "Owned periodic retry handler admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A successful periodic handler runs once initially and once at each configured interval, rather than stopping after its first result or duplicating work at a deadline.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval",
+      "coverageRelation": "The test registers an owned handler with tryRunInIntervals, observes its first returned tick, advances the owned fake clock by each configured 50ms interval, and captures handler invocations at the public input port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "tryRunInIntervals input.handler callable",
+        "observableEffect": "The configured periodic work occurs once initially, then once at 50ms and once at 100ms.",
+        "requiredConstraint": "The successful first result must leave the periodic lifetime active; admit exactly one subsequent handler call per elapsed configured interval.",
+        "failureRationale": "The first promise result cannot detect missing recurring work or duplicate background effects, so the handler port must be observed across deadlines."
+      }
+    },
+    {
+      "id": "browser-expiry-cleanup-stop-prevents-late-listing",
+      "domain": "Browser expiry cleanup lifetime stop",
+      "owner": "Shared Web maintainers",
+      "summary": "Stopping expiry cleanup while a database listing is in flight allows that listing to finish but admits no new listing or recurring timer afterward.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts#does not re-arm when a stopped browser cleanup completes its in-flight database listing",
+      "coverageRelation": "The test starts real browser expiry cleanup over fake IndexedDB, holds its first interval listing open, stops the returned lifetime, releases that listing, then advances ten further intervals and observes no third listing and no timer.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IndexedDB factory.databases listing port used by the owned browser expiry cleanup lifetime",
+        "observableEffect": "After the initial and already-entered interval listings, stop prevents another external database listing even when the in-flight result arrives late.",
+        "requiredConstraint": "Once stop returns, late completion must not admit any further listing or re-arm a recurring timer.",
+        "failureRationale": "Zero remaining timers alone could miss an unwanted listing admitted by a late continuation; the listing-port count establishes absence of post-stop database work."
       }
     }
   ],
@@ -6542,80 +6579,80 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
     },
     {
-      "id": "test-structure-coupling-02a7c0341d254415",
+      "id": "test-structure-coupling-d21ee0508d100156",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the executable CRDT recipe and verifies that durable evidence is narrowed to the command prefixes owned by that recipe instead of a containing ID from another recipe.",
+      "rationale": "The test loads the schema-validated CRDT recipe and checks its durable selector and two operation-specific command prefixes. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes"
     },
     {
-      "id": "test-structure-coupling-43c0aec131666232",
+      "id": "test-structure-coupling-bb2a8190c613193f",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the bounded-execution recipe and compares the command identity with the evidence query identity in the same parsed fixture.",
+      "rationale": "The test loads the schema-validated admin recipe and checks its command path, absent caller body requestId, durable selector, and required RALLAR_BB_EXECUTION_TOKEN binding against independent literals. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
     },
     {
-      "id": "test-structure-coupling-59a8fed67f047251",
+      "id": "test-structure-coupling-12bcb85e34a3c139",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Loads the socket-authorization recipe to verify its commit observation precedes the clustered websocket effect assertion.",
+      "rationale": "The test loads both schema-validated executable recipes and checks each websocket connection has a consuming client-state snapshot wait before the corresponding clustered mutation step. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects"
     },
     {
-      "id": "test-structure-coupling-6677491d43bcda4f",
+      "id": "test-structure-coupling-4b5311fd770a8a41",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Parses the auth-ticket race recipe so candidate selection is tied to its redacted secret and computed durable digest together.",
+      "rationale": "The test loads the schema-validated executable auth fixture, checks its declared evidence selector, and calls the real digest boundary with a fixed authored ticket value. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest"
     },
     {
-      "id": "test-structure-coupling-95c57aee7329bbc5",
+      "id": "test-structure-coupling-e0cca2e5f3b38ea8",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads every state-write recipe selected by the evidence catalog and rejects literal SET payloads that bypass generated durable evidence.",
+      "rationale": "The test loads each schema-validated authored recipe and checks its evidence-output declaration uses set.state-write-evidence with a spec and has no literal value; the same suite separately executes the collector and rejects literal evidence in strict preflight. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence"
     },
     {
-      "id": "test-structure-coupling-982b926666e23ad4",
+      "id": "test-structure-coupling-3ebd1695e79f5aa8",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--selects-strict-group-evidence-by-scoped-command-id",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Reads the executable contract, convergence, and medium-scale recipes to keep durable evidence aligned with the opaque scoped group AppInbox identity.",
+      "rationale": "The test loads all three schema-validated executable recipes and compares their configured command prefixes with an independently authored group AppInbox prefix and the operation-specific retained prefixes. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects strict group evidence by its scoped internal command identity"
     },
     {
-      "id": "test-structure-coupling-e59eda4bb5b12d9f",
+      "id": "test-structure-coupling-b9a1597224340ed0",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "disposition": "durable-boundary",
-      "boundary": "public",
+      "boundary": "interaction",
       "owner": "Shared Test maintainers",
-      "rationale": "Parses the topology state-write recipe and compares exact-revision assertion positions with each cleanup command.",
+      "rationale": "The test loads the validated topology recipe, derives assertion and cleanup stages from protocol fields, executes the actual assertion requests in recipe order with real executeBlackBox, and observes SET outputs for admitted trailing stages on success and their absence after a failing exact revision. This occurrence reads authored executable recipe data, not implementation source or an internal call graph.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step"
     },
     {
@@ -9114,6 +9151,61 @@ moved or changed test.
       "owner": "Shared Server maintainers",
       "rationale": "The exact once assertion observes the caller-supplied guarded winner allocation port required by the specialized ResourceInbox contract; result equality alone could hide duplicate allocation before the same payload is persisted. The replay branch separately supplies a throwing materializer and must return the original winner.",
       "semanticCoverage": "packages/tests/shared-server/queuebox/resource-inbox-enqueue-transaction-boundary.test.ts#prepares a supplied placeholder before opening winner materialization SQL"
+    },
+    {
+      "id": "test-structure-coupling-22f1d4767a8de4e9",
+      "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "The exact env name and required flag are operator-facing recipe configuration: they prevent fallback or missing execution identity while the command path and evidence query share that token. No implementation symbol or helper spelling is asserted.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
+    },
+    {
+      "id": "test-structure-coupling-87ec3e68772377c0",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The first successful tick must admit exactly one initial handler effect; returning tick alone could hide duplicate startup work.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-a29f0f6785d95861",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The first configured interval must admit exactly one additional handler effect, proving recurring work survives first-result settlement without a burst.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-bd58882a8c24b02d",
+      "path": "packages/tests/shared/try-with.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "periodic-retry-successful-handler-interval-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The second configured interval must admit exactly one additional handler effect, proving recurrence continues and does not duplicate deadline work.",
+      "semanticCoverage": "packages/tests/shared/try-with.test.ts#continues to invoke a successful handler at the configured interval"
+    },
+    {
+      "id": "test-structure-coupling-f4e1c97c55c1f1f4",
+      "path": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-expiry-cleanup-stop-prevents-late-listing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "Both database listings have already entered before stop. Keeping the observed count at two after late completion and ten elapsed intervals directly proves no post-stop listing at the owned IndexedDB port, separately from timer readback.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-lifetime.test.ts#does not re-arm when a stopped browser cleanup completes its in-flight database listing"
     }
   ]
 }
