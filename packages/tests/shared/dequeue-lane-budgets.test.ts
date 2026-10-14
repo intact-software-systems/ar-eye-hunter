@@ -258,6 +258,47 @@ describe('DequeueController lane budgets', () => {
             .toEqual([EntityStatus.COMPLETED, EntityStatus.COMPLETED, EntityStatus.NEW, EntityStatus.NEW]);
     });
 
+    it('keeps a getter-backed service quota bounded at the first observed value', async () => {
+        const queue = new InMemoryQueueBox();
+        const reader = new InboxQueueReader(queue);
+        const entries = await Promise.all(['a', 'b', 'c'].map((id) => reader.enqueueIfAbsent(createQueueMessage(id))));
+        let firstRead = true;
+        const budgets: DequeueController.LaneBudgets = {
+            ...laneBudgets(2),
+            NEW: {
+                maxToReserve: 1,
+                get maxNumToDequeue() {
+                    if (firstRead) {
+                        firstRead = false;
+                        return 2;
+                    }
+                    return Number.POSITIVE_INFINITY;
+                }
+            }
+        };
+        const dequeuer = createDefaultResourceInboxDequeuer<string>({
+            repository: queue,
+            typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            maxToReserve: () => 1,
+            maxNumToDequeue: 1_000,
+            resilience: createQueueResilience(),
+            readLaneBudgets: () => budgets
+        });
+
+        await dequeuer.dequeueForCompute(async (_key, attempt) => attempt.entry.key.resourceId);
+
+        const stored = await Promise.all(entries.map((entry) => queue.getItem(entry.key)));
+        const durableStates = stored.map((entry) => ({
+            status: entry?.status,
+            attempts: entry?.dequeueAudit.attempts
+        })).sort((left, right) => String(left.status).localeCompare(String(right.status)));
+        expect(durableStates).toEqual([
+            { status: EntityStatus.COMPLETED, attempts: 1 },
+            { status: EntityStatus.COMPLETED, attempts: 1 },
+            { status: EntityStatus.NEW, attempts: 0 }
+        ]);
+    });
+
     it.each(['release', 'completion', 'preprocessing'] as const)(
         'keeps a successful claim charged when %s fails',
         async (failurePhase) => {
