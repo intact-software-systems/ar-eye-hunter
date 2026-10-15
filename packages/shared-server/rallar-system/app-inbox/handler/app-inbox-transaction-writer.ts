@@ -6,17 +6,14 @@ import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
-import {
-    timeRallarAsync,
-    type RallarTimingDetails,
-    type RallarTimingSink
-} from '../../observability/timing.ts';
+import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
 import {
     AppInboxReservationConflictError,
     type AppInboxExecutionMetadata
 } from '../app-inbox-contracts.ts';
 import { toAppInboxAttemptTimingDetails } from './app-inbox-attempt-timing.ts';
 import type { AppInboxCompletionComputed, AppInboxCompletionFacts } from './app-inbox-completion-computation.ts';
+import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 
 export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
@@ -100,12 +97,16 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         attempt: ResourceInboxAttempt,
         computed: AppInboxCompletionComputed<Result>
     ): Promise<void> {
-        await timeRallarAsync(this.config.timing, {
-            component: 'app-inbox-phase',
-            operation: 'transaction',
-            serviceId: this.config.serviceId,
-            requestId: attempt.entry.key.resourceId,
-            details: { ...attempt.telemetry, classification: 'non-retryable' }
+        await timeAppInboxPhase({
+            sink: this.config.timing,
+            database: this.database,
+            event: {
+                component: 'app-inbox-phase',
+                operation: 'transaction',
+                serviceId: this.config.serviceId,
+                requestId: attempt.entry.key.resourceId,
+                details: { ...attempt.telemetry, classification: 'non-retryable' }
+            }
         }, async () =>
             await runInPSqlTransaction(this.database, async (transaction) => {
                 await writeAppInboxCompletion(transaction, computed);
@@ -145,14 +146,17 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         details: RallarTimingDetails,
         write: PSqlTransactionWrite<ReturnResult>
     ): Promise<ReturnResult> {
-        return await timeRallarAsync(
-            this.config.timing,
+        return await timeAppInboxPhase(
             {
-                component: 'app-inbox-phase',
-                operation: 'transaction',
-                serviceId: this.config.serviceId,
-                requestId: context.enqueue.resourceId,
-                details
+                sink: this.config.timing,
+                database: this.database,
+                event: {
+                    component: 'app-inbox-phase',
+                    operation: 'transaction',
+                    serviceId: this.config.serviceId,
+                    requestId: context.enqueue.resourceId,
+                    details
+                }
             },
             async () =>
                 await runInPSqlTransaction(

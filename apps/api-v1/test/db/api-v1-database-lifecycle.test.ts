@@ -14,10 +14,15 @@ import {
     type CreateApiV1DatabaseLifecycleInput
 } from '../../src/db/api-v1-database-lifecycle.ts';
 
-Deno.test('PostgreSQL client adapter preserves a complete current client', () => {
-    const client = fakePostgresClient(7, []);
+Deno.test('PostgreSQL client adapter counts the statements of a complete current client and forwards its lifecycle', async () => {
+    const events: string[] = [];
+    const client = fakePostgresClient(7, events);
 
-    assert.equal(toApiV1PostgresClient(client), client);
+    const adapted = toApiV1PostgresClient(client);
+    await adapted`select 1`;
+    await adapted.end();
+    assert.deepEqual(adapted.getExecutorCounters?.()?.statements, 1);
+    assert.deepEqual(events, ['postgres:close:7']);
     assert.throws(
         () =>
             toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {

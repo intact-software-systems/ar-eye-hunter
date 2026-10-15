@@ -6,6 +6,7 @@ import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     tryReadCoalescedAppOutboxWorkEnvelope
 } from './coalesced-app-outbox-work-envelope.ts';
+import type { DequeueController } from './dequeue/dequeue-controller.ts';
 import {
     hasSameGroupPresenceSummaryImmutableEntry,
     isCanonicalGroupPresenceSummaryEntry
@@ -73,6 +74,8 @@ export interface ResourceInboxWorkAdvertisementOptions {
     readonly maxAttempts: number;
     readonly finalizationStaleAfterMs: number;
     readonly reservationLeaseMs: number;
+    /** A due retry older than this is overdue: the FAIRNESS lane's row, not the RETRY lane's. */
+    readonly staleDueThresholdMs: number;
 }
 
 export type ResourceInboxTerminalReleaseStatus =
@@ -305,6 +308,9 @@ export function toResourceInboxWorkAdvertisementOptions(
     if (!Number.isSafeInteger(input.reservationLeaseMs) || input.reservationLeaseMs < 0) {
         throw new Error('reservationLeaseMs must be a non-negative safe integer');
     }
+    if (!Number.isSafeInteger(input.staleDueThresholdMs) || input.staleDueThresholdMs < 0) {
+        throw new Error('staleDueThresholdMs must be a non-negative safe integer');
+    }
     if (
         !(input.checkTimeout instanceof RateLimiter) ||
         !(input.checkFairness instanceof RateLimiter) ||
@@ -319,7 +325,8 @@ export function toResourceInboxWorkAdvertisementOptions(
         checkFinalization: input.checkFinalization,
         maxAttempts: input.maxAttempts,
         finalizationStaleAfterMs: input.finalizationStaleAfterMs,
-        reservationLeaseMs: input.reservationLeaseMs
+        reservationLeaseMs: input.reservationLeaseMs,
+        staleDueThresholdMs: input.staleDueThresholdMs
     };
 }
 
@@ -391,6 +398,17 @@ export interface QueueBoxResourceEntryRepository
         EnqueueResourceEntryController,
         PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
     readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage>;
+
+    /**
+     * One storage read per queue naming the lanes a reservation could claim from now: NEW rows, due
+     * RETRY rows, overdue RETRY rows (FAIRNESS), reservations past their lease and stale exhausted
+     * reservations, the last two advertised at most once per their check's window.
+     * `isAnyEntryToLock` is its any-lane fold.
+     */
+    readWorkAdvertisement(
+        typeIds: Set<string>,
+        workOptions: ResourceInboxWorkAdvertisementOptions
+    ): Promise<DequeueController.WorkAdvertisement>;
 
     /**
      * Answers every request exactly as `readWorkPage` would. A store that can read them together does

@@ -405,7 +405,8 @@ describe('InMemoryQueueBox', () => {
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 20,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
-                reservationLeaseMs: 5 * 60 * 1000
+                reservationLeaseMs: 5 * 60 * 1000,
+                staleDueThresholdMs: 30_000
             }
         )).resolves.toBe(false);
     });
@@ -514,7 +515,8 @@ describe('InMemoryQueueBox', () => {
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
-                reservationLeaseMs: 5 * 60 * 1000
+                reservationLeaseMs: 5 * 60 * 1000,
+                staleDueThresholdMs: 30_000
             }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY

@@ -110,7 +110,8 @@ export class ResourceInboxResilience {
             checkFinalization: this.checkFinalization.isEntryRateLimiter,
             maxAttempts: this.retryPolicy.maxAttempts,
             finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS,
-            reservationLeaseMs: this.reservationLeaseMs
+            reservationLeaseMs: this.reservationLeaseMs,
+            staleDueThresholdMs: this.retryPolicy.staleDueThresholdMs
         };
     }
 

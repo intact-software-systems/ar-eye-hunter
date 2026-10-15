@@ -1,6 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
-import { readFile } from 'node:fs/promises';
-import postgres from 'postgres';
 import {
     afterAll,
     beforeAll,
@@ -11,7 +8,6 @@ import {
 } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxRowCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
@@ -21,23 +17,17 @@ import { AppInboxResultWaiter } from '@shared-server/rallar-system/app-inbox/cli
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 
-import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import { createResourceInboxQueryCapture } from '../../shared/p-sql-resource-inbox-test-harness.ts';
-import { toPSqlSql } from '../integration/postgres/test-support/postgres-sql-adapter.ts';
+import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from './resource-inbox-test-storage.ts';
 
 const key: Key = { topicId: 'AppInbox', resourceId: 'request-1', contextId: 'context-1' };
-interface ResourceInboxPollTestStorage {
-    readonly sql: PSqlSql;
-    close(): Promise<void>;
-}
 
-let storage: ResourceInboxPollTestStorage;
+let storage: ResourceInboxTestStorage;
 let sql: PSqlSql;
 let repository: PSqlResourceInboxEntryRepository;
 
 beforeAll(async () => {
-    storage = await createResourceInboxPollTestStorage();
+    storage = await createResourceInboxTestStorage('poll_projection');
     sql = storage.sql;
     repository = new PSqlResourceInboxEntryRepository(sql, () => new Date());
 });
@@ -140,39 +130,4 @@ async function writeRow(key: Key, status: string, attempts: bigint | null): Prom
              values (${key.resourceId}, ${key.topicId}, 'invalid-resource-json', 'APP_INBOX', ${status},
              ${key.contextId}, '2026-10-10', 'server-1', (now() at time zone 'UTC'),
              (now() at time zone 'UTC') + interval '1 day', ${attempts})`;
-}
-
-async function createResourceInboxPollTestStorage(): Promise<ResourceInboxPollTestStorage> {
-    const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
-    if (process.env.RALLAR_POSTGRES_INTEGRATION !== '1') {
-        const sql = createPGliteSqlClient(new PGlite());
-        await sql.exec(schemaSql);
-        return { sql, close: async () => await sql.close() };
-    }
-    const schema = `poll_projection_${crypto.randomUUID().replaceAll('-', '')}`;
-    const client = postgres(process.env.DATABASE_URL ?? 'postgres://app:app@localhost:5432/appdb', {
-        max: 1,
-        connection: { search_path: schema },
-        types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
-    });
-    try {
-        await client.unsafe(`create schema "${schema}"`);
-        await client.unsafe(schemaSql);
-    }
-    catch (error) {
-        await client.unsafe(`drop schema if exists "${schema}" cascade`);
-        await client.end();
-        throw error;
-    }
-    return {
-        sql: toPSqlSql(client),
-        close: async () => {
-            try {
-                await client.unsafe(`drop schema "${schema}" cascade`);
-            }
-            finally {
-                await client.end();
-            }
-        }
-    };
 }

@@ -143,36 +143,18 @@ Deno.test(
             await inbox.entries.write(expired);
             await inbox.entries.write(exhausted);
             await inbox.entries.write(exhaustedTimeout);
-            assert.equal(
-                await inbox.reservations.isEntriesToLock(
-                    new Set([exhausted.typeId]),
-                    new Set([EntityStatus.RETRY]),
-                    2
-                ),
-                false
-            );
-            assert.equal(
-                await inbox.reservations.isEntriesToLock(
-                    new Set([exhausted.typeId]),
-                    new Set([EntityStatus.RETRY])
-                ),
-                true
-            );
-            assert.equal(
-                await inbox.reservations.isTimeoutOnReservedEntries(
-                    new Set([exhaustedTimeout.typeId]),
-                    Temporal.Duration.from({ seconds: 1 }),
-                    2
-                ),
-                false
-            );
-            assert.equal(
-                await inbox.reservations.isTimeoutOnReservedEntries(
-                    new Set([exhaustedTimeout.typeId]),
-                    Temporal.Duration.from({ seconds: 1 })
-                ),
-                true
-            );
+            const readPresence = async (typeId: string, maxAttempts: number) =>
+                await inbox.reservations.readWorkPresence({
+                    typeIds: new Set([typeId]),
+                    maxAttempts,
+                    reservationLeaseMs: 1_000,
+                    finalizationStaleAfterMs: 5 * 60_000,
+                    staleDueThresholdMs: 30_000
+                });
+            assert.equal((await readPresence(exhausted.typeId, 2)).dueRetry, false);
+            assert.equal((await readPresence(exhausted.typeId, 20)).dueRetry, true);
+            assert.equal((await readPresence(exhaustedTimeout.typeId, 2)).timedOutReservation, false);
+            assert.equal((await readPresence(exhaustedTimeout.typeId, 20)).timedOutReservation, true);
             const databaseClockTimeout = {
                 ...createResourceEntry('database-clock-timeout', {
                     payload: { text: 'database clock timeout' },
@@ -308,15 +290,23 @@ Deno.test(
             assert.equal((await inbox.entries.findByKey(active.key))?.key.resourceId, 'active-1');
             assert.equal(await inbox.entries.findByKey(expired.key), null);
             assert.equal(
-                await inbox.reservations.isEntriesToLock(
-                    new Set(['TYPE_A']),
-                    new Set([EntityStatus.NEW])
-                ),
+                (await inbox.reservations.readWorkPresence({
+                    typeIds: new Set(['TYPE_A']),
+                    maxAttempts: 20,
+                    reservationLeaseMs: 1_000,
+                    finalizationStaleAfterMs: 5 * 60_000,
+                    staleDueThresholdMs: 30_000
+                })).newRow,
                 true
             );
 
             const locked = await inbox.transaction((txInbox) =>
-                txInbox.reservations.findEntriesSkipLocked({ typeIds: new Set(['TYPE_A']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 })
+                txInbox.reservations.findEntriesSkipLocked({
+                    typeIds: new Set(['TYPE_A']),
+                    statusIds: new Set([EntityStatus.NEW]),
+                    reservationInput: 10,
+                    observedRowIds: [stored.db!.id, String(Number(stored.db!.id) + 1)]
+                })
             );
             assert.equal(locked.size, 1);
             assert.equal([...locked.values()][0].key.resourceId, 'active-1');

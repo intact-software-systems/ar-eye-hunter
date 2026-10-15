@@ -1,4 +1,3 @@
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     EntityStatus,
     type Key,
@@ -57,29 +56,6 @@ export class PSqlResourceInboxFinalizationRepository {
             limit ${options.maxToReserve}
         `;
         return rowsToMap(rows);
-    }
-
-    async isRetryExhaustionFinalizationRequired(
-        typeIds: ReadonlySet<string>,
-        staleAfterMs: number,
-        processingAttempts: number
-    ): Promise<boolean> {
-        if (!typeIds.has(EnqueuedType.APP_INBOX)) {
-            return false;
-        }
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
-            from resource_inbox
-            where ri_type_id = ${EnqueuedType.APP_INBOX}
-              and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts >= ${processingAttempts}
-              and ri_attempts < ${Number.MAX_SAFE_INTEGER}
-              and start_ts is not null
-              and start_ts <= (now() - (${staleAfterMs} * interval '1 millisecond')) at time zone 'UTC'
-            limit 1
-        `;
-        return rows.length > 0;
     }
 
     async startFinalizationRecovery(

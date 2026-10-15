@@ -1,9 +1,10 @@
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
-import type { RallarTimingSink } from '../../observability/timing.ts';
+import { nowMs, type RallarTimingSink } from '../../observability/timing.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
+import { AppInboxDequeuePassTiming } from './app-inbox-dequeue-pass-timing.ts';
 import { AppInboxHandlerExecutor } from './app-inbox-handler-executor.ts';
 import { AppInboxHandlerRegistry } from './app-inbox-handler-registry.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
@@ -41,6 +42,7 @@ export function createAppInboxHandlerRuntime(
         {
             resultRepository: input.resultRepository,
             transactionWriter,
+            database: input.database,
             nowEpochMs
         },
         {
@@ -56,5 +58,13 @@ export function createAppInboxHandlerRuntime(
         },
         { serviceId: input.serviceId }
     );
+    if (input.timing !== undefined && (input.options?.phaseTiming ?? false)) {
+        input.inboxQueueReader.onDequeuePassDo(
+            new AppInboxDequeuePassTiming(
+                { database: input.database, nowMs },
+                { serviceId: input.serviceId, sink: input.timing }
+            )
+        );
+    }
     return { registry, transactionWriter };
 }

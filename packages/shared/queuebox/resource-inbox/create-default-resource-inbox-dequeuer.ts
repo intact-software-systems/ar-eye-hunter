@@ -122,6 +122,8 @@ export interface ResourceInboxDequeuerInput {
     readonly maxToReserve: () => number;
     readonly maxNumToDequeue: number;
     readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
+    /** The probe that preceded this pass; without one every lane is offered a reservation. */
+    readonly workAdvertisement?: DequeueController.WorkAdvertisement;
     readonly resilience: ResourceInboxResilience;
     readonly options?: DequeueResourceEntryOptions;
 }
@@ -187,7 +189,9 @@ export function createDefaultResourceInboxDequeuer<V>(
             reserveResourceInboxAttempts(dependencies, { types, maxToReserve, lane: Reservator.RETRY })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxFairness(dependencies, types, maxToReserve)
+            input.workAdvertisement === undefined
+                ? reserveResourceInboxFairness(dependencies, types, maxToReserve)
+                : readResourceInboxFairness(dependencies, types, maxToReserve)
         )
         .onTimeoutEntriesReserveDo((types, maxToReserve) =>
             reserveResourceInboxTimeouts(dependencies, types, maxToReserve)
@@ -206,6 +210,7 @@ function createResourceInboxFinalizationController<V>(
         .withInboxTypesToDequeue(input.typesToDequeue)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
+        .withWorkAdvertisement(input.workAdvertisement)
         .withMaxNumToReserve(input.maxToReserve)
         .onFinalizationEntriesReserveDo(
             dependencies.options.onRetryExhaustionRecovery
@@ -260,6 +265,10 @@ async function reserveResourceInboxTimeouts(
     return toResourceInboxAttempts(dependencies, entries, Reservator.TIMEOUT);
 }
 
+/**
+ * Without a probe the selection limiter bounds how often the overdue scan runs; a probe that advertised
+ * an overdue row already answered that, so the lane then claims it on this pass, ahead of RETRY.
+ */
 async function reserveResourceInboxFairness(
     dependencies: ResourceInboxDequeueDependencies,
     types: Set<string>,

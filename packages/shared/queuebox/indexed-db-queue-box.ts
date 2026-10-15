@@ -9,6 +9,7 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
 import { toValidatedResourceInboxReleases } from './compute-resource-inbox-release.ts';
+import { hasAdvertisedDequeueWork, type DequeueController } from './dequeue/dequeue-controller.ts';
 import {
     decodeStoredResourceEntry,
     decodeStoredResourceEntryValue,
@@ -65,7 +66,6 @@ import {
     COMPLETED_STATUSES,
     EntityStatus,
     Key,
-    NEW_AND_RETRY_STATUSES,
     ResourceEntry,
     toKeyAsString,
     type ResourceEntryKeyString
@@ -567,10 +567,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await this.#write(db, { mutations, result: reserved });
     }
 
-    async isAnyEntryToLock(
+    async readWorkAdvertisement(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
-    ): Promise<boolean> {
+    ): Promise<DequeueController.WorkAdvertisement> {
         const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
         if (decision instanceof Promise) {
             await decision;
@@ -578,11 +578,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         const options = toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
         const now = this.#now();
-        const anyEntryToLock = await hasIndexedDbEntryToLock({
-            newAndRetryCandidates: [
-                ...await this.#readNewProbeEntries(db, typeIds),
-                ...await this.#readDueRetryProbeEntries(db, typeIds, now)
-            ],
+        const advertisement = computeIndexedDbWorkAdvertisement({
+            newCandidates: await this.#readNewProbeEntries(db, typeIds),
+            dueRetryCandidates: await this.#readDueRetryProbeEntries(db, typeIds, now),
             reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
             options,
             typeIds,
@@ -591,7 +589,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
         this.cleanup();
 
-        return anyEntryToLock;
+        return advertisement;
+    }
+
+    async isAnyEntryToLock(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementOptions
+    ): Promise<boolean> {
+        return hasAdvertisedDequeueWork(await this.readWorkAdvertisement(typeIds, workInput));
     }
 
     async #readNewProbeEntries(
@@ -841,53 +846,50 @@ function selectRetryExhaustionDueTimestamp(
     return startTs;
 }
 
-interface IndexedDbEntryToLockInput {
-    readonly newAndRetryCandidates: readonly StoredResourceEntry[];
+interface IndexedDbWorkAdvertisementInput {
+    readonly newCandidates: readonly StoredResourceEntry[];
+    readonly dueRetryCandidates: readonly StoredResourceEntry[];
     readonly reservedCandidates: readonly StoredResourceEntry[];
     readonly options: ResourceInboxWorkAdvertisementOptions;
     readonly typeIds: ReadonlySet<string>;
     readonly now: Temporal.Instant;
 }
 
-async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promise<boolean> {
-    const { newAndRetryCandidates, reservedCandidates, options, typeIds, now } = input;
-    const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } = options;
-    const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-        options.checkTimeout,
-        async () =>
-            reservedCandidates.some((stored) =>
-                stored.dequeueAudit.attempts < maxAttempts &&
-                isStoredQueueEntryTimedOut({
-                    stored,
-                    typeIds,
-                    duration: Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
-                    now
-                })
-            ),
-        false
-    );
-    const newAndRetryEntryToLock = newAndRetryCandidates.some((stored) =>
-        isStoredQueueEntryReservable({
-            stored,
+function computeIndexedDbWorkAdvertisement(
+    input: IndexedDbWorkAdvertisementInput
+): DequeueController.WorkAdvertisement {
+    const { newCandidates, dueRetryCandidates, reservedCandidates, options, typeIds, now } = input;
+    const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } = options;
+    const timeoutAdvertised = options.checkTimeout.allow();
+    const finalizationAdvertised = options.checkFinalization.allow();
+    const isReservable = (stored: StoredResourceEntry, status: EntityStatus) =>
+        isStoredQueueEntryReservable({ stored, typeIds, statusIds: new Set([status]), now, maxAttempts });
+    const dueRetries = dueRetryCandidates.filter((stored) => isReservable(stored, EntityStatus.RETRY));
+    const overdueBefore = now.subtract({ milliseconds: staleDueThresholdMs });
+    return {
+        FINALIZATION: finalizationAdvertised && hasIndexedDbFinalizationWork({
+            entries: reservedCandidates,
             typeIds,
-            statusIds: NEW_AND_RETRY_STATUSES,
             now,
-            maxAttempts
-        })
-    );
-    const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-        options.checkFinalization,
-        async () =>
-            hasIndexedDbFinalizationWork({
-                entries: reservedCandidates,
+            maxAttempts,
+            finalizationStaleAfterMs
+        }),
+        NEW: newCandidates.some((stored) => isReservable(stored, EntityStatus.NEW)),
+        RETRY: dueRetries.length > 0,
+        FAIRNESS: dueRetries.some((stored) =>
+            stored.dequeueAudit.nextTs !== undefined &&
+            Temporal.Instant.compare(Temporal.Instant.from(stored.dequeueAudit.nextTs), overdueBefore) <= 0
+        ),
+        TIMEOUT: timeoutAdvertised && reservedCandidates.some((stored) =>
+            stored.dequeueAudit.attempts < maxAttempts &&
+            isStoredQueueEntryTimedOut({
+                stored,
                 typeIds,
-                now,
-                maxAttempts,
-                finalizationStaleAfterMs
-            }),
-        false
-    );
-    return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+                duration: Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
+                now
+            })
+        )
+    };
 }
 
 interface IndexedDbFinalizationWorkInput {

@@ -364,7 +364,8 @@ describe('resource inbox retry and fairness lanes', () => {
             checkFinalization: RateLimiter.init(60_000, 1),
             maxAttempts: 20,
             finalizationStaleAfterMs: 300_000,
-            reservationLeaseMs: 60_000
+            reservationLeaseMs: 60_000,
+            staleDueThresholdMs: 30_000
         };
 
         expect(() => toResourceInboxWorkAdvertisementOptions({ ...valid, [field]: value })).toThrow(message);

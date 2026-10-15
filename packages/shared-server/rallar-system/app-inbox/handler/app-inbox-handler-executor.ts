@@ -15,6 +15,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -30,6 +31,7 @@ import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
 import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
+import { timeAppInboxPhase } from './app-inbox-phase-timing.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
@@ -66,6 +68,8 @@ export namespace AppInboxHandlerExecutor {
     export interface Dependencies {
         readonly resultRepository: AppInboxResultRepository;
         readonly transactionWriter: AppInboxTransactionWriter;
+        /** The executor whose statement and wait counters the phase lines report. */
+        readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
         readonly nowEpochMs: () => number;
     }
 
@@ -79,6 +83,7 @@ export namespace AppInboxHandlerExecutor {
 export class AppInboxHandlerExecutor {
     private readonly resultRepository: AppInboxResultRepository;
     private readonly transactionWriter: AppInboxTransactionWriter;
+    private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     private readonly nowEpochMs: () => number;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
@@ -90,6 +95,7 @@ export class AppInboxHandlerExecutor {
     ) {
         this.resultRepository = dependencies.resultRepository;
         this.transactionWriter = dependencies.transactionWriter;
+        this.database = dependencies.database;
         this.nowEpochMs = dependencies.nowEpochMs;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
@@ -351,14 +357,17 @@ export class AppInboxHandlerExecutor {
         if (!(this.options.phaseTiming ?? false)) {
             return await phase.action();
         }
-        return await timeRallarAsync(
-            this.timing,
+        return await timeAppInboxPhase(
             {
-                component: 'app-inbox-phase',
-                operation: phase.operation,
-                serviceId: this.serviceId,
-                requestId: phase.enqueue.resourceId,
-                details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
+                sink: this.timing,
+                database: this.database,
+                event: {
+                    component: 'app-inbox-phase',
+                    operation: phase.operation,
+                    serviceId: this.serviceId,
+                    requestId: phase.enqueue.resourceId,
+                    details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
+                }
             },
             phase.action
         );

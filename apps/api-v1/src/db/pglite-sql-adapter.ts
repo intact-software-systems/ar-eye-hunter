@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlExecutorCounters, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 
 type PGliteQueryExecutor = Readonly<{
@@ -16,6 +16,12 @@ type PGliteQueryOptions = Readonly<{
 
 type PGliteSavepointState = {
     nextId: number;
+};
+
+/** Owned by the root handle and shared with every transaction handle it opens. */
+type PGliteExecutorCounterState = {
+    statements: number;
+    executorWaitMs: number;
 };
 
 type PGliteSavepointSql = PSqlSql & {
@@ -37,6 +43,7 @@ type SqlCallableOptions = Readonly<{
     raw: PGlite;
     executor: PGliteQueryExecutor;
     ready: Promise<unknown>;
+    counters: PGliteExecutorCounterState;
     stopBeforeClose?: () => Promise<void>;
     inTransaction: boolean;
     savepointState?: PGliteSavepointState;
@@ -64,6 +71,7 @@ export function createPGliteSqlClient(
         raw,
         executor: raw,
         ready,
+        counters: { statements: 0, executorWaitMs: 0 },
         stopBeforeClose: options.stopBeforeClose,
         inTransaction: false
     }) as PGliteSql;
@@ -84,6 +92,10 @@ function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
         return queryRows(options, stringsOrValues, values);
     }) as PSqlSql;
 
+    sql.getExecutorCounters = (): PSqlExecutorCounters => ({
+        statements: options.counters.statements,
+        executorWaitMs: options.counters.executorWaitMs
+    });
     attachPGliteBegin(sql, options);
     attachPGliteSavepoint(sql, options);
     return attachPGliteLifecycle(sql, options);
@@ -102,6 +114,7 @@ function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
                 raw: options.raw,
                 executor: tx,
                 ready: Promise.resolve(),
+                counters: options.counters,
                 inTransaction: true,
                 savepointState: { nextId: 0 }
             });
@@ -125,15 +138,15 @@ function attachPGliteSavepoint(sql: PSqlSql, options: SqlCallableOptions): void 
     ): Promise<T> => {
         const savepointName = `rallar_savepoint_${savepointState.nextId}`;
         savepointState.nextId += 1;
-        await options.executor.query(`savepoint ${savepointName}`);
+        await executeCountedStatement(options, `savepoint ${savepointName}`);
         try {
             const result = await fn(savepointSql);
-            await options.executor.query(`release savepoint ${savepointName}`);
+            await executeCountedStatement(options, `release savepoint ${savepointName}`);
             return result;
         }
         catch (error) {
-            await options.executor.query(`rollback to savepoint ${savepointName}`);
-            await options.executor.query(`release savepoint ${savepointName}`);
+            await executeCountedStatement(options, `rollback to savepoint ${savepointName}`);
+            await executeCountedStatement(options, `release savepoint ${savepointName}`);
             throw error;
         }
     };
@@ -167,22 +180,30 @@ function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGlit
 }
 
 async function queryRows(
-    options: Readonly<{
-        executor: PGliteQueryExecutor;
-        ready: Promise<unknown>;
-    }>,
+    options: SqlCallableOptions,
     strings: TemplateStringsArray,
     values: readonly unknown[]
 ): Promise<readonly Record<string, unknown>[]> {
     await options.ready;
     const query = renderPGliteTemplate(strings, values);
-    const result = await options.executor.query<Record<string, unknown>>(
-        query.text,
-        query.params,
-        PGLITE_QUERY_OPTIONS
-    );
+    const result = await executeCountedStatement<Record<string, unknown>>(options, query.text, query.params);
 
     return result.rows;
+}
+
+async function executeCountedStatement<T>(
+    options: Pick<SqlCallableOptions, 'executor' | 'counters'>,
+    text: string,
+    params: unknown[] = []
+): Promise<{ rows: T[]; }> {
+    options.counters.statements += 1;
+    const calledAt = performance.now();
+    try {
+        return await options.executor.query<T>(text, params, PGLITE_QUERY_OPTIONS);
+    }
+    finally {
+        options.counters.executorWaitMs += performance.now() - calledAt;
+    }
 }
 
 function renderPGliteTemplate(

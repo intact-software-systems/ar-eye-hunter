@@ -1,3 +1,4 @@
+import { hasAdvertisedDequeueWork, type DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -23,8 +24,8 @@ export interface RegisterApplicationQueueReaderTasksInput {
 interface QueueReaderTask {
     readonly taskId: string;
     readonly resilience: ResourceInboxResilience;
-    readonly readIsWork: () => Promise<boolean>;
-    readonly dequeue: () => Promise<number>;
+    readonly readWorkAdvertisement: () => Promise<DequeueController.WorkAdvertisement>;
+    readonly dequeue: (workAdvertisement: DequeueController.WorkAdvertisement | undefined) => Promise<number>;
 }
 
 export class RegisteredRallarMiddlewareQueueHandle {
@@ -101,34 +102,39 @@ export function registerApplicationQueueReaderTasks(
     includeQueueReaderTask(input, {
         taskId: InboxQueueReader.INBOX_ENQUEUE_TYPE,
         resilience: input.appInboxResilience,
-        readIsWork: () =>
-            input.inboxQueueReader.inbox.isAnyEntryToLock(
-                InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                input.appInboxResilience.toWorkAdvertisementOptions()
-            ),
-        dequeue: () =>
-            input.inboxQueueReader.dequeueInbox(
+        readWorkAdvertisement: () =>
+            input.inboxQueueReader.readWorkAdvertisement(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
                 input.appInboxResilience
+            ),
+        dequeue: (workAdvertisement) =>
+            input.inboxQueueReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                input.appInboxResilience,
+                workAdvertisement
             )
     });
     includeQueueReaderTask(input, {
         taskId: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
         resilience: input.appOutboxResilience,
-        readIsWork: () =>
-            input.outboxQueueReader.outbox.isAnyEntryToLock(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                input.appOutboxResilience.toWorkAdvertisementOptions()
-            ),
-        dequeue: () =>
-            input.outboxQueueReader.dequeueOutbox(
+        readWorkAdvertisement: () =>
+            input.outboxQueueReader.readWorkAdvertisement(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 input.appOutboxResilience
+            ),
+        dequeue: (workAdvertisement) =>
+            input.outboxQueueReader.dequeueOutbox(
+                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+                input.appOutboxResilience,
+                workAdvertisement
             )
     });
 }
 
 /**
+ * The probe that advertises work is one storage read naming the lanes with a claimable row, and the
+ * batch the engine runs for it offers reservations to those lanes only: the engine runs a task's probe
+ * and then its batch within one pass on the task's single slot, so the advertisement carries over.
  * A batch that claimed work wakes the engine, so the next claim does not wait out the idle backoff.
  * An open circuit, a failed readiness probe or a failed batch advertises no work and wakes the task
  * when it may run again, so none of them probes storage on every pass nor holds the task's only slot
@@ -139,6 +145,7 @@ function includeQueueReaderTask(
     task: QueueReaderTask
 ): void {
     const failureBackoff = new QueueReaderFailureBackoff();
+    let advertisedLanes: DequeueController.WorkAdvertisement | undefined;
     input.engine.includeTask(task.taskId, {
         name: task.taskId,
         maxConcurrency: () => 1,
@@ -150,7 +157,8 @@ function includeQueueReaderTask(
                 return false;
             }
             try {
-                return await task.readIsWork();
+                advertisedLanes = await task.readWorkAdvertisement();
+                return hasAdvertisedDequeueWork(advertisedLanes);
             }
             catch (error) {
                 input.engine.wakeAt(task.taskId, failureBackoff.recordFailure(input.nowEpochMs()));
@@ -158,9 +166,11 @@ function includeQueueReaderTask(
             }
         },
         runnable: async () => {
+            const workAdvertisement = advertisedLanes;
+            advertisedLanes = undefined;
             let claimedCount: number;
             try {
-                claimedCount = await task.dequeue();
+                claimedCount = await task.dequeue(workAdvertisement);
             }
             catch (error) {
                 input.engine.wakeAt(task.taskId, failureBackoff.recordFailure(input.nowEpochMs()));

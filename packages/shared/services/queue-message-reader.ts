@@ -22,6 +22,14 @@ export namespace QueueMessageReader {
         readonly creationNow: QueueBoxUtilities.CreationClock;
         readonly dequeueOptions: DequeueResourceEntryOptions;
     }
+
+    export interface DequeueInput {
+        readonly typesToDequeue: Set<string>;
+        readonly resilience: ResourceInboxResilience;
+        readonly readLaneBudgets: DequeueController.ReadLaneBudgets | undefined;
+        readonly workAdvertisement: DequeueController.WorkAdvertisement | undefined;
+        readonly handlerObserver: QueueBoxUtilities.DequeueHandlerObserver | undefined;
+    }
 }
 
 export class QueueMessageReader {
@@ -53,19 +61,17 @@ export class QueueMessageReader {
         );
     }
 
-    async dequeue(
-        typesToDequeue: Set<string>,
-        resilience: ResourceInboxResilience,
-        readLaneBudgets?: DequeueController.ReadLaneBudgets
-    ): Promise<number> {
+    async dequeue(input: QueueMessageReader.DequeueInput): Promise<number> {
         return await QueueBoxUtilities.defaultDequeue(
             {
                 qbox: this.repository,
-                typesToDequeue: typesToDequeue,
-                resilience: resilience,
+                typesToDequeue: input.typesToDequeue,
+                resilience: input.resilience,
                 onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
                 options: this.config.dequeueOptions,
-                readLaneBudgets
+                readLaneBudgets: input.readLaneBudgets,
+                workAdvertisement: input.workAdvertisement,
+                handlerObserver: input.handlerObserver
             }
         );
     }

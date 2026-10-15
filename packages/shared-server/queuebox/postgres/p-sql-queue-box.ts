@@ -1,11 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
     computeResourceInboxRelease,
     toValidatedResourceInboxReleases
 } from '@shared/queuebox/compute-resource-inbox-release.ts';
+import { hasAdvertisedDequeueWork, type DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
     ResourceInboxLostReservationError,
@@ -29,13 +29,8 @@ import {
     captureResourceEntryObservations,
     validateResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
-import {
-    NEW_AND_RETRY_STATUSES,
-    type Key,
-    type ResourceEntry
-} from '@shared/queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
@@ -80,45 +75,48 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         return pages;
     }
 
+    async readWorkAdvertisement(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementOptions
+    ): Promise<DequeueController.WorkAdvertisement> {
+        const {
+            checkTimeout,
+            checkFinalization,
+            maxAttempts,
+            finalizationStaleAfterMs,
+            reservationLeaseMs,
+            staleDueThresholdMs
+        } = toResourceInboxWorkAdvertisementOptions(workInput);
+        const timeoutAdvertised = checkTimeout.allow();
+        const finalizationAdvertised = checkFinalization.allow();
+        const presence = await this.resourceInbox.reservations.readWorkPresence({
+            typeIds,
+            maxAttempts,
+            reservationLeaseMs,
+            finalizationStaleAfterMs,
+            staleDueThresholdMs
+        });
+
+        return {
+            FINALIZATION: finalizationAdvertised && presence.staleExhaustedReservation,
+            NEW: presence.newRow,
+            RETRY: presence.dueRetry,
+            FAIRNESS: presence.overdueRetry,
+            TIMEOUT: timeoutAdvertised && presence.timedOutReservation
+        };
+    }
+
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } =
-            toResourceInboxWorkAdvertisementOptions(workInput);
-        const isTimedOutReservedEntryToLock: boolean = await RateLimiter.tryToExecuteOrDefault(
-            checkTimeout,
-            async () =>
-                await this.resourceInbox.reservations.isTimeoutOnReservedEntries(
-                    typeIds,
-                    Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
-                    maxAttempts
-                ),
-            false
-        );
-
-        const isNewAndRetryEntryToLock: boolean = await this.resourceInbox.reservations.isEntriesToLock(
-            typeIds,
-            NEW_AND_RETRY_STATUSES,
-            maxAttempts
-        );
-        const finalizationTypes = typeIds.has(EnqueuedType.APP_INBOX)
-            ? new Set([EnqueuedType.APP_INBOX])
-            : new Set<string>();
-        const isFinalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkFinalization,
-            () =>
-                this.resourceInbox.finalization.isRetryExhaustionFinalizationRequired(
-                    finalizationTypes,
-                    finalizationStaleAfterMs,
-                    maxAttempts
-                ),
-            false
-        );
-
-        return isNewAndRetryEntryToLock || isTimedOutReservedEntryToLock || isFinalizationEntryToLock;
+        return hasAdvertisedDequeueWork(await this.readWorkAdvertisement(typeIds, workInput));
     }
 
+    /**
+     * A plain claim is one statement in a transaction that only a corrupt selected row rolls back; an
+     * observed claim locks the observed rows and compares them with their observations first.
+     */
     async reserveEntries(
         { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
@@ -127,10 +125,20 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const observations = captureResourceEntryObservations(observedEntries);
-        const observedRowIds = observations === undefined
-            ? undefined
-            : [...observations.values()].flatMap((entry) => entry.db === undefined ? [] : [entry.db.id]);
-        if (observedRowIds?.length === 0 || options.maxToReserve === 0) {
+        if (observations === undefined) {
+            const claimed = await this.resourceInbox.transaction(async (txRepo) =>
+                await txRepo.reservations.reserveEntriesSkipLocked({
+                    typeIds,
+                    statusIds,
+                    reservationInput: options
+                })
+            );
+            return new Map([...claimed.values()].map((entry) => [entry.key, entry]));
+        }
+        const observedRowIds = [...observations.values()].flatMap((entry) =>
+            entry.db === undefined ? [] : [entry.db.id]
+        );
+        if (observedRowIds.length === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         return await this.resourceInbox.transaction(
