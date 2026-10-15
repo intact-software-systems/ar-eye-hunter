@@ -4362,6 +4362,81 @@ moved or changed test.
         "requiredConstraint": "An incomparable-work retry exits before any Database.begin invocation and emits no observeCommittedTopology call during that queue attempt.",
         "failureRationale": "The retry exception and unchanged durable rows do not exclude an unnecessary empty or rolled-back transaction, or an in-memory observation emitted before rejection. Either invocation would cross a commit boundary without an accepted prepared write."
       }
+    },
+    {
+      "id": "resource-inbox-dequeue-unexpected-failure-logged-once-with-key",
+      "domain": "Resource inbox dequeue failure reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "An unexpected computer failure on a dequeued entry is reported once, naming the entry's topic, resource and context ids; a committed typed rejection keeps its own report (the ticket-rejection log contract).",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs an unexpected handler failure once with the key identity",
+      "coverageRelation": "The test drives the real default resource inbox dequeuer over an in-memory queue, throws a plain error from the computer on the first attempt and captures the console error adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController error log and its console error adapter",
+        "observableEffect": "One unexpected failure produces one operator-visible report that names the dequeued key by its identity fields.",
+        "requiredConstraint": "Report each unexpected computer failure exactly once with the key rendered by its ids, never as [object Object].",
+        "failureRationale": "A repeated report doubles operator alerts and an anonymous key hides which entry failed."
+      }
+    },
+    {
+      "id": "rtc-receiver-heartbeat-answered-without-al-admission",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A heartbeat ping on the data channel is answered with a pong and never decoded or admitted as an AL message, so it produces no warning and no admission event.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#answers a heartbeat ping without admitting it as an AL message",
+      "coverageRelation": "The test delivers a real heartbeat payload through the recording data channel to the real receive streamer and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "A heartbeat yields exactly one pong and zero AL admissions, warnings or diagnostics.",
+        "requiredConstraint": "Never admit, warn about or record a heartbeat value as an AL message.",
+        "failureRationale": "Each heartbeat admitted as an AL message costs a full decode and authorization pass per edge every five seconds and floods the console."
+      }
+    },
+    {
+      "id": "rtc-receiver-undecodable-value-recorded-once",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A data-channel value that is no AL envelope is recorded to the inbound diagnostics sink as one undecoded rejection with its code instead of a console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records a value that is no AL envelope as one undecoded rejection instead of warning about it",
+      "coverageRelation": "The test delivers a non-envelope object through the recording data channel and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One undecodable value produces exactly one undecoded-rejection diagnostic and no warning.",
+        "requiredConstraint": "Record each undecodable value once through the sink; never warn per message.",
+        "failureRationale": "A console warning per rejected message is invisible to the harness and costs a console write on every malformed frame."
+      }
+    },
+    {
+      "id": "rtc-receiver-initial-rejection-recorded-not-warned",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "An AL message the initial admission rejects is recorded by the inbound runtime's admission-outcome diagnostic and produces no console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected on its initial admission instead of warning about it",
+      "coverageRelation": "The test delivers a unicast envelope addressed to another peer through the recording data channel and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One rejected admission produces one admission-outcome diagnostic naming the rejection and no warning.",
+        "requiredConstraint": "Report a rejected initial admission once through the sink; never warn per message.",
+        "failureRationale": "Warnings per rejected message hide in the console and are not counted by any harness evidence."
+      }
+    },
+    {
+      "id": "rtc-receiver-refresh-rejection-recorded-not-warned",
+      "domain": "RTC data-channel receive admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "An AL message rejected on its re-admission after an authority refresh is recorded by the admission-outcome diagnostic and produces no console warning.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it",
+      "coverageRelation": "The test lets the first admission pass as pending, refreshes authority, delivers the unicast envelope addressed to another peer and captures the console warn adapter and the inbound diagnostics sink.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRtcRxStreamerService console warn adapter and inbound diagnostics sink",
+        "observableEffect": "One rejected re-admission produces one admission-outcome diagnostic naming the rejection and no warning.",
+        "requiredConstraint": "Report a rejected re-admission once through the sink; never warn per message.",
+        "failureRationale": "The after-refresh path previously warned separately; a silent or duplicated report hides authority refresh failures."
+      }
     }
   ],
   "entries": [
@@ -9699,6 +9774,61 @@ moved or changed test.
       "owner": "Rallar operations maintainers",
       "rationale": "Reads the materializer's repeated output and record files to prove that a second materialization of the same source is byte-identical, the operator's reproducibility contract; the isolated group scope is asserted independently from the manifest content.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
+    },
+    {
+      "id": "test-structure-coupling-c3cb61e482d2cdb2",
+      "path": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-dequeue-unexpected-failure-logged-once-with-key",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured console error proves an unexpected failure is reported once and names the key by its ids; the failure value itself is asserted independently.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs an unexpected handler failure once with the key identity"
+    },
+    {
+      "id": "test-structure-coupling-8889c17e5d0c84ef",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-heartbeat-answered-without-al-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the recorded pong and the empty diagnostics, proves a heartbeat never reaches the AL admission.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#answers a heartbeat ping without admitting it as an AL message"
+    },
+    {
+      "id": "test-structure-coupling-a0da04408e50b39d",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-undecodable-value-recorded-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single undecoded-rejection diagnostic, proves the rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records a value that is no AL envelope as one undecoded rejection instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-20ce3aa931de230c",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-initial-rejection-recorded-not-warned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single admission-outcome diagnostic, proves an initial rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected on its initial admission instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-3ce5024ae534aa5e",
+      "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-receiver-refresh-rejection-recorded-not-warned",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent warn call, beside the single admission-outcome diagnostic after the refresh, proves the re-admission rejection is reported through the sink and not the console.",
+      "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it"
     }
   ]
 }
