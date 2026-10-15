@@ -15,7 +15,10 @@ export interface ALAcceptedOverlayAdjacency {
  * the forwarding hint when one is given. A multicast frozen to its recipients keeps only the neighbours that lead to one
  * of them over the accepted layout, and a peer that is its only recipient keeps none. A peer that is no recipient and
  * whose layout leads none of its neighbours to one holds a layout that disagrees with its sender's, so it keeps every
- * neighbour. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
+ * neighbour. That fallback cascades: once one peer keeps every neighbour (no adjacency, an unplaced recipient, or a
+ * path child its room, hint or visited set removes), each relay below it with a consistent layout sees every recipient
+ * behind its sender and keeps every neighbour too, so one disagreement floods that whole subtree as before the
+ * adjacency was kept, still at least once. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
  * already counted is the decision of the origin.
  */
 export function resolveALOwnedChildPeerIds(

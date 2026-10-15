@@ -332,7 +332,12 @@ relay and at the origin's missing-recipient retry; without that adjacency, or
 with a recipient it does not place, every child stays. A peer that is the only
 recipient keeps no child. A relay that is no recipient and whose adjacency leads
 none of its children to one holds a layout that disagrees with its sender's, so
-it keeps every child, as the flood did. The
+it keeps every child, as the flood did. That fallback cascades: once one peer
+keeps every child (no adjacency, an unplaced recipient, or a path child its
+room, hint or visited set removes), each relay below it with a consistent layout
+sees every recipient behind its sender and keeps every child too, so one
+disagreement floods that whole subtree at the cost of the flood before the
+adjacency was kept, still at least once. The
 same exclusion governs the forward of a retried copy and the relay row's
 expected set. A targeted repair copy inherits the repaired dispatch's own copy
 for its peer, so a requester never owns its siblings. Unicast copies carry no

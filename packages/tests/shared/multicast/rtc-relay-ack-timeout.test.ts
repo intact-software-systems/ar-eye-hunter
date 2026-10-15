@@ -9,7 +9,10 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundCommitBundle } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundCommitBundle,
+    ALOutboundRepairHint
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
@@ -56,9 +59,10 @@ describe('the receipt timeout of a copy an RTC relay forwarded', () => {
         await origin.multicast.enqueueIfAbsent(message);
         await vi.advanceTimersByTimeAsync(RECEIPT_LIFETIME_MS);
 
-        expect(readPendingAttempts(relayCommits)).toContain(1);
-        expect(readRepairHintFailedPeerIds(relayCommits)).toEqual([]);
-        expect(readRepairHintFailedPeerIds(originCommits)).toEqual([['director'], ['director'], ['director']]);
+        const retry = { trigger: 'ack-timeout', failedPeerIds: ['director'], missingRanges: [] };
+        expect(new Set(readPendingAttempts(relayCommits))).toEqual(new Set([0, 1, 2, 3]));
+        expect(readRepairHintRequests(relayCommits)).toEqual([]);
+        expect(readRepairHintRequests(originCommits)).toEqual([retry, retry, retry]);
     });
 });
 
@@ -87,14 +91,7 @@ function readPendingAttempts(commits: readonly ALOutboundCommitBundle<ALOutbound
     return commits.flatMap((bundle) => bundle.mutations.flatMap((mutation) => mutation.kind === 'set-pending-ack' ? [mutation.snapshot.attempts] : []));
 }
 
-function readRepairHintFailedPeerIds(
-    commits: readonly ALOutboundCommitBundle<ALOutboundTransportMessage>[]
-): readonly (readonly string[])[] {
-    return commits.flatMap((bundle) =>
-        bundle.durableEffects.flatMap((effect) =>
-            effect.payload.kind === 'repair-hint' && effect.payload.request.trigger === 'ack-timeout'
-                ? [effect.payload.request.failedPeerIds]
-                : []
-        )
-    );
+/** Every repair hint this endpoint committed, whatever triggered it. */
+function readRepairHintRequests(commits: readonly ALOutboundCommitBundle<ALOutboundTransportMessage>[]): readonly ALOutboundRepairHint[] {
+    return commits.flatMap((bundle) => bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'repair-hint' ? [effect.payload.request] : []));
 }

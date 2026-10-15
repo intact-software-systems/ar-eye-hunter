@@ -6,14 +6,15 @@ import { resolveALOwnedChildPeerIds } from '@shared/al-contracts/resolve-al-owne
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
-/** `r` is the root; `a` and `b` each lead to one leaf, `c` is a leaf itself. */
+/** `r` is the root; `a`, `b` and `c` each lead to one leaf. */
 const TREE: Readonly<Record<string, readonly string[]>> = {
     r: ['a', 'b', 'c'],
     a: ['r', 'a1'],
     a1: ['a'],
     b: ['r', 'b1'],
     b1: ['b'],
-    c: ['r']
+    c: ['r', 'c1'],
+    c1: ['c']
 };
 
 describe('the children a peer owns for a multicast frozen to its recipients', () => {
@@ -31,6 +32,29 @@ describe('the children a peer owns for a multicast frozen to its recipients', ()
 
     it('keeps every child when the layout does not place one of the recipients', () => {
         expect(resolveRelayChildren(['b1', 'unplaced'])).toEqual(['b', 'c']);
+    });
+
+    it('keeps every child when its room lags the path child, and the relay below it then keeps every child too', () => {
+        const message = createFrozenMulticast(['b1']);
+
+        const lagging = resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'r',
+            fromPeerId: 'a',
+            groupMemberPeerIds: ['r', 'a', 'c', 'c1', 'b1'],
+            overlayNeighborPeerIds: TREE.r,
+            overlayNextHopsBySessionId: TREE
+        });
+        const below = resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'c',
+            fromPeerId: 'r',
+            overlayNeighborPeerIds: TREE.c,
+            overlayNextHopsBySessionId: TREE
+        });
+
+        expect(lagging).toEqual(['c']);
+        expect(below).toEqual(['c1']);
     });
 
     it('keeps every child without an accepted layout', () => {
