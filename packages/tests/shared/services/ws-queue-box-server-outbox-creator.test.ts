@@ -16,6 +16,7 @@ it('enqueues a browser room message with a queue creator that fits the durable c
     const browserSessionId = 'browser-session-12345678901234567890';
     const outbox = new InMemoryQueueBox();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: new JsonWebSocketServer(),
@@ -55,6 +56,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
     const serverId = 'server-instance-12345678901234567890';
     const outbox = new InMemoryQueueBox();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         name: serverId,
         socket: new JsonWebSocketServer(),

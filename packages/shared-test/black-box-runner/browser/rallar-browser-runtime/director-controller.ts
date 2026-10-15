@@ -4,7 +4,9 @@ import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus
 } from '@shared-web/browser/rallar.ts';
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
@@ -18,6 +20,7 @@ import type {
     BlackBoxRallarDirectorRelayStartInput,
     BlackBoxRallarDirectorRelaySummary,
     BlackBoxRallarDirectorRoomInput,
+    BlackBoxRallarDirectorRuntime,
     BlackBoxRallarDirectorStatusInput,
     BlackBoxRallarDirectorSyncRequestInput,
     BlackBoxRallarEvent,
@@ -28,10 +31,21 @@ import type {
 import type { BlackBoxRallarScopeDiagnostics } from './black-box-rallar-operation-policy.ts';
 import type {
     BlackBoxBrowserDirectorDependency,
-    BlackBoxBrowserRoomsDependency
+    BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
-import { decodeBlackBoxCommandRoomRef, decodeBlackBoxCommandScope } from './decode-black-box-rallar-command-input.ts';
+import {
+    decodeBlackBoxCommandNumber,
+    decodeBlackBoxCommandRoomRef,
+    decodeBlackBoxCommandScope,
+    decodeBlackBoxCommandString,
+    isBlackBoxCommandRecord,
+    isRallarMessagePayload,
+    type BlackBoxRallarCommandRecord
+} from './decode-black-box-rallar-command-input.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
+
+/** A status refresh without a caller deadline gets the scale recipes' point-read allowance. */
+const DEFAULT_DIRECTOR_REFRESH_TIMEOUT_MS = 5_000;
 
 export interface BlackBoxRallarDirectorLease {
     readonly generation: number;
@@ -85,7 +99,7 @@ interface DirectorAcceptedIntent {
     readonly senderId: string;
     readonly epoch: number | undefined;
     readonly receivedAtEpochMs: number;
-    readonly payload: unknown;
+    readonly payload: RallarMessagePayload;
 }
 interface DirectorSyncRequest {
     readonly senderId: string;
@@ -96,7 +110,7 @@ interface DirectorSyncRequest {
 interface DirectorRelayObservations {
     readonly acceptedIntents: DirectorAcceptedIntent[];
     readonly outputs: BlackBoxRallarDirectorOutputRecord[];
-    readonly snapshots: unknown[];
+    readonly snapshots: RallarMessagePayload[];
     readonly syncRequests: DirectorSyncRequest[];
     sequence: number;
 }
@@ -109,7 +123,11 @@ interface DirectorRelayContext {
 interface DirectorRelayState {
     readonly handle: string;
     readonly input: BlackBoxRallarDirectorRelayStartInput;
-    readonly relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
+    readonly relay: RallarDirectorRelayHandle<
+        RallarMessagePayload,
+        BlackBoxRallarDirectorOutputRecord,
+        RallarMessagePayload
+    >;
     readonly observations: DirectorRelayObservations;
 }
 interface DirectorRelaySnapshot extends DirectorRelayObservations {
@@ -121,112 +139,97 @@ interface DirectorStaticSnapshot {
     readonly handle: string;
     readonly static: true;
     readonly status: RallarDirectorStatus;
-    readonly snapshot: unknown;
+    readonly snapshot: RallarMessagePayload;
 }
 
 interface DirectorFacade {
     readonly director: BlackBoxBrowserDirectorDependency;
-    readonly rooms: BlackBoxBrowserRoomsDependency;
+    readonly refreshRoomState: BlackBoxBrowserRallarRuntimeDependency['refreshRoomState'];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function decodeDirectorCommandRecord(value: unknown): BlackBoxRallarCommandRecord {
+    return isBlackBoxCommandRecord(value) ? value : {};
 }
 
-function readDirectorCommandRecord(value: unknown): Record<string, unknown> {
-    return isRecord(value) ? value : {};
-}
-
-function optionalRecord(value: unknown): Record<string, unknown> | undefined {
-    return isRecord(value) ? value : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
-}
-
-function optionalNumber(value: unknown): number | undefined {
-    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : undefined;
-    return parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function normalizeDirectorRoomInput(input: unknown): BlackBoxRallarDirectorRoomInput {
-    const record = readDirectorCommandRecord(input);
-    const rallarConfig = readDirectorCommandRecord(record.rallar);
-    const scope = optionalRecord(record.scope) ?? optionalRecord(rallarConfig.scope);
-    const roomRef = optionalRecord(record.roomRef) ?? optionalRecord(rallarConfig.roomRef);
+function decodeDirectorRoomInput(input: unknown): BlackBoxRallarDirectorRoomInput {
+    const record = decodeDirectorCommandRecord(input);
+    const rallarConfig = decodeDirectorCommandRecord(record.rallar);
     return {
-        roomId: stringValue(record.roomId) ?? stringValue(record.groupId) ?? stringValue(rallarConfig.roomId),
-        applicationId: stringValue(record.applicationId) ?? stringValue(rallarConfig.applicationId),
-        workspaceId: stringValue(record.workspaceId) ?? stringValue(rallarConfig.workspaceId),
-        scope: decodeBlackBoxCommandScope(scope),
-        roomRef: decodeBlackBoxCommandRoomRef(roomRef),
-        timeoutMs: optionalNumber(record.timeoutMs)
+        roomId: decodeBlackBoxCommandString(record.roomId) ?? decodeBlackBoxCommandString(record.groupId) ??
+            decodeBlackBoxCommandString(rallarConfig.roomId),
+        applicationId: decodeBlackBoxCommandString(record.applicationId) ??
+            decodeBlackBoxCommandString(rallarConfig.applicationId),
+        workspaceId: decodeBlackBoxCommandString(record.workspaceId) ??
+            decodeBlackBoxCommandString(rallarConfig.workspaceId),
+        scope: decodeBlackBoxCommandScope([record.scope, rallarConfig.scope].find(isBlackBoxCommandRecord)),
+        roomRef: decodeBlackBoxCommandRoomRef([record.roomRef, rallarConfig.roomRef].find(isBlackBoxCommandRecord)),
+        timeoutMs: decodeBlackBoxCommandNumber(record.timeoutMs)
     };
 }
 
-function normalizeDirectorAppointInput(input: unknown): BlackBoxRallarDirectorAppointInput {
-    const record = readDirectorCommandRecord(input);
+function decodeDirectorAppointInput(input: unknown): BlackBoxRallarDirectorAppointInput {
+    const record = decodeDirectorCommandRecord(input);
     return {
-        ...normalizeDirectorRoomInput(record),
-        heartbeatTtlMs: optionalNumber(record.heartbeatTtlMs)
+        ...decodeDirectorRoomInput(record),
+        heartbeatTtlMs: decodeBlackBoxCommandNumber(record.heartbeatTtlMs)
     };
 }
 
-function normalizeDirectorStatusInput(input: unknown): BlackBoxRallarDirectorStatusInput {
-    const record = readDirectorCommandRecord(input);
+function decodeDirectorStatusInput(input: unknown): BlackBoxRallarDirectorStatusInput {
+    const record = decodeDirectorCommandRecord(input);
     return {
-        ...normalizeDirectorRoomInput(record),
+        ...decodeDirectorRoomInput(record),
         refresh: typeof record.refresh === 'boolean' ? record.refresh : undefined,
-        now: optionalNumber(record.now)
+        now: decodeBlackBoxCommandNumber(record.now)
     };
 }
 
-function normalizeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirectorRelayStartInput {
-    const record = readDirectorCommandRecord(input);
-    const handle = stringValue(record.handle);
-    const intentTypeId = stringValue(record.intentTypeId);
-    const outputTypeId = stringValue(record.outputTypeId);
+function decodeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirectorRelayStartInput {
+    const record = decodeDirectorCommandRecord(input);
+    const handle = decodeBlackBoxCommandString(record.handle);
+    const intentTypeId = decodeBlackBoxCommandString(record.intentTypeId);
+    const outputTypeId = decodeBlackBoxCommandString(record.outputTypeId);
     if (!handle || !intentTypeId || !outputTypeId) {
         throw new Error('director.relay.start requires handle, intentTypeId, and outputTypeId.');
     }
     return {
-        ...normalizeDirectorRoomInput(record),
+        ...decodeDirectorRoomInput(record),
         handle,
-        topicId: stringValue(record.topicId),
+        topicId: decodeBlackBoxCommandString(record.topicId),
         intentTypeId,
         outputTypeId,
-        heartbeatTypeId: stringValue(record.heartbeatTypeId),
-        snapshotTypeId: stringValue(record.snapshotTypeId),
-        syncRequestTypeId: stringValue(record.syncRequestTypeId),
-        heartbeatIntervalMs: optionalNumber(record.heartbeatIntervalMs),
-        snapshotIntervalMs: optionalNumber(record.snapshotIntervalMs),
+        heartbeatTypeId: decodeBlackBoxCommandString(record.heartbeatTypeId),
+        snapshotTypeId: decodeBlackBoxCommandString(record.snapshotTypeId),
+        syncRequestTypeId: decodeBlackBoxCommandString(record.syncRequestTypeId),
+        heartbeatIntervalMs: decodeBlackBoxCommandNumber(record.heartbeatIntervalMs),
+        snapshotIntervalMs: decodeBlackBoxCommandNumber(record.snapshotIntervalMs),
         ...(Object.prototype.hasOwnProperty.call(record, 'snapshot') ? { snapshot: record.snapshot } : {})
     };
 }
 
-function normalizeDirectorHandleInput(input: unknown): BlackBoxRallarDirectorHandleInput {
-    const record = readDirectorCommandRecord(input);
-    const handle = stringValue(record.handle);
+function decodeDirectorHandleInput(input: unknown): BlackBoxRallarDirectorHandleInput {
+    const record = decodeDirectorCommandRecord(input);
+    const handle = decodeBlackBoxCommandString(record.handle);
     if (!handle) {
         throw new Error('Director relay command requires handle.');
     }
-    return { handle, timeoutMs: optionalNumber(record.timeoutMs) };
+    return { handle, timeoutMs: decodeBlackBoxCommandNumber(record.timeoutMs) };
 }
 
-function normalizeDirectorIntentInput(input: unknown): BlackBoxRallarDirectorIntentInput {
-    const record = readDirectorCommandRecord(input);
-    return { ...normalizeDirectorHandleInput(record), intent: record.intent };
+function decodeDirectorIntentInput(input: unknown): BlackBoxRallarDirectorIntentInput {
+    const record = decodeDirectorCommandRecord(input);
+    return { ...decodeDirectorHandleInput(record), intent: record.intent };
 }
 
-function normalizeDirectorSyncRequestInput(input: unknown): BlackBoxRallarDirectorSyncRequestInput {
-    const record = readDirectorCommandRecord(input);
-    return { ...normalizeDirectorHandleInput(record), payload: record.payload };
+function decodeDirectorSyncRequestInput(input: unknown): BlackBoxRallarDirectorSyncRequestInput {
+    const record = decodeDirectorCommandRecord(input);
+    return { ...decodeDirectorHandleInput(record), payload: record.payload };
 }
 
-function intentIdFromPayload(payload: unknown, fallback: string): string {
-    const record = readDirectorCommandRecord(payload);
-    return stringValue(record.intentId) ?? stringValue(record.id) ?? stringValue(record.messageId) ?? fallback;
+function toDirectorIntentId(payload: RallarMessagePayload, fallback: string): string {
+    const record = decodeDirectorCommandRecord(payload);
+    return decodeBlackBoxCommandString(record.intentId) ?? decodeBlackBoxCommandString(record.id) ??
+        decodeBlackBoxCommandString(record.messageId) ?? fallback;
 }
 
 interface DirectorStatusDiagnosticsInput {
@@ -313,7 +316,7 @@ export class BlackBoxRallarDirectorController {
     };
     private relaySnapshot = (context: DirectorRelayContext): DirectorRelaySnapshot | DirectorStaticSnapshot => {
         const status = this.#options.facade.director.status(this.toTarget(context.input, context.config));
-        return context.input.snapshot !== undefined
+        return isRallarMessagePayload(context.input.snapshot)
             ? { handle: context.input.handle, static: true, status, snapshot: context.input.snapshot }
             : {
                 handle: context.input.handle,
@@ -330,20 +333,20 @@ export class BlackBoxRallarDirectorController {
             throw new Error('Director relay handle is not open: ' + handle);
         }
     };
-    appoint = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    appoint: BlackBoxRallarDirectorRuntime['appoint'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorAppointInput(input);
-        const directorStatus = await this.#options.facade.director.appoint(this.toTarget(normalized, config), {
-            heartbeatTtlMs: normalized.heartbeatTtlMs,
-            scope: this.#options.scopeOf(config, normalized),
-            timeoutMs: normalized.timeoutMs
+        const decoded = decodeDirectorAppointInput(input);
+        const directorStatus = await this.#options.facade.director.appoint(this.toTarget(decoded, config), {
+            heartbeatTtlMs: decoded.heartbeatTtlMs,
+            scope: this.#options.scopeOf(config, decoded),
+            timeoutMs: decoded.timeoutMs
         });
         this.assertCurrent(lease);
         const diagnostics = this.statusDiagnostics({
             status: 'appointed',
-            input: normalized,
+            input: decoded,
             directorStatus: directorStatus,
             config: config
         });
@@ -355,19 +358,19 @@ export class BlackBoxRallarDirectorController {
         });
         return diagnostics;
     };
-    resign = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    resign: BlackBoxRallarDirectorRuntime['resign'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorRoomInput(input);
-        const directorStatus = await this.#options.facade.director.resign(this.toTarget(normalized, config), {
-            scope: this.#options.scopeOf(config, normalized),
-            timeoutMs: normalized.timeoutMs
+        const decoded = decodeDirectorRoomInput(input);
+        const directorStatus = await this.#options.facade.director.resign(this.toTarget(decoded, config), {
+            scope: this.#options.scopeOf(config, decoded),
+            timeoutMs: decoded.timeoutMs
         });
         this.assertCurrent(lease);
         const diagnostics = this.statusDiagnostics({
             status: 'resigned',
-            input: normalized,
+            input: decoded,
             directorStatus: directorStatus,
             config: config
         });
@@ -379,24 +382,21 @@ export class BlackBoxRallarDirectorController {
         });
         return diagnostics;
     };
-    status = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    status: BlackBoxRallarDirectorRuntime['status'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorStatusInput(input);
-        if (normalized.refresh) {
-            await this.#options.facade.rooms.refresh({
-                scope: this.#options.scopeOf(config, normalized),
-                timeoutMs: normalized.timeoutMs
-            });
+        const decoded = decodeDirectorStatusInput(input);
+        if (decoded.refresh) {
+            await this.refreshRoom(decoded, config);
         }
         this.assertCurrent(lease);
-        const directorStatus = this.#options.facade.director.status(this.toTarget(normalized, config), {
-            now: normalized.now
+        const directorStatus = this.#options.facade.director.status(this.toTarget(decoded, config), {
+            now: decoded.now
         });
         const diagnostics = this.statusDiagnostics({
             status: 'status',
-            input: normalized,
+            input: decoded,
             directorStatus: directorStatus,
             config: config
         });
@@ -408,9 +408,26 @@ export class BlackBoxRallarDirectorController {
         });
         return diagnostics;
     };
+    private async refreshRoom(
+        decoded: BlackBoxRallarDirectorStatusInput,
+        config: BlackBoxRallarConnectionConfig
+    ): Promise<void> {
+        const roomRef = this.#options.roomRefOf(config, decoded);
+        if (!roomRef) {
+            throwRallarValidation([{
+                path: '$.roomRef',
+                code: 'room-ref-required',
+                message: 'Director status refresh requires an exact room reference.'
+            }]);
+        }
+        await this.#options.facade.refreshRoomState(roomRef, {
+            scope: toStateScope(roomRef),
+            timeoutMs: decoded.timeoutMs ?? DEFAULT_DIRECTOR_REFRESH_TIMEOUT_MS
+        });
+    }
     private createRelay(
         context: DirectorRelayContext
-    ): RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown> {
+    ): RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload> {
         return this.#options.facade.director.createRelay({
             roomId: context.input.roomId ?? context.config.roomId,
             roomRef: this.#options.roomRefOf(context.config, context.input),
@@ -431,14 +448,14 @@ export class BlackBoxRallarDirectorController {
     }
     private receiveIntent(
         context: DirectorRelayContext,
-        message: RallarDirectorRelayMessage<unknown>,
-        relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>
+        message: RallarDirectorRelayMessage<RallarMessagePayload>,
+        relay: RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>
     ): BlackBoxRallarDirectorOutputRecord {
         this.assertCurrent(context.lease);
         const nextSequence = context.observations.sequence + 1;
         const output: BlackBoxRallarDirectorOutputRecord = {
             kind: 'black-box-director-output',
-            intentId: intentIdFromPayload(message.data, `intent-${nextSequence}`),
+            intentId: toDirectorIntentId(message.data, `intent-${nextSequence}`),
             sequence: nextSequence,
             senderId: message.senderId,
             directorSessionId: relay.status().appointment?.sessionId,
@@ -485,7 +502,10 @@ export class BlackBoxRallarDirectorController {
             config: context.config
         });
     }
-    private receiveSnapshot(context: DirectorRelayContext, message: RallarDirectorRelayMessage<unknown>): void {
+    private receiveSnapshot(
+        context: DirectorRelayContext,
+        message: RallarDirectorRelayMessage<RallarMessagePayload>
+    ): void {
         this.assertCurrent(context.lease);
         context.observations.snapshots.push(message.data);
         this.emitDiagnostic({
@@ -521,13 +541,13 @@ export class BlackBoxRallarDirectorController {
         });
     }
 
-    relayStart = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    relayStart: BlackBoxRallarDirectorRuntime['relayStart'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorRelayStartInput(input);
-        if (this.#resources.handles().includes(normalized.handle)) {
-            throw new Error('Director relay handle is already open: ' + normalized.handle);
+        const decoded = decodeDirectorRelayStartInput(input);
+        if (this.#resources.handles().includes(decoded.handle)) {
+            throw new Error('Director relay handle is already open: ' + decoded.handle);
         }
         const observations: DirectorRelayObservations = {
             acceptedIntents: [],
@@ -536,42 +556,45 @@ export class BlackBoxRallarDirectorController {
             syncRequests: [],
             sequence: 0
         };
-        const relay = this.createRelay({ input: normalized, config, lease, observations });
-        const entry: DirectorRelayState = { handle: normalized.handle, input: normalized, relay, observations };
-        this.#resources.add(normalized.handle, entry);
+        const relay = this.createRelay({ input: decoded, config, lease, observations });
+        const entry: DirectorRelayState = { handle: decoded.handle, input: decoded, relay, observations };
+        this.#resources.add(decoded.handle, entry);
         const diagnostics = this.statusDiagnostics({
             status: 'relay_started',
-            input: normalized,
+            input: decoded,
             directorStatus: relay.status(),
             config: config,
             extra: {
-                handle: normalized.handle,
+                handle: decoded.handle,
                 relay: {
-                    handle: normalized.handle,
-                    topicId: normalized.topicId,
-                    intentTypeId: normalized.intentTypeId,
-                    outputTypeId: normalized.outputTypeId,
-                    heartbeatTypeId: normalized.heartbeatTypeId,
-                    snapshotTypeId: normalized.snapshotTypeId,
-                    syncRequestTypeId: normalized.syncRequestTypeId
+                    handle: decoded.handle,
+                    topicId: decoded.topicId,
+                    intentTypeId: decoded.intentTypeId,
+                    outputTypeId: decoded.outputTypeId,
+                    heartbeatTypeId: decoded.heartbeatTypeId,
+                    snapshotTypeId: decoded.snapshotTypeId,
+                    syncRequestTypeId: decoded.syncRequestTypeId
                 }
             }
         });
         this.emitDiagnostic({
             topic: 'rallar.browser.director.relay_started',
-            handle: normalized.handle,
+            handle: decoded.handle,
             data: diagnostics,
             config: config
         });
         return diagnostics;
     };
-    intent = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    intent: BlackBoxRallarDirectorRuntime['intent'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorIntentInput(input);
-        const relay = this.requireRelay(normalized.handle);
-        const sendResult = await relay.relay.sendIntent(normalized.intent);
+        const decoded = decodeDirectorIntentInput(input);
+        const relay = this.requireRelay(decoded.handle);
+        if (!isRallarMessagePayload(decoded.intent)) {
+            throw new TypeError('director.intent requires a JSON intent.');
+        }
+        const sendResult = await relay.relay.sendIntent(decoded.intent);
         this.assertCurrent(lease);
         const diagnostics = this.statusDiagnostics({
             status: 'intent_sent',
@@ -579,28 +602,28 @@ export class BlackBoxRallarDirectorController {
             directorStatus: relay.relay.status(),
             config: config,
             extra: {
-                handle: normalized.handle,
+                handle: decoded.handle,
                 sendResult
             }
         });
         this.emitDiagnostic({
             topic: 'rallar.browser.director.intent_sent',
-            handle: normalized.handle,
+            handle: decoded.handle,
             data: {
                 ...diagnostics,
-                intent: normalized.intent
+                intent: decoded.intent
             },
             config: config
         });
         return diagnostics;
     };
-    syncRequest = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    syncRequest: BlackBoxRallarDirectorRuntime['syncRequest'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorSyncRequestInput(input);
-        const relay = this.requireRelay(normalized.handle);
-        const sendResult = await relay.relay.requestSync(normalized.payload);
+        const decoded = decodeDirectorSyncRequestInput(input);
+        const relay = this.requireRelay(decoded.handle);
+        const sendResult = await relay.relay.requestSync(decoded.payload);
         this.assertCurrent(lease);
         const diagnostics = this.statusDiagnostics({
             status: 'sync_requested',
@@ -608,37 +631,37 @@ export class BlackBoxRallarDirectorController {
             directorStatus: relay.relay.status(),
             config: config,
             extra: {
-                handle: normalized.handle,
+                handle: decoded.handle,
                 sendResult
             }
         });
         this.emitDiagnostic({
             topic: 'rallar.browser.director.sync_requested',
-            handle: normalized.handle,
+            handle: decoded.handle,
             data: {
                 ...diagnostics,
-                payload: normalized.payload
+                payload: decoded.payload
             },
             config: config
         });
         return diagnostics;
     };
-    relayStop = async (input: unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics> => {
+    relayStop: BlackBoxRallarDirectorRuntime['relayStop'] = async (input) => {
         const config = this.#options.requireConfig();
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
-        const normalized = normalizeDirectorHandleInput(input);
-        const relay = this.requireRelay(normalized.handle);
+        const decoded = decodeDirectorHandleInput(input);
+        const relay = this.requireRelay(decoded.handle);
         const status = relay.relay.status();
         relay.relay.stop();
-        this.#resources.delete(normalized.handle);
+        this.#resources.delete(decoded.handle);
         const diagnostics = this.statusDiagnostics({
             status: 'relay_stopped',
             input: relay.input,
             directorStatus: status,
             config: config,
             extra: {
-                handle: normalized.handle,
+                handle: decoded.handle,
                 acceptedIntentCount: relay.observations.acceptedIntents.length,
                 outputCount: relay.observations.outputs.length,
                 snapshotCount: relay.observations.snapshots.length,
@@ -647,7 +670,7 @@ export class BlackBoxRallarDirectorController {
         });
         this.emitDiagnostic({
             topic: 'rallar.browser.director.relay_stopped',
-            handle: normalized.handle,
+            handle: decoded.handle,
             data: diagnostics,
             config: config
         });

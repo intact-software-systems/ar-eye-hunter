@@ -1,6 +1,7 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../control-snapshots.ts';
+import { decodeControlArtifactOverflowRow } from '../control/control-artifact-overflow.ts';
 import type {
     DistributedRunArtifactParseWarning,
     DistributedRunArtifactRejection
@@ -253,7 +254,8 @@ function toControlRunReading(
 /**
  * An artifact import whose control-run.json holds no results or events carries that evidence in the
  * recorder JSONL files; rows that name their agent, command and outcome stand in for the envelopes and
- * every other JSON object row is a warning.
+ * every other JSON object row is a warning. The recorder's overflow row stands in for no result; its
+ * events.jsonl copy stands in as the control server's diagnostic event.
  */
 function toControlRunWithJsonlEnvelopes(
     parsed: ParsedDistributedArtifactPipeline,
@@ -263,7 +265,9 @@ function toControlRunWithJsonlEnvelopes(
     const results = controlRun.results.length > 0
         ? { value: controlRun.results, warnings: [] }
         : toJsonlStandInEnvelopes(
-            distributedArtifactPipelineJsonlRows(parsed, 'results.jsonl'),
+            distributedArtifactPipelineJsonlRows(parsed, 'results.jsonl').filter((row) =>
+                decodeControlArtifactOverflowRow(row.value).right === undefined
+            ),
             { fileName: 'results.jsonl', envelopeName: 'a control result' },
             (row) => decodeJsonlControlResultEnvelope(row, runId)
         );

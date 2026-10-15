@@ -31,6 +31,7 @@ import {
     type EvolvePlannedTopologyFullRebuildReason
 } from './evolve-planned-topology.ts';
 import { planRallarRtcTopologySnapshot } from './plan-rallar-rtc-topology-snapshot.ts';
+import { resolveRttRefinementNextHops } from './resolve-rtt-refinement-next-hops.ts';
 import {
     DEFAULT_MESH_EXIT_WIDTH,
     DEFAULT_TREE_EXIT_WIDTH,
@@ -297,22 +298,50 @@ export class RtcTopologyPlanner {
         if (plan.relevantRttMeasurements.length === 0) {
             return this.computeNoRttNextHops(plan);
         }
-        return this.createNextHopMap({
+        return this.computeWeightedNextHops(plan, publicDispatch);
+    }
+
+    private computeWeightedNextHops(
+        plan: RtcTopologyPlanInput,
+        publicDispatch: RtcTopologyPlanner.PublicDispatch
+    ): Record<string, readonly string[]> {
+        const globalGraph = this.createMeasuredRoomGraph(
+            {
+                group: plan.group,
+                leaderSessionId: plan.leaderSessionId,
+                rttMeasurements: plan.relevantRttMeasurements,
+                topology: plan.topology,
+                options: plan.topologyOptions
+            },
+            publicDispatch
+        );
+        const rebuiltNextHopsBySessionId = this.createNextHopMap({
             topology: plan.topology,
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph: this.createMeasuredRoomGraph(
-                {
-                    group: plan.group,
-                    leaderSessionId: plan.leaderSessionId,
-                    rttMeasurements: plan.relevantRttMeasurements,
-                    topology: plan.topology,
-                    options: plan.topologyOptions
-                },
-                publicDispatch
-            ),
+            globalGraph,
             options: plan.topologyOptions
+        });
+        if (
+            plan.planningIntent !== 'full-rebuild' || plan.topology !== 'tree' || plan.previous?.state !== 'active' ||
+            plan.previous.topology !== 'tree'
+        ) {
+            return rebuiltNextHopsBySessionId;
+        }
+        return resolveRttRefinementNextHops({
+            evolve: {
+                previous: plan.previous,
+                group: plan.group,
+                leaderSessionId: plan.leaderSessionId,
+                activeSessionIds: plan.activeSessionIds,
+                globalGraph,
+                kind: plan.topology,
+                degreeLimit: this.readDegreeLimit(plan.topologyOptions),
+                meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
+            },
+            rttMeasurements: plan.relevantRttMeasurements,
+            rebuiltNextHopsBySessionId
         });
     }
 

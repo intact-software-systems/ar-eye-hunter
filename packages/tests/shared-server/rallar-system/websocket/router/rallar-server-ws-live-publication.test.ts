@@ -44,6 +44,7 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -77,6 +78,7 @@ describe('Rallar server WS live cluster publication', () => {
             native.open();
             socket.addConnection(new ConnectionContext({ id: 'stale-session', socket: native }));
             const service = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 outbox: new InMemoryQueueBox(new Map()),
                 socket,
                 name: 'server-a',
@@ -130,6 +132,7 @@ describe('Rallar server WS live cluster publication', () => {
         };
         const outbox = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             socket: new JsonWebSocketServer(),
@@ -169,6 +172,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -196,6 +200,7 @@ describe('Rallar server WS live cluster publication', () => {
     it('reports failed admitted live publication without retrying the best-effort notice', async () => {
         let attempts = 0;
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -238,6 +243,7 @@ describe('Rallar server WS live cluster publication', () => {
     it('reports failed proxy live publication without retrying the best-effort notice', async () => {
         let attempts = 0;
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -296,6 +302,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -335,6 +342,7 @@ describe('Rallar server WS live cluster publication', () => {
         native.open();
         socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -389,6 +397,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -425,6 +434,7 @@ describe('Rallar server WS live cluster publication', () => {
         native.open();
         socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -495,6 +505,7 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -543,6 +554,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -716,6 +728,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -769,6 +782,7 @@ describe('Rallar server WS live cluster publication', () => {
         socket.addConnection(new ConnectionContext({ id: 'room-session', socket: roomSocket }));
         socket.addConnection(new ConnectionContext({ id: 'reconnected-session', socket: reconnectedSocket }));
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -822,6 +836,7 @@ describe('Rallar server WS live cluster publication', () => {
         native.open();
         socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -875,6 +890,7 @@ describe('Rallar server WS live cluster publication', () => {
         socket.addConnection(new ConnectionContext({ id: 'same-session', socket: oldNative, generationId: 'old' }));
         const scope = { applicationId: 'app', workspaceId: 'space' };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -926,6 +942,7 @@ describe('Rallar server WS live cluster publication', () => {
         socket.addConnection(new ConnectionContext({ id: 'principal-session', socket: native }));
         const scope = { applicationId: 'app', workspaceId: 'space' };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'server-a',
@@ -958,6 +975,7 @@ describe('Rallar server WS live cluster publication', () => {
     it('refuses durable room work with only a bare room ID and no full group reference', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             socket: new JsonWebSocketServer(),
@@ -993,6 +1011,7 @@ describe('Rallar server WS live cluster publication', () => {
 
     it('returns a failed public result when the room audience reader rejects', async () => {
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -1040,6 +1059,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -1083,6 +1103,7 @@ describe('Rallar server WS live cluster publication', () => {
         };
         const outbox = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             socket: new JsonWebSocketServer(),
@@ -1132,6 +1153,7 @@ describe('Rallar server WS live cluster publication', () => {
             subscribe: async () => {}
         };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -1195,6 +1217,7 @@ function createScopedSocketsFixture(
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         name: 'server-a',
@@ -1280,6 +1303,7 @@ async function createRoomClusterFixture(): Promise<RoomClusterFixture> {
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         name: 'server-a',

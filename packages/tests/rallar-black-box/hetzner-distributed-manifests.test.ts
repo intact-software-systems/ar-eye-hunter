@@ -8,6 +8,7 @@ import {
 
 import { decodeStringLeaves } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
     createHetznerDistributedManifestCatalog,
@@ -15,7 +16,7 @@ import {
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import { toHetznerManifestCommands } from './hetzner-manifest-test-commands.ts';
+import { toHetznerManifestCommands, toHetznerRecipeCommands } from './hetzner-manifest-test-commands.ts';
 
 interface ExpectedStream {
     readonly rateHz: number;
@@ -315,36 +316,49 @@ describe('Hetzner distributed manifest catalog', () => {
             }],
             ['apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 45_000
+                timeoutMs: 49_750
             }],
             ['apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 45_000
+                timeoutMs: 59_500
             }],
             ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', {
                 peers: 1,
-                timeoutMs: 45_000
+                timeoutMs: 72_500
             }]
         ]);
 
         for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
-            const commands = toHetznerManifestCommands(entry.manifest);
-            const sendsRtc = commands.some((command) =>
+            const sendsRtc = (command: RallarBlackBoxTestCommand) =>
                 command.kind === 'rtc.send' || command.kind === 'rtc.stream' ||
-                (entry.manifest.metadata.family === 'alm-scale' && command.kind === 'messages.send')
-            );
-            if (!sendsRtc) {
+                (entry.manifest.metadata.family === 'alm-scale' && command.kind === 'messages.send');
+            if (!toHetznerManifestCommands(entry.manifest).some(sendsRtc)) {
                 expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
                 continue;
             }
 
-            const connect = commands.find((command) => command.kind === 'rtc.connect');
+            const declared = toHetznerManifestCommands(entry.manifest)
+                .filter((command) => command.kind === 'rtc.connect')
+                .find((command) => command.readiness !== undefined);
             const expected = expectedReadyPeers.get(entry.filePath);
-            expect(connect?.readiness, entry.filePath).toEqual({
+            expect(declared?.readiness, entry.filePath).toEqual({
                 minReadyPeers: expected?.peers,
                 timeoutMs: expected?.timeoutMs,
                 intervalMs: 100
             });
+            // A connect that declares no readiness, like a director connecting before any peer exists,
+            // must still wait for a ready formation before its recipe's first RTC send.
+            for (const selection of entry.manifest.recipes) {
+                const commands = toHetznerRecipeCommands(selection.recipe?.commands ?? []);
+                const connect = commands.filter((command) => command.kind === 'rtc.connect').at(0);
+                if (connect === undefined || connect.readiness !== undefined) {
+                    continue;
+                }
+                const firstSend = commands.findIndex(sendsRtc);
+                const gated = commands.slice(commands.indexOf(connect), firstSend < 0 ? commands.length : firstSend)
+                    .some((command) => command.kind === 'formation.readiness');
+                expect(gated, `${entry.filePath} ${selection.recipeId}`).toBe(true);
+            }
         }
     });
 

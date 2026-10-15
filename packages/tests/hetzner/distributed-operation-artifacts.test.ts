@@ -729,6 +729,41 @@ await runControlSnapshotAtomicReplacementFixture(Deno.args[0]);
         ).resolves.toContain('"state":"running"');
     });
 
+    // A 50-agent bundle GET took the hosted control server down mid-response; every later GET then saw a 502.
+    it('exports the run\'s events, results and failures before any bundle, and keeps exporting after a bundle GET fails', async (context) => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-control-export-order-'));
+        onTestFinished(() => rm(tmp, { recursive: true, force: true }));
+        const artifactDir = path.join(tmp, 'artifacts');
+        await mkdir(artifactDir, { recursive: true });
+
+        const { stdout } = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh')],
+            options: {
+                env: {
+                    ...process.env,
+                    RALLAR_DISTRIBUTED_ARTIFACT_DIR: artifactDir,
+                    RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'export-order'
+                }
+            }
+        });
+
+        const requested = stdout.split('\n').filter((line) => line.startsWith('GET ')).map((line) => line.slice(4));
+        const firstBundle = requested.findIndex((requestPath) => requestPath.endsWith('/artifacts'));
+        expect(requested.slice(0, firstBundle)).toEqual(expect.arrayContaining([
+            '/runs/run%2F1/events.jsonl',
+            '/runs/run%2F1/results.jsonl',
+            '/runs/run%2F1/failure-bundle'
+        ]));
+        expect(requested.slice(firstBundle)).toEqual([
+            '/distributed-runs/dist%2F1/artifacts',
+            '/fleet/reports/dist%2F1/artifacts'
+        ]);
+        for (const fileName of ['events.jsonl', 'results.jsonl', 'failures.json']) {
+            await expect(readFile(path.join(artifactDir, fileName), 'utf8')).resolves.not.toBe('');
+        }
+    });
+
     it('preserves failed control POST response bodies as analyzable artifacts', async (context) => {
         const tmp = await mkdtemp(
             path.join(tmpdir(), 'rallar-control-post-json-evidence-')

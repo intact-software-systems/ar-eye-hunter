@@ -36,7 +36,7 @@ export function createControlFleetReportBundle(
         distributedRunId: report.distributedRunId,
         generatedAtEpochMs,
         files: {
-            'fleet-report.json': JSON.stringify(report, null, 2),
+            'fleet-report.json': JSON.stringify(report),
             'summary.md': toFleetSummaryMarkdown(report),
             'agent-results.csv': toCsv([AGENT_RESULT_COLUMNS, ...toAgentResultRows(report)]),
             'failure-signatures.csv': toCsv([FAILURE_SIGNATURE_COLUMNS, ...toFailureSignatureRows(report)])

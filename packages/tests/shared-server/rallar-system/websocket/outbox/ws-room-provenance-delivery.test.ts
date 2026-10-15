@@ -92,6 +92,7 @@ describe('verified direct room row delivery', () => {
         });
         const winnerEngine = new InboxOutboxEngine();
         const winnerService = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),
@@ -300,6 +301,7 @@ class RoomFixture {
 
     createService() {
         return createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             name: 'server',
             socket: this.socket,
             outbox: this.stores.workQueue,

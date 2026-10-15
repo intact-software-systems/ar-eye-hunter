@@ -38,6 +38,7 @@ describe('WS server inbound delivery and relay', () => {
         await fixture.service.acceptIncomingMessage(message, 'session-1');
         fixture.service.dispose();
         const resumed = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: fixture.server,

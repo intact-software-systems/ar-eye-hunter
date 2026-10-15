@@ -86,6 +86,15 @@ export class ControlAgentSockets {
         this.sendDispatchableCommandsToAgents(runId, [...this.socketsByRun.get(runId)?.keys() ?? []]);
     }
 
+    /** The deadline sweep over every run with a registered socket; answers how many runs it swept. */
+    sendDispatchableCommandsForConnectedRuns(): number {
+        const runIds = [...this.socketsByRun.keys()];
+        for (const runId of runIds) {
+            this.sendDispatchableCommandsForRun(runId);
+        }
+        return runIds.length;
+    }
+
     private sendDispatchableCommandsToAgents(runId: string, agentIds: readonly string[]): void {
         const sockets = this.socketsByRun.get(runId);
         const openSockets = new Map(agentIds.flatMap((agentId) => {

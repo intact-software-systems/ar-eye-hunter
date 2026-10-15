@@ -446,6 +446,7 @@ describe('direct resource outbox writes', () => {
         ]);
         const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -487,6 +488,7 @@ describe('direct resource outbox writes', () => {
         const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
         const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',

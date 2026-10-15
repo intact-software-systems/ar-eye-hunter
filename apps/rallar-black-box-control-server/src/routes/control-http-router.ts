@@ -27,7 +27,7 @@ export interface ControlHttpRouteDependencies {
     readonly responses: ControlHttpResponses;
     readonly agentSockets: ControlAgentSockets;
     readonly artifactRecorder: ControlArtifactRecorder;
-    readonly persistence: ControlSnapshotPersistence;
+    readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
     readonly retentionPlanTokens: RetentionPlanTokenAdapter;
     readonly commandDestinations: BrowserCommandDestinationPolicy;
     readonly retentionMaxRuns: number;

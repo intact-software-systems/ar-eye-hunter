@@ -1,8 +1,8 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { createControlSnapshotPersistence } from '../../src/control-snapshot-persistence.ts';
-import type { ControlSnapshotPersistence } from '../../src/control-snapshot-persistence.ts';
+import { ControlSnapshotPersistence } from '../../src/control-snapshot-persistence.ts';
+import { createDefaultControlTimers } from '../../src/control-timers.ts';
 
 interface AtomicSnapshotFileEvidence {
     readonly priorText: string;
@@ -32,18 +32,23 @@ const replacementSnapshot: ControlServerSnapshot = {
 
 export async function runControlSnapshotAtomicReplacementFixture(directory: string): Promise<void> {
     let restoredSnapshot: ControlServerSnapshot | undefined;
-    const persistence = createControlSnapshotPersistence({
+    const persistence = new ControlSnapshotPersistence({
         storageDir: directory,
         retentionMaxRuns: 50,
         snapshotBounds: {},
+        flushIntervalMs: 0,
         controlService: {
             applyRunRetention: () => [],
+            snapshotLifecycleRevision: () => '',
+            snapshotRevision: () => ({ content: 'replacement', lifecycle: '' }),
             snapshotForPersistence: () => replacementSnapshot,
             restoreSnapshot: (value: ControlServerSnapshot) => {
                 restoredSnapshot = value;
             }
         },
-        deleteRuns: () => undefined
+        deleteRuns: () => undefined,
+        timers: createDefaultControlTimers(),
+        timingSink: undefined
     });
     const log = console.log;
     console.log = () => undefined;

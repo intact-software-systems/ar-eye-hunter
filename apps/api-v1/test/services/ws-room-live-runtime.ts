@@ -59,6 +59,7 @@ export function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
         socket.addConnection(new ConnectionContext({ id: sessionId, socket: webSocket }));
     }
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'api-live-room-test',
 
         outbox: outboundStores.workQueue,

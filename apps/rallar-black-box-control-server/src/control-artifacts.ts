@@ -16,8 +16,8 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 import { decodeJsonValue } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-export const CONTROL_ARTIFACT_SCHEMA_VERSION = 1;
-export const CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION = 2;
+const CONTROL_ARTIFACT_SCHEMA_VERSION = 1;
+const CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION = 2;
 
 export type {
     ControlDistributedRunArtifactBaseFileName,
@@ -28,6 +28,12 @@ export type {
     ControlRunArtifactSummary,
     ControlRunFailureBundle
 };
+
+export interface ControlResultArtifactLines {
+    readonly resultLine: string;
+    /** The step-result row of events.jsonl for the same result. */
+    readonly eventLine: string;
+}
 
 const CONTROL_ARTIFACT_FILE_NAMES: readonly ControlRunArtifactFileName[] = [
     'report.json',
@@ -126,7 +132,20 @@ function resultRows(
     return results.map((result) => controlResultArtifactRow(result, commands.get(result.commandId)));
 }
 
-export function controlResultArtifactRow(
+/** Redacts the result once and serializes its `actual` value once; both rows embed that one serialization. */
+export function toControlResultArtifactLines(
+    result: ControlResultEnvelope,
+    command?: ControlQueuedCommandSnapshot
+): ControlResultArtifactLines {
+    const { actual, ...fields } = controlResultArtifactRow(result, command);
+    const actualJson = actual === undefined ? undefined : JSON.stringify(actual);
+    return {
+        resultLine: toJsonlLineWithActual(fields, actualJson),
+        eventLine: toJsonlLineWithActual(toResultEventFields(fields), actualJson)
+    };
+}
+
+function controlResultArtifactRow(
     result: ControlResultEnvelope,
     command?: ControlQueuedCommandSnapshot
 ): RallarBlackBoxTestRecord {
@@ -146,29 +165,14 @@ export function controlResultArtifactRow(
     });
 }
 
-export function controlResultArtifactJsonl(
-    result: ControlResultEnvelope,
-    command?: ControlQueuedCommandSnapshot
-): string {
-    return `${JSON.stringify(controlResultArtifactRow(result, command))}\n`;
+/** The fields are already redacted; `actual` is appended as the last field from its one serialization. */
+function toJsonlLineWithActual(fields: RallarBlackBoxTestRecord, actualJson: string | undefined): string {
+    const text = JSON.stringify(fields);
+    return actualJson === undefined ? `${text}\n` : `${text.slice(0, -1)},"actual":${actualJson}}\n`;
 }
 
-export function controlResultEventArtifactJsonl(
-    result: ControlResultEnvelope,
-    command?: ControlQueuedCommandSnapshot
-): string {
-    return `${JSON.stringify(artifactEventFromResult(controlResultArtifactRow(result, command)))}\n`;
-}
-
-export function controlEventArtifactJsonl(
-    event: ControlEventEnvelope,
-    command?: ControlQueuedCommandSnapshot
-): string {
-    return `${JSON.stringify(artifactEventFromControlEvent(event, command))}\n`;
-}
-
-function artifactEventFromResult(row: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
-    return redactRallarBlackBoxValue({
+function toResultEventFields(row: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
+    return {
         kind: 'step-result',
         name: row.name,
         status: row.status,
@@ -177,9 +181,15 @@ function artifactEventFromResult(row: RallarBlackBoxTestRecord): RallarBlackBoxT
         connection: row.connection,
         agentId: row.agentId,
         commandId: row.commandId,
-        actual: row.actual,
         attribution: row.attribution
-    });
+    };
+}
+
+export function controlEventArtifactJsonl(
+    event: ControlEventEnvelope,
+    command?: ControlQueuedCommandSnapshot
+): string {
+    return `${JSON.stringify(artifactEventFromControlEvent(event, command))}\n`;
 }
 
 function artifactEventFromControlEvent(
@@ -220,21 +230,24 @@ function controlRunEventsJsonlFromSlices(
     run: ControlRunSnapshot,
     input: ControlRunEventSlices
 ): string {
-    const rows = resultRows(run, input.results);
     const commands = commandById(run);
-    return jsonl([
-        ...rows.map(artifactEventFromResult),
-        ...input.events.map((event) =>
+    return [
+        ...input.results.map((result) =>
+            toControlResultArtifactLines(result, commands.get(result.commandId)).eventLine
+        ),
+        jsonl(input.events.map((event) =>
             artifactEventFromControlEvent(
                 event,
                 event.commandId ? commands.get(event.commandId) : undefined
             )
-        )
-    ]);
+        ))
+    ].join('');
 }
 
 export function controlRunResultsJsonl(run: ControlRunSnapshot): string {
-    return jsonl(resultRows(run));
+    const commands = commandById(run);
+    return run.results.map((result) => toControlResultArtifactLines(result, commands.get(result.commandId)).resultLine)
+        .join('');
 }
 
 export function controlRunFailureBundle(run: ControlRunSnapshot): ControlRunFailureBundle {
@@ -313,21 +326,38 @@ export function createControlRunArtifactBundle(
     run: ControlRunSnapshot,
     generatedAtEpochMs = Date.now()
 ): ControlRunArtifactBundle {
-    const rows = resultRows(run);
-    const summary = artifactSummary(run);
-
     return {
         artifactSchemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         runId: run.runId,
         generatedAtEpochMs,
         files: {
-            'report.json': JSON.stringify(toControlRunArtifactReport(run, rows, summary), null, 2),
-            'results.jsonl': controlRunResultsJsonl(run),
-            'events.jsonl': controlRunEventsJsonl(run),
-            'failures.json': JSON.stringify(controlRunFailureBundle(run), null, 2),
-            'metadata.json': JSON.stringify(toControlRunArtifactMetadata(run, summary, generatedAtEpochMs), null, 2)
+            'report.json': createControlRunArtifactFile(run, 'report.json', generatedAtEpochMs),
+            'results.jsonl': createControlRunArtifactFile(run, 'results.jsonl', generatedAtEpochMs),
+            'events.jsonl': createControlRunArtifactFile(run, 'events.jsonl', generatedAtEpochMs),
+            'failures.json': createControlRunArtifactFile(run, 'failures.json', generatedAtEpochMs),
+            'metadata.json': createControlRunArtifactFile(run, 'metadata.json', generatedAtEpochMs)
         }
     };
+}
+
+/** One bundle member, built alone, so a single-file read does not serialize the run's every result and event. */
+export function createControlRunArtifactFile(
+    run: ControlRunSnapshot,
+    fileName: ControlRunArtifactFileName,
+    generatedAtEpochMs: number
+): string {
+    switch (fileName) {
+        case 'report.json':
+            return JSON.stringify(toControlRunArtifactReport(run, resultRows(run), artifactSummary(run)));
+        case 'results.jsonl':
+            return controlRunResultsJsonl(run);
+        case 'events.jsonl':
+            return controlRunEventsJsonl(run);
+        case 'failures.json':
+            return JSON.stringify(controlRunFailureBundle(run));
+        case 'metadata.json':
+            return JSON.stringify(toControlRunArtifactMetadata(run, artifactSummary(run), generatedAtEpochMs));
+    }
 }
 
 interface DistributedArtifactEvidence {
@@ -491,24 +521,18 @@ export function createControlDistributedRunArtifactBundle(
         distributedRunId: distributedRun.distributedRunId,
         generatedAtEpochMs,
         files: {
-            'distributed-run.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun), null, 2),
-            'manifest.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun.manifest), null, 2),
+            'distributed-run.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun)),
+            'manifest.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun.manifest)),
             'target-resolution.json': JSON.stringify(
-                redactRallarBlackBoxValue(distributedRun.targetResolution ?? null),
-                null,
-                2
+                redactRallarBlackBoxValue(distributedRun.targetResolution ?? null)
             ),
-            'control-run.json': JSON.stringify(redactRallarBlackBoxValue(controlRun ?? null), null, 2),
+            'control-run.json': JSON.stringify(redactRallarBlackBoxValue(controlRun ?? null)),
             'report.json': JSON.stringify(
-                toDistributedArtifactReport({ distributedRun, controlRun, evidence, output }),
-                null,
-                2
+                toDistributedArtifactReport({ distributedRun, controlRun, evidence, output })
             ),
-            'failures.json': JSON.stringify(toDistributedArtifactFailures(distributedRun, evidence, output), null, 2),
+            'failures.json': JSON.stringify(toDistributedArtifactFailures(distributedRun, evidence, output)),
             'metadata.json': JSON.stringify(
-                toDistributedArtifactMetadata(distributedRun, evidence.summary, generatedAtEpochMs),
-                null,
-                2
+                toDistributedArtifactMetadata(distributedRun, evidence.summary, generatedAtEpochMs)
             )
         }
     };

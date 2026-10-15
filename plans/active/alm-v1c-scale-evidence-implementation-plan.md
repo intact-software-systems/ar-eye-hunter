@@ -255,6 +255,31 @@ gate. The recipes need no further harness change for this: they pass locally at 
 running when the database closes) and the hosted worker's `session.expected_mismatch` diagnostic
 (the agent id passed as the expected session id).
 
+**Designed (PR for step 2d).** Two surveys (proposal §4) located the bound: the server builds its
+WS inbound runtime without the volatile store pair, so every best-effort RTC signal is admitted
+through the durable PGlite lane (≈20 statements on one mutex, FIFO behind every mutation and
+list read), and formation-time rebuilds plus the appointment rebuild churn most edges. Decisions
+D219–D224 (proposal §3): the server carries the volatile lane; additions-only deltas never rebuild;
+a plan with an unchanged leader keeps its adjacency and the recipes appoint the director before
+the players connect; the status refresh reads one room; the outbound breaker is verified under a
+burst; ICE coalescing is held in reserve. Each RED first, judged by the hosted 30-agent run.
+
+**As applied (PR #667).** D219–D224 landed with three review-driven fix waves and the hosted
+50 evidence recorded as D225–D231 (proposal §3, §6): the server's volatile signalling lane on
+single-instance profiles, typed retries off the outbox breaker, breadth-first joins from the
+leader within the depth bound, the eccentricity rule for an unchanged leader, the director
+appointed before the players connect, the players joining through the room connect, one-room
+status refresh, cohort-proportional connect and status allowances, a refinement that keeps the
+tree unless clearly faster, compact streamed artifact bundles, and a control server that survives
+50 agents. Measured (proposal §1.10):
+local 50 setup-complete 36.2 s against 41.8 s on main with one offer per edge and no peer churn;
+hosted 30 passes (offer→answer 0.81 s against 7.1 s, formation 32.9 s against 52–59 s); hosted 50
+failed four times, each one phase further, and passes on the control-server head (D232: the
+control server had died ≈70 s into every 50-agent run; it now persists on a bounded cadence, scans
+per agent and records under a cap). Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
+player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
+derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
+
 ## Completion and handoff
 
 Use test-driven and subagent-driven development with distinct implementation, specification and

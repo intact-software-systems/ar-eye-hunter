@@ -484,7 +484,7 @@ describe('Hetzner materialization contracts and effects', () => {
                     ? [command.request.body.displayName]
                     : []
             );
-            expect(displayNames).toEqual(['hetzner-headless-room', 'hetzner-headless-room']);
+            expect(displayNames).toEqual(['hetzner-headless-room']);
             if (mode.agentSource === 'external') {
                 expect(manifest.recipes).toEqual(source.recipes);
             }
@@ -605,12 +605,15 @@ describe('Hetzner materialization contracts and effects', () => {
                 command.kind === 'http.request'
             );
             return requests.map((command) => command.kind === 'http.request' ? command.request.path : undefined);
-        })).toEqual(['director', 'player'].map((role) => [
-            `${scope}/stats/me/realtime`,
-            `${scope}/groups/requests/alm-scale-${role}-ensure-group-{runtimeIdentity}`,
-            `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-${role}-ensure-member-{runtimeIdentity}`,
-            `${scope}/groups/${room}`
-        ]));
+        })).toEqual([
+            [
+                `${scope}/stats/me/realtime`,
+                `${scope}/groups/requests/alm-scale-director-ensure-group-{runtimeIdentity}`,
+                `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-director-ensure-member-{runtimeIdentity}`,
+                `${scope}/groups/${room}`
+            ],
+            [`${scope}/stats/me/realtime`, `${scope}/groups/${room}`]
+        ]);
 
         const unknownPath = '/api/state/apps/rallar-server/workspaces/default/stats/summary';
         const source = JSON.parse(await readFile(sourcePath, 'utf8'));

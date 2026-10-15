@@ -61,7 +61,6 @@ it('refreshes connected room state with the caller deadline and signal', async (
         signal: controller.signal,
         timeoutMs: 321
     }]);
-    expect(facade.records.roomRefreshes).toHaveLength(0);
 });
 
 it('rejects room refresh when the connected config has no exact room reference', async () => {
@@ -86,8 +85,7 @@ it('rejects room refresh when the connected config has no exact room reference',
             }
         ]
     });
-
-    expect(facade.records.roomRefreshes).toHaveLength(0);
+    expect(facade.records.roomStateRefreshes).toHaveLength(0);
 });
 
 it('rejects a connected identity change before mutating facade configuration', async () => {

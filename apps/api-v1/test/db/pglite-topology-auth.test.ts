@@ -515,6 +515,7 @@ Deno.test(
             const wsConnection = new ConnectionContext({ id: authority.sessionId, socket: wsSocket });
             wsServer.addConnection(wsConnection);
             const wsService = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 outbox: new InMemoryQueueBox(new Map()),
                 socket: wsServer,
                 readAuthenticatedConnectionScope: (connection) =>

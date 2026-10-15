@@ -224,6 +224,7 @@ async function createAddressedFixture(sendNacks = true): Promise<AddressedFixtur
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket: socketServer,
         name: SERVER_ID,

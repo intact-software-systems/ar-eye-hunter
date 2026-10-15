@@ -355,6 +355,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
     registerReceiptLoopCleanup([() => engine.stop()]);
     const receiptObservations: WsQueueBoxServerReceiptObservation[] = [];
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(),
         socket,
         name: 'server',

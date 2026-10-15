@@ -40,6 +40,7 @@ import type {
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarConnectionOperations
@@ -78,8 +79,7 @@ import {
 } from './black-box-rallar-congestion-counters.ts';
 import type {
     BlackBoxRallarControlSubmitInput,
-    BlackBoxRallarDirectorOutputRecord,
-    BlackBoxRallarEvent
+    BlackBoxRallarDirectorOutputRecord
 } from './black-box-rallar-operation-contracts.ts';
 import {
     createBlackBoxRallarOrderingTracks,
@@ -142,7 +142,6 @@ export interface BlackBoxBrowserRoomsDependency {
         options?: Parameters<BrowserRallarRooms['join']>[1]
     ): Promise<void>;
     leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
-    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
     formation(
         room: Parameters<BrowserRallarRooms['formation']>[0]
     ): RallarRoomFormation;
@@ -198,15 +197,11 @@ export interface BlackBoxBrowserCrdtDependency extends Pick<BrowserRallarCrdtFac
 export interface BlackBoxBrowserDirectorDependency extends Pick<RallarDirectorFacade, 'appoint' | 'resign' | 'status'> {
     createRelay(
         config: RallarDirectorRelayConfig<
-            BlackBoxRallarEvent['data'],
+            RallarMessagePayload,
             BlackBoxRallarDirectorOutputRecord,
-            BlackBoxRallarEvent['data']
+            RallarMessagePayload
         >
-    ): RallarDirectorRelayHandle<
-        BlackBoxRallarEvent['data'],
-        BlackBoxRallarDirectorOutputRecord,
-        BlackBoxRallarEvent['data']
-    >;
+    ): RallarDirectorRelayHandle<RallarMessagePayload, BlackBoxRallarDirectorOutputRecord, RallarMessagePayload>;
 }
 
 export interface CreateBlackBoxBrowserRallarRuntimeDependencyInput {
@@ -399,9 +394,6 @@ function toBlackBoxBrowserRuntimeDependency(
             },
             leave: async (options) => {
                 await rooms.rooms.leave(options);
-            },
-            refresh: async (options) => {
-                await rooms.rooms.refresh(options);
             },
             formation: (room) => rooms.rooms.formation(room)
         },

@@ -81,7 +81,6 @@ export interface BrowserRuntimeFacadeRecords {
     readonly roomStateRefreshes: Array<[GroupRef, RallarScopedOperationOptions]>;
     readonly roomJoins: Array<Parameters<BlackBoxBrowserRoomsDependency['join']>>;
     readonly roomLeaves: Array<Parameters<BlackBoxBrowserRoomsDependency['leave']>>;
-    readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refresh']>>;
     readonly realtimeSubscriptions: Array<[
         Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
         RallarRealtimeHandler<never>
@@ -129,7 +128,6 @@ export const facadeRecords: BrowserRuntimeFacadeRecords = {
     roomStateRefreshes: [],
     roomJoins: [],
     roomLeaves: [],
-    roomRefreshes: [],
     realtimeSubscriptions: [],
     realtimeUnsubscribeCount: 0,
     realtimeSends: [],
@@ -184,7 +182,6 @@ export const facadeBehavior = {
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
-    roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
     roomFormation: vi.fn<BlackBoxBrowserRoomsDependency['formation']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
@@ -270,10 +267,6 @@ const rooms: BlackBoxBrowserRoomsDependency = {
     leave: async (input) => {
         facadeRecords.roomLeaves.push([input]);
         return await facadeBehavior.roomLeave(input);
-    },
-    refresh: async (input) => {
-        facadeRecords.roomRefreshes.push([input]);
-        return await facadeBehavior.roomRefresh(input);
     },
     formation: (room) => facadeBehavior.roomFormation(room)
 };
@@ -515,7 +508,6 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.roomStateRefresh.mockResolvedValue(undefined);
     facadeBehavior.roomJoin.mockResolvedValue(undefined);
     facadeBehavior.roomLeave.mockResolvedValue(undefined);
-    facadeBehavior.roomRefresh.mockResolvedValue(undefined);
     // The runtime installs the formation diagnostics on every room-scoped connect, so the double
     // answers with a handle that holds no room and subscribes to nothing.
     facadeBehavior.roomFormation.mockImplementation(() => createIdleRoomFormation());
@@ -626,7 +618,6 @@ function clearRecords(): void {
             facadeRecords.roomStateRefreshes,
             facadeRecords.roomJoins,
             facadeRecords.roomLeaves,
-            facadeRecords.roomRefreshes,
             facadeRecords.realtimeSubscriptions,
             facadeRecords.realtimeSends,
             facadeRecords.rtcMessageSubscriptions,

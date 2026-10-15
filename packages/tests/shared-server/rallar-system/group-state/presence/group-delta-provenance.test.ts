@@ -189,6 +189,7 @@ function createGroupDeltaReceiver(producer: GroupDeltaProducerFixture): GroupDel
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'foreign-api',
         socket,
         outbox: stores.workQueue,

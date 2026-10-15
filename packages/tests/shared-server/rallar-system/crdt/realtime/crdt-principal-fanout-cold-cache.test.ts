@@ -62,6 +62,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         }
         const queue = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: queue,
             socket: webSocketServer,
             name: 'server-1',

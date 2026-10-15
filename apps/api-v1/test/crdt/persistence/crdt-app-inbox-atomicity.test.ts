@@ -292,6 +292,7 @@ function createFanoutDequeueFixture(sql: PGliteSql): FanoutDequeueFixture {
     });
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'foreign-dequeue',
         socket,
         outbox: stores.workQueue,

@@ -177,7 +177,7 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity, now holding setup-complete for a layout stable at its exact revision, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
+    it('keeps the authored workload identity, now creating the group under the default replanning, joining players only through their connect with 650 ms per participant for the hosted join lane, reading the ready status under the group-request allowance, appointing the director before the players connect, holding setup-complete for a layout stable at its exact revision, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
         expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
@@ -194,7 +194,7 @@ describe('world-fleet native manifest acceptance', () => {
                 }
             }))
         };
-        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('12c15fdcfa5b89a5551b3964cfa4a2a7f8e10038c6dc02e904b31df3e5b40870');
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('2a18d726ee12fea12896d659f014c1286fea7c2b868305031a965358891aa528');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);

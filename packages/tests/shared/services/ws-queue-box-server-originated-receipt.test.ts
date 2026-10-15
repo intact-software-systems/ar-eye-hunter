@@ -280,6 +280,7 @@ async function createInstance(input: CreateInstanceInput): Promise<ServerInstanc
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: input.outbox,
         socket: socketServer,
         name: SERVER_ID,

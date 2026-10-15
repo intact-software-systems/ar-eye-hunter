@@ -53,6 +53,7 @@ describe('WS server outbound planning', () => {
         const context = new ConnectionContext({ id: 'connection', socket: native });
         server.addConnection(context);
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: server,
@@ -368,6 +369,7 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
     const roomRecipients: readonly WsServerResolvedRecipient[] = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: server,

@@ -63,6 +63,7 @@ export async function createServerIngressFixture(
         authorizeInboundMessage,
         readAuthenticatedConnectionScope,
         inboundStores: { admissionStore, workQueue: admission.workQueue },
+        inboundVolatileStores: undefined,
         queueEngine: engine
     };
     const service = createDefaultWsQueueBoxServerService(input);

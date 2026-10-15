@@ -21,7 +21,7 @@ export interface DefaultALInboundRuntimeResourceInput {
     readonly newControlId?: () => string;
     readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
     readonly stores?: ALInboundRuntimeStores;
-    /** Absent keeps one backend for every message, as the server and a standalone runtime do. */
+    /** Absent keeps one backend for every message, as a standalone runtime and a server relaying to other instances do. */
     readonly volatileStores?: ALVolatileInboundRuntimeStores;
     readonly queueEngine?: InboxOutboxEngine;
     /** The browser's per-connect session claim; absent, the runtime owns its durable work. */

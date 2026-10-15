@@ -246,6 +246,7 @@ function createServerFixture(roomPeerIds: readonly string[]): ServerFixture {
     const roomRecipients = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: server,

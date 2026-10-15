@@ -27,6 +27,7 @@ describe('WS server inbound identity', () => {
         server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(),
             socket: server,
             readAuthenticatedConnectionScope: (connection) =>
@@ -81,6 +82,7 @@ describe('WS server inbound identity', () => {
         server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => ({
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
                 expiresAtEpochMs: Number.MAX_SAFE_INTEGER

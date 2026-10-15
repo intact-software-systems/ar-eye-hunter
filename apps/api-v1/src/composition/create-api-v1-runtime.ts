@@ -1,7 +1,8 @@
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
-    resolveServerWsQBoxALOutboundRuntimeStores
+    resolveServerWsQBoxALOutboundRuntimeStores,
+    toServerWsQBoxALRuntimeStoreId
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
@@ -28,6 +29,8 @@ import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbo
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
+import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
@@ -303,6 +306,12 @@ function createSharedMiddleware(
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
+    const relayedAckNotices = createApiV1RelayedAckNotices({
+        mode: input.databasePubSubMode,
+        notification: input.databaseNotification,
+        channel: input.queuePubSubChannel,
+        publisherId: input.queuePubSubPublisherId
+    });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
         repository: mutation.runtimeStateRepository,
         nowMs: input.nowEpochMs
@@ -318,6 +327,9 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
+        inboundVolatileStores: relayedAckNotices === undefined
+            ? createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName)
+            : undefined,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
@@ -341,15 +353,18 @@ function createSharedMiddleware(
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
-        relayedAckNotices: createApiV1RelayedAckNotices({
-            mode: input.databasePubSubMode,
-            notification: input.databaseNotification,
-            channel: input.queuePubSubChannel,
-            publisherId: input.queuePubSubPublisherId
-        }),
+        relayedAckNotices,
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });
+}
+
+/** No volatile budget: the server sends nothing of its own on this lane, and an arrival is never refused. */
+function createServerWsQBoxALVolatileInboundRuntimeStores(wsRuntimeName: string): ALVolatileInboundRuntimeStores {
+    return createVolatileALInboundRuntimeStores(
+        { namespace: `${toServerWsQBoxALRuntimeStoreId(wsRuntimeName)}:volatile` },
+        undefined
+    );
 }
 
 function createApiV1QueuePubSubBridge(

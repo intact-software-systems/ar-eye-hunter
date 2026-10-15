@@ -213,6 +213,7 @@ async function createOrderedServer(): Promise<OrderedServer> {
     const settlements: ALDeliverySettlement[] = [];
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox,
         socket: socketServer,
         name: SERVER_ID,
