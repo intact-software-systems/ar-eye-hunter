@@ -28,13 +28,16 @@ export function parseGroupStateDeltaEnvelope(
     scope: StateScope
 ): GroupStateDeltaEnvelope | undefined {
     try {
-        const value: unknown = JSON.parse(serialized);
-        validateGroupStateDeltaEnvelope(value, scope);
-        return value;
+        return decodeGroupStateDeltaEnvelope(JSON.parse(serialized), scope);
     }
     catch {
         return undefined;
     }
+}
+
+function decodeGroupStateDeltaEnvelope(value: unknown, scope: StateScope): GroupStateDeltaEnvelope {
+    validateGroupStateDeltaEnvelope(value, scope);
+    return value;
 }
 
 export async function acceptGroupStateDeltaEnvelope(
