@@ -3,14 +3,13 @@ import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-
 import { assert } from '@std/assert';
 
 import {
-    controlResultArtifactJsonl,
-    controlResultEventArtifactJsonl,
     controlRunEventsJsonl,
     controlRunFailureBundle,
     controlRunResultsJsonl,
     createControlDistributedRunArtifactBundle,
     createControlRunArtifactBundle,
-    createControlRunArtifactFile
+    createControlRunArtifactFile,
+    toControlResultArtifactLines
 } from '../src/control-artifacts.ts';
 import { toArtifactBundleJsonChunks } from '../src/http/control-http-responses.ts';
 import { assertJsonEquals } from './support/control-service-test-fixtures.ts';
@@ -224,8 +223,8 @@ Deno.test('control artifacts export event, result, and failure bundles', () => {
 });
 
 Deno.test('control artifact JSONL helpers preserve queued command metadata', () => {
-    const resultJsonl = controlResultArtifactJsonl(run.results[2], run.commands[1]);
-    const resultRow = JSON.parse(resultJsonl) as {
+    const lines = toControlResultArtifactLines(run.results[2], run.commands[1]);
+    const resultRow = JSON.parse(lines.resultLine) as {
         action?: string;
         transport?: string;
         connection?: string;
@@ -234,8 +233,7 @@ Deno.test('control artifact JSONL helpers preserve queued command metadata', () 
     assertJsonEquals(resultRow.transport, 'CRDT');
     assertJsonEquals(resultRow.connection, 'checklist');
 
-    const eventJsonl = controlResultEventArtifactJsonl(run.results[2], run.commands[1]);
-    const eventRow = JSON.parse(eventJsonl) as {
+    const eventRow = JSON.parse(lines.eventLine) as {
         kind?: string;
         action?: string;
         transport?: string;

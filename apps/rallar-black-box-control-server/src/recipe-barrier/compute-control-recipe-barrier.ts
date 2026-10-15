@@ -70,9 +70,10 @@ export function computeControlRecipeBarrierArrival(
 export function computeControlRecipeBarrierDelivery(
     read: ControlRecipeBarrierDeliveryRead
 ): ControlRecipeBarrierDelivery {
-    const delivered = [...read.run.barriers.values()].map((barrier) =>
-        toDeliveredBarrier({ ...barrier, resolution: computeControlRecipeBarrierResolution(barrier, read) }, read.agent)
-    );
+    const delivered = [...read.run.barriers.values()].map((barrier) => {
+        const resolution = computeControlRecipeBarrierResolution(barrier, read);
+        return toDeliveredBarrier(resolution === barrier.resolution ? barrier : { ...barrier, resolution }, read.agent);
+    });
     return {
         barriers: delivered.map((entry) => entry.barrier),
         envelopes: delivered.flatMap((entry) => entry.envelope === undefined ? [] : [entry.envelope])
@@ -86,9 +87,8 @@ function computeControlRecipeBarrierResolution(
     if (barrier.resolution !== undefined) {
         return barrier.resolution;
     }
-    const missing = barrier.participants.filter((participant) =>
-        !barrier.arrivedAgentIds.includes(participant.agentId)
-    );
+    const arrived = new Set(barrier.arrivedAgentIds);
+    const missing = barrier.participants.filter((participant) => !arrived.has(participant.agentId));
     if (barrier.issue === undefined && missing.length === 0) {
         return { outcome: 'released', arrivedAgentIds: barrier.arrivedAgentIds };
     }

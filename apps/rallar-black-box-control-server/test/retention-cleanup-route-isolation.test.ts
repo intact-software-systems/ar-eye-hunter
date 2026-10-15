@@ -2,8 +2,13 @@ import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-sna
 import { assert, assertEquals } from '@std/assert';
 
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
-import { ControlArtifactRecorder, toRunDirectoryName } from '../src/control-artifact-recorder.ts';
+import {
+    ControlArtifactRecorder,
+    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
+    toRunDirectoryName
+} from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
+import { createDefaultControlTimers } from '../src/control-timers.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
 import { ControlHttpSecurity } from '../src/http/control-http-security.ts';
 import { createControlRequestBodyReader } from '../src/http/control-request-body.ts';
@@ -131,8 +136,13 @@ function createRetentionRouteDependencies(
         requestBody: createControlRequestBodyReader(8),
         responses: createControlHttpResponses(['*']),
         agentSockets,
-        artifactRecorder: new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS }),
-        persistence: { restore: () => Promise.resolve(), persist: () => persistCalls.push('persist') },
+        artifactRecorder: new ControlArtifactRecorder({
+            storageDir,
+            commandSnapshots: NO_COMMAND_SNAPSHOTS,
+            timers: createDefaultControlTimers(),
+            config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
+        }),
+        persistence: { persist: () => persistCalls.push('persist') },
         retentionPlanTokens: createRetentionPlanTokenAdapter({ key: new Uint8Array(32) }),
         commandDestinations: { httpAllowedHosts: [], httpAllowedOrigins: [], wsAllowedHosts: [], wsAllowedOrigins: [] },
         retentionMaxRuns: 1,

@@ -5,6 +5,7 @@ import {
 } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
@@ -22,9 +23,12 @@ import {
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 
-interface DistributedAssessmentEvidenceSource {
+export interface DistributedAssessmentEvidenceSource {
     readonly manifest: ControlDistributedRunSnapshot['manifest'];
     readonly commandLinks: ControlDistributedRunSnapshot['commandLinks'];
+    readonly state: ControlDistributedRunSnapshot['state'];
+    /** Absent until the run is first evaluated. */
+    readonly rollup?: Pick<ControlDistributedRunSnapshot['rollup'], 'state'>;
 }
 
 export interface StoredControlResultInput {
@@ -32,7 +36,7 @@ export interface StoredControlResultInput {
     readonly command: RallarBlackBoxTestCommand | undefined;
     readonly preserveReloadEvidence: boolean;
     readonly distributedRuns: Iterable<
-        Pick<ControlDistributedRunSnapshot, 'manifest' | 'commandLinks' | 'controlRunId'>
+        DistributedAssessmentEvidenceSource & Pick<ControlDistributedRunSnapshot, 'controlRunId'>
     >;
 }
 
@@ -80,9 +84,19 @@ export function toCompactedResultEnvelope(envelope: ControlResultEnvelope): Cont
     return node ? { ...envelope, result: toCompactedResult(node) } : envelope;
 }
 
+/** The start results a pending group assessment or an ALM conformance analysis still reads whole. */
 export function toDistributedAssessmentEvidenceCommandIds(
     distributedRun: DistributedAssessmentEvidenceSource
 ): readonly string[] {
+    return isSettledGroupAssessment(distributedRun) ? [] : toAssessmentStartCommandIds(distributedRun);
+}
+
+/** The start results a group assessment no longer reads: its terminal rollup holds the evaluated assertions. */
+export function toSettledAssessmentCommandIds(distributedRun: DistributedAssessmentEvidenceSource): readonly string[] {
+    return isSettledGroupAssessment(distributedRun) ? toAssessmentStartCommandIds(distributedRun) : [];
+}
+
+function toAssessmentStartCommandIds(distributedRun: DistributedAssessmentEvidenceSource): readonly string[] {
     if (
         (distributedRun.manifest.groupAssertions?.length ?? 0) === 0 &&
         distributedRun.manifest.metadata.family !== 'alm-conformance'
@@ -92,6 +106,13 @@ export function toDistributedAssessmentEvidenceCommandIds(
     return distributedRun.commandLinks
         .filter((link) => link.phase === 'start')
         .map((link) => link.commandId);
+}
+
+/** A terminal run's rollup is final once it agrees with the run's state; ALM conformance analysis reads its starts later. */
+function isSettledGroupAssessment(distributedRun: DistributedAssessmentEvidenceSource): boolean {
+    return isDistributedRunTerminalState(distributedRun.state) &&
+        distributedRun.rollup?.state === distributedRun.state &&
+        distributedRun.manifest.metadata.family !== 'alm-conformance';
 }
 
 /** Keep local ALM roots intact within normal finite result limits; only distributed owners extend those limits. */

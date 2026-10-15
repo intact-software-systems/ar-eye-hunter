@@ -1,4 +1,3 @@
-import { toRetainedControlResultEnvelope } from '@shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRetentionRunSafety } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
@@ -9,8 +8,10 @@ import type {
     ControlRunSnapshotBounds,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { toRetainedControlResultEnvelope } from '@shared-test/rallar-bb-test/control/control-rtc-capture-evidence.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import type { ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { toControlCommandFingerprint } from './control-command-queue-policy.ts';
@@ -33,6 +34,20 @@ import { toPendingReloadEvidenceIds } from './recipe-reload/control-recipe-reloa
 export interface RestoredControlSnapshot {
     readonly runs: Map<string, ControlRunState>;
     readonly distributedRuns: Map<string, ControlDistributedRunState>;
+}
+
+/** Cheap change detection for persistence: comparing two revisions replaces comparing two serialized snapshots. */
+export interface ControlSnapshotRevision {
+    /** Moves whenever anything a persisted snapshot holds may have changed. */
+    readonly content: string;
+    /** Moves when a distributed run is created, removed or enters another lifecycle state. */
+    readonly lifecycle: string;
+}
+
+export interface ControlSnapshotRevisionInput {
+    readonly runs: Iterable<ControlRunState>;
+    readonly distributedRuns: Iterable<ControlDistributedRunState>;
+    readonly fleetReports: Iterable<ControlFleetRunReport>;
 }
 
 interface RestoredControlRunInput {
@@ -66,8 +81,13 @@ export function toControlRunSnapshot(
         protectedIds.add(commandId);
     }
     const retainedCommands = toBoundedProtectedCommands(commands, bounds.commands, protectedIds);
+    const retainedCommandIds = new Set(retainedCommands.map((command) => command.envelope.commandId));
     const retainedResults = toBoundedProtectedResults(results, bounds.results, protectedIds)
-        .map((result) => toRetainedControlResultEnvelope(result, retainedCommands));
+        .map((result) =>
+            retainedCommandIds.has(result.commandId)
+                ? result
+                : toRetainedControlResultEnvelope(result, retainedCommands)
+        );
     return {
         runId: run.runId,
         createdAtEpochMs: run.createdAtEpochMs,
@@ -95,6 +115,24 @@ export function toControlRunSnapshot(
         stats: toBoundedTail(run.stats, bounds.stats),
         reports: toBoundedTail(run.reports, bounds.reports),
         heartbeats: toBoundedTail(run.heartbeats, bounds.heartbeats)
+    };
+}
+
+export function toControlSnapshotRevision(input: ControlSnapshotRevisionInput): ControlSnapshotRevision {
+    const distributedRuns = Array.from(input.distributedRuns);
+    const lifecycle = distributedRuns.map((run) => `${run.distributedRunId}:${run.state}`).join('|');
+    return {
+        lifecycle,
+        content: [
+            Array.from(input.runs, (run) => `${run.runId}@${run.createdAtEpochMs}:${run.retentionRevision}`).join('|'),
+            lifecycle,
+            distributedRuns.map((run) =>
+                `${run.updatedAtEpochMs}:${run.completedAtEpochMs}:${run.commandLinks.length}:${run.rollup?.state}`
+            ).join('|'),
+            Array.from(input.fleetReports, (report) => `${report.distributedRunId}:${report.generatedAtEpochMs}`).join(
+                '|'
+            )
+        ].join('\n')
     };
 }
 

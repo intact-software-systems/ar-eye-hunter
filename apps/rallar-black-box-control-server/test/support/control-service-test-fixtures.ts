@@ -40,6 +40,12 @@ interface ControlRegisterFixtureInput {
     readonly identity?: RallarBlackBoxControlAgentIdentity;
 }
 
+interface ControlHeartbeatFixtureInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly atEpochMs: number;
+}
+
 interface ControlResultFixtureInput {
     readonly runId: string;
     readonly agentId: string;
@@ -128,6 +134,19 @@ export function toRegisterEnvelope(
         resume: {
             completedCommandIds
         }
+    };
+}
+export function toHeartbeatEnvelope(
+    { runId, agentId, atEpochMs }: ControlHeartbeatFixtureInput
+): ControlClientEnvelope {
+    return {
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        atEpochMs,
+        status: 'running',
+        identity: toUnconfiguredAgentIdentity(agentId, atEpochMs)
     };
 }
 export function toCommandResultEnvelope(

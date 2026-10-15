@@ -147,7 +147,8 @@ function groupAssertionManifest(
     };
 }
 
-function runGroupAssertionDistributedRun(
+/** Delivers every start result without reading the distributed run, so its assessment is not yet evaluated. */
+function deliverGroupAssertionResults(
     groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[],
     probeValueByAgentId: Readonly<Record<string, RallarBlackBoxTestRecord | undefined>>
 ) {
@@ -168,7 +169,14 @@ function runGroupAssertionDistributedRun(
             recipeResultEnvelope(agentId, startCommand.commandId, probeValueByAgentId[agentId])
         );
     }
+    return service;
+}
 
+function runGroupAssertionDistributedRun(
+    groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[],
+    probeValueByAgentId: Readonly<Record<string, RallarBlackBoxTestRecord | undefined>>
+) {
+    const service = deliverGroupAssertionResults(groupAssertions, probeValueByAgentId);
     const snapshot = service.snapshotDistributedRun('dist-ga-1');
     assert(snapshot);
     return { service, snapshot };
@@ -227,17 +235,37 @@ Deno.test('missing evidence at the source address fails the assertion by default
     );
 });
 
-Deno.test('group-assertion evidence commands keep full recipe results uncompacted', () => {
-    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
-        'agent-1': { body: { memberCount: 2 } },
-        'agent-2': { body: { memberCount: 2 } }
-    });
+Deno.test('group-assertion evidence stays whole until the assessment settles, then compacts like any result', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
+    for (const agentId of ['agent-1', 'agent-2']) {
+        service.receiveClientEnvelope(registerEnvelope(agentId));
+    }
+    service.createDistributedRun(groupAssertionManifest([ALL_EQUAL_ASSERTION]));
+    service.stageDistributedRun('dist-ga-1');
+    for (const agentId of ['agent-1', 'agent-2']) {
+        service.receiveClientEnvelope(stageResultEnvelope(agentId, takeAgentDispatchableCommands(service, 'run-1', agentId)[0].commandId));
+    }
+    service.startDistributedRun('dist-ga-1');
+    const [firstStart, secondStart] = ['agent-1', 'agent-2'].map((agentId) => takeAgentDispatchableCommands(service, 'run-1', agentId)[0]);
+    service.receiveClientEnvelope(recipeResultEnvelope('agent-1', firstStart.commandId, { body: { memberCount: 2 } }));
+    const pendingEvidence = service.snapshotRun('run-1')?.results.find((result) => result.commandId === firstStart.commandId)?.result?.value;
 
-    const run = service.snapshotRun('run-1');
-    assert(run);
-    const startResult = run.results.find((result) => result.commandId.includes('-start-agent-1-'));
-    const value = startResult?.result?.value;
-    assert(isJsonRecordValue(value) && Array.isArray(value.results), 'Expected uncompacted recipe results.');
+    service.receiveClientEnvelope(recipeResultEnvelope('agent-2', secondStart.commandId, { body: { memberCount: 2 } }));
+    const settled = service.snapshotDistributedRun('dist-ga-1');
+    const settledEvidence = service.snapshotForPersistence().runs[0].results
+        .filter((result) => result.commandId === firstStart.commandId || result.commandId === secondStart.commandId)
+        .map((result) => result.result?.value);
+
+    assertJsonEquals(pendingEvidence, { recipeId: 'probe-recipe', results: [{ ...PROBE_READ_RESULT, value: { body: { memberCount: 2 } } }] });
+    assertJsonEquals(settled?.state, 'passed');
+    assertJsonEquals(settled?.rollup.summary.passedGroupAssertions, 1);
+    assertJsonEquals(settled?.rollup.groupAssertions?.[0].perAgent.length, 2);
+    assertJsonEquals(settledEvidence.length, 2);
+    for (const value of settledEvidence) {
+        assert(isJsonRecordValue(value));
+        assertJsonEquals(value.resultEvidence, { status: 'finite', payloadsOmitted: true });
+        assertJsonEquals(value.results, [PROBE_READ_RESULT]);
+    }
 });
 
 Deno.test('redacted per-agent value tables hide sensitive evidence values', () => {
@@ -257,8 +285,8 @@ Deno.test('redacted per-agent value tables hide sensitive evidence values', () =
     assert(!serialized.includes('secret-token-b'), 'Expected token values to be redacted.');
 });
 
-Deno.test('persistence snapshots preserve group evidence through JSON restore without materializing fleet reports', () => {
-    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+Deno.test('persistence snapshots preserve pending group evidence through JSON restore without materializing fleet reports', () => {
+    const service = deliverGroupAssertionResults([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
     });
@@ -271,7 +299,6 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
         command: { kind: 'recipe.run', recipe: ordinaryRecipe }
     });
     assert(ordinaryCommand.right);
-    assertJsonEquals(takeAgentDispatchableCommands(service, 'run-1', 'agent-1').map((command) => command.commandId), ['ordinary-result']);
     assertJsonEquals(
         service.receiveClientEnvelope(
             recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } })
@@ -282,7 +309,8 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
     assertJsonEquals(persisted.fleetReports, []);
     const restored = createRallarBlackBoxControlService(toControlServiceInput());
     const decoded = JSON.parse(JSON.stringify(persisted)) as typeof persisted;
-    restored.restoreSnapshot({ ...decoded, distributedRuns: decoded.distributedRuns?.map((run) => ({ ...run, state: 'running' })) });
+    assertJsonEquals(decoded.distributedRuns?.map((run) => run.state), ['running']);
+    restored.restoreSnapshot(decoded);
     const run = restored.snapshotRun('run-1');
     assert(run);
     const evidence = run.results.find((result) => result.commandId.includes('-start-agent-1-'))?.result?.value;
@@ -303,7 +331,7 @@ Deno.test('persistence snapshots preserve group evidence through JSON restore wi
 });
 
 Deno.test('restore keeps group evidence isolated from concatenation-ambiguous run and command identities', () => {
-    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+    const service = deliverGroupAssertionResults([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
     });

@@ -6,81 +6,120 @@ import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
+import type { ControlTimers } from './control-timers.ts';
 
-export interface ControlSnapshotPersistence {
-    restore(): Promise<void>;
-    persist(): void;
-}
-
-export interface CreateControlSnapshotPersistenceInput {
+export interface ControlSnapshotPersistenceInput {
     readonly storageDir: string | undefined;
     readonly retentionMaxRuns: number;
     readonly snapshotBounds: ControlRunSnapshotBounds;
+    /** The least time between two snapshot writes; a distributed-run lifecycle change writes at once. */
+    readonly flushIntervalMs: number;
     readonly controlService: Pick<
         RallarBlackBoxControlService,
-        'applyRunRetention' | 'restoreSnapshot' | 'snapshotForPersistence'
+        'applyRunRetention' | 'restoreSnapshot' | 'snapshotForPersistence' | 'snapshotRevision'
     >;
     readonly deleteRuns: (runIds: readonly string[]) => void;
+    readonly timers: ControlTimers;
 }
 
-const SNAPSHOT_PERSIST_DEBOUNCE_MS = 100;
+interface ScheduledSnapshotFlush {
+    readonly dueEpochMs: number;
+    readonly cancel: () => void;
+}
+
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
 
-export function createControlSnapshotPersistence(
-    input: CreateControlSnapshotPersistenceInput
-): ControlSnapshotPersistence {
-    const path = input.storageDir ? toSnapshotPath(input.storageDir) : undefined;
-    let sequence = 0;
-    let scheduled = false;
-    let persisting = false;
-    let dirty = false;
-    let writtenSnapshotJson: string | undefined;
+/**
+ * Writes the whole snapshot at most once per flush interval, trailing the last change, and skips the serialization
+ * when the service revision has not moved since the last write. One write is in flight at a time.
+ */
+export class ControlSnapshotPersistence {
+    private readonly input: ControlSnapshotPersistenceInput;
+    private sequence = 0;
+    private dirty = false;
+    private lastFlushEpochMs = Number.NEGATIVE_INFINITY;
+    private flushedLifecycle: string | undefined;
+    private written: ControlSnapshotRevision | undefined;
+    private flushing: Promise<void> | undefined;
+    private scheduled: ScheduledSnapshotFlush | undefined;
 
-    async function flush(): Promise<void> {
-        scheduled = false;
-        if (!dirty || persisting || !path || !input.storageDir) {
-            return;
-        }
-        dirty = false;
-        persisting = true;
-        try {
-            const snapshotJson = JSON.stringify(input.controlService.snapshotForPersistence(input.snapshotBounds));
-            if (snapshotJson === writtenSnapshotJson) {
-                return;
-            }
-            const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${sequence += 1}`;
-            if (await writeSnapshotFile(input.storageDir, tempPath, toSnapshotFileText(snapshotJson))) {
-                writtenSnapshotJson = snapshotJson;
-            }
-        }
-        finally {
-            persisting = false;
-            if (dirty) {
-                schedulePersistence();
-            }
+    constructor(input: ControlSnapshotPersistenceInput) {
+        this.input = input;
+    }
+
+    async restore(): Promise<void> {
+        if (this.input.storageDir) {
+            await restoreSnapshotFile(toSnapshotPath(this.input.storageDir), this.input.controlService);
         }
     }
 
-    function schedulePersistence(): void {
-        applyAutomaticRetention(input);
-        if (!path) {
+    persist(): void {
+        applyAutomaticRetention(this.input);
+        if (!this.input.storageDir) {
             return;
         }
-        dirty = true;
-        if (!scheduled && !persisting) {
-            scheduled = true;
-            setTimeout(() => void flush(), SNAPSHOT_PERSIST_DEBOUNCE_MS);
+        this.dirty = true;
+        if (!this.flushing) {
+            this.scheduleFlush();
         }
     }
 
-    return {
-        restore: () => path ? restoreSnapshotFile(path, input.controlService) : Promise.resolve(),
-        persist: schedulePersistence
-    };
+    /** Writes an unsaved change at once; shutdown awaits it. */
+    async stop(): Promise<void> {
+        await this.flushing;
+        this.scheduled?.cancel();
+        this.scheduled = undefined;
+        if (this.dirty) {
+            await this.flush();
+        }
+    }
+
+    private scheduleFlush(): void {
+        const nowEpochMs = this.input.timers.nowEpochMs();
+        const lifecycleChanged = this.input.controlService.snapshotRevision().lifecycle !== this.flushedLifecycle;
+        const dueEpochMs = lifecycleChanged
+            ? nowEpochMs
+            : Math.max(nowEpochMs, this.lastFlushEpochMs + this.input.flushIntervalMs);
+        if (this.scheduled !== undefined && this.scheduled.dueEpochMs <= dueEpochMs) {
+            return;
+        }
+        this.scheduled?.cancel();
+        this.scheduled = {
+            dueEpochMs,
+            cancel: this.input.timers.schedule(() => this.flush(), dueEpochMs - nowEpochMs)
+        };
+    }
+
+    private async flush(): Promise<void> {
+        this.scheduled = undefined;
+        this.flushing = this.writeChangedSnapshot();
+        await this.flushing;
+        this.flushing = undefined;
+        if (this.dirty) {
+            this.scheduleFlush();
+        }
+    }
+
+    private async writeChangedSnapshot(): Promise<void> {
+        const { storageDir, controlService, snapshotBounds, timers } = this.input;
+        this.dirty = false;
+        this.lastFlushEpochMs = timers.nowEpochMs();
+        const revision = controlService.snapshotRevision();
+        this.flushedLifecycle = revision.lifecycle;
+        if (!storageDir || revision.content === this.written?.content) {
+            return;
+        }
+        const snapshotJson = JSON.stringify(controlService.snapshotForPersistence(snapshotBounds));
+        const tempPath = `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${this.lastFlushEpochMs}-${this.sequence += 1}`;
+        if (await writeSnapshotFile(storageDir, tempPath, toSnapshotFileText(snapshotJson, this.lastFlushEpochMs))) {
+            this.written = revision;
+        }
+    }
 }
 
-function applyAutomaticRetention(input: CreateControlSnapshotPersistenceInput): void {
+function applyAutomaticRetention(input: ControlSnapshotPersistenceInput): void {
     const deletedRunIds = input.controlService.applyRunRetention(input.retentionMaxRuns);
     if (deletedRunIds.length > 0) {
         input.deleteRuns(deletedRunIds);
@@ -91,9 +130,8 @@ function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
 }
 
-/** Embeds the already serialized snapshot, so change detection and the file share one serialization. */
-function toSnapshotFileText(snapshotJson: string): string {
-    return `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${Date.now()},"snapshot":${snapshotJson}}`;
+function toSnapshotFileText(snapshotJson: string, savedAtEpochMs: number): string {
+    return `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":${snapshotJson}}`;
 }
 
 async function writeSnapshotFile(storageDir: string, tempPath: string, payload: string): Promise<boolean> {
@@ -114,7 +152,7 @@ async function writeSnapshotFile(storageDir: string, tempPath: string, payload: 
 
 async function restoreSnapshotFile(
     path: string,
-    controlService: CreateControlSnapshotPersistenceInput['controlService']
+    controlService: ControlSnapshotPersistenceInput['controlService']
 ): Promise<void> {
     try {
         decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(

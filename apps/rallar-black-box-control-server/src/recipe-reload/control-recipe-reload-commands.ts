@@ -107,6 +107,27 @@ export function resolveControlRecipeReloadOwner(
     return undefined;
 }
 
+/** The reload root owning each root and child command id, first root first, built in one pass over the run. */
+export function toControlRecipeReloadOwners(run: ControlRunState): ReadonlyMap<string, ControlCommandState> {
+    const owners = new Map<string, ControlCommandState>();
+    for (const root of run.commands.values()) {
+        if (!isControlRecipeReloadRoot(root.envelope)) {
+            continue;
+        }
+        for (
+            const commandId of [
+                root.envelope.commandId,
+                ...toControlRecipeReloadCommands(root.envelope).map((child) => child.commandId)
+            ]
+        ) {
+            if (!owners.has(commandId)) {
+                owners.set(commandId, root);
+            }
+        }
+    }
+    return owners;
+}
+
 export function isReloadChildEnvelope(expected: ControlCommandEnvelope, actual: ControlCommandEnvelope): boolean {
     return JSON.stringify(expected) === JSON.stringify(actual);
 }

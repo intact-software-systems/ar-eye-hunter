@@ -27,6 +27,10 @@ export interface BlackBoxControlServerConfiguration {
     /** Absent when the server keeps no snapshot or artifact files. */
     readonly storageDir?: string;
     readonly retentionMaxRuns: number;
+    /** The least time between two snapshot writes. */
+    readonly snapshotFlushIntervalMs: number;
+    /** The cadence on which reload deadlines, cleanup refusals, barrier timeouts and rollups are judged. */
+    readonly deadlineSweepIntervalMs: number;
     readonly snapshotPersistenceBounds: ControlRunSnapshotBounds;
     readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
 }
@@ -50,6 +54,10 @@ const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
     reports: 20,
     heartbeats: 500
 };
+/** A 50-agent snapshot serializes to about 33 MB in 100–300 ms; one write per two seconds keeps that under a tenth of the loop. */
+const DEFAULT_SNAPSHOT_FLUSH_INTERVAL_MS = 2_000;
+/** Well inside the agents' 10 s barrier-resolution grace, so a timed-out barrier is judged before an agent gives up. */
+const DEFAULT_DEADLINE_SWEEP_INTERVAL_MS = 1_000;
 const UNBOUNDED_SNAPSHOT_LIMITS = new Set(['all', 'unbounded', 'none']);
 const TRUE_FLAGS = new Set(['1', 'true', 'yes', 'on']);
 
@@ -77,6 +85,16 @@ export function readBlackBoxControlServerConfiguration(
         wsAllowedOrigins: readEnvironmentList(environment, 'RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS'),
         storageDir: readEnvironmentString(environment, 'RALLAR_BLACK_BOX_STORAGE_DIR'),
         retentionMaxRuns: readEnvironmentNumber(environment, 'RALLAR_BLACK_BOX_RETENTION_MAX_RUNS', 0),
+        snapshotFlushIntervalMs: readEnvironmentNumber(
+            environment,
+            'RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS',
+            DEFAULT_SNAPSHOT_FLUSH_INTERVAL_MS
+        ),
+        deadlineSweepIntervalMs: readEnvironmentNumber(
+            environment,
+            'RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS',
+            DEFAULT_DEADLINE_SWEEP_INTERVAL_MS
+        ),
         snapshotPersistenceBounds: readSnapshotBounds(
             environment,
             'SNAPSHOT_PERSIST',
