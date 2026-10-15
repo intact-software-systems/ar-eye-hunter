@@ -1,11 +1,16 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
-import type { Group, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    isCanonicalGroupPresenceSummaryEntry,
+    type GroupPresenceSummaryWorkData
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
@@ -15,6 +20,14 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../..
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { writeCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
+import {
+    nowMs,
+    recordRallarTiming,
+    timeRallarAsync,
+    type RallarTimingDetails,
+    type RallarTimingEventInput,
+    type RallarTimingSink
+} from '../../observability/timing.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import { RtcTopologySnapshotRepository } from '../../topology/persistence/rtc-topology-snapshot-repository.ts';
@@ -29,6 +42,11 @@ import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggreg
 import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
 import { assertGroupPresenceSummaryRead } from './assert-group-presence-summary-read.ts';
+import {
+    computeGroupPresenceSummaryCoalescedWrite,
+    validateGroupPresenceSummaryCoalescedWrite,
+    type GroupPresenceSummaryCoalescedWrite
+} from './compute-group-presence-summary-coalesced-write.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import { computeGroupDeltaProvenance, writeGroupDeltaProvenance } from './group-delta-provenance.ts';
 import {
@@ -37,8 +55,7 @@ import {
     validateGroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryReservationRead,
-    type GroupPresenceSummaryWorkRead,
-    type GroupPresenceSummaryWrite
+    type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
 
 export interface GroupPresenceSummaryWorkOptions {
@@ -50,14 +67,25 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationPresenceSummarySink;
+    readonly timing?: RallarTimingSink;
 }
 
-interface ReadTopologyReplanPolicyFactsInput {
+/** One summary work row and the reservation its finish must match. */
+export interface GroupPresenceSummaryWorkItem {
     readonly work: GroupPresenceSummaryWorkData;
-    readonly group: Group;
-    readonly coalescedTopologyEntry: ResourceEntry | null;
-    readonly nowEpochMs: number;
+    readonly reservation: GroupPresenceSummaryReservationRead;
 }
+
+interface GroupPresenceSummaryExpansion {
+    readonly work: GroupPresenceSummaryWorkData;
+    readonly read: GroupPresenceSummaryWorkRead;
+    readonly computed: GroupPresenceSummaryComputedWork;
+}
+
+type GroupPresenceSummaryPhase = 'claim' | 'read' | 'compute' | 'write';
+
+/** The queue caps a work page at 256 rows; one page of pending APP_OUTBOX work is scanned per expansion. */
+const COALESCED_SUMMARY_WORK_SCAN_LIMIT = 256;
 
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
@@ -68,55 +96,53 @@ export class GroupPresenceSummaryWork {
         this.now = options.now;
     }
 
+    /** One read of the group serves every item of the same group; the items differ only in their reservation. */
     public async read(
-        work: GroupPresenceSummaryWorkData,
-        reservation: GroupPresenceSummaryReservationRead,
+        items: readonly GroupPresenceSummaryWorkItem[],
         nowEpochMs: number
-    ): Promise<GroupPresenceSummaryWorkRead> {
+    ): Promise<readonly GroupPresenceSummaryWorkRead[]> {
+        const ref = requireSameGroup(items);
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
         const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
-            repository.findGroupEntry(work.aggregateRef),
-            repository.listMemberEntries(work.aggregateRef),
-            repository.listPresenceAdmissionEntries(work.aggregateRef),
-            repository.listPresenceSessionEntries(work.aggregateRef),
-            repository.findPresenceSummaryEntry(work.aggregateRef),
-            this.readCoalescedTopologyEntry(work.aggregateRef)
+            repository.findGroupEntry(ref),
+            repository.listMemberEntries(ref),
+            repository.listPresenceAdmissionEntries(ref),
+            repository.listPresenceSessionEntries(ref),
+            repository.findPresenceSummaryEntry(ref),
+            this.readCoalescedTopologyEntry(ref)
         ]);
         if (!group) {
-            throw new TypeError(
-                `Group not found for presence summary: ${work.aggregateRef.groupId}`
-            );
+            throw new TypeError(`Group not found for presence summary: ${ref.groupId}`);
         }
-        const read: GroupPresenceSummaryWorkRead = {
+        const presence = { group, members, admissions, presenceSessions, current: current ?? null };
+        assertGroupPresenceSummaryRead(ref, presence);
+        const coalescedEvents = items.map((item) => item.work.event);
+        const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts(
+            items[0]!.work,
+            presence.group.value,
+            coalescedTopologyEntry,
+            nowEpochMs
+        );
+        return items.map((item) => ({
             nowEpochMs,
             reservation: {
-                key: { ...reservation.key },
-                expectedAttempts: reservation.expectedAttempts
+                key: { ...item.reservation.key },
+                expectedAttempts: item.reservation.expectedAttempts
             },
-            presence: {
-                group,
-                members,
-                admissions,
-                presenceSessions,
-                current: current ?? null
-            },
+            presence,
+            coalescedEvents,
             coalescedTopologyEntry,
-            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts({
-                work,
-                group: group.value,
-                coalescedTopologyEntry,
-                nowEpochMs
-            })
-        };
-        assertGroupPresenceSummaryRead(work.aggregateRef, read.presence);
-        return read;
+            topologyReplanPolicyFacts
+        }));
     }
 
-    /** The policy and planned slot are read only when the enqueue gate will consult them. */
+    /** The policy and planned slot are read only when the enqueue gate will consult them; the gate depends on the group alone. */
     private async readTopologyReplanPolicyFacts(
-        input: ReadTopologyReplanPolicyFactsInput
+        work: GroupPresenceSummaryWorkData,
+        group: GroupPresenceSummaryWorkRead['presence']['group']['value'],
+        coalescedTopologyEntry: ResourceEntry | null,
+        nowEpochMs: number
     ): Promise<TopologyReplanPolicyFacts> {
-        const { work, group, coalescedTopologyEntry, nowEpochMs } = input;
         const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs });
         if (!consultsTopologyReplanPolicy(facts)) {
             return { consulted: false };
@@ -172,7 +198,7 @@ export class GroupPresenceSummaryWork {
 
     public async write(
         transaction: PSqlSql,
-        computed: GroupPresenceSummaryComputedWork
+        computed: GroupPresenceSummaryCoalescedWrite
     ): Promise<void> {
         if (computed.summaryWrite !== null) {
             await writePresenceSummary(transaction, computed.summaryWrite);
@@ -188,34 +214,144 @@ export class GroupPresenceSummaryWork {
         }
     }
 
+    /**
+     * Expands the reserved row together with every pending summary row of the
+     * same group it can claim through the queue, so the group is read once and
+     * its summary written once per tick; each claimed event still gets its own
+     * delta row, in causal order.
+     */
     public async processReservedEntry(
         message: ALMessage,
         entry: ResourceEntry
     ): Promise<void> {
-        if (!this.options.database) {
+        const database = this.options.database;
+        if (!database) {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
-        const work = decodeCanonicalGroupPresenceSummaryWork(message, entry);
-        const read = await this.read(work, {
-            key: entry.key,
-            expectedAttempts: entry.dequeueAudit.attempts
-        }, this.now());
-        const computed = this.compute(work, read);
-        this.validateComputed(work, read, computed);
-        const proofs = computeGroupDeltaProvenance(computed);
-        await runInPSqlTransaction(this.options.database, async (transaction) => {
-            await this.write(transaction, computed);
-            await writeGroupDeltaProvenance(transaction, proofs);
-            const finished = await writeResourceInboxReservationFinish(
-                transaction,
-                computed.reservationFinish
-            );
-            if (!finished) {
-                throw new Error('Presence-summary reservation changed before commit');
-            }
-        });
+        const primary = decodeCanonicalGroupPresenceSummaryWork(message, entry);
+        const claimStartedAtMs = nowMs();
+        const claimed = await this.claimPendingSummaryWork(entry);
+        this.recordPhase(primary, 'claim', { coalescedWorkCount: claimed.length + 1 }, claimStartedAtMs);
+        try {
+            const items = sortByCausalOrder([
+                { work: primary, reservation: toReservationRead(entry) },
+                ...claimed.map((sibling) => ({
+                    work: decodeCanonicalGroupPresenceSummaryWork(decodePersistedALMessage(sibling.resource), sibling),
+                    reservation: toReservationRead(sibling)
+                }))
+            ]);
+            await this.expandItems(database, primary, items);
+        }
+        catch (error) {
+            await this.releaseClaimedWork(claimed);
+            throw error;
+        }
+    }
+
+    private async expandItems(
+        database: PSqlSql,
+        primary: GroupPresenceSummaryWorkData,
+        items: readonly GroupPresenceSummaryWorkItem[]
+    ): Promise<void> {
+        const workCount = { coalescedWorkCount: items.length };
+        const reads = await timeRallarAsync(
+            this.options.timing,
+            this.toPhaseTimingEvent(primary, 'read', workCount),
+            async () => await this.read(items, this.now())
+        );
+        const computeStartedAtMs = nowMs();
+        const expansions = items.map((item, index) => this.expand(item.work, reads[index]!));
+        const coalesced = computeGroupPresenceSummaryCoalescedWrite(expansions.map((expansion) => expansion.computed));
+        this.validateCoalesced(expansions, coalesced);
+        const effectDetails = {
+            ...workCount,
+            recipientCount: expansions[0]!.computed.summary.summary.activeSessionIds.length,
+            deltaCount: coalesced.downstreamOutboxWrites.length
+        };
+        this.recordPhase(primary, 'compute', effectDetails, computeStartedAtMs);
+        const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
+        await timeRallarAsync(
+            this.options.timing,
+            this.toPhaseTimingEvent(primary, 'write', effectDetails),
+            async () =>
+                await runInPSqlTransaction(database, async (transaction) => {
+                    await this.write(transaction, coalesced);
+                    await writeGroupDeltaProvenance(transaction, proofs);
+                    for (const reservationFinish of coalesced.reservationFinishes) {
+                        if (!await writeResourceInboxReservationFinish(transaction, reservationFinish)) {
+                            throw new Error('Presence-summary reservation changed before commit');
+                        }
+                    }
+                })
+        );
         this.options.wakeQueue?.();
-        this.recordFormationMetrics(computed);
+        this.recordFormationMetrics(coalesced);
+    }
+
+    private expand(
+        work: GroupPresenceSummaryWorkData,
+        read: GroupPresenceSummaryWorkRead
+    ): GroupPresenceSummaryExpansion {
+        const computed = this.compute(work, read);
+        const issue = this.validate(work, read, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
+        return { work, read, computed };
+    }
+
+    private validateCoalesced(
+        expansions: readonly GroupPresenceSummaryExpansion[],
+        coalesced: GroupPresenceSummaryCoalescedWrite
+    ): void {
+        const issue = validateGroupPresenceSummaryCoalescedWrite(
+            expansions.map((expansion) => expansion.computed),
+            coalesced
+        )[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
+    }
+
+    /** Claims, through the queue, the still-new summary rows of the same group; an unchanged observation is the claim's guard. */
+    private async claimPendingSummaryWork(entry: ResourceEntry): Promise<readonly ResourceEntry[]> {
+        const outbox = this.options.outboxQueueReader.outbox;
+        const page = await outbox.readWorkPage({
+            typeId: EnqueuedType.APP_OUTBOX,
+            status: EntityStatus.NEW,
+            maxToRead: COALESCED_SUMMARY_WORK_SCAN_LIMIT,
+            cursor: null
+        });
+        const pending = page.entries.filter((candidate) => isPendingSummaryWorkOfSameGroup(candidate, entry));
+        if (pending.length === 0) {
+            return [];
+        }
+        const reserved = await outbox.reserveEntries({
+            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: pending.length,
+            observedEntries: pending
+        });
+        return [...reserved.values()];
+    }
+
+    /** A claimed row that was not expanded consumed no attempt; it goes back to the queue at once. */
+    private async releaseClaimedWork(claimed: readonly ResourceEntry[]): Promise<void> {
+        if (claimed.length === 0) {
+            return;
+        }
+        try {
+            await this.options.outboxQueueReader.outbox.releaseEntries(
+                claimed.map((entry) => ({
+                    entry,
+                    disposition: { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' }
+                }))
+            );
+        }
+        catch {
+            // The expansion's own failure is the one to report; a claim this release could not return
+            // is reclaimed by the queue's reservation timeout.
+        }
     }
 
     private async readCoalescedTopologyEntry(ref: GroupRef): Promise<ResourceEntry | null> {
@@ -227,23 +363,43 @@ export class GroupPresenceSummaryWork {
         return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
-    private validateComputed(
+    private recordPhase(
         work: GroupPresenceSummaryWorkData,
-        read: GroupPresenceSummaryWorkRead,
-        computed: GroupPresenceSummaryComputedWork
+        operation: GroupPresenceSummaryPhase,
+        details: RallarTimingDetails,
+        startedAtMs: number
     ): void {
-        const issue = this.validate(work, read, computed)[0];
-        if (issue !== undefined) {
-            throw issue.cause;
-        }
+        recordRallarTiming({
+            sink: this.options.timing,
+            event: this.toPhaseTimingEvent(work, operation, details),
+            status: 'ok',
+            durationMs: nowMs() - startedAtMs
+        });
     }
 
-    private recordFormationMetrics(computed: GroupPresenceSummaryComputedWork): void {
+    private toPhaseTimingEvent(
+        work: GroupPresenceSummaryWorkData,
+        operation: GroupPresenceSummaryPhase,
+        details: RallarTimingDetails
+    ): RallarTimingEventInput {
+        return {
+            component: 'group-presence-summary',
+            operation,
+            serviceId: this.options.serviceId,
+            requestId: work.commandId,
+            applicationId: work.aggregateRef.applicationId,
+            workspaceId: work.aggregateRef.workspaceId,
+            groupId: work.aggregateRef.groupId,
+            details
+        };
+    }
+
+    private recordFormationMetrics(coalesced: GroupPresenceSummaryCoalescedWrite): void {
         try {
             this.options.formationMetrics?.({
                 downstreamTopicIds: [
-                    ...computed.downstreamOutboxWrites.map((write) => write.entry.key.topicId),
-                    ...(computed.topologyReplan.decision === 'enqueue' ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : [])
+                    ...coalesced.downstreamOutboxWrites.map((write) => write.entry.key.topicId),
+                    ...(coalesced.topologyReplan.decision === 'enqueue' ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : [])
                 ]
             });
         }
@@ -253,9 +409,49 @@ export class GroupPresenceSummaryWork {
     }
 }
 
+function requireSameGroup(items: readonly GroupPresenceSummaryWorkItem[]): GroupRef {
+    const ref = items[0]?.work.aggregateRef;
+    if (ref === undefined) {
+        throw new TypeError('A presence summary read needs at least one work item');
+    }
+    for (const item of items) {
+        const candidate = item.work.aggregateRef;
+        if (
+            candidate.applicationId !== ref.applicationId ||
+            candidate.workspaceId !== ref.workspaceId ||
+            candidate.groupId !== ref.groupId
+        ) {
+            throw new TypeError('Coalesced presence summary work must belong to one group');
+        }
+    }
+    return ref;
+}
+
+function isPendingSummaryWorkOfSameGroup(candidate: ResourceEntry, entry: ResourceEntry): boolean {
+    return candidate.key.topicId === entry.key.topicId &&
+        candidate.key.contextId === entry.key.contextId &&
+        !isKeysEqual(candidate.key, entry.key) &&
+        isCanonicalGroupPresenceSummaryEntry(candidate);
+}
+
+function toReservationRead(entry: ResourceEntry): GroupPresenceSummaryReservationRead {
+    return { key: entry.key, expectedAttempts: entry.dequeueAudit.attempts };
+}
+
+function sortByCausalOrder(
+    items: readonly GroupPresenceSummaryWorkItem[]
+): readonly GroupPresenceSummaryWorkItem[] {
+    return [...items].sort((left, right) =>
+        left.work.acceptedCausalRevision.groupRevision - right.work.acceptedCausalRevision.groupRevision ||
+        left.work.acceptedCausalRevision.presenceRevision - right.work.acceptedCausalRevision.presenceRevision ||
+        left.work.createdAtEpochMs - right.work.createdAtEpochMs ||
+        left.work.commandId.localeCompare(right.work.commandId)
+    );
+}
+
 async function writePresenceSummary(
     transaction: PSqlSql,
-    computed: GroupPresenceSummaryWrite
+    computed: NonNullable<GroupPresenceSummaryCoalescedWrite['summaryWrite']>
 ): Promise<void> {
     const rows = computed.operation === 'insert'
         ? await transaction<{ revision: number; }[]>`

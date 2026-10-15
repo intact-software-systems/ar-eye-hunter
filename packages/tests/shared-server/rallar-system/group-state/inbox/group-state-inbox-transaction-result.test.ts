@@ -225,6 +225,7 @@ describe('group-state AppInbox transaction result boundary', () => {
                 }
             },
             transactionWriter,
+            lanePhaseTiming: undefined,
             wakeQueue: () => actions.push('wake')
         });
         const authority: GroupMutationIngress = {

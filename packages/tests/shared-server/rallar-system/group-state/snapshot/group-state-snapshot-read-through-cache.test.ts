@@ -25,6 +25,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createGroupStateServiceFixture } from '../../state-sync/create-group-state-service-fixture.ts';
+import { readSummaryWork } from '../presence/group-presence-test-runtime.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {
@@ -218,14 +219,7 @@ async function convergePresenceSummaryForCacheTest(
         now: () => 2_001,
         serviceId: 'cache-convergence-test'
     });
-    const read = await work.read(command, {
-        key: {
-            topicId: 'test.group-presence-summary',
-            resourceId: command.commandId,
-            contextId: 'test.group-presence-summary'
-        },
-        expectedAttempts: 1
-    }, 2_001);
+    const read = await readSummaryWork(work, command, 2_001);
     const computed = work.compute(command, read);
     expect(work.validate(command, read, computed)).toEqual([]);
     await runtime.begin(async (transaction) => {

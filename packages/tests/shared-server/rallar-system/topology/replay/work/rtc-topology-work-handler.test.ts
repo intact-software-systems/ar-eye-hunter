@@ -62,7 +62,7 @@ import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-suppo
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { GroupBarrierRepository } from '../../../group-state/group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
-import { createService, summaryReservationRead } from '../../../group-state/presence/group-presence-test-runtime.ts';
+import { createService, readSummaryWork } from '../../../group-state/presence/group-presence-test-runtime.ts';
 
 interface CriterionSubmission {
     readonly command: GroupMutationCommand;
@@ -889,7 +889,7 @@ async function computeLatestPresenceTopologyWork({
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await worker.read(command, summaryReservationRead(command.commandId), nowEpochMs);
+    const read = await readSummaryWork(worker, command, nowEpochMs);
     const computed = worker.compute(command, read);
     expect(worker.validate(command, read, computed)).toEqual([]);
     if (computed.topologyReplan.decision !== 'enqueue') {

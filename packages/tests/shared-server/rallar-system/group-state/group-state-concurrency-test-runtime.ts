@@ -276,12 +276,17 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         }
     }
 
+    /**
+     * The last arrival continues at once; the earlier arrivals resume one
+     * macrotask later, so the last arrival's read, compute and transaction
+     * entry complete before any other reader can observe the same state.
+     */
     private async waitAtBarrier(kind: 'group' | 'presence' | 'admission'): Promise<void> {
         if (kind === 'group') {
             this.groupReadsArrived += 1;
             if (this.groupReadsArrived === this.groupReadsRemaining) {
                 this.groupReadsRemaining = 0;
-                this.releaseGroupReads?.();
+                releaseAfterMacrotask(this.releaseGroupReads);
                 return;
             }
             await new Promise<void>((resolve) => {
@@ -293,7 +298,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
             this.admissionReadsArrived += 1;
             if (this.admissionReadsArrived === this.admissionReadsRemaining) {
                 this.admissionReadsRemaining = 0;
-                this.releaseAdmissionReads?.();
+                releaseAfterMacrotask(this.releaseAdmissionReads);
                 return;
             }
             await new Promise<void>((resolve) => {
@@ -304,12 +309,18 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.presenceReadsArrived += 1;
         if (this.presenceReadsArrived === this.presenceReadsRemaining) {
             this.presenceReadsRemaining = 0;
-            this.releasePresenceReads?.();
+            releaseAfterMacrotask(this.releasePresenceReads);
             return;
         }
         await new Promise<void>((resolve) => {
             this.releasePresenceReads = resolve;
         });
+    }
+}
+
+function releaseAfterMacrotask(release: (() => void) | undefined): void {
+    if (release !== undefined) {
+        setTimeout(release, 0);
     }
 }
 

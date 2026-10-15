@@ -336,7 +336,8 @@ function createGroupStateInboxServiceFactory(
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
-            formationMetrics: input.groupFormationMetrics.presenceSummary
+            formationMetrics: input.groupFormationMetrics.presenceSummary,
+            timing: input.timing
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)

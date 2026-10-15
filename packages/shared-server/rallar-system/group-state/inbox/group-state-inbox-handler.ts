@@ -8,6 +8,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { toError } from '@shared/resilience/to-error.ts';
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import { toAppInboxTimingDetails } from '../../app-inbox/handler/app-inbox-attempt-timing.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion,
@@ -16,6 +17,7 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
+import { timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
 import { validateWsSessionConnectGuard } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
@@ -48,6 +50,14 @@ export interface GroupStateInboxResultReader {
     readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
 }
 
+/** Present only while AppInbox phase timing is on; each lane phase then reports as `app-inbox-phase`. */
+export interface GroupStateLanePhaseTiming {
+    readonly sink: RallarTimingSink;
+    readonly serviceId: string;
+}
+
+type GroupStateLanePhase = 'ingress-capture' | 'ingress-persist';
+
 export interface GroupStateInboxHandlerDependencies {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
@@ -56,6 +66,7 @@ export interface GroupStateInboxHandlerDependencies {
         AppInboxMutationTransactionWriter,
         'readCompletionFacts' | 'writeComputedMutation'
     >;
+    readonly lanePhaseTiming: GroupStateLanePhaseTiming | undefined;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
     readonly captureAuthenticatedMutationIngress: (
@@ -229,12 +240,43 @@ export class GroupStateInboxHandler {
         if (authority.kind === 'ingress') {
             return { ingress: authority.mutation, entry: context.entry };
         }
-        const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
-            authority.mutation.descriptor,
-            authority.mutation.authorityProof
+        const ingress = await this.timeLanePhase(
+            context,
+            'ingress-capture',
+            async () =>
+                await this.dependencies.captureAuthenticatedMutationIngress(
+                    authority.mutation.descriptor,
+                    authority.mutation.authorityProof
+                )
         );
-        const entry = await this.dependencies.persistMutationIngress(context, ingress);
+        const entry = await this.timeLanePhase(
+            context,
+            'ingress-persist',
+            async () => await this.dependencies.persistMutationIngress(context, ingress)
+        );
         return { ingress, entry };
+    }
+
+    private async timeLanePhase<Result>(
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        operation: GroupStateLanePhase,
+        action: () => Promise<Result>
+    ): Promise<Result> {
+        const timing = this.dependencies.lanePhaseTiming;
+        if (timing === undefined) {
+            return await action();
+        }
+        return await timeRallarAsync(
+            timing.sink,
+            {
+                component: 'app-inbox-phase',
+                operation,
+                serviceId: timing.serviceId,
+                requestId: context.enqueue.resourceId,
+                details: toAppInboxTimingDetails(context.enqueue, context.entry.key)
+            },
+            action
+        );
     }
 
     private async commitMutation(
