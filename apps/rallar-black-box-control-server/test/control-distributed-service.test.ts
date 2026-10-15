@@ -409,10 +409,10 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
 
     const bundle = service.createDistributedRunArtifactBundle('dist-1', {});
     assert(bundle);
-    assertJsonEquals(bundle.files['manifest.json'].includes('"distributedRunId": "dist-1"'), true);
+    assertJsonEquals(JSON.parse(bundle.files['manifest.json']).distributedRunId, 'dist-1');
     assert(typeof bundle.files['target-resolution.json'] === 'string');
     assertJsonEquals(bundle.files['target-resolution.json'].includes('"targetAgentIds"'), true);
-    assertJsonEquals(bundle.files['control-run.json'].includes('"runId": "run-1"'), true);
+    assertJsonEquals(JSON.parse(bundle.files['control-run.json']).runId, 'run-1');
 
     const snapshot = service.snapshot();
     const restored = createRallarBlackBoxControlService(toControlServiceInput());
@@ -664,6 +664,7 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
     assert(bundle.files['summary.md'].includes('Fleet Run Report'));
     assert(bundle.files['agent-results.csv'].includes('agent-2,us-east,hetzner,failed'));
     assertJsonEquals(bundle.files['fleet-report.json'].includes('alpha-secret'), false);
+    assertJsonEquals(bundle.files['fleet-report.json'], JSON.stringify(JSON.parse(bundle.files['fleet-report.json'])));
 
     const rebuilt = service.rebuildFleetReports();
     assertJsonEquals(rebuilt.reports.length, 1);

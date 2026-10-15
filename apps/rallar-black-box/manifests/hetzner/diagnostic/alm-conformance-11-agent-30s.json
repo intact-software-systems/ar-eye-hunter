@@ -1707,7 +1707,7 @@
               "groupId": "hetzner-headless-room"
             },
             "refresh": true,
-            "timeoutMs": 5000
+            "timeoutMs": 7750
           },
           {
             "kind": "loop",
@@ -4991,7 +4991,7 @@
               "groupId": "hetzner-headless-room"
             },
             "refresh": true,
-            "timeoutMs": 5000
+            "timeoutMs": 7750
           },
           {
             "kind": "loop",

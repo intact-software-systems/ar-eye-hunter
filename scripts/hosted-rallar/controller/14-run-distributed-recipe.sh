@@ -374,6 +374,8 @@ write_bundle_files() {
 	done
 }
 
+# The run's own small exports come first: a bundle GET serializes the whole run and can fail or take the
+# server down, and each fetch failure only skips its own file.
 export_artifacts() {
 	local distributed_run_id="$1"
 	local control_run_id="$2"
@@ -384,11 +386,6 @@ export_artifacts() {
 		"/distributed-runs/${distributed_run_path_id}" \
 		"${run_artifact_dir}/distributed-run.json" \
 		"distributed-run.json" || true
-	control_get_json_to_file \
-		"/distributed-runs/${distributed_run_path_id}/artifacts" \
-		"${run_artifact_dir}/distributed-artifact-bundle.json" \
-		"distributed-artifact-bundle.json" || true
-	write_bundle_files "${run_artifact_dir}/distributed-artifact-bundle.json"
 
 	if [[ -n "${control_run_id}" ]]; then
 		control_get_text_to_file \
@@ -413,6 +410,13 @@ export_artifacts() {
 		"/fleet/reports/${distributed_run_path_id}" \
 		"${run_artifact_dir}/fleet-report.json" \
 		"fleet-report.json" || true
+
+	control_get_json_to_file \
+		"/distributed-runs/${distributed_run_path_id}/artifacts" \
+		"${run_artifact_dir}/distributed-artifact-bundle.json" \
+		"distributed-artifact-bundle.json" || true
+	write_bundle_files "${run_artifact_dir}/distributed-artifact-bundle.json"
+
 	control_get_json_to_file \
 		"/fleet/reports/${distributed_run_path_id}/artifacts" \
 		"${run_artifact_dir}/fleet-report-artifact-bundle.json" \
@@ -496,6 +500,20 @@ run_self_test() {
 		}
 		control_get_json_to_file "/distributed-runs/dist-preserve" "${output_file}" "distributed-run.json" || true
 		printf 'preservedState=%s\n' "$(jq -r '.state // "unknown"' "${output_file}")"
+		return 0
+		;;
+	export-order)
+		run_artifact_dir="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-export-order}"
+		mkdir -p "${run_artifact_dir}"
+		control_get() {
+			printf 'GET %s\n' "$1" >>"${run_artifact_dir}/export-order.log"
+			if [[ "$1" == */artifacts ]]; then
+				return 22
+			fi
+			printf '{"path":"%s"}\n' "$1"
+		}
+		export_artifacts "dist/1" "run/1" "$(urlencode "dist/1")" "$(urlencode "run/1")"
+		cat "${run_artifact_dir}/export-order.log"
 		return 0
 		;;
 	post-json-evidence)

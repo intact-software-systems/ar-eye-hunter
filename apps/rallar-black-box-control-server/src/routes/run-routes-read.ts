@@ -5,7 +5,8 @@ import {
     controlRunArtifactContentType,
     controlRunArtifactFileNameFromValue,
     controlRunFailureBundle,
-    createControlRunArtifactBundle
+    createControlRunArtifactBundle,
+    createControlRunArtifactFile
 } from '../control-artifacts.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlHttpResponses } from '../http/control-http-responses.ts';
@@ -75,7 +76,9 @@ async function routeRunArtifactReadRequest(
     const [bundleRunId] = toPathParameters(url.pathname, RUN_ARTIFACTS_PATH) ?? [];
     if (bundleRunId !== undefined) {
         const run = controlService.snapshotRun(bundleRunId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-        return run ? responses.json(createControlRunArtifactBundle(run), 200) : responses.rejection(RUN_NOT_FOUND);
+        return run
+            ? responses.artifactBundle(createControlRunArtifactBundle(run), 200)
+            : responses.rejection(RUN_NOT_FOUND);
     }
 
     const [eventsRunId] = toPathParameters(url.pathname, RUN_EVENTS_JSONL_PATH) ?? [];
@@ -113,9 +116,8 @@ async function readRunArtifactFileRoute(
     if (!run) {
         return dependencies.responses.rejection(RUN_NOT_FOUND);
     }
-    const bundle = createControlRunArtifactBundle(run);
     return dependencies.responses.text(
-        bundle.files[artifactFileName],
+        createControlRunArtifactFile(run, artifactFileName, Date.now()),
         200,
         controlRunArtifactContentType(artifactFileName)
     );

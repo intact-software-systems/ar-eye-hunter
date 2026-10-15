@@ -33,7 +33,7 @@ export function routeDistributedRunReadRequest(
     const [bundleRunId] = toPathParameters(url.pathname, DISTRIBUTED_RUN_ARTIFACTS_PATH) ?? [];
     if (bundleRunId !== undefined) {
         const bundle = controlService.createDistributedRunArtifactBundle(bundleRunId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-        return bundle ? responses.json(bundle, 200) : responses.rejection(DISTRIBUTED_RUN_NOT_FOUND);
+        return bundle ? responses.artifactBundle(bundle, 200) : responses.rejection(DISTRIBUTED_RUN_NOT_FOUND);
     }
     return undefined;
 }

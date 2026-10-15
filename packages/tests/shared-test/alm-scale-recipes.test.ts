@@ -300,6 +300,26 @@ describe('ALM scale recipes', () => {
         }
     );
 
+    it.each([[15, 8_750], [30, 12_500], [50, 17_500]] as const)(
+        'allows the %i-member cohort\'s single ready-status read %i ms like its group requests, because hosted it queues behind the formation burst on the serial lane, while the director-ready loop retries at 5 s',
+        (participantCount, allowanceMs) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+
+            for (const [role, recipe] of [['director', scale.recipes[0]], ['player', scale.recipes[1]]] as const) {
+                const commands = flattenCommands(recipe.commands);
+                expect(commands.find((command) => command.commandId === `alm-scale-${role}-ready-status`)).toMatchObject({
+                    kind: 'director.status',
+                    refresh: true,
+                    timeoutMs: allowanceMs
+                });
+                expect(commands.find((command) => command.commandId === `alm-scale-${role}-director-status`)).toMatchObject({
+                    kind: 'director.status',
+                    timeoutMs: 5_000
+                });
+            }
+        }
+    );
+
     it.each(['director', 'player'] as const)('holds the %s at setup-complete until no newer plan replaces the ready layout', (role) => {
         const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;

@@ -10,8 +10,8 @@ import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 /** Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan. */
 const LAYOUT_QUIET_WINDOW_MS = 3_500;
 /**
- * The API serves a cohort's group joins one at a time, so the director's group requests get an allowance that grows
- * with the cohort; a player's join runs inside its connect, under the whole setup allowance.
+ * The API serves a cohort's group joins one at a time, so the director's group requests and every agent's single
+ * ready-status read get an allowance that grows with the cohort; a player's join runs inside its connect.
  */
 const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
@@ -53,7 +53,7 @@ export function createAlmScaleSetupCommands(
             commandId: `${prefix}-ready-status`,
             roomRef: { ...input.group },
             refresh: true,
-            timeoutMs: 5_000
+            timeoutMs: computeGroupRequestTimeoutMs(input)
         },
         createStableLayoutWait(input, prefix),
         createSetupBarrier(input, prefix, 'setup-complete'),

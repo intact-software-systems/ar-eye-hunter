@@ -9,8 +9,10 @@ import {
     controlRunFailureBundle,
     controlRunResultsJsonl,
     createControlDistributedRunArtifactBundle,
-    createControlRunArtifactBundle
+    createControlRunArtifactBundle,
+    createControlRunArtifactFile
 } from '../src/control-artifacts.ts';
+import { toArtifactBundleJsonChunks } from '../src/http/control-http-responses.ts';
 import { assertJsonEquals } from './support/control-service-test-fixtures.ts';
 
 const run: ControlRunSnapshot = {
@@ -187,6 +189,32 @@ Deno.test('control artifacts export redacted shared-test compatible files', () =
     assert(JSON.stringify(bundle).includes('<redacted>'));
 });
 
+/** Pretty-printing tripled a 50-agent run's report.json (33 MB compact, 88 MB indented); members carry no layout. */
+function assertCompactJsonMembers(files: Readonly<Record<string, string>>): void {
+    const jsonMembers = Object.entries(files).filter(([fileName]) => fileName.endsWith('.json'));
+    assert(jsonMembers.length > 0);
+    for (const [fileName, text] of jsonMembers) {
+        assertJsonEquals({ fileName, text }, { fileName, text: JSON.stringify(JSON.parse(text)) });
+    }
+}
+
+Deno.test('control run artifact bundles hold compact JSON members, each also built alone', () => {
+    const bundle = createControlRunArtifactBundle(run, 3_000);
+
+    assertCompactJsonMembers(bundle.files);
+    for (const fileName of ['report.json', 'failures.json', 'metadata.json'] as const) {
+        assertJsonEquals(createControlRunArtifactFile(run, fileName, 3_000), bundle.files[fileName]);
+    }
+});
+
+Deno.test('an artifact bundle streams as exactly its JSON, one chunk per member', () => {
+    const bundle = createControlRunArtifactBundle(run, 3_000);
+    const chunks = [...toArtifactBundleJsonChunks(bundle)];
+
+    assertJsonEquals(chunks.join(''), JSON.stringify(bundle));
+    assert(chunks.length > Object.keys(bundle.files).length);
+});
+
 Deno.test('control artifacts export event, result, and failure bundles', () => {
     assert(controlRunEventsJsonl(run).includes('rtc-diagnostic'));
     assert(controlRunEventsJsonl(run).includes('crdt-diagnostic'));
@@ -324,6 +352,7 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
     assertJsonEquals('events.jsonl' in bundle.files, false);
     assertJsonEquals(metadata.artifactRefs.resultsJsonl, '/runs/artifact-run/results.jsonl');
     assertJsonEquals(metadata.artifactRefs.eventsJsonl, '/runs/artifact-run/events.jsonl');
+    assertCompactJsonMembers(bundle.files);
     assert(!JSON.stringify(bundle).includes('secret-token'));
     assert(JSON.stringify(bundle).includes('<redacted>'));
 });

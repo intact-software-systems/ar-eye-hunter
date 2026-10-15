@@ -313,21 +313,38 @@ export function createControlRunArtifactBundle(
     run: ControlRunSnapshot,
     generatedAtEpochMs = Date.now()
 ): ControlRunArtifactBundle {
-    const rows = resultRows(run);
-    const summary = artifactSummary(run);
-
     return {
         artifactSchemaVersion: CONTROL_ARTIFACT_SCHEMA_VERSION,
         runId: run.runId,
         generatedAtEpochMs,
         files: {
-            'report.json': JSON.stringify(toControlRunArtifactReport(run, rows, summary), null, 2),
-            'results.jsonl': controlRunResultsJsonl(run),
-            'events.jsonl': controlRunEventsJsonl(run),
-            'failures.json': JSON.stringify(controlRunFailureBundle(run), null, 2),
-            'metadata.json': JSON.stringify(toControlRunArtifactMetadata(run, summary, generatedAtEpochMs), null, 2)
+            'report.json': createControlRunArtifactFile(run, 'report.json', generatedAtEpochMs),
+            'results.jsonl': createControlRunArtifactFile(run, 'results.jsonl', generatedAtEpochMs),
+            'events.jsonl': createControlRunArtifactFile(run, 'events.jsonl', generatedAtEpochMs),
+            'failures.json': createControlRunArtifactFile(run, 'failures.json', generatedAtEpochMs),
+            'metadata.json': createControlRunArtifactFile(run, 'metadata.json', generatedAtEpochMs)
         }
     };
+}
+
+/** One bundle member, built alone, so a single-file read does not serialize the run's every result and event. */
+export function createControlRunArtifactFile(
+    run: ControlRunSnapshot,
+    fileName: ControlRunArtifactFileName,
+    generatedAtEpochMs: number
+): string {
+    switch (fileName) {
+        case 'report.json':
+            return JSON.stringify(toControlRunArtifactReport(run, resultRows(run), artifactSummary(run)));
+        case 'results.jsonl':
+            return controlRunResultsJsonl(run);
+        case 'events.jsonl':
+            return controlRunEventsJsonl(run);
+        case 'failures.json':
+            return JSON.stringify(controlRunFailureBundle(run));
+        case 'metadata.json':
+            return JSON.stringify(toControlRunArtifactMetadata(run, artifactSummary(run), generatedAtEpochMs));
+    }
 }
 
 interface DistributedArtifactEvidence {
@@ -491,24 +508,18 @@ export function createControlDistributedRunArtifactBundle(
         distributedRunId: distributedRun.distributedRunId,
         generatedAtEpochMs,
         files: {
-            'distributed-run.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun), null, 2),
-            'manifest.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun.manifest), null, 2),
+            'distributed-run.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun)),
+            'manifest.json': JSON.stringify(redactRallarBlackBoxValue(distributedRun.manifest)),
             'target-resolution.json': JSON.stringify(
-                redactRallarBlackBoxValue(distributedRun.targetResolution ?? null),
-                null,
-                2
+                redactRallarBlackBoxValue(distributedRun.targetResolution ?? null)
             ),
-            'control-run.json': JSON.stringify(redactRallarBlackBoxValue(controlRun ?? null), null, 2),
+            'control-run.json': JSON.stringify(redactRallarBlackBoxValue(controlRun ?? null)),
             'report.json': JSON.stringify(
-                toDistributedArtifactReport({ distributedRun, controlRun, evidence, output }),
-                null,
-                2
+                toDistributedArtifactReport({ distributedRun, controlRun, evidence, output })
             ),
-            'failures.json': JSON.stringify(toDistributedArtifactFailures(distributedRun, evidence, output), null, 2),
+            'failures.json': JSON.stringify(toDistributedArtifactFailures(distributedRun, evidence, output)),
             'metadata.json': JSON.stringify(
-                toDistributedArtifactMetadata(distributedRun, evidence.summary, generatedAtEpochMs),
-                null,
-                2
+                toDistributedArtifactMetadata(distributedRun, evidence.summary, generatedAtEpochMs)
             )
         }
     };
