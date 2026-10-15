@@ -1,7 +1,11 @@
-/** A clock and a one-shot timer: `schedule` runs `run` once after `delayMs` and answers its cancel. */
+/**
+ * A clock and a one-shot timer: `schedule` runs `run` once after `delayMs` and answers its cancel. The default
+ * timers do not observe an asynchronous run: its rejection is unhandled, so a run that can fail asynchronously
+ * owns its failure.
+ */
 export interface Timers {
     nowMs(): number;
-    schedule(run: () => void, delayMs: number): () => void;
+    schedule(run: () => void | Promise<void>, delayMs: number): () => void;
 }
 
 export function createDefaultTimers(): Timers {

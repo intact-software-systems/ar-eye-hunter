@@ -2,12 +2,15 @@ import { FailureBackoff } from './failure-backoff.ts';
 import type { Timers } from './timers.ts';
 import { toError } from './to-error.ts';
 
-export namespace RepeatingRun {
+export namespace StartRepeating {
     export interface Input {
         readonly timers: Timers;
         /** Measured from the end of one run to the start of the next. */
         readonly intervalMs: number;
-        /** The wait after a failed run; absent, a failed run waits the interval and its failure reaches the timer host. */
+        /**
+         * The wait after a failed run; absent, a failed run waits the interval and its failure reaches the timer host
+         * (a synchronous failure as a thrown error; an asynchronous one is unobserved by the default timers).
+         */
         readonly retryBackoff?: FailureBackoff.Config;
         /** `now` runs within the start call; `after-interval` waits one interval first. */
         readonly firstRun: 'now' | 'after-interval';
@@ -22,9 +25,10 @@ interface RepeatingRunFailure {
 /**
  * Runs `run` again and again with the interval between runs, one run at a time; answers the stop, which is
  * idempotent and cancels the pending run. A run in flight at stop completes but is awaited by nothing and
- * schedules no successor. A synchronous failure of a `now` first run ends the loop and reaches the caller.
+ * schedules no successor. Without a retry backoff, a synchronous failure of a `now` first run ends the loop and
+ * reaches the caller.
  */
-export function startRepeating(input: RepeatingRun.Input): () => void {
+export function startRepeating(input: StartRepeating.Input): () => void {
     if (!Number.isFinite(input.intervalMs) || input.intervalMs <= 0) {
         throw new TypeError('Repeating run requires a positive finite interval');
     }
