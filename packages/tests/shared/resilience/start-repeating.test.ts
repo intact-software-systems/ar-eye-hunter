@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { startRepeating } from '@shared/resilience/repeating-run.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createManualTimers } from './manual-timers.ts';
 
 describe('repeating run', () => {

@@ -1,4 +1,4 @@
-import { startRepeating } from '../resilience/repeating-run.ts';
+import { startRepeating } from '../resilience/start-repeating.ts';
 import { createDefaultBackgroundTimers } from '../resilience/timers.ts';
 
 export type ExpiredEntryEvictionOptions = Readonly<{

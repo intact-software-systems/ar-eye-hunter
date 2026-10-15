@@ -1,4 +1,4 @@
-import { startRepeating } from '@shared/resilience/repeating-run.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultBackgroundTimers, type Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 

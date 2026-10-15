@@ -13,7 +13,7 @@ import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-t
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { startRepeating } from '@shared/resilience/repeating-run.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;

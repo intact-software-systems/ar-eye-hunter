@@ -1,4 +1,4 @@
-import { startRepeating } from '@shared/resilience/repeating-run.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { ControlAgentSockets } from './control-agent-sockets.ts';

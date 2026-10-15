@@ -1,3 +1,4 @@
+import { toError } from '../resilience/to-error.ts';
 import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from './ExpiredEntryEviction.ts';
 import {
     assertMaxEntries,
@@ -428,12 +429,12 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
             await listener(event);
         }
         catch (error) {
-            await this.handleObserverError(error, event);
+            await this.handleObserverError(toError(error), event);
         }
     }
 
     private async handleObserverError(
-        error: unknown,
+        error: Error,
         event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onObserverError) {
