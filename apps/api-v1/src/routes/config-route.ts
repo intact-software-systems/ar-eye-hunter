@@ -29,6 +29,7 @@ export interface ConfigRouteDependencies {
         | 'issueWebSocketTicket'
         | 'issueAgentSessionTickets'
         | 'consumeAgentSessionTicket'
+        | 'passwordDerivationAdmission'
     >;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: Pick<

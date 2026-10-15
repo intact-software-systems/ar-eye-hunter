@@ -1,12 +1,15 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
+    RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
+import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcRttMutationLifecycleFacts } from '../mutation/rtc-rtt-mutation-contracts.ts';
 import {
     readLiveRtcRttEndpointAdmissionEntry,
@@ -27,7 +30,12 @@ import {
     RTC_RTT_LATEST_NAMESPACE,
     RTC_RTT_RECEIPTS_NAMESPACE
 } from './rtc-rtt-runtime-namespaces.ts';
-import { toRtcRttEndpointAdmissionStorageKey, toRtcRttMeasurementStorageKey } from './rtc-rtt-storage-keys.ts';
+import {
+    toRtcRttEndpointAdmissionStorageKey,
+    toRtcRttMeasurementFromKeyPrefix,
+    toRtcRttMeasurementStorageKey,
+    toRtcRttMeasurementToKeySuffix
+} from './rtc-rtt-storage-keys.ts';
 
 const DEFAULT_RTC_RTT_TTL_MS = 60_000;
 
@@ -95,6 +103,33 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
                     nowEpochMs: this.nowEpochMs()
                 })
             )
+        );
+    }
+
+    async listMeasurementEntriesForEndpoints(
+        endpointIds: readonly string[]
+    ): Promise<readonly RuntimeStateEntryValue<RttMeasurementInfo>[]> {
+        const selectors = [...new Set(endpointIds)]
+            .sort(compareRtcTopologyIdentifiers)
+            .flatMap((endpointId, index) => toRtcRttMeasurementEndpointSelectors(endpointId, index));
+        if (selectors.length === 0) {
+            return [];
+        }
+        const entriesByKey = new Map<string, RuntimeStateEntry>();
+        for (const selection of await this.runtimeRepository.readRuntimeStateBatch(selectors)) {
+            for (const entry of selection.entries) {
+                entriesByKey.set(entry.key, entry);
+            }
+        }
+        return compact(
+            [...entriesByKey.values()]
+                .sort((left, right) => compareRtcTopologyIdentifiers(left.key, right.key))
+                .map((entry) =>
+                    readLiveRtcRttMeasurementEntry({
+                        entry,
+                        nowEpochMs: this.nowEpochMs()
+                    })
+                )
         );
     }
 
@@ -348,6 +383,27 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
     async cleanupExpiredReceiptFamilies(): Promise<number> {
         return await cleanupExpiredRtcRttReceipts(this);
     }
+}
+
+function toRtcRttMeasurementEndpointSelectors(
+    endpointId: string,
+    endpointIndex: number
+): readonly RuntimeStateReadBatchSelector[] {
+    return [
+        {
+            selectorId: `endpoint:${endpointIndex}:from`,
+            kind: 'prefix',
+            namespace: RTC_RTT_LATEST_NAMESPACE,
+            keyPrefix: toRtcRttMeasurementFromKeyPrefix(endpointId)
+        },
+        {
+            selectorId: `endpoint:${endpointIndex}:to`,
+            kind: 'prefix-suffix',
+            namespace: RTC_RTT_LATEST_NAMESPACE,
+            keyPrefix: 'from=',
+            keySuffix: toRtcRttMeasurementToKeySuffix(endpointId)
+        }
+    ];
 }
 
 function sameMeasurement(left: RttMeasurementInfo, right: RttMeasurementInfo): boolean {

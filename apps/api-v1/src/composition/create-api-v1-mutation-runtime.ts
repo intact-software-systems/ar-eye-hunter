@@ -14,6 +14,7 @@ import { createAuthMutationService } from '@shared-server/rallar-system/auth/aut
 import {
     createHmacAuthCredentialIssuer
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
@@ -397,6 +398,9 @@ function createAppAuthInboxServiceFactory(
     input: CreateAppAuthInboxServiceFactoryInput
 ): RallarAuthInboxServiceFactory {
     const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
+    const passwordDerivationAdmission = new AuthPasswordDerivationAdmission({
+        maxConcurrentDerivations: Math.max(1, navigator.hardwareConcurrency - 1)
+    });
 
     return ({ inboxQueueReader, wakeQueueEngine }) =>
         new AppAuthInboxService(
@@ -409,7 +413,8 @@ function createAppAuthInboxServiceFactory(
                     runtimeRepository: input.runtimeStateRepository,
                     serviceId: input.serviceId
                 }),
-                credentialIssuer: credentialIssuer
+                credentialIssuer: credentialIssuer,
+                passwordDerivationAdmission
             },
             {
                 serviceId: input.serviceId,

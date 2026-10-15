@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
@@ -59,6 +60,7 @@ it('waits for delayed auth intent materialization before dequeuing', async () =>
         expect(settled).toBe(false);
 
         materialization.resolve();
+        vi.useRealTimers();
         expect(await registration).toBeDefined();
     }
     finally {
@@ -325,7 +327,8 @@ it('rechecks the parent session before issuing agent credentials', async () => {
                 runtimeRepository: runtime,
                 serviceId: 'auth-test-service'
             }),
-            credentialIssuer: credentialIssuer
+            credentialIssuer: credentialIssuer,
+            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
             serviceId: 'auth-test-service'

@@ -2,6 +2,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
@@ -204,7 +205,8 @@ Deno.test(
                         ticket: 'websocket-ticket',
                         sessionId: AUTH_SESSION.sessionId,
                         expiresAtEpochMs: 32_000
-                    }))
+                    })),
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
             }) as never
         });
 

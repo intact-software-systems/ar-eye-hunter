@@ -14,12 +14,12 @@ export async function readRtcRttMutation(
         return { receipt };
     }
 
-    const [measurement, measurements, ...endpointAdmissionReads] = await Promise.all([
+    const endpointIds = [...new Set([request.rtt.sessionIdFrom, request.rtt.sessionIdTo])]
+        .sort(compareRtcTopologyIdentifiers);
+    const [measurement, incidentMeasurements, ...endpointAdmissionReads] = await Promise.all([
         repository.readMeasurementEntry(request.rtt.sessionIdFrom, request.rtt.sessionIdTo),
-        repository.listMeasurementEntries(),
-        ...[...new Set([request.rtt.sessionIdFrom, request.rtt.sessionIdTo])]
-            .sort(compareRtcTopologyIdentifiers)
-            .map((endpointId) => repository.readEndpointAdmissionEntry(endpointId))
+        repository.listMeasurementEntriesForEndpoints(endpointIds),
+        ...endpointIds.map((endpointId) => repository.readEndpointAdmissionEntry(endpointId))
     ]);
     return {
         receipt: null,
@@ -29,6 +29,6 @@ export async function readRtcRttMutation(
         expiredEndpointAdmissionEntries: endpointAdmissionReads.flatMap((read) =>
             read.expiredEntry ? [read.expiredEntry] : []
         ),
-        measurements
+        incidentMeasurements
     };
 }

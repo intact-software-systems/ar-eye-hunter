@@ -41,6 +41,7 @@ import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '../credentials/auth-password-derivation-admission.ts';
 import { constantTimeAuthDigestEqual } from '../credentials/constant-time-auth-digest-equal.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 import type { LoginClientData } from '../login/authenticate-auth-user.ts';
@@ -104,6 +105,7 @@ export namespace AppAuthInboxService {
         readonly database: PSqlSql;
         readonly authMutationService: AuthMutationService;
         readonly credentialIssuer: AuthCredentialIssuer;
+        readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     }
 
     export interface Config {
@@ -130,6 +132,7 @@ export class AppAuthInboxService {
 
     public readonly authMutationService: AuthMutationService;
     public readonly credentialIssuer: AuthCredentialIssuer;
+    public readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 
     constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
         this.commandClient = createAppInboxClientRuntime({
@@ -153,6 +156,7 @@ export class AppAuthInboxService {
         this.handlers = handlerRuntime.registry;
         this.authMutationService = dependencies.authMutationService;
         this.credentialIssuer = dependencies.credentialIssuer;
+        this.passwordDerivationAdmission = dependencies.passwordDerivationAdmission;
         this.authInboxRepository = dependencies.resourceInboxRepository;
         this.authFactNowEpochMs = config.authFactNowEpochMs ?? Date.now;
         this.newAuthMessageId = config.newAuthMessageId ?? crypto.randomUUID.bind(crypto);
@@ -246,12 +250,14 @@ export class AppAuthInboxService {
                 senderId: normalizedUsername
             },
             async () => {
-                const registration = await prepareAuthUserRegistrationVerifier(
-                    input.request,
-                    {
-                        passwordSaltSeed: `auth-registration:${input.requestId}:${normalizedUsername}`
-                    },
-                    input.staticClients
+                const registration = await this.passwordDerivationAdmission.admit(() =>
+                    prepareAuthUserRegistrationVerifier(
+                        input.request,
+                        {
+                            passwordSaltSeed: `auth-registration:${input.requestId}:${normalizedUsername}`
+                        },
+                        input.staticClients
+                    )
                 );
                 return {
                     version: 1,
@@ -266,7 +272,9 @@ export class AppAuthInboxService {
                 intent.registration.username === input.request.username.trim() &&
                 intent.registration.displayName ===
                     readRegistrationDisplayName(input.request.displayName) &&
-                (await verifyAuthUserPassword(input.request.password, intent.registration))
+                (await this.passwordDerivationAdmission.admit(() =>
+                    verifyAuthUserPassword(input.request.password, intent.registration)
+                ))
         );
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
@@ -608,17 +616,11 @@ export class AppAuthInboxService {
             const existing = observations.find((entry) =>
                 isKeysEqual(entry.key, placeholder.key) && entry.audit.expiryTs.epochMilliseconds > observedAtMs
             );
-            const candidate = existing ??
-                toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())), {
-                    observedAtMs,
-                    messageId: this.newAuthMessageId()
-                });
-            const entry = existing ?? await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
-                placeholder,
-                async () => candidate
-            );
-            const intent = readAuthReplayIntent(entry, reservation.type);
-            if (!intent || !(await matches(intent))) {
+            const reserved = existing
+                ? { entry: existing, ownCandidate: false }
+                : await this.writeMaterializedAuthIntent(placeholder, observedAtMs, materialize);
+            const intent = readAuthReplayIntent(reserved.entry, reservation.type);
+            if (!intent || (!reserved.ownCandidate && !(await matches(intent)))) {
                 throw new AppInboxIdempotencyConflictError(
                     reservation.requestId,
                     'existing-auth-command',
@@ -630,6 +632,22 @@ export class AppAuthInboxService {
         catch (error) {
             return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
         }
+    }
+
+    private async writeMaterializedAuthIntent(
+        placeholder: ResourceEntry,
+        observedAtMs: number,
+        materialize: () => Promise<AuthMutationIntent>
+    ): Promise<AuthIntentReservation> {
+        const candidate = toAuthInboxEntry(toAuthIntentEnqueue(decodeAuthMutationIntent(await materialize())), {
+            observedAtMs,
+            messageId: this.newAuthMessageId()
+        });
+        const entry = await this.authInboxRepository.writeMaterializedIfAbsentOrReplaceExpired(
+            placeholder,
+            async () => candidate
+        );
+        return { entry, ownCandidate: entry.resource === candidate.resource };
     }
 }
 
@@ -646,6 +664,11 @@ interface AuthCommandReservation {
     readonly requestId: string;
     readonly contextId: string;
     readonly senderId: string;
+}
+
+interface AuthIntentReservation {
+    readonly entry: ResourceEntry;
+    readonly ownCandidate: boolean;
 }
 
 function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {

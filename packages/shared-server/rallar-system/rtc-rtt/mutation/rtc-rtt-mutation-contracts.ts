@@ -38,7 +38,7 @@ export type RtcRttMutationRead =
         expiredMeasurementEntry: RuntimeStateEntry | null;
         endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
         expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
-        measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
+        incidentMeasurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
     }>;
 
 export type RtcRttMutationFacts =

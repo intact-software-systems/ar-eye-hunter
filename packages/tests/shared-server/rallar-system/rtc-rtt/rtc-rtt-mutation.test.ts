@@ -43,7 +43,7 @@ describe('RTC RTT mutation phases', () => {
                 },
                 endpointAdmissions: [],
                 expiredEndpointAdmissionEntries: [],
-                measurements: [
+                incidentMeasurements: [
                     {
                         entry: {
                             key: 'from=session-a:to=session-b',
@@ -101,7 +101,7 @@ describe('RTC RTT mutation phases', () => {
             measurement: null,
             endpointAdmissions: [],
             expiredEndpointAdmissionEntries: [],
-            measurements: []
+            incidentMeasurements: []
         };
         expect(
             computeAndValidateRttTwice(
@@ -273,7 +273,7 @@ describe('RTC RTT mutation phases', () => {
                         }
                     ],
                     expiredEndpointAdmissionEntries: [],
-                    measurements: []
+                    incidentMeasurements: []
                 }
             })
         );
@@ -306,7 +306,7 @@ describe('RTC RTT mutation phases', () => {
                 measurement: null,
                 endpointAdmissions: [],
                 expiredEndpointAdmissionEntries: [],
-                measurements: []
+                incidentMeasurements: []
             },
             facts: {
                 requestedAtEpochMs: 1,
@@ -363,7 +363,7 @@ describe('RTC RTT mutation phases', () => {
                     measurement: null,
                     endpointAdmissions: [],
                     expiredEndpointAdmissionEntries: [],
-                    measurements: []
+                    incidentMeasurements: []
                 },
                 facts: {
                     requestedAtEpochMs,
@@ -401,7 +401,7 @@ describe('RTC RTT mutation phases', () => {
             measurement: null,
             endpointAdmissions: [],
             expiredEndpointAdmissionEntries: [],
-            measurements: []
+            incidentMeasurements: []
         };
         const reportingOverlay = {
             ...topologySnapshot(group.group, 1),
@@ -506,7 +506,7 @@ describe('RTC RTT mutation phases', () => {
             },
             endpointAdmissions: [],
             expiredEndpointAdmissionEntries: [],
-            measurements: []
+            incidentMeasurements: []
         });
         const command = {
             rtt: incoming,
@@ -712,7 +712,7 @@ describe('RTC RTT mutation phases', () => {
                 measurement: null,
                 endpointAdmissions: [],
                 expiredEndpointAdmissionEntries: [],
-                measurements: []
+                incidentMeasurements: []
             },
             facts: {
                 requestedAtEpochMs: 2,

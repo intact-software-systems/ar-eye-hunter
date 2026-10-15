@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -78,7 +79,8 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
                 replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
                 issueWebSocketTicket: rejectUnusedOperation,
                 issueAgentSessionTickets: rejectUnusedOperation,
-                consumeAgentSessionTicket: rejectUnusedOperation
+                consumeAgentSessionTicket: rejectUnusedOperation,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
             },
             appClientInboxService: {
                 enqueueAuthorisedWsClientConnect: rejectUnusedOperation,
