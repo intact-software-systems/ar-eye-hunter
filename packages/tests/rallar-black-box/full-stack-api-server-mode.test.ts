@@ -306,6 +306,7 @@ describe('rallar-black-box full-stack API server mode', () => {
 
         const configuration = await readApiV1Configuration({
             environment: { get: (name) => profileEnvironment.get(name) },
+            hardwareConcurrency: 4,
             readTextFile: (url) => readFile(url, 'utf8'),
             defaultsUrl: resource('configuration/defaults-config.json'),
             profileUrls: {

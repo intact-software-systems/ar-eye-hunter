@@ -226,6 +226,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.authentication.staticClientsMode = value
     },
     {
+        name: 'RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS',
+        decode: decodeNumber,
+        apply: (source, value) => source.authentication.maxConcurrentPasswordDerivations = value
+    },
+    {
         name: 'RALLAR_LOGIN_IP_RATE_LIMIT',
         decode: decodeNumber,
         apply: (source, value) => source.authentication.rateLimits.loginIp = value

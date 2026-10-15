@@ -70,7 +70,7 @@ export class GroupMutationAuthorizationError extends Error {
 export async function captureGroupMutationIngress(
     dependencies: GroupMutationAuthorityDependencies,
     descriptor: GroupMutationDescriptor,
-    authority: GroupMutationAuthority
+    authority: IssuedAuthSession
 ): Promise<GroupMutationIngress> {
     return await captureAuthorizedGroupMutationIngress({
         dependencies,

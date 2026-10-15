@@ -147,6 +147,7 @@ function readFixtureConfiguration(requests?: string) {
     }
     return readApiV1Configuration({
         environment: { get: (name) => environment[name] },
+        hardwareConcurrency: 4,
         readTextFile: (url) => Deno.readTextFile(url),
         defaultsUrl: resource('defaults'),
         profileUrls: { dev: resource('dev'), prod: resource('prod'), 'prod-hardened': resource('prod-hardened'), 'prod-in-memory': resource('prod-in-memory') },

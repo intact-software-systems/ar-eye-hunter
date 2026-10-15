@@ -77,6 +77,7 @@ export interface ApiV1AuthenticationConfiguration {
     readonly sessionTtlMs: number;
     readonly webSocketTicketTtlMs: number;
     readonly agentSessionTicketTtlMs: number;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly rateLimits: ApiV1AuthenticationRateLimits;
 }
 

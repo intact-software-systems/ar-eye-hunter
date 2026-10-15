@@ -85,6 +85,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
@@ -115,6 +116,7 @@ export interface ApiV1MutationRuntime {
     readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
     readonly createAppAuthInboxService: RallarAuthInboxServiceFactory;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
     readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
     readonly resilience: RallarMiddlewareResilience;
@@ -159,6 +161,7 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly authCredentialSecret: string;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 }
 
 export function createApiV1MutationRuntime(
@@ -171,6 +174,9 @@ export function createApiV1MutationRuntime(
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
     const groupStateService = createMutationGroupStateService(input, resources);
 
+    const passwordDerivationAdmission = new AuthPasswordDerivationAdmission({
+        maxConcurrentDerivations: input.maxConcurrentPasswordDerivations
+    });
     return {
         database: input.database,
         serviceId: input.serviceId,
@@ -197,8 +203,10 @@ export function createApiV1MutationRuntime(
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
-            authCredentialSecret: input.authCredentialSecret
+            authCredentialSecret: input.authCredentialSecret,
+            passwordDerivationAdmission
         }),
+        passwordDerivationAdmission,
         ...mutationFactories,
         resilience: input.resilience
     };
@@ -399,9 +407,7 @@ function createAppAuthInboxServiceFactory(
     input: CreateAppAuthInboxServiceFactoryInput
 ): RallarAuthInboxServiceFactory {
     const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
-    const passwordDerivationAdmission = new AuthPasswordDerivationAdmission({
-        maxConcurrentDerivations: Math.max(1, navigator.hardwareConcurrency - 1)
-    });
+    const { passwordDerivationAdmission } = input;
 
     return ({ inboxQueueReader, wakeQueueEngine }) =>
         new AppAuthInboxService(

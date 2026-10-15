@@ -77,6 +77,39 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
     }
 });
 
+Deno.test('configuration reader bounds password derivations by the host cores minus one unless the environment names a bound', async () => {
+    const fromHost = await readApiV1Configuration(readerInput(validConfigurationEnvironment(), 4));
+    assert.equal(fromHost.authentication.maxConcurrentPasswordDerivations, 3);
+
+    const singleCore = await readApiV1Configuration(readerInput(validConfigurationEnvironment(), 1));
+    assert.equal(singleCore.authentication.maxConcurrentPasswordDerivations, 1);
+
+    const fromEnvironment = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '7'
+    }, 4));
+    assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
+    assert.equal(
+        fromEnvironment.profile.appliedEnvironmentOverrideNames.includes(
+            'RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS'
+        ),
+        true
+    );
+});
+
+Deno.test('configuration reader rejects a password derivation bound below one', async () => {
+    await assert.rejects(
+        () =>
+            readApiV1Configuration(readerInput({
+                ...validConfigurationEnvironment(),
+                RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '0'
+            }, 4)),
+        (error: unknown) =>
+            error instanceof ApiV1ConfigurationError &&
+            error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations')
+    );
+});
+
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),
@@ -354,9 +387,13 @@ Deno.test('all committed profiles preserve the default finite ICE admission poli
     }
 });
 
-function readerInput(environmentValues: Record<string, string>): ReadApiV1ConfigurationInput {
+function readerInput(
+    environmentValues: Record<string, string>,
+    hardwareConcurrency = 4
+): ReadApiV1ConfigurationInput {
     return {
         environment: { get: (name) => environmentValues[name] },
+        hardwareConcurrency,
         readTextFile: (url) => Deno.readTextFile(url),
         defaultsUrl: DEFAULTS_URL,
         profileUrls: {

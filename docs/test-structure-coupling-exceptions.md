@@ -2526,6 +2526,36 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-state-delta-coalesced-batch-apply",
+      "domain": "Shared-web coalesced presence batch delta application",
+      "owner": "Shared Web maintainers",
+      "summary": "A coalesced presence batch applies through its first delta, whose merged slice brings the cache to the resulting revision; the sibling deltas at that revision are already applied. Executable assertion: “applies a coalesced batch through its first delta and takes the sibling deltas as applied”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "The first delta materializes canonical state and the sibling deltas resolve as no-ops without a fetch.",
+        "requiredConstraint": "Recovery fetch remains unused for every delta of a batch the cache applied through its first delta.",
+        "failureRationale": "A refresh per sibling delta multiplies snapshot reads by the batch size at every recipient."
+      }
+    },
+    {
+      "id": "shared-web-state-delta-coalesced-batch-stale-floor",
+      "domain": "Shared-web coalesced presence batch stale-cache recovery",
+      "owner": "Shared Web maintainers",
+      "summary": "A cache behind a coalesced batch's predecessor pulls once at the batch's resulting floor, after which the sibling deltas are already applied. Executable assertion: “pulls at the floor for a coalesced batch when the cache is behind its predecessor”.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor",
+      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Group-state floored HTTP read port",
+        "observableEffect": "One request at the resulting floor returns canonical state and the sibling deltas resolve as no-ops.",
+        "requiredConstraint": "Exactly one floored recovery fetch occurs for the whole batch.",
+        "failureRationale": "Applying crosses an unproven predecessor; a fetch per sibling delta repeats the same read."
+      }
+    },
+    {
       "id": "shared-web-state-delta-predecessor-apply",
       "domain": "Shared-web predecessor-matched delta application",
       "owner": "Shared Web maintainers",
@@ -7420,6 +7450,28 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The active-update zero-call assertion excludes unnecessary RTC mutation on a lease-only renewal whose repository update is already observable.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
+      "id": "test-structure-coupling-1b3d4d2848352f1b",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-coalesced-batch-stale-floor",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The exactly-one recovery fetch assertion directly proves that a stale cache pulls once at the batch's resulting floor and then takes the sibling deltas as applied.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor for a coalesced batch when the cache is behind its predecessor"
+    },
+    {
+      "id": "test-structure-coupling-46eb6ae3b5c09fa2",
+      "path": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-state-delta-coalesced-batch-apply",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The recovery-fetch absence assertion directly proves that a coalesced batch applies through its first delta without a snapshot refresh for the sibling deltas.",
+      "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a coalesced batch through its first delta and takes the sibling deltas as applied"
     },
     {
       "id": "test-structure-coupling-505ac7ff6ccdc8a1",

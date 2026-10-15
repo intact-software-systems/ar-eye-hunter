@@ -184,6 +184,7 @@ function createConfiguredApiV1Runtime(
         queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'default-qbox-server',
         authCredentialSecret: configuration.authentication.credentialSecret,
+        maxConcurrentPasswordDerivations: configuration.authentication.maxConcurrentPasswordDerivations,
         nowEpochMs,
         timing,
         wsReceiptObserver: createApiV1WsReceiptObserver({

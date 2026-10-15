@@ -56,7 +56,7 @@ export interface GroupPresenceSummaryWorkRead {
     readonly nowEpochMs: number;
     readonly reservation: GroupPresenceSummaryReservationRead;
     readonly presence: GroupPresenceSummaryRead;
-    /** Every event expanded from this read, in causal order; each delta carries their merged slices. */
+    /** Every event expanded from this read, in causal order; the first delta carries their merged slice, the others their own. */
     readonly coalescedEvents: readonly GroupEvent[];
     readonly coalescedTopologyEntry: ResourceEntry | null;
     readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
@@ -337,31 +337,51 @@ function computeGroupStateEventEffect(
 export function computeGroupStateDeltaEnvelope(
     input: ComputeGroupStateDeltaEnvelopeInput
 ): GroupStateDeltaEnvelope {
-    const { event, coalescedEvents, snapshot } = input;
+    const { event, snapshot } = input;
+    const sliceEvents = resolveGroupStateDeltaSliceEvents(event, input.coalescedEvents);
     const activeSessionIds = snapshot.activeSessions.map((session) => session.sessionId);
-    const removedSessionIds = coalescedEvents.flatMap((coalesced) =>
-        coalesced.eventType === 'session-disconnected' &&
-            coalesced.actor.kind === 'session' &&
-            !activeSessionIds.includes(coalesced.actor.sessionId)
-            ? [coalesced.actor.sessionId]
-            : []
-    );
     return {
         event,
         predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision(input),
         resultingCausalRevision: snapshot.causalRevision,
         members: snapshot.members.filter((member) =>
-            coalescedEvents.some((coalesced) => isGroupMemberWrittenByEvent(member, coalesced))
+            sliceEvents.some((sliced) => isGroupMemberWrittenByEvent(member, sliced))
         ),
         removedMemberPrincipalIds: [],
-        sessions: computeGroupStateDeltaSessions(coalescedEvents, snapshot),
-        removedSessionIds,
+        sessions: computeGroupStateDeltaSessions(sliceEvents, snapshot),
+        removedSessionIds: computeGroupStateDeltaRemovedSessionIds(sliceEvents, activeSessionIds),
         activeSessionIds,
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
         audienceSessionIds: input.summary.summary.activeSessionIds
     };
+}
+
+/** The first delta of a coalesced batch carries the whole batch's slice; every later delta carries its own event's. */
+function resolveGroupStateDeltaSliceEvents(
+    event: GroupEvent,
+    coalescedEvents: readonly GroupEvent[]
+): readonly GroupEvent[] {
+    return coalescedEvents[0]?.eventId === event.eventId ? coalescedEvents : [event];
+}
+
+function computeGroupStateDeltaRemovedSessionIds(
+    sliceEvents: readonly GroupEvent[],
+    activeSessionIds: readonly string[]
+): readonly string[] {
+    const active = new Set(activeSessionIds);
+    const removed = new Set<string>();
+    for (const sliced of sliceEvents) {
+        if (
+            sliced.eventType === 'session-disconnected' &&
+            sliced.actor.kind === 'session' &&
+            !active.has(sliced.actor.sessionId)
+        ) {
+            removed.add(sliced.actor.sessionId);
+        }
+    }
+    return [...removed];
 }
 
 function resolveGroupStateDeltaPredecessorCausalRevision(

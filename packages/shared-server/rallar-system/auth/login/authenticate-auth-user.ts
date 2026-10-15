@@ -1,6 +1,7 @@
 import type { LoginRequest } from '@shared/api/api-config.ts';
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { AuthPasswordDerivationAdmission } from '../credentials/auth-password-derivation-admission.ts';
 import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
 import type { AuthSessionAuthority } from '../mutation/auth-mutation-contracts.ts';
 import type { PersistedAuthUser } from '../persistence/persisted-auth-user.ts';
@@ -26,6 +27,8 @@ export interface AuthUserLoginRepository {
 export interface LoginAuthUserOptions {
     readonly userRepository: AuthUserLoginRepository;
     readonly staticClients?: readonly LoginClientData[];
+    /** Only a registered user's proof derives a password; a static client takes no slot. */
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 }
 
 const PASSWORD_ALGORITHM = 'pbkdf2-sha256' as const;
@@ -40,7 +43,9 @@ export async function authenticateAuthUser(
     if (registeredUser) {
         if (
             registeredUser.value.status !== 'active' ||
-            !(await verifyAuthUserPassword(loginRequest.password, registeredUser.value))
+            !(await options.passwordDerivationAdmission.admit(() =>
+                verifyAuthUserPassword(loginRequest.password, registeredUser.value)
+            ))
         ) {
             return undefined;
         }

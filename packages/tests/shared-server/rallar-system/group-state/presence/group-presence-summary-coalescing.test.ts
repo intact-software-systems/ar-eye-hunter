@@ -59,11 +59,12 @@ describe('group presence summary coalescing', () => {
         for (const envelope of envelopes) {
             expect(envelope.predecessorCausalRevision).toEqual(summaryBefore.causalRevision);
             expect(envelope.resultingCausalRevision).toEqual(summaryAfter.causalRevision);
-            expect(envelope.sessions.map((session) => session.principalId).sort()).toEqual(
-                coalesced.principalIds
-            );
             expect(envelope.audienceSessionIds).toHaveLength(10);
         }
+        expect(envelopes.map((envelope) => envelope.sessions.map((session) => session.principalId))).toEqual([
+            coalesced.principalIds,
+            ...coalesced.principalIds.slice(1).map((principalId) => [principalId])
+        ]);
         const referenceSummary = await fixture.readSummary(reference.ref);
         expect(summaryAfter).toMatchObject({
             causalRevision: referenceSummary.causalRevision,

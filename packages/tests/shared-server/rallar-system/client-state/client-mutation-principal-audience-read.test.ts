@@ -1,6 +1,7 @@
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toDisconnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-disconnect-client-session-mutation-input.ts';
 import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { readClientMutation } from '@shared-server/rallar-system/client-state/mutation/read-client-mutation.ts';
@@ -268,37 +269,97 @@ describe('client mutation principal audience read', () => {
         expect(read.audienceClientSnapshots).toEqual([]);
     });
 
-    it('reads the principal audience for a heartbeat that carries the session generation', async () => {
+    it('renews a heartbeat to the principal\'s own sessions without reading three co-members', async () => {
         const runtime = new RecordingReadRepository();
-        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob', 'carol', 'dave']);
         runtime.batchSelectors.length = 0;
+        const command = heartbeatCommandFor('alice-session-generation');
 
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: heartbeatCommandFor('alice-session-generation'),
+            command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
+        const computed = computeClientMutation({ command, read });
 
-        expect(audienceSelectors(runtime.batchSelectors).length).toBeGreaterThan(0);
-        expect(read.audienceGroupSnapshots.map((snapshot) => snapshot.group.groupId)).toEqual(['room-one']);
-        expect(read.audienceClientSnapshots.map((snapshot) => snapshot.principal.principalId)).toEqual(['bob']);
+        expect(audienceSelectors(runtime.batchSelectors)).toEqual([]);
+        expect(read.audienceGroupSnapshots).toEqual([]);
+        expect(read.audienceClientSnapshots).toEqual([]);
+        expect(computed).toMatchObject({ outcome: 'write', principalAudienceSessionIds: ['alice-session'] });
+        expect(() => assertClientMutationInvariants({ command, read, computed })).not.toThrow();
     });
 
-    it('rejects a stale-generation heartbeat read that still carries the principal audience', async () => {
+    it('fans a session disconnect to every co-member session', async () => {
         const runtime = new RecordingReadRepository();
-        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob', 'carol', 'dave']);
+        const command = disconnectCommandFor('alice-session-generation');
+
         const read = await readClientMutation({
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: heartbeatCommandFor('alice-session-generation'),
+            command,
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
-        expect(read.audienceClientSnapshots).toHaveLength(1);
+        const computed = computeClientMutation({ command, read });
 
-        expect(() => assertClientMutationRead(heartbeatCommandFor('superseded-generation'), read)).toThrow(
+        expect(computed).toMatchObject({
+            outcome: 'write',
+            principalAudienceSessionIds: ['bob-session', 'carol-session', 'dave-session']
+        });
+        expect(() => assertClientMutationInvariants({ command, read, computed })).not.toThrow();
+    });
+
+    it('rejects a heartbeat write addressed to a co-member session', async () => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime, ['bob']);
+        const command = heartbeatCommandFor('alice-session-generation');
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command,
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        const computed = computeClientMutation({ command, read });
+        if (computed.outcome !== 'write') {
+            throw new Error('Expected a renewing heartbeat write');
+        }
+
+        expect(() =>
+            assertClientMutationInvariants({
+                command,
+                read,
+                computed: { ...computed, principalAudienceSessionIds: ['alice-session', 'bob-session'] }
+            })
+        ).toThrow('Client session heartbeat audience is not the principal\'s own sessions');
+    });
+
+    it.each([
+        ['a stale-generation heartbeat', 'superseded-generation'],
+        ['a renewing heartbeat', 'alice-session-generation']
+    ])('rejects %s read that carries the co-member audience', async (_label, generationId) => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const coMemberRead = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: principalCommand('audience-carrying-read'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        expect(coMemberRead.audienceClientSnapshots).toHaveLength(1);
+        const command = heartbeatCommandFor(generationId);
+        const session = await clients.readSessionEntry({
+            ...TEST_SCOPE,
+            principalId: 'alice',
+            clientInstanceId: 'alice-instance',
+            sessionId: 'alice-session'
+        });
+
+        expect(() => assertClientMutationRead(command, { ...coMemberRead, session: session.value ?? null })).toThrow(
             'Client mutation audience read is out of scope'
         );
     });
@@ -422,20 +483,65 @@ interface HeartbeatAudienceRepositories {
     readonly clients: ReturnType<typeof createTestClientStateRepository>;
 }
 
-async function seedHeartbeatAudience(runtime: FakeRuntimeStateRepository): Promise<HeartbeatAudienceRepositories> {
+async function seedHeartbeatAudience(
+    runtime: FakeRuntimeStateRepository,
+    coMemberPrincipalIds: readonly string[] = ['bob']
+): Promise<HeartbeatAudienceRepositories> {
     const groups = createTestGroupStateRepository(runtime);
     const clients = createTestClientStateRepository(runtime);
     await seedGroup({
         repository: groups,
         groupId: 'room-one',
         ownerPrincipalId: 'alice',
-        activePrincipalIds: ['bob'],
+        activePrincipalIds: coMemberPrincipalIds,
         leftPrincipalIds: []
     });
-    for (const principalId of ['alice', 'bob']) {
+    for (const principalId of ['alice', ...coMemberPrincipalIds]) {
         await seedClient(clients, principalId);
     }
     return { groups, clients };
+}
+
+function disconnectCommandFor(generationId: string): ClientMutationCommand {
+    const requestId = `disconnect:${generationId}`;
+    const input = toDisconnectClientSessionMutationInput({
+        operation: 'disconnectSession',
+        scope: TEST_SCOPE,
+        principalId: 'alice',
+        clientInstanceId: 'alice-instance',
+        sessionId: 'alice-session',
+        request: {
+            generationId,
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            disconnectedAtEpochMs: HEARTBEAT_EPOCH_MS,
+            reason: 'closed',
+            requestId
+        },
+        defaultCommandId: requestId
+    });
+    return toClientMutationCommand(
+        input,
+        {
+            nowEpochMs: HEARTBEAT_EPOCH_MS,
+            serviceId: 'client-service',
+            eventId: `event:${requestId}`,
+            attemptCount: 1,
+            expireAtEpochMs: 20_000
+        },
+        toClientMutationIssuedSessionAuthority(
+            {
+                clientId: 'alice',
+                username: 'alice',
+                sessionId: 'alice-session',
+                accessTokenDigest: 'sha256:test-token',
+                issuedAtEpochMs: 0,
+                expiresAtEpochMs: 10_000
+            },
+            TEST_SCOPE,
+            'disconnectSession'
+        )
+    );
 }
 
 function heartbeatCommandFor(generationId: string): ClientMutationCommand {
@@ -483,7 +589,7 @@ function audienceSelectors(
 ): readonly RuntimeStateReadBatchSelector[] {
     return selectors.filter((selector) =>
         selector.namespace.startsWith('group-state:') ||
-        (selector.namespace.startsWith('client-state:') && JSON.stringify(selector).includes('principal=bob'))
+        (selector.namespace.startsWith('client-state:') && /principal=(bob|carol|dave)/.test(JSON.stringify(selector)))
     );
 }
 

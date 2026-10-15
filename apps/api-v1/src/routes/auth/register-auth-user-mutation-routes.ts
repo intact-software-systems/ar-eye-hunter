@@ -93,13 +93,12 @@ async function issueLoginSession(
     request: LoginRequest,
     dependencies: ConfigRouteDependencies
 ): Promise<Response> {
-    const loginResponse = await dependencies.appAuthInbox.passwordDerivationAdmission.admit(() =>
-        apiLoginService.login({
-            request,
-            userRepository: dependencies.authUserRepository,
-            staticClients: dependencies.authentication.staticClients
-        })
-    );
+    const loginResponse = await apiLoginService.login({
+        request,
+        userRepository: dependencies.authUserRepository,
+        staticClients: dependencies.authentication.staticClients,
+        passwordDerivationAdmission: dependencies.passwordDerivationAdmission
+    });
     if (!loginResponse) {
         return toApiMutationFailureResponse(
             { json: (value, status) => toJsonResponse(value, status) },

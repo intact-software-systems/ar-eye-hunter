@@ -1,3 +1,4 @@
+import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type {
@@ -42,6 +43,7 @@ export interface ApiV1Runtime extends
     readonly rtcTopologyReplay: NonNullable<RallarMiddlewareRuntime['rtcTopologyReplay']>;
     readonly appAuthInboxService: AppAuthInboxService;
     readonly authSessionRepository: AuthSessionRepository;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -53,6 +55,7 @@ export interface ApiV1Runtime extends
 export interface RequireApiV1RuntimeInput {
     readonly runtime: RallarMiddlewareRuntime;
     readonly authSessionRepository: AuthSessionRepository;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -95,6 +98,7 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
         rtcTopologyReplay: runtime.rtcTopologyReplay,
         appAuthInboxService: runtime.appAuthInboxService,
         authSessionRepository: input.authSessionRepository,
+        passwordDerivationAdmission: input.passwordDerivationAdmission,
         clientRestSnapshotReadSelector: input.clientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: input.groupRestSnapshotReadSelector,
         groupFormationMetrics: input.groupFormationMetrics,

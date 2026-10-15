@@ -79,9 +79,9 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
                 replayLogoutSessionWithCredentialProof: rejectUnusedOperation,
                 issueWebSocketTicket: rejectUnusedOperation,
                 issueAgentSessionTickets: rejectUnusedOperation,
-                consumeAgentSessionTicket: rejectUnusedOperation,
-                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
+                consumeAgentSessionTicket: rejectUnusedOperation
             },
+            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
             appClientInboxService: {
                 enqueueAuthorisedWsClientConnect: rejectUnusedOperation,
                 processAuthenticatedEntryUntilCompletion: rejectUnusedOperation

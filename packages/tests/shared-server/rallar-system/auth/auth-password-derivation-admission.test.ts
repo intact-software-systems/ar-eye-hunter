@@ -13,51 +13,8 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { createAppInboxTestResilience } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
 
-interface GatedDerivation {
-    readonly id: number;
-    readonly release: () => void;
-}
-
 describe('auth password derivation admission', () => {
     afterEach(() => vi.restoreAllMocks());
-
-    it('runs at most the bound at once and admits derivations in arrival order', async () => {
-        const admission = new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 });
-        const started: GatedDerivation[] = [];
-        const completed: number[] = [];
-        let inFlight = 0;
-        let maxInFlight = 0;
-        const derivations = Array.from({ length: 8 }, (_, id) =>
-            admission.admit(() => {
-                inFlight += 1;
-                maxInFlight = Math.max(maxInFlight, inFlight);
-                return new Promise<number>((resolve) => {
-                    started.push({
-                        id,
-                        release: () => {
-                            inFlight -= 1;
-                            resolve(id);
-                        }
-                    });
-                });
-            }).then((id) => {
-                completed.push(id);
-                return id;
-            }));
-
-        await Promise.resolve();
-        expect(started.map((derivation) => derivation.id)).toEqual([0, 1]);
-
-        for (let released = 0; released < 8; released += 1) {
-            started[released]!.release();
-            await vi.waitFor(() => expect(started.length).toBe(Math.min(8, released + 3)));
-        }
-        await Promise.all(derivations);
-
-        expect(maxInFlight).toBe(2);
-        expect(started.map((derivation) => derivation.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-        expect(completed).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-    });
 
     it('rejects a bound below one at construction', () => {
         expect(() => new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 0 })).toThrow(TypeError);

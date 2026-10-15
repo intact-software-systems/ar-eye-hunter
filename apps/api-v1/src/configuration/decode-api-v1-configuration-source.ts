@@ -101,6 +101,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'sessionTtlMs',
         'webSocketTicketTtlMs',
         'agentSessionTicketTtlMs',
+        'maxConcurrentPasswordDerivations',
         'rateLimits'
     ]),
     'authentication.rateLimits': new Set([
@@ -382,7 +383,7 @@ function environmentNameForSource(
     return source === 'environment' ? ENVIRONMENT_NAME_BY_PATH[path] : undefined;
 }
 
-function isApiV1ConfigurationSourceRecord(
+export function isApiV1ConfigurationSourceRecord(
     value: ApiV1ConfigurationSourceValue | undefined
 ): value is ApiV1ConfigurationSourceObject {
     return typeof value === 'object' &&

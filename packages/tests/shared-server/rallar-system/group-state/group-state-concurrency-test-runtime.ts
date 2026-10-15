@@ -277,9 +277,10 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
     }
 
     /**
-     * The last arrival continues at once; the earlier arrivals resume one
-     * macrotask later, so the last arrival's read, compute and transaction
-     * entry complete before any other reader can observe the same state.
+     * The fixture is deterministic: the last arrival continues at once and the
+     * earlier arrivals resume one macrotask later, so the last arrival's read,
+     * compute and transaction entry complete before any other reader can
+     * observe the same state, and every run exercises the same interleaving.
      */
     private async waitAtBarrier(kind: 'group' | 'presence' | 'admission'): Promise<void> {
         if (kind === 'group') {

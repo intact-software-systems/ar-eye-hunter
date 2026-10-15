@@ -101,7 +101,8 @@ export class GroupPresenceSummaryWork {
         items: readonly GroupPresenceSummaryWorkItem[],
         nowEpochMs: number
     ): Promise<readonly GroupPresenceSummaryWorkRead[]> {
-        const ref = requireSameGroup(items);
+        const first = requireSameGroup(items);
+        const ref = first.work.aggregateRef;
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
         const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
             repository.findGroupEntry(ref),
@@ -118,7 +119,7 @@ export class GroupPresenceSummaryWork {
         assertGroupPresenceSummaryRead(ref, presence);
         const coalescedEvents = items.map((item) => item.work.event);
         const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts(
-            items[0]!.work,
+            first.work,
             presence.group.value,
             coalescedTopologyEntry,
             nowEpochMs
@@ -265,7 +266,7 @@ export class GroupPresenceSummaryWork {
         this.validateCoalesced(expansions, coalesced);
         const effectDetails = {
             ...workCount,
-            recipientCount: expansions[0]!.computed.summary.summary.activeSessionIds.length,
+            recipientCount: toRecipientCount(expansions),
             deltaCount: coalesced.downstreamOutboxWrites.length
         };
         this.recordPhase(primary, 'compute', effectDetails, computeStartedAtMs);
@@ -409,11 +410,13 @@ export class GroupPresenceSummaryWork {
     }
 }
 
-function requireSameGroup(items: readonly GroupPresenceSummaryWorkItem[]): GroupRef {
-    const ref = items[0]?.work.aggregateRef;
-    if (ref === undefined) {
+/** The first item of a non-empty batch; every item must name its group. */
+function requireSameGroup(items: readonly GroupPresenceSummaryWorkItem[]): GroupPresenceSummaryWorkItem {
+    const first = items[0];
+    if (first === undefined) {
         throw new TypeError('A presence summary read needs at least one work item');
     }
+    const ref = first.work.aggregateRef;
     for (const item of items) {
         const candidate = item.work.aggregateRef;
         if (
@@ -424,7 +427,16 @@ function requireSameGroup(items: readonly GroupPresenceSummaryWorkItem[]): Group
             throw new TypeError('Coalesced presence summary work must belong to one group');
         }
     }
-    return ref;
+    return first;
+}
+
+/** Every expansion of one read shares the summary, so the first names the recipients of the batch. */
+function toRecipientCount(expansions: readonly GroupPresenceSummaryExpansion[]): number {
+    const expansion = expansions[0];
+    if (expansion === undefined) {
+        throw new TypeError('A presence summary expansion needs at least one item');
+    }
+    return expansion.computed.summary.summary.activeSessionIds.length;
 }
 
 function isPendingSummaryWorkOfSameGroup(candidate: ResourceEntry, entry: ResourceEntry): boolean {

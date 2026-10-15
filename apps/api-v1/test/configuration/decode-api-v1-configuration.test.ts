@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
+import { withHostPasswordDerivationBound } from '../../src/configuration/read-api-v1-configuration.ts';
 import {
     CONFIGURATION_SECRET_SENTINELS,
     validDecodeApiV1ConfigurationInput,
@@ -54,7 +55,7 @@ Deno.test('configuration decoder returns the complete normalized development con
 });
 
 Deno.test('committed profiles resolve their intended database, delivery, and ICE modes', async () => {
-    const defaultsSource = await readJsonResource('defaults-config.json');
+    const defaultsSource = withHostPasswordDerivationBound(await readJsonResource('defaults-config.json'), 4);
     const cases = [
         {
             profileName: 'dev',
@@ -234,6 +235,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['authentication.sessionTtlMs', 1],
         ['authentication.webSocketTicketTtlMs', 1],
         ['authentication.agentSessionTicketTtlMs', 1],
+        ['authentication.maxConcurrentPasswordDerivations', 1],
         ['authentication.rateLimits.windowMs', 1],
         ['authentication.rateLimits.loginIp', 1],
         ['authentication.rateLimits.loginUsername', 1],

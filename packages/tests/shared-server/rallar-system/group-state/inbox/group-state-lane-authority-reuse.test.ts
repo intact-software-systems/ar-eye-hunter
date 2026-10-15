@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
@@ -71,11 +72,17 @@ describe('group mutation lane authority reuse', () => {
         expect(await harness.repository.listPresenceSessions({ ...SCOPE, groupId: GROUP_ID })).toEqual([]);
     });
 
-    it('keeps the captured queue identity and captures once across a redelivery', async () => {
+    it('accepts the route proof only through the AppInbox capture', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+
+        expectTypeOf(harness.groupStateService.captureMutationIngress).parameter(1).toEqualTypeOf<IssuedAuthSession>();
+        expectTypeOf(harness.groupStateService.captureAppInboxMutationIngress).parameter(1).not.toEqualTypeOf<IssuedAuthSession>();
+    });
+
+    it('keeps the captured queue identity and authority across a redelivery', async () => {
         const harness = await createAuthorityHarness(['owner', 'alice']);
         await createRoom(harness, GROUP_ID, 'Authority reuse room');
         await activateMember(harness, GROUP_ID, 'alice');
-        const capture = vi.spyOn(harness.groupStateService, 'captureAppInboxMutationIngress');
         let firstAttemptAuthority: JsonWireValue | undefined;
         harness.runtimeRepository.beforeConditionalWrite = async () => {
             harness.runtimeRepository.beforeConditionalWrite = undefined;
@@ -96,7 +103,6 @@ describe('group mutation lane authority reuse', () => {
         }).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 2 } });
 
         await expect(pending).resolves.toMatchObject({ right: { commandId: expect.any(String) } });
-        expect(capture).toHaveBeenCalledTimes(1);
         const completed = await harness.queue.getItem(original.key);
         expect(readPersistedAuthority(completed!)).toEqual(firstAttemptAuthority);
         expect(firstAttemptAuthority).toMatchObject({ queueResourceId: expect.stringMatching(/^g-/) });

@@ -132,7 +132,7 @@ export class AppAuthInboxService {
 
     public readonly authMutationService: AuthMutationService;
     public readonly credentialIssuer: AuthCredentialIssuer;
-    public readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
+    private readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 
     constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
         this.commandClient = createAppInboxClientRuntime({

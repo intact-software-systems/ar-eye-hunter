@@ -14,8 +14,8 @@ import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchest
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
-const intervalMsecs = 20000;
-const retryIntervalMsecs = 5000;
+export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
+export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
@@ -44,7 +44,7 @@ class BrowserStateHeartbeatRuntime {
     }
 
     public start(): void {
-        this.schedule(intervalMsecs);
+        this.schedule(SESSION_HEARTBEAT_INTERVAL_MS);
     }
 
     private stop(): void {
@@ -69,7 +69,7 @@ class BrowserStateHeartbeatRuntime {
         try {
             await this.refreshHeartbeat();
             if (this.isCurrent()) {
-                this.schedule(intervalMsecs);
+                this.schedule(SESSION_HEARTBEAT_INTERVAL_MS);
             }
         }
         catch (error) {
@@ -86,7 +86,7 @@ class BrowserStateHeartbeatRuntime {
                     `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
                     error
                 );
-                this.schedule(retryIntervalMsecs);
+                this.schedule(SESSION_HEARTBEAT_RETRY_MS);
             }
         }
     }

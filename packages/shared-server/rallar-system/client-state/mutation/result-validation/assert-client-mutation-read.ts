@@ -76,7 +76,7 @@ function assertClientMutationAudienceReadScope(
     read: ClientMutationRead
 ): void {
     if (
-        resolveClientMutationAudienceReadScope(command, read) === 'none' &&
+        resolveClientMutationAudienceReadScope(command, read) !== 'principal-audience' &&
         (read.audienceGroupSnapshots.length > 0 || read.audienceClientSnapshots.length > 0)
     ) {
         throw new ClientMutationRejectedError('Client mutation audience read is out of scope');

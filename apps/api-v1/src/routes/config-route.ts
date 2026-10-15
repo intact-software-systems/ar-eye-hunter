@@ -1,4 +1,5 @@
 import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
+import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
@@ -29,8 +30,8 @@ export interface ConfigRouteDependencies {
         | 'issueWebSocketTicket'
         | 'issueAgentSessionTickets'
         | 'consumeAgentSessionTicket'
-        | 'passwordDerivationAdmission'
     >;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: Pick<
         ApiV1AuthenticationConfiguration,

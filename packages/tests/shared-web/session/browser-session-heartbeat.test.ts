@@ -1,7 +1,11 @@
 import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { toCreateWsUrl } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import { initHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
+import {
+    initHeartbeat,
+    SESSION_HEARTBEAT_INTERVAL_MS,
+    SESSION_HEARTBEAT_RETRY_MS
+} from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -31,9 +35,6 @@ interface FetchCall {
     readonly method: string;
     readonly body: JsonWireValue | undefined;
 }
-
-const HEARTBEAT_INTERVAL_MS = 20_000;
-const HEARTBEAT_RETRY_MS = 5_000;
 
 describe('Browser session heartbeat', () => {
     const fetchCalls: FetchCall[] = [];
@@ -96,7 +97,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS - 1);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS - 1);
         expect(fetchCalls).toHaveLength(0);
 
         await vi.advanceTimersByTimeAsync(1);
@@ -122,13 +123,13 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         expect(fetchCalls).toHaveLength(1);
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_RETRY_MS - 1);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_RETRY_MS - 1);
         expect(fetchCalls).toHaveLength(1);
         await vi.advanceTimersByTimeAsync(1);
         expect(fetchCalls).toHaveLength(2);
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS - 1);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS - 1);
         expect(fetchCalls).toHaveLength(2);
         await vi.advanceTimersByTimeAsync(1);
         handle.stop();
@@ -174,7 +175,7 @@ describe('Browser session heartbeat', () => {
             },
             policies: { command: { maxAttempts: 3 } }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
@@ -235,7 +236,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
@@ -265,7 +266,7 @@ describe('Browser session heartbeat', () => {
                 expiresAtEpochMs: 1_160_000
             }))
         };
-        vi.setSystemTime(1_040_000 - HEARTBEAT_INTERVAL_MS);
+        vi.setSystemTime(1_040_000 - SESSION_HEARTBEAT_INTERVAL_MS);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
                 return jsonResponse(clientSnapshot('principal-1'));
@@ -280,7 +281,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
         vi.setSystemTime(1_090_000);
@@ -325,7 +326,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         await groupRequestStarted.promise;
         handle.stop();
         groupResponse.resolve(jsonResponse(advanced));
@@ -360,14 +361,14 @@ describe('Browser session heartbeat', () => {
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
             onAuthInvalid: firstAuthInvalid
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         expect(fetchCalls).toHaveLength(1);
 
         const replacement = await initHeartbeat(clientData, {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         await replacementRequestStarted.promise;
         firstResponse.resolve(textResponse('Unauthorized', 401));
         await vi.advanceTimersByTimeAsync(0);
@@ -402,7 +403,7 @@ describe('Browser session heartbeat', () => {
                 authInvalidated = true;
             }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
 
         expect(authInvalidated).toBe(true);
@@ -425,7 +426,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         handle.stop();
 
         expect(own.activeSessions[0]?.generationId).toBe('generation-session-1');
@@ -449,14 +450,14 @@ describe('Browser session heartbeat', () => {
         });
 
         const first = await initHeartbeat(clientData, { authSession });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         expect(fetchCalls).toHaveLength(1);
         expect(fetchCalls[0]?.body).toMatchObject({
             generationId: first.generationId
         });
 
         const second = await initHeartbeat(clientData, { authSession });
-        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
         second.stop();
         expect(fetchCalls).toHaveLength(2);
 

@@ -278,6 +278,10 @@ function decodeAuthentication(
         sessionTtlMs: input.values.integer('authentication.sessionTtlMs', 1),
         webSocketTicketTtlMs: input.values.integer('authentication.webSocketTicketTtlMs', 1),
         agentSessionTicketTtlMs: input.values.integer('authentication.agentSessionTicketTtlMs', 1),
+        maxConcurrentPasswordDerivations: input.values.integer(
+            'authentication.maxConcurrentPasswordDerivations',
+            1
+        ),
         rateLimits: {
             windowMs: input.values.integer('authentication.rateLimits.windowMs', 1),
             loginIp: input.values.integer('authentication.rateLimits.loginIp', 1),

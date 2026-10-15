@@ -42,6 +42,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
             sessionTtlMs: 2_592_000_000,
             webSocketTicketTtlMs: 30_000,
             agentSessionTicketTtlMs: 60_000,
+            maxConcurrentPasswordDerivations: 3,
             rateLimits: {
                 windowMs: 60_000,
                 loginIp: 30,

@@ -94,6 +94,7 @@ export interface CreateApiV1RuntimeInput {
     readonly queuePubSubLocalBus: LocalQueuePubSubBus;
     readonly wsRuntimeName: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
@@ -209,6 +210,7 @@ export function constructApiV1Runtime(
     return operations.requireRuntime({
         runtime,
         authSessionRepository: mutation.authSessionRepository,
+        passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
@@ -259,6 +261,7 @@ function toMutationRuntimeInput(
         database: input.database,
         serviceId: input.serviceId,
         authCredentialSecret: input.authCredentialSecret,
+        maxConcurrentPasswordDerivations: input.maxConcurrentPasswordDerivations,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,

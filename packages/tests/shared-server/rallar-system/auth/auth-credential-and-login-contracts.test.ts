@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { authenticateAuthUser, type AuthUserLoginRepository } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
 import type { PersistedAuthUser } from '@shared-server/rallar-system/auth/persistence/persisted-auth-user.ts';
@@ -63,7 +64,10 @@ describe('auth registered login', () => {
         };
 
         await expect(
-            authenticateAuthUser({ username: 'ALICE', password: 'secret' }, { userRepository })
+            authenticateAuthUser({ username: 'ALICE', password: 'secret' }, {
+                userRepository,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
+            })
         ).resolves.toEqual({
             clientId: 'client-1',
             username: 'Alice',
@@ -75,7 +79,10 @@ describe('auth registered login', () => {
             }
         });
         await expect(
-            authenticateAuthUser({ username: 'alice', password: 'wrong' }, { userRepository })
+            authenticateAuthUser({ username: 'alice', password: 'wrong' }, {
+                userRepository,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
+            })
         ).resolves.toBeUndefined();
     });
 });
@@ -102,7 +109,10 @@ describe('auth login accessor evaluation order', () => {
         };
 
         await expect(
-            authenticateAuthUser({ username: 'active-user', password: 'wrong' }, { userRepository })
+            authenticateAuthUser({ username: 'active-user', password: 'wrong' }, {
+                userRepository,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
+            })
         ).resolves.toBeUndefined();
         expect(reads).toEqual(['value', 'value']);
     });
@@ -142,7 +152,12 @@ describe('auth login accessor evaluation order', () => {
             }
         };
 
-        await expect(authenticateAuthUser(loginRequest, { userRepository })).resolves.toBeUndefined();
+        await expect(
+            authenticateAuthUser(loginRequest, {
+                userRepository,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
+            })
+        ).resolves.toBeUndefined();
         expect(reads).toEqual(['value', 'status']);
     });
 });
