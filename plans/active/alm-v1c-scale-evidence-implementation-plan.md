@@ -264,6 +264,20 @@ a plan with an unchanged leader keeps its adjacency and the recipes appoint the 
 the players connect; the status refresh reads one room; the outbound breaker is verified under a
 burst; ICE coalescing is held in reserve. Each RED first, judged by the hosted 30-agent run.
 
+**As applied (PR #667).** D219–D224 landed with three review-driven fix waves and the hosted
+50 evidence recorded as D225–D231 (proposal §3, §6): the server's volatile signalling lane on
+single-instance profiles, typed retries off the outbox breaker, breadth-first joins from the
+leader within the depth bound, the eccentricity rule for an unchanged leader, the director
+appointed before the players connect, the players joining through the room connect, one-room
+status refresh, cohort-proportional connect and status allowances, a refinement that keeps the
+tree unless clearly faster, and compact streamed artifact bundles. Measured (proposal §1.10):
+local 50 setup-complete 36.2 s against 41.8 s on main with one offer per edge and no peer churn;
+hosted 30 passes (offer→answer 0.81 s against 7.1 s, formation 32.9 s against 52–59 s); hosted 50
+failed three times, each one phase further, and the run on the final head is the handoff's open
+item. Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
+player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
+derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
+
 ## Completion and handoff
 
 Use test-driven and subagent-driven development with distinct implementation, specification and
