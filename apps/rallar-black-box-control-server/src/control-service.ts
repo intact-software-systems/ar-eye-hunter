@@ -1,3 +1,4 @@
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { ControlBarrierEnvelope } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
@@ -81,6 +82,7 @@ import {
 } from './control-service-failure.ts';
 import {
     toControlCommandSnapshot,
+    toControlLifecycleRevision,
     toControlRetentionRunSafety,
     toControlRunSnapshot,
     toControlSnapshotRevision,
@@ -105,7 +107,7 @@ import {
     toDistributedCancelCommands,
     toDistributedStageCommands,
     toDistributedStartCommands,
-    toRecoveredDistributedCommandLinks,
+    toReconciledDistributedRunFields,
     toScheduledStartEpochMs,
     type DistributedPhaseCommand
 } from './distributed/distributed-run-commands.ts';
@@ -135,7 +137,8 @@ import { createControlFleetReportBundle } from './fleet/create-control-fleet-rep
 import { createControlFleetRunReport } from './fleet/create-control-fleet-run-report.ts';
 import {
     computeControlRecipeBarrierArrival,
-    computeControlRecipeBarrierDelivery
+    computeControlRecipeBarrierDelivery,
+    recordControlRecipeBarrierResolutionTiming
 } from './recipe-barrier/compute-control-recipe-barrier.ts';
 import {
     computeControlRecipeReloadStep,
@@ -165,6 +168,8 @@ export interface RallarBlackBoxControlServiceDependencies {
     readonly createCommandId: () => string;
     readonly createRunToken: () => string;
     readonly toDistributedRunRollup: (input: DistributedRunEvaluationInput) => RallarBlackBoxDistributedRunRollup;
+    /** Absent when barrier resolutions are not timed. */
+    readonly timingSink: RallarTimingSink | undefined;
 }
 
 export interface RallarBlackBoxControlServiceConfig {
@@ -524,8 +529,12 @@ export class RallarBlackBoxControlService {
         if (!run || !agent?.connected) {
             return [];
         }
-        const delivery = computeControlRecipeBarrierDelivery({ run, agent, nowEpochMs: this.dependencies.now() });
+        const nowEpochMs = this.dependencies.now();
+        const delivery = computeControlRecipeBarrierDelivery({ run, agent, nowEpochMs });
         delivery.barriers.forEach((barrier) => run.barriers.set(barrier.barrierId, barrier));
+        delivery.resolved.forEach((barrier) =>
+            recordControlRecipeBarrierResolutionTiming(this.dependencies.timingSink, barrier, nowEpochMs)
+        );
         return delivery.envelopes;
     }
 
@@ -631,6 +640,10 @@ export class RallarBlackBoxControlService {
             distributedRuns: this.distributedRuns.values(),
             fleetReports: this.fleetReports.values()
         });
+    }
+
+    snapshotLifecycleRevision(): string {
+        return toControlLifecycleRevision(this.distributedRuns.values());
     }
 
     snapshotRun(runId: string, bounds: ControlRunSnapshotBounds = {}): ControlRunSnapshot | undefined {
@@ -1038,28 +1051,6 @@ export class RallarBlackBoxControlService {
         return undefined;
     }
 
-    private reconcileDistributedCommandLinks(distributedRun: ControlDistributedRunState): void {
-        const run = this.runs.get(distributedRun.controlRunId);
-        for (const recovered of toRecoveredDistributedCommandLinks(distributedRun, run)) {
-            const queuedAtEpochMs = recovered.evidenceQueuedAtEpochMs ?? distributedRun.updatedAtEpochMs;
-            distributedRun.commandLinks.push({
-                phase: recovered.phase,
-                agentId: recovered.agentId,
-                commandId: recovered.commandId,
-                recipeId: recovered.recipeId,
-                role: recovered.role,
-                queuedAtEpochMs
-            });
-            if (recovered.phase === 'start') {
-                distributedRun.startedAtEpochMs ??= queuedAtEpochMs;
-            }
-            if (recovered.phase === 'barrier') {
-                distributedRun.barrierStartedAtEpochMs ??= queuedAtEpochMs;
-            }
-            distributedRun.updatedAtEpochMs = this.dependencies.now();
-        }
-    }
-
     private refreshDistributedRunSnapshot(distributedRun: ControlDistributedRunState): ControlDistributedRunSnapshot {
         return toDistributedRunSnapshot(distributedRun, this.refreshDistributedRunState(distributedRun));
     }
@@ -1108,7 +1099,8 @@ export class RallarBlackBoxControlService {
             return latest;
         }
 
-        this.reconcileDistributedCommandLinks(distributedRun);
+        const run = this.runs.get(distributedRun.controlRunId);
+        Object.assign(distributedRun, toReconciledDistributedRunFields(distributedRun, run, this.dependencies.now()));
         this.advanceDistributedRun(distributedRun);
         const evaluated = this.dependencies.toDistributedRunRollup({
             distributedRun,

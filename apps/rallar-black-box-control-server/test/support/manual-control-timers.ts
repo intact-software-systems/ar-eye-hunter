@@ -8,7 +8,7 @@ export interface ManualControlTimers extends ControlTimers {
 interface ManualTimer {
     readonly dueEpochMs: number;
     readonly sequence: number;
-    readonly run: () => Promise<void>;
+    readonly run: () => void | Promise<void>;
 }
 
 export function createManualControlTimers(startEpochMs: number): ManualControlTimers {

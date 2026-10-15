@@ -1,3 +1,4 @@
+import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeArrayItems } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
@@ -18,10 +19,16 @@ export interface ControlSnapshotPersistenceInput {
     readonly flushIntervalMs: number;
     readonly controlService: Pick<
         RallarBlackBoxControlService,
-        'applyRunRetention' | 'restoreSnapshot' | 'snapshotForPersistence' | 'snapshotRevision'
+        | 'applyRunRetention'
+        | 'restoreSnapshot'
+        | 'snapshotForPersistence'
+        | 'snapshotLifecycleRevision'
+        | 'snapshotRevision'
     >;
     readonly deleteRuns: (runIds: readonly string[]) => void;
     readonly timers: ControlTimers;
+    /** Absent when flushes are not timed. */
+    readonly timingSink: RallarTimingSink | undefined;
 }
 
 interface ScheduledSnapshotFlush {
@@ -29,7 +36,29 @@ interface ScheduledSnapshotFlush {
     readonly cancel: () => void;
 }
 
+interface WriteControlSnapshotFileInput {
+    readonly storageDir: string;
+    readonly path: string;
+    readonly tempPath: string;
+    readonly savedAtEpochMs: number;
+    readonly snapshot: ControlServerSnapshot;
+}
+
+interface ControlSnapshotFileWrite {
+    readonly written: boolean;
+    readonly bytes: number;
+    /** Time spent serializing and encoding, summed over the slices; the event loop runs between slices. */
+    readonly serializeMs: number;
+    readonly writeMs: number;
+}
+
+/** A 50-agent snapshot is tens of megabytes; serializing it in one call held every agent frame for seconds on the VM. */
+const SNAPSHOT_SLICE_LENGTH = 1024 * 1024;
+/** Runs, their command/result/event lists and those lists' entries are serialized one entry at a time. */
+const SLICED_DEPTH = 4;
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
+
+type JsonPieceSource = string | number | boolean | bigint | symbol | null | undefined | object;
 
 /**
  * Writes the whole snapshot at most once per flush interval, trailing the last change, and skips the serialization
@@ -78,7 +107,7 @@ export class ControlSnapshotPersistence {
 
     private scheduleFlush(): void {
         const nowEpochMs = this.input.timers.nowEpochMs();
-        const lifecycleChanged = this.input.controlService.snapshotRevision().lifecycle !== this.flushedLifecycle;
+        const lifecycleChanged = this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle;
         const dueEpochMs = lifecycleChanged
             ? nowEpochMs
             : Math.max(nowEpochMs, this.lastFlushEpochMs + this.input.flushIntervalMs);
@@ -111,9 +140,15 @@ export class ControlSnapshotPersistence {
         if (!storageDir || revision.content === this.written?.content) {
             return;
         }
-        const snapshotJson = JSON.stringify(controlService.snapshotForPersistence(snapshotBounds));
-        const tempPath = `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${this.lastFlushEpochMs}-${this.sequence += 1}`;
-        if (await writeSnapshotFile(storageDir, tempPath, toSnapshotFileText(snapshotJson, this.lastFlushEpochMs))) {
+        const write = await writeControlSnapshotFile({
+            storageDir,
+            path: toSnapshotPath(storageDir),
+            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${this.lastFlushEpochMs}-${this.sequence += 1}`,
+            savedAtEpochMs: this.lastFlushEpochMs,
+            snapshot: controlService.snapshotForPersistence(snapshotBounds)
+        });
+        recordSnapshotFlushTiming(this.input.timingSink, write);
+        if (write.written) {
             this.written = revision;
         }
     }
@@ -130,24 +165,104 @@ function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
 }
 
-function toSnapshotFileText(snapshotJson: string, savedAtEpochMs: number): string {
-    return `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":${snapshotJson}}`;
+function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: ControlSnapshotFileWrite): void {
+    recordRallarTiming({
+        sink,
+        event: {
+            component: 'rallar-black-box-control',
+            operation: 'snapshot.flush',
+            details: {
+                bytes: write.bytes,
+                serializeMs: Math.round(write.serializeMs),
+                writeMs: Math.round(write.writeMs)
+            }
+        },
+        status: write.written ? 'ok' : 'error',
+        durationMs: write.serializeMs + write.writeMs
+    });
 }
 
-async function writeSnapshotFile(storageDir: string, tempPath: string, payload: string): Promise<boolean> {
-    const path = toSnapshotPath(storageDir);
+/**
+ * Streams the compact snapshot file into a temporary file one slice at a time and renames it over the snapshot. Each
+ * slice write awaits the disk, so agent frames are handled between slices instead of after the whole serialization.
+ */
+async function writeControlSnapshotFile(
+    input: WriteControlSnapshotFileInput
+): Promise<ControlSnapshotFileWrite> {
+    const encoder = new TextEncoder();
+    let bytes = 0;
+    let serializeMs = 0;
+    let writeMs = 0;
     try {
-        await Deno.mkdir(storageDir, { recursive: true });
-        await Deno.writeTextFile(tempPath, payload);
-        await Deno.rename(tempPath, path);
-        return true;
+        await Deno.mkdir(input.storageDir, { recursive: true });
+        const file = await Deno.open(input.tempPath, { write: true, create: true, truncate: true });
+        const writer = file.writable.getWriter();
+        const slices = toSnapshotFileSlices(input.snapshot, input.savedAtEpochMs);
+        for (let startedMs = nowMs(), slice = slices.next(); !slice.done; startedMs = nowMs(), slice = slices.next()) {
+            const encoded = encoder.encode(slice.value);
+            const encodedMs = nowMs();
+            serializeMs += encodedMs - startedMs;
+            await writer.write(encoded);
+            writeMs += nowMs() - encodedMs;
+            bytes += encoded.length;
+        }
+        await writer.close();
+        await Deno.rename(input.tempPath, input.path);
+        return { written: true, bytes, serializeMs, writeMs };
     }
     catch (error) {
-        Deno.remove(tempPath).catch(() => undefined);
+        Deno.remove(input.tempPath).catch(() => undefined);
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Could not persist control snapshot to ${path}: ${message}`);
-        return false;
+        console.warn(`Could not persist control snapshot to ${input.path}: ${message}`);
+        return { written: false, bytes, serializeMs, writeMs };
     }
+}
+
+function* toSnapshotFileSlices(snapshot: ControlServerSnapshot, savedAtEpochMs: number): Generator<string> {
+    let parts = [`{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":`];
+    let length = parts[0].length;
+    for (const piece of toJsonPieces(snapshot, 0)) {
+        parts.push(piece);
+        length += piece.length;
+        if (length >= SNAPSHOT_SLICE_LENGTH) {
+            yield parts.join('');
+            parts = [];
+            length = 0;
+        }
+    }
+    parts.push('}');
+    yield parts.join('');
+}
+
+/** The pieces concatenate to `JSON.stringify(value)`; containers above the sliced depth are split at their entries. */
+export function* toJsonPieces(value: JsonPieceSource, depth: number): Generator<string> {
+    if (depth >= SLICED_DEPTH || value === null || typeof value !== 'object' || 'toJSON' in value) {
+        yield JSON.stringify(value) ?? 'null';
+        return;
+    }
+    if (Array.isArray(value)) {
+        yield '[';
+        for (const [index, item] of value.entries()) {
+            yield index === 0 ? '' : ',';
+            yield* isSkippedJsonValue(item) ? ['null'] : toJsonPieces(item, depth + 1);
+        }
+        yield ']';
+        return;
+    }
+    let separator = '';
+    yield '{';
+    for (const [key, item] of Object.entries(value)) {
+        if (!isSkippedJsonValue(item)) {
+            yield `${separator}${JSON.stringify(key)}:`;
+            yield* toJsonPieces(item, depth + 1);
+            separator = ',';
+        }
+    }
+    yield '}';
+}
+
+function isSkippedJsonValue(value: JsonPieceSource): boolean {
+    return value === undefined || typeof value === 'function' || typeof value === 'symbol';
 }
 
 async function restoreSnapshotFile(

@@ -1,3 +1,4 @@
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope
@@ -24,6 +25,7 @@ import { toDistributedRunRollup } from '../../src/distributed/distributed-run-ev
 
 export interface ControlServiceInputOverrides {
     readonly now?: () => number;
+    readonly timingSink?: RallarTimingSink;
     readonly createCommandId?: () => string;
     readonly redaction?: RallarBlackBoxTestRedactionOptions;
     readonly allowedCommandKinds?: readonly string[];
@@ -85,7 +87,8 @@ export function toControlServiceInput(
             now: overrides.now ?? (() => Date.now()),
             createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID()),
             createRunToken: () => crypto.randomUUID(),
-            toDistributedRunRollup
+            toDistributedRunRollup,
+            timingSink: overrides.timingSink
         },
         config: {
             redaction: overrides.redaction,

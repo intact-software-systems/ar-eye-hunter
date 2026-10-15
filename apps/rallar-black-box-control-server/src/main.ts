@@ -1,4 +1,5 @@
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
+import { createConsoleRallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 
 import { ControlAgentSockets } from './control-agent-sockets.ts';
 import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from './control-artifact-recorder.ts';
@@ -30,13 +31,15 @@ if (configurationIssues.length > 0) {
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 const timers = createDefaultControlTimers();
+const timingSink = createConsoleRallarTimingSink();
 
 const controlService = createRallarBlackBoxControlService({
     dependencies: {
         now: timers.nowEpochMs,
         createCommandId: () => crypto.randomUUID(),
         createRunToken: () => crypto.randomUUID(),
-        toDistributedRunRollup
+        toDistributedRunRollup,
+        timingSink
     },
     config: {
         redaction: undefined,
@@ -65,7 +68,8 @@ const snapshotPersistence = new ControlSnapshotPersistence({
             artifactRecorder.deleteRun(runId);
         }
     },
-    timers
+    timers,
+    timingSink
 });
 const routeDependencies = {
     controlService,

@@ -3,6 +3,8 @@ import { assert, assertEquals } from '@std/assert';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import {
     ControlArtifactRecorder,
     DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
@@ -297,7 +299,99 @@ Deno.test('1,000 recorded results are serialized once each and appended in one w
     }
 });
 
-Deno.test('pending rows beyond the byte cap drop the oldest and record the gap before the rows that remain', async () => {
+function readJsonlRows(text: string): readonly RallarBlackBoxTestRecord[] {
+    return text.trim().split('\n').filter((line) => line.length > 0).map((line) => decodeRecord(JSON.parse(line)));
+}
+
+function resultEnvelopeForRun(runId: string, commandId: string, marker: string): ControlClientEnvelope {
+    return { ...resultEnvelope(commandId, { marker }), runId } as ControlClientEnvelope;
+}
+
+/** Holds every file append until `release` runs, as a disk that stops answering would. */
+async function withStalledWrites<T>(run: (release: () => void, writesStarted: () => number) => Promise<T>): Promise<T> {
+    const writeTextFile = Deno.writeTextFile;
+    let started = 0;
+    let release = () => undefined as void;
+    const released = new Promise<void>((resolve) => release = resolve);
+    Deno.writeTextFile = async (...args: Parameters<typeof writeTextFile>) => {
+        started += 1;
+        await released;
+        return writeTextFile(...args);
+    };
+    try {
+        return await run(release, () => started);
+    }
+    finally {
+        Deno.writeTextFile = writeTextFile;
+    }
+}
+
+// Before rows stayed pending during a write, every tick queued its rows behind the stalled write and nothing was dropped.
+Deno.test('while a write stalls, rows stay pending under the cap and the oldest of the recording run are dropped', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-stall-' });
+    const timers = createManualControlTimers(0);
+    const maxPendingBytes = 4_000;
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+        const recorder = new ControlArtifactRecorder({
+            storageDir,
+            commandSnapshots: NO_COMMAND_SNAPSHOTS,
+            timers,
+            config: { flushIntervalMs: 250, maxPendingBytes }
+        });
+        const { writesDuringStall, stalledRows } = await withStalledWrites(async (release, writesStarted) => {
+            recorder.record(resultEnvelopeForRun('stalled-run', 'in-flight', 'in-flight'));
+            await timers.advanceTo(250);
+            while (writesStarted() === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 1));
+            }
+            const rows: string[] = [];
+            // Each tick's rows fit under the cap; only rows held across ticks exceed it.
+            for (let tick = 2; tick <= 9; tick += 1) {
+                for (let index = 0; index < 5; index += 1) {
+                    const marker = `stalled-${tick}-${index}`;
+                    rows.push(marker);
+                    recorder.record(resultEnvelopeForRun('stalled-run', marker, marker));
+                }
+                await timers.advanceTo(tick * 250);
+            }
+            const writes = writesStarted();
+            release();
+            await recorder.stop();
+            return { writesDuringStall: writes, stalledRows: rows };
+        });
+        const runDirectory = `${storageDir}/runs/${toRunDirectoryName('stalled-run')}`;
+        const resultsText = await Deno.readTextFile(`${runDirectory}/results.jsonl`);
+        const eventsText = await Deno.readTextFile(`${runDirectory}/events.jsonl`);
+        const results = readJsonlRows(resultsText);
+        const events = readJsonlRows(eventsText);
+        const [inFlight, overflow, ...kept] = results;
+        const keptBytes = [resultsText, eventsText]
+            .flatMap((text) => text.split('\n').slice(2, -1))
+            .reduce((total, line) => total + line.length + 1, 0);
+        const overflowValue = overflow.value as Record<string, number>;
+
+        assertEquals(writesDuringStall, 1, 'one batch is in flight and no later batch queues behind it');
+        assertEquals(inFlight.commandId, 'in-flight');
+        assertEquals(overflow.kind, 'control-artifact-overflow');
+        assertEquals(events[1], overflow, 'the same overflow row heads both files');
+        assert(keptBytes <= maxPendingBytes, `${keptBytes} pending bytes outlived the stall`);
+        assertEquals(overflowValue.omittedResults + kept.length, stalledRows.length);
+        assertEquals(kept.map((row) => row.commandId), stalledRows.slice(overflowValue.omittedResults), 'the oldest rows are dropped');
+        assertEquals(
+            events.slice(2).map((row) => row.commandId),
+            stalledRows.slice(overflowValue.omittedResults),
+            'each kept result keeps its step-result row'
+        );
+    }
+    finally {
+        console.warn = warn;
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+Deno.test('a run over the cap drops only its own rows; a quiet run keeps all of its rows', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-cap-' });
     const timers = createManualControlTimers(0);
     const warnings: string[] = [];
@@ -308,23 +402,28 @@ Deno.test('pending rows beyond the byte cap drop the oldest and record the gap b
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
             timers,
-            config: { flushIntervalMs: 250, maxPendingBytes: 2_000 }
+            config: { flushIntervalMs: 250, maxPendingBytes: 3_000 }
         });
+        for (let index = 0; index < 5; index += 1) {
+            recorder.record(eventEnvelope('quiet-run', `quiet-${index}`, `quiet-marker-${index}`));
+        }
         for (let index = 0; index < 100; index += 1) {
-            recorder.record(eventEnvelope('capped-run', `event-${index}`, `marker-${index}`));
+            recorder.record(eventEnvelope('noisy-run', `event-${index}`, `marker-${index}`));
         }
         await timers.advanceTo(250);
         await recorder.stop();
-        const rows = (await eventsTextForRun(recorder, 'capped-run')).trim().split('\n').map((line) => JSON.parse(line));
-        const [gap, ...kept] = rows;
+        const quiet = readJsonlRows(await eventsTextForRun(recorder, 'quiet-run'));
+        const [overflow, ...kept] = readJsonlRows(await eventsTextForRun(recorder, 'noisy-run'));
+        const overflowValue = overflow.value as Record<string, number>;
 
-        assertEquals(gap.kind, 'artifact-truncated');
-        assertEquals(gap.omittedRows + kept.length, 100, 'every row is either written or counted in the gap');
-        assert(kept.reduce((total, row) => total + JSON.stringify(row).length + 1, 0) <= 2_000, 'the rows kept fit the cap');
-        assertEquals(kept.at(-1).value, 'marker-99', 'the newest rows are kept');
-        assertEquals(kept[0].name, `event-${gap.omittedRows}`, 'the oldest rows are dropped');
+        assertEquals(quiet.map((row) => row.value), [0, 1, 2, 3, 4].map((index) => `quiet-marker-${index}`));
+        assertEquals([overflow.kind, overflow.agentId, overflow.atEpochMs], ['control-artifact-overflow', 'control-server', 250]);
+        assertEquals(overflowValue.omittedEventRows + kept.length, 100, 'every row is either written or counted');
+        assertEquals(overflowValue.omittedResults, 0);
+        assertEquals(kept.at(-1)?.value, 'marker-99', 'the newest rows are kept');
+        assertEquals(kept[0].name, `event-${overflowValue.omittedEventRows}`, 'the oldest rows are dropped');
         assertEquals(warnings.length, 1);
-        assert(warnings[0].includes(`dropped ${gap.omittedRows} pending rows`), warnings[0]);
+        assert(warnings[0].includes(`dropped ${overflowValue.omittedEventRows} pending rows`), warnings[0]);
     }
     finally {
         console.warn = warn;

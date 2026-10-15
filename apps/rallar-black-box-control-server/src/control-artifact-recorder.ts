@@ -3,6 +3,10 @@ import type {
     ControlQueuedCommandSnapshot,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    toControlArtifactOverflowRow,
+    type ControlArtifactOverflowCounts
+} from '@shared-test/rallar-bb-test/control/control-artifact-overflow.ts';
 
 import {
     controlEventArtifactJsonl,
@@ -27,8 +31,8 @@ export interface ControlArtifactRecorderConfig {
     /** Rows wait at most this long and are appended in one write per run file. */
     readonly flushIntervalMs: number;
     /**
-     * Beyond this many pending bytes the oldest pending rows are dropped and the gap is recorded. Rows are counted in
-     * UTF-16 code units, which equal bytes for the ASCII JSON the recorder writes.
+     * Beyond this many pending bytes a run's oldest pending rows are dropped and the gap is recorded. Rows are counted
+     * in UTF-16 code units, which equal bytes for the ASCII JSON the recorder writes.
      */
     readonly maxPendingBytes: number;
 }
@@ -41,25 +45,31 @@ export interface ControlArtifactRecorderDependencies {
 }
 
 /**
- * A 50-agent run sends about 75 MB of start results within seconds; 128 MiB holds that burst even if the disk stalls
- * through it, while the recorder's memory stays bounded near twice the cap (pending rows plus one batch being written).
+ * A 50-agent run sends about 75 MB of start results within seconds, and each result is written to both files, so about
+ * 150 MB of rows; 160 MiB holds that burst while the disk stalls. Rows stay pending while a batch is being written, so
+ * the recorder holds at most about twice the cap: the pending rows plus the one batch in flight.
  */
 export const DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG: ControlArtifactRecorderConfig = {
     flushIntervalMs: 250,
-    maxPendingBytes: 128 * 1024 * 1024
+    maxPendingBytes: 160 * 1024 * 1024
 };
 
-type ArtifactJsonlFileName = 'events.jsonl' | 'results.jsonl';
-
-interface PendingArtifactRow {
-    readonly runId: string;
-    readonly fileName: ArtifactJsonlFileName;
-    readonly text: string;
+/** One accepted envelope's rows: a result's two rows are kept or dropped together. */
+interface PendingArtifactEntry {
+    readonly resultLine: string | undefined;
+    readonly eventLine: string;
+    readonly bytes: number;
 }
 
-interface DroppedArtifactRows {
-    rows: number;
-    bytes: number;
+interface PendingRunArtifacts {
+    readonly entries: PendingArtifactEntry[];
+    readonly omitted: { omittedResults: number; omittedEventRows: number; omittedBytes: number; };
+}
+
+interface ArtifactRunWrite {
+    readonly runId: string;
+    readonly resultsText: string;
+    readonly eventsText: string;
 }
 
 const JSONL_CONTENT_TYPE = 'application/x-ndjson; charset=utf-8';
@@ -68,9 +78,9 @@ const RUN_DIRECTORY_NAME_LITERAL_CHARACTER = /^[a-z0-9-]$/;
 /** Appends JSONL rows per run in batches; one batch, delete or read barrier runs at a time, in order. */
 export class ControlArtifactRecorder {
     private readonly dependencies: ControlArtifactRecorderDependencies;
-    private pending: PendingArtifactRow[] = [];
+    private pendingByRun = new Map<string, PendingRunArtifacts>();
     private pendingBytes = 0;
-    private dropped = new Map<string, DroppedArtifactRows>();
+    private writing = false;
     private cancelFlush: (() => void) | undefined;
     private writeQueue: Promise<void> = Promise.resolve();
 
@@ -85,15 +95,14 @@ export class ControlArtifactRecorder {
         const commandId = toArtifactCommandId(envelope);
         const command = commandBeforeAcceptance ??
             (commandId ? this.dependencies.commandSnapshots.snapshotCommand(envelope.runId, commandId) : undefined);
-        for (const row of toPendingArtifactRows(envelope, command)) {
-            this.pending.push(row);
-            this.pendingBytes += row.text.length;
-        }
-        this.dropOldestOverCap();
-        this.cancelFlush ??= this.dependencies.timers.schedule(
-            () => this.flush(),
-            this.dependencies.config.flushIntervalMs
-        );
+        const pending = this.pendingByRun.get(envelope.runId) ??
+            { entries: [], omitted: { omittedResults: 0, omittedEventRows: 0, omittedBytes: 0 } };
+        const entry = toPendingArtifactEntry(envelope, command);
+        pending.entries.push(entry);
+        this.pendingByRun.set(envelope.runId, pending);
+        this.pendingBytes += entry.bytes;
+        this.dropOldestOverCap(pending);
+        this.armFlush();
     }
 
     deleteRun(runId: string): void {
@@ -101,17 +110,19 @@ export class ControlArtifactRecorder {
         if (!storageDir) {
             return;
         }
-        this.pending = this.pending.filter((row) => row.runId !== runId);
-        this.pendingBytes = this.pending.reduce((total, row) => total + row.text.length, 0);
-        this.dropped.delete(runId);
+        this.pendingBytes -= toPendingBytes(this.pendingByRun.get(runId));
+        this.pendingByRun.delete(runId);
         this.writeQueue = this.writeQueue
             .then(() => Deno.remove(toArtifactRunDirectory(storageDir, runId), { recursive: true }))
             .catch(() => undefined);
     }
 
-    /** Writes every pending row at once; shutdown awaits it. */
-    stop(): Promise<void> {
-        return this.flush();
+    /** Writes every pending row once the batch in flight is written; reads and shutdown await it. */
+    async stop(): Promise<void> {
+        this.cancelFlush?.();
+        this.cancelFlush = undefined;
+        await this.writeQueue;
+        await this.writePending();
     }
 
     async response({ runId, kind, fallbackRun, corsOrigins }: ControlArtifactResponseInput): Promise<Response> {
@@ -120,7 +131,7 @@ export class ControlArtifactRecorder {
         const storedPath = storageDir ? `${toArtifactRunDirectory(storageDir, runId)}/${kind}.jsonl` : undefined;
         if (storedPath) {
             try {
-                await this.flush();
+                await this.stop();
                 const file = await Deno.open(storedPath, { read: true });
                 return new Response(file.readable, { status: 200, headers });
             }
@@ -136,39 +147,58 @@ export class ControlArtifactRecorder {
         return new Response(text, { status: 200, headers });
     }
 
-    private dropOldestOverCap(): void {
-        const maxPendingBytes = this.dependencies.config.maxPendingBytes;
+    /** Only the recording run gives up rows, oldest first, so one run's burst never erases another run's evidence. */
+    private dropOldestOverCap(pending: PendingRunArtifacts): void {
         let dropCount = 0;
-        while (this.pendingBytes > maxPendingBytes && dropCount < this.pending.length) {
-            const row = this.pending[dropCount];
-            this.pendingBytes -= row.text.length;
-            const dropped = this.dropped.get(row.runId) ?? { rows: 0, bytes: 0 };
-            dropped.rows += 1;
-            dropped.bytes += row.text.length;
-            this.dropped.set(row.runId, dropped);
+        while (this.pendingBytes > this.dependencies.config.maxPendingBytes && dropCount < pending.entries.length) {
+            const entry = pending.entries[dropCount];
+            this.pendingBytes -= entry.bytes;
+            pending.omitted.omittedResults += entry.resultLine === undefined ? 0 : 1;
+            pending.omitted.omittedEventRows += 1;
+            pending.omitted.omittedBytes += entry.bytes;
             dropCount += 1;
         }
-        if (dropCount > 0) {
-            this.pending.splice(0, dropCount);
-        }
+        pending.entries.splice(0, dropCount);
     }
 
-    private flush(): Promise<void> {
-        this.cancelFlush?.();
+    private armFlush(): void {
+        this.cancelFlush ??= this.dependencies.timers.schedule(
+            () => this.flushTick(),
+            this.dependencies.config.flushIntervalMs
+        );
+    }
+
+    /** While a batch is in flight the rows stay pending under the cap and the next tick tries again. */
+    private flushTick(): void {
         this.cancelFlush = undefined;
-        const storageDir = this.dependencies.storageDir;
-        const batch = toArtifactWriteBatch(this.pending, this.dropped);
-        this.pending = [];
-        this.pendingBytes = 0;
-        this.dropped = new Map();
-        if (storageDir && batch.length > 0) {
-            this.writeQueue = this.writeQueue
-                .then(() => writeArtifactBatch(storageDir, batch))
-                .catch((error) => {
-                    const message = error instanceof Error ? error.message : String(error);
-                    console.warn(`Could not append control artifact JSONL: ${message}`);
-                });
+        if (this.writing) {
+            this.armFlush();
+            return;
         }
+        void this.writePending();
+    }
+
+    private writePending(): Promise<void> {
+        const storageDir = this.dependencies.storageDir;
+        const batch = toArtifactWriteBatch(this.pendingByRun, {
+            maxPendingBytes: this.dependencies.config.maxPendingBytes,
+            atEpochMs: this.dependencies.timers.nowEpochMs()
+        });
+        this.pendingByRun = new Map();
+        this.pendingBytes = 0;
+        if (!storageDir || batch.length === 0) {
+            return this.writeQueue;
+        }
+        this.writing = true;
+        this.writeQueue = this.writeQueue
+            .then(() => writeArtifactBatch(storageDir, batch))
+            .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                console.warn(`Could not append control artifact JSONL: ${message}`);
+            })
+            .finally(() => {
+                this.writing = false;
+            });
         return this.writeQueue;
     }
 }
@@ -187,58 +217,54 @@ export function toRunDirectoryName(runId: string): string {
     return name;
 }
 
-function toPendingArtifactRows(
+function toPendingArtifactEntry(
     envelope: Exclude<ControlClientEnvelope, { kind: 'register' | 'heartbeat'; }>,
     command: ControlQueuedCommandSnapshot | undefined
-): readonly PendingArtifactRow[] {
-    if (envelope.kind === 'result') {
-        const lines = toControlResultArtifactLines(envelope, command);
-        return [
-            { runId: envelope.runId, fileName: 'results.jsonl', text: lines.resultLine },
-            { runId: envelope.runId, fileName: 'events.jsonl', text: lines.eventLine }
-        ];
-    }
-    return [{ runId: envelope.runId, fileName: 'events.jsonl', text: controlEventArtifactJsonl(envelope, command) }];
+): PendingArtifactEntry {
+    const lines = envelope.kind === 'result'
+        ? toControlResultArtifactLines(envelope, command)
+        : { resultLine: undefined, eventLine: controlEventArtifactJsonl(envelope, command) };
+    return { ...lines, bytes: (lines.resultLine?.length ?? 0) + lines.eventLine.length };
 }
 
-interface ArtifactRunWrite {
-    readonly runId: string;
-    readonly files: ReadonlyMap<ArtifactJsonlFileName, string>;
+function toPendingBytes(pending: PendingRunArtifacts | undefined): number {
+    return pending?.entries.reduce((total, entry) => total + entry.bytes, 0) ?? 0;
 }
 
-/** One append per run file, in arrival order; a run that lost rows starts its events with the gap record. */
+interface ArtifactOverflowFacts {
+    readonly maxPendingBytes: number;
+    readonly atEpochMs: number;
+}
+
+/** One append per run file, in arrival order; a run that lost rows starts both files with the overflow row. */
 function toArtifactWriteBatch(
-    rows: readonly PendingArtifactRow[],
-    dropped: ReadonlyMap<string, DroppedArtifactRows>
+    pendingByRun: ReadonlyMap<string, PendingRunArtifacts>,
+    facts: ArtifactOverflowFacts
 ): readonly ArtifactRunWrite[] {
-    const textByRun = new Map<string, Map<ArtifactJsonlFileName, string[]>>();
-    for (const [runId, gap] of dropped) {
-        console.warn(`Control artifact recorder dropped ${gap.rows} pending rows (${gap.bytes} bytes) for ${runId}.`);
-        textByRun.set(runId, new Map([['events.jsonl', [toArtifactGapLine(gap)]]]));
-    }
-    for (const row of rows) {
-        const files = textByRun.get(row.runId) ?? new Map<ArtifactJsonlFileName, string[]>();
-        const texts = files.get(row.fileName) ?? [];
-        texts.push(row.text);
-        files.set(row.fileName, texts);
-        textByRun.set(row.runId, files);
-    }
-    return Array.from(textByRun, ([runId, files]) => ({
-        runId,
-        files: new Map(Array.from(files, ([fileName, texts]) => [fileName, texts.join('')]))
-    }));
+    return Array.from(pendingByRun, ([runId, pending]) => {
+        const overflowLine = toArtifactOverflowLine(runId, {
+            ...pending.omitted,
+            maxPendingBytes: facts.maxPendingBytes
+        }, facts.atEpochMs);
+        const resultLines = pending.entries.flatMap((entry) =>
+            entry.resultLine === undefined ? [] : [entry.resultLine]
+        );
+        return {
+            runId,
+            resultsText: overflowLine + resultLines.join(''),
+            eventsText: overflowLine + pending.entries.map((entry) => entry.eventLine).join('')
+        };
+    });
 }
 
-function toArtifactGapLine(gap: DroppedArtifactRows): string {
-    return `${
-        JSON.stringify({
-            kind: 'artifact-truncated',
-            name: 'control-artifact-recorder-overflow',
-            status: 'dropped',
-            omittedRows: gap.rows,
-            omittedBytes: gap.bytes
-        })
-    }\n`;
+function toArtifactOverflowLine(runId: string, counts: ControlArtifactOverflowCounts, atEpochMs: number): string {
+    if (counts.omittedEventRows === 0) {
+        return '';
+    }
+    console.warn(
+        `Control artifact recorder dropped ${counts.omittedEventRows} pending rows (${counts.omittedBytes} bytes) for ${runId}.`
+    );
+    return `${JSON.stringify(toControlArtifactOverflowRow(counts, atEpochMs))}\n`;
 }
 
 function toArtifactCommandId(envelope: ControlClientEnvelope): string | undefined {
@@ -253,8 +279,10 @@ async function writeArtifactBatch(storageDir: string, batch: readonly ArtifactRu
     for (const write of batch) {
         const runDirectory = toArtifactRunDirectory(storageDir, write.runId);
         await Deno.mkdir(runDirectory, { recursive: true });
-        for (const [fileName, text] of write.files) {
-            await Deno.writeTextFile(`${runDirectory}/${fileName}`, text, { append: true, create: true });
+        for (const [fileName, text] of [['results.jsonl', write.resultsText], ['events.jsonl', write.eventsText]]) {
+            if (text.length > 0) {
+                await Deno.writeTextFile(`${runDirectory}/${fileName}`, text, { append: true, create: true });
+            }
         }
     }
 }

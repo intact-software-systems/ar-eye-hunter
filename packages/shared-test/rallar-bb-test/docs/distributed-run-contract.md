@@ -332,8 +332,10 @@ is true, the control server inserts a `barrier` phase between staging and
 starting. Each target receives a `health` command with distributed metadata
 identifying `barrier.ready`; successful command results are the ready evidence.
 `auto-after-ready` starts as soon as all barrier commands pass. `scheduled`
-holds the ready run until `startDeadlineEpochMs`; heartbeat/register/result
-traffic or a snapshot refresh can advance and dispatch the start commands.
+holds the ready run until `startDeadlineEpochMs`; the control server's deadline
+sweep (every `RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS`, 1 s by default),
+register/result/barrier traffic or a snapshot refresh can advance and dispatch
+the start commands. Heartbeats do not.
 Cancelling queues `recipe.cancel` for target agents and marks the distributed
 run terminal.
 
@@ -418,7 +420,19 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   event row also needs its time, envelope kind and payload. Every other JSON
   object row is a parse warning naming the file, the line and the missing field,
   except the `step-result` rows the recorder mirrors into `events.jsonl`, which
-  stand in for no event.
+  stand in for no event, and the recorder's overflow row.
+- The control server's artifact recorder holds rows pending for at most one
+  flush tick (250 ms) and while a batch is being written. Above its pending cap
+  (160 MiB) the recording run drops its own oldest pending rows, and a result
+  always keeps or loses its `results.jsonl` row and its `events.jsonl`
+  step-result row together. The run's next write then starts both files with one
+  overflow row: `kind: "control-artifact-overflow"`, `status: "diagnostic"`,
+  `agentId: "control-server"`, `atEpochMs`, and `value` holding `topic:
+  "rallar.bb.control.artifact-overflow"`, `severity: "warning"`,
+  `omittedResults`, `omittedEventRows`, `omittedBytes` and `maxPendingBytes`
+  (`control/control-artifact-overflow.ts`). In `events.jsonl` it stands in as
+  the control server's diagnostic event; in `results.jsonl` it stands in for no
+  result.
 - `toDistributedArtifactSnapshots` rejects when the files hold no readable
   distributed run, and with the control-run.json warning when that file is
   unavailable. `toDistributedArtifactBundle` rejects in the same cases and also

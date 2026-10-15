@@ -39,6 +39,7 @@ export async function runControlSnapshotAtomicReplacementFixture(directory: stri
         flushIntervalMs: 0,
         controlService: {
             applyRunRetention: () => [],
+            snapshotLifecycleRevision: () => '',
             snapshotRevision: () => ({ content: 'replacement', lifecycle: '' }),
             snapshotForPersistence: () => replacementSnapshot,
             restoreSnapshot: (value: ControlServerSnapshot) => {
@@ -46,7 +47,8 @@ export async function runControlSnapshotAtomicReplacementFixture(directory: stri
             }
         },
         deleteRuns: () => undefined,
-        timers: createDefaultControlTimers()
+        timers: createDefaultControlTimers(),
+        timingSink: undefined
     });
     const log = console.log;
     console.log = () => undefined;

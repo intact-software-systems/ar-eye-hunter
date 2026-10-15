@@ -16,12 +16,11 @@ export interface ControlDeadlineSweepInput {
 export function startControlDeadlineSweep(input: ControlDeadlineSweepInput): () => void {
     let cancel = input.timers.schedule(sweep, input.intervalMs);
 
-    function sweep(): Promise<void> {
+    function sweep(): void {
         if (input.agentSockets.sendDispatchableCommandsForConnectedRuns() > 0) {
             input.persistence.persist();
         }
         cancel = input.timers.schedule(sweep, input.intervalMs);
-        return Promise.resolve();
     }
 
     return () => cancel();

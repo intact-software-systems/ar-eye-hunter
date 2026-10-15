@@ -1,7 +1,7 @@
 /** The control server's clock and one-shot timer: `schedule` runs `run` once after `delayMs` and answers its cancel. */
 export interface ControlTimers {
     readonly nowEpochMs: () => number;
-    readonly schedule: (run: () => Promise<void>, delayMs: number) => () => void;
+    readonly schedule: (run: () => void | Promise<void>, delayMs: number) => () => void;
 }
 
 export function createDefaultControlTimers(): ControlTimers {

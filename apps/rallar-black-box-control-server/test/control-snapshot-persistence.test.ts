@@ -1,9 +1,12 @@
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
+import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { toRallarBlackBoxCompositeResultFlatEntries } from '@shared-test/rallar-bb-test/composite-results.ts';
-import { parseControlClientMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { parseControlClientMessage, RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import type { RallarBlackBoxDistributedTargetBlocker } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -12,13 +15,14 @@ import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-captu
 
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 
+import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import {
     ControlArtifactRecorder,
     DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
+import { ControlSnapshotPersistence, toJsonPieces } from '../src/control-snapshot-persistence.ts';
 import { createDefaultControlTimers, type ControlTimers } from '../src/control-timers.ts';
 import {
     assertRight,
@@ -60,6 +64,7 @@ interface SnapshotPersistenceFixtureInput {
     readonly storageDir: string;
     readonly controlService: ConstructorParameters<typeof ControlSnapshotPersistence>[0]['controlService'];
     readonly timers?: ControlTimers;
+    readonly timingSink?: RallarTimingSink;
 }
 
 function toSnapshotPersistence(input: SnapshotPersistenceFixtureInput): ControlSnapshotPersistence {
@@ -70,7 +75,8 @@ function toSnapshotPersistence(input: SnapshotPersistenceFixtureInput): ControlS
         flushIntervalMs: FLUSH_INTERVAL_MS,
         controlService: input.controlService,
         deleteRuns: () => undefined,
-        timers: input.timers ?? createDefaultControlTimers()
+        timers: input.timers ?? createDefaultControlTimers(),
+        timingSink: input.timingSink
     });
 }
 
@@ -82,6 +88,7 @@ function toCountingControlService(
     return {
         applyRunRetention: (maxRuns) => service.applyRunRetention(maxRuns),
         restoreSnapshot: (snapshot) => service.restoreSnapshot(snapshot),
+        snapshotLifecycleRevision: () => service.snapshotLifecycleRevision(),
         snapshotRevision: () => service.snapshotRevision(),
         snapshotForPersistence: (bounds) => {
             onSnapshot();
@@ -459,4 +466,111 @@ function assertSdkArtifactReceipt(input: SdkArtifactReceiptInput): void {
     const actual = decodeRecord(row.actual);
     assertEquals(actual.invocation, input.invocation);
     assertSdkCaptureReceipts({ ...input.result, value: actual }, input.receipt);
+}
+
+const SLOW_SLICES = 8;
+const SLOW_SLICE_MS = 60;
+
+Deno.test('the sliced snapshot serialization is exactly JSON.stringify of the snapshot', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
+    for (const agentId of ['agent-1', 'agent-2']) {
+        service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId, identity: toFleetIdentity(agentId) }));
+    }
+    assertRight(service.createDistributedRun(toDistributedManifest()));
+    assertRight(service.stageDistributedRun('dist-1'));
+    const [stage] = takeAgentDispatchableCommands(service, 'run-1', 'agent-1');
+    service.receiveClientEnvelope(toCommandResultEnvelope({ runId: 'run-1', agentId: 'agent-1', command: stage, ok: true }));
+    const snapshot = service.snapshotForPersistence({});
+    const withEdgeValues = { ...snapshot, edge: [undefined, () => 1, { skipped: undefined, kept: null, date: new Date(0) }] };
+
+    assertEquals([...toJsonPieces(snapshot, 0)].join(''), JSON.stringify(snapshot));
+    assertEquals([...toJsonPieces(withEdgeValues, 0)].join(''), JSON.stringify(withEdgeValues));
+});
+
+// Before the serialization was sliced, a barrier arrival that landed during a flush waited for the whole
+// JSON.stringify; on the hosted VM that held barrier resolutions for seconds.
+Deno.test('a barrier arrival during a slow snapshot flush is resolved on its socket before the flush ends', async () => {
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-slow-flush-' });
+    const timings: RallarTimingEvent[] = [];
+    const service = createRallarBlackBoxControlService(toControlServiceInput({ timingSink: (event) => timings.push(event) }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1' }));
+    const sockets = new ControlAgentSockets(service);
+    let resolutionSentAt: number | undefined;
+    sockets.register(
+        { readyState: 1, send: () => resolutionSentAt ??= performance.now(), close: () => undefined },
+        { runId: 'run-1', agentId: 'agent-1' }
+    );
+    try {
+        const persistence = new ControlSnapshotPersistence({
+            storageDir,
+            retentionMaxRuns: 0,
+            snapshotBounds: {},
+            flushIntervalMs: 2_000,
+            controlService: {
+                applyRunRetention: () => [],
+                restoreSnapshot: () => undefined,
+                snapshotLifecycleRevision: () => '',
+                snapshotRevision: () => ({ content: 'slow', lifecycle: '' }),
+                snapshotForPersistence: () => toSlowSnapshot()
+            },
+            deleteRuns: () => undefined,
+            timers: createDefaultControlTimers(),
+            timingSink: (event) => timings.push(event)
+        });
+        persistence.persist();
+        const arrivalDueAt = performance.now() + 20;
+        setTimeout(() => {
+            if (service.receiveClientEnvelope(toBarrierArrival()).affectsDispatch) {
+                sockets.sendDispatchableCommandsForRun('run-1');
+            }
+        }, 20);
+        await persistence.stop();
+        const flushEndedAt = performance.now();
+        const flush = timings.find((event) => event.operation === 'snapshot.flush');
+        const resolution = timings.find((event) => event.operation === 'barrier.resolution');
+
+        assert(resolutionSentAt !== undefined, 'the barrier resolution was sent');
+        assert(resolutionSentAt < flushEndedAt, 'the resolution went out while the flush was still writing');
+        assert(resolutionSentAt - arrivalDueAt < 4 * SLOW_SLICE_MS, `${resolutionSentAt - arrivalDueAt} ms after the arrival was due`);
+        assertEquals(flush?.status, 'ok');
+        assert((flush?.details?.bytes ?? 0) as number > SLOW_SLICES * 1_000_000);
+        assert((flush?.details?.serializeMs ?? 0) as number >= SLOW_SLICES * SLOW_SLICE_MS);
+        assertEquals(resolution?.details, { barrierId: 'armed', outcome: 'failed', arrivals: 1, participants: 0 });
+    }
+    finally {
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+/** Every fleet report entry takes one slice and its serialization blocks for a fixed time, as a slow CPU would. */
+function toSlowSnapshot(): ControlServerSnapshot {
+    const slowEntry = {
+        toJSON: () => {
+            const until = performance.now() + SLOW_SLICE_MS;
+            while (performance.now() < until) {
+                // Busy wait: the serialization itself holds the event loop.
+            }
+            return 'x'.repeat(1_100_000);
+        }
+    };
+    return { runs: [], distributedRuns: [], fleetReports: Array.from({ length: SLOW_SLICES }, () => slowEntry) } as never;
+}
+
+function toBarrierArrival() {
+    return {
+        kind: 'event',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_000,
+        eventId: 'barrier-arrived',
+        payload: {
+            eventId: 'barrier-arrived',
+            kind: 'event',
+            topic: RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC,
+            atEpochMs: 1_000,
+            severity: 'info',
+            payload: { barrierId: 'armed', timeoutMs: 5_000 }
+        }
+    } as const;
 }

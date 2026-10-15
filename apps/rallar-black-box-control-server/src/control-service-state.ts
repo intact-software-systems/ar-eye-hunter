@@ -92,6 +92,8 @@ export interface ControlRecipeBarrierState {
     readonly participants: readonly ControlRecipeBarrierParticipant[];
     readonly openedAtEpochMs: number;
     readonly arrivedAgentIds: readonly string[];
+    /** When the server accepted the latest arrival; the resolution's delay is measured from it. */
+    readonly lastArrivedAtEpochMs: number;
     /** Undefined until an arrival makes the barrier unpassable. */
     readonly issue: ControlBarrierFailureReason | undefined;
     /** Undefined until every participant arrived or the barrier failed; then it never changes. */

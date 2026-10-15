@@ -120,7 +120,7 @@ export function toControlRunSnapshot(
 
 export function toControlSnapshotRevision(input: ControlSnapshotRevisionInput): ControlSnapshotRevision {
     const distributedRuns = Array.from(input.distributedRuns);
-    const lifecycle = distributedRuns.map((run) => `${run.distributedRunId}:${run.state}`).join('|');
+    const lifecycle = toControlLifecycleRevision(distributedRuns);
     return {
         lifecycle,
         content: [
@@ -134,6 +134,11 @@ export function toControlSnapshotRevision(input: ControlSnapshotRevisionInput): 
             )
         ].join('\n')
     };
+}
+
+/** The lifecycle part of the snapshot revision alone, cheap enough to read on every accepted envelope. */
+export function toControlLifecycleRevision(distributedRuns: Iterable<ControlDistributedRunState>): string {
+    return Array.from(distributedRuns, (run) => `${run.distributedRunId}:${run.state}`).join('|');
 }
 
 export function toDistributedRunSnapshot(

@@ -871,6 +871,15 @@ snapshot write. The distributed-recipe workflow exports each run's artifacts
 when the run ends, so the controller is not the archive; raise the value only
 when you need an older run's controller-side files.
 
+Once a distributed run with group assertions settles (terminal, with its rollup
+evaluated), the control server also compacts its start results in memory:
+child payloads are omitted, as for any ordinary result. This applies to the
+scale manifests `19/20/21-alm-conformance-*.json` too, because their family is
+`alm-scale`; only family `alm-conformance` keeps its start results whole. After
+settlement `control-run.json`, the observation drill-downs and the fleet report
+see compacted start results, and the whole rows remain only in the run's
+`results.jsonl`.
+
 Override any default by prefixing the deploy command:
 
 ```sh
@@ -975,9 +984,22 @@ journalctl -u rallar-black-box-control -n 80 --no-pager
 ## Control Server Memory
 
 The control server keeps its retained runs in the heap and writes them all to
-`/var/lib/rallar-black-box-control/control-snapshot.json` at most once every two
-seconds (`RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS`), and at once when a
-distributed run changes state or the service stops. The unit runs without
+`/var/lib/rallar-black-box-control/control-snapshot.json` at most once every ten
+seconds on the hosted controller (`RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS=10000`
+in the deploy env; two seconds by default elsewhere), and at once when a
+distributed run changes state or the service stops. A crash therefore loses at
+most ten seconds of restorable state, which a test harness can afford; each
+write serializes tens of megabytes on the VM's slow CPU, so fewer writes leave
+more of the event loop to the agents. The write is streamed in one-megabyte
+slices, and agent frames, barrier resolutions among them, are handled between
+slices. The journal shows each write and each barrier resolution as a
+`rallar.timing` line (`operation` `snapshot.flush` with `bytes`, `serializeMs`
+and `writeMs`; `barrier.resolution` with the milliseconds from the last arrival
+to the resolution):
+
+````sh
+journalctl -u rallar-black-box-control --no-pager | grep '"rallar.timing"' | tail -40
+``` The unit runs without
 `--v8-flags` or a systemd `MemoryMax`, so V8 sizes its heap from the VM's RAM.
 When the control service stops answering (502 to the operator and to the agents'
 control sockets), confirm whether it ran out of memory before changing code:
@@ -989,7 +1011,7 @@ systemctl show -p NRestarts rallar-black-box-control
 free -m
 nproc
 ls -l /var/lib/rallar-black-box-control/control-snapshot.json
-```
+````
 
 - `Reached heap limit` or `JavaScript heap out of memory` in the journal: V8's
   own limit stopped the process.

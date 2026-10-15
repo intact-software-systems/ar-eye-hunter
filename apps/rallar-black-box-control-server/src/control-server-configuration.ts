@@ -107,11 +107,19 @@ export function readBlackBoxControlServerConfiguration(
 export function validateBlackBoxControlServerConfiguration(
     configuration: BlackBoxControlServerConfiguration
 ): readonly string[] {
-    return configuration.maxRequestBytes < RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
-        ? [
-            `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES must be at least ${RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES}, the frame limit agents send to; got ${configuration.maxRequestBytes}.`
-        ]
-        : [];
+    return [
+        ...(configuration.maxRequestBytes < RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES
+            ? [
+                `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES must be at least ${RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES}, the frame limit agents send to; got ${configuration.maxRequestBytes}.`
+            ]
+            : []),
+        ...(configuration.snapshotFlushIntervalMs < 1
+            ? [`RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS must be at least 1; got ${configuration.snapshotFlushIntervalMs}.`]
+            : []),
+        ...(configuration.deadlineSweepIntervalMs < 1
+            ? [`RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS must be at least 1; got ${configuration.deadlineSweepIntervalMs}.`]
+            : [])
+    ];
 }
 
 function readAccessConfiguration(
