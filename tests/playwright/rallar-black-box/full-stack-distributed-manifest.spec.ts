@@ -504,6 +504,7 @@ async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
     const resourceUrl = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return readApiV1Configuration({
         environment: { get: (key) => profileEnvironment[key] ?? process.env[key] },
+        hardwareConcurrency: availableParallelism(),
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resourceUrl('configuration/defaults-config.json'),
         profileUrls: {

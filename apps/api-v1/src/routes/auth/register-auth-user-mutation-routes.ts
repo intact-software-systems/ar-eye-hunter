@@ -96,7 +96,8 @@ async function issueLoginSession(
     const loginResponse = await apiLoginService.login({
         request,
         userRepository: dependencies.authUserRepository,
-        staticClients: dependencies.authentication.staticClients
+        staticClients: dependencies.authentication.staticClients,
+        passwordDerivationAdmission: dependencies.passwordDerivationAdmission
     });
     if (!loginResponse) {
         return toApiMutationFailureResponse(

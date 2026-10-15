@@ -4,6 +4,7 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
+import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
@@ -49,6 +50,7 @@ export interface ApiV1RouteWsAuthRequest {
 export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRuntime {
     readonly wsQBoxServerService: Pick<ApiV1Runtime['wsQBoxServerService'], 'socket'>;
     readonly appAuthInboxService: configRoutes.ConfigRouteDependencies['appAuthInbox'];
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly appClientInboxService: Pick<
         ApiV1Runtime['appClientInboxService'],
         | 'enqueueAuthorisedWsClientConnect'
@@ -222,6 +224,7 @@ function createApiV1StateRouteInstallers<
                 now: input.nowEpochMs,
                 createTokenId: input.createTokenId,
                 appAuthInbox: input.runtime.appAuthInboxService,
+                passwordDerivationAdmission: input.runtime.passwordDerivationAdmission,
                 authUserRepository: input.authUserRepository,
                 authentication: input.authentication,
                 operatorToken: input.operatorToken,

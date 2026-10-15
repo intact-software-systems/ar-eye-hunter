@@ -10,7 +10,11 @@ import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-sta
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import {
+    computeGroupPresenceSummaryEntry,
+    decodeCanonicalGroupPresenceSummaryEntry,
+    type GroupPresenceSummaryWorkData
+} from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -43,7 +47,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
                 formationEvents.push(event);
             }
         });
-        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
+        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([
                 AppTopics.groupStateEvent
@@ -82,7 +86,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
                 formationEvents.push(event);
             }
         });
-        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
+        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry, 'held-by-policy')
         );
@@ -107,7 +111,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             now: () => BASE_EPOCH_MS + 5_000,
             formationMetrics: (event) => formationEvents.push(event)
         });
-        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
+        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry)
         );
@@ -125,6 +129,8 @@ function createComputedWorkWithDownstreamTopics(
     replan: 'enqueued' | 'held-by-policy' = 'enqueued'
 ) {
     return {
+        work: decodeCanonicalGroupPresenceSummaryEntry(entry),
+        summary: { outcome: 'no-op', summary: { activeSessionIds: [] } },
         reservationFinish: {
             key: entry.key,
             expectedAttempts: entry.dequeueAudit.attempts,

@@ -1,3 +1,5 @@
+import { createDefaultTimers, type Timers } from './timers.ts';
+
 export interface TryWithInput<T> {
     readonly handler: () => T | Promise<T>;
     readonly retryIntervalMsecs: number;
@@ -311,15 +313,12 @@ export function tryWith<T>(input: TryWithInput<T>): Promise<T> {
 
 export function tryRunInIntervals<T>(input: TryRunInIntervalsInput<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-        new PeriodicRetryCycle(input, {
-            schedule: (delayMsecs, elapsed) => setTimeout(elapsed, delayMsecs),
-            cancel: (timer) => clearTimeout(timer)
-        }, { resolve, reject }).start();
+        new PeriodicRetryCycle(input, createDefaultTimers(), { resolve, reject }).start();
     });
 }
 
 interface PeriodicRetryWait {
-    readonly timer: ReturnType<typeof setTimeout>;
+    readonly cancel: () => void;
     readonly completion: PeriodicRetryCycle.Result<void>;
 }
 
@@ -328,17 +327,11 @@ namespace PeriodicRetryCycle {
         readonly resolve: (value: T) => void;
         readonly reject: (reason: unknown) => void;
     }
-
-    export interface Dependencies {
-        /** The host registers a deferred callback and returns before it can run. */
-        readonly schedule: (delayMsecs: number, elapsed: () => void) => ReturnType<typeof setTimeout>;
-        readonly cancel: (timer: ReturnType<typeof setTimeout>) => void;
-    }
 }
 
 class PeriodicRetryCycle<T> {
     private readonly input: TryRunInIntervalsInput<T>;
-    private readonly dependencies: PeriodicRetryCycle.Dependencies;
+    private readonly timers: Timers;
     private readonly policy: TryWithPolicy;
     private readonly first: PeriodicRetryCycle.Result<T>;
     private pendingWait: PeriodicRetryWait | undefined;
@@ -347,12 +340,12 @@ class PeriodicRetryCycle<T> {
 
     constructor(
         input: TryRunInIntervalsInput<T>,
-        dependencies: PeriodicRetryCycle.Dependencies,
+        timers: Timers,
         first: PeriodicRetryCycle.Result<T>
     ) {
         this.first = first;
         this.input = input;
-        this.dependencies = dependencies;
+        this.timers = timers;
         this.policy = TryWithPolicy.defaults()
             .retryIntervalMsecs(input.retryIntervalMsecs)
             .maxAttempts(Math.ceil(input.maxAttempts))
@@ -402,14 +395,14 @@ class PeriodicRetryCycle<T> {
         }
         return new Promise<void>((resolve, reject) => {
             const completion: PeriodicRetryCycle.Result<void> = { resolve, reject };
-            const timer = this.dependencies.schedule(delayMsecs, () => {
+            const cancel = this.timers.schedule(() => {
                 if (this.pendingWait?.completion !== completion) {
                     return;
                 }
                 this.pendingWait = undefined;
                 completion.resolve(undefined);
-            });
-            this.pendingWait = { timer, completion };
+            }, delayMsecs);
+            this.pendingWait = { cancel, completion };
         });
     }
 
@@ -422,7 +415,7 @@ class PeriodicRetryCycle<T> {
         this.pendingWait = undefined;
         if (pending) {
             try {
-                this.dependencies.cancel(pending.timer);
+                pending.cancel();
             }
             catch {
                 // A failed host cancellation leaves only an inert callback until its deadline.

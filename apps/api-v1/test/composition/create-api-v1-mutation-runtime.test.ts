@@ -11,6 +11,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         database: databaseProbe.database,
         serviceId: 'api-test',
         authCredentialSecret: 'a'.repeat(32),
+        maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },

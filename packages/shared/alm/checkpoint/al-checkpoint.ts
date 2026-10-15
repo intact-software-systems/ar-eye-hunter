@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { Timers } from '../../resilience/timers.ts';
 
 import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
 import { decodeStoredResourceEntry } from '../../queuebox/indexed-db-queue-box-entry-codec.ts';
@@ -28,7 +29,7 @@ export interface ALCheckpointStorage {
     readonly health: ALStorageHealth;
     readonly settings: ALCheckpointWriter.Settings;
     readonly newWriteToken: () => string;
-    readonly timers: ALCheckpointWriter.Timers;
+    readonly timers: Pick<Timers, 'schedule'>;
 }
 
 /**

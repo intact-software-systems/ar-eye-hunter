@@ -22,6 +22,17 @@ import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
 
 export namespace InboxQueueReader {
+    /**
+     * The lifecycle of one engine pass over this queue: a probe, then the pass it advertised, with the
+     * handler of every claimed entry. One observer at a time; the owner measures what it will at each step.
+     */
+    export interface DequeuePassObserver extends QueueBoxUtilities.DequeueHandlerObserver {
+        onProbeStarted(): void;
+        onProbeFinished(advertisedLanes: DequeueController.WorkAdvertisement): void;
+        onPassStarted(): void;
+        onPassFinished(): void;
+    }
+
     export interface PressureSample {
         readonly observedAt: number;
         readonly retryQuota: number;
@@ -48,6 +59,7 @@ export class InboxQueueReader {
     private pressureCursor: ResourceInboxWorkPage.Cursor | null = null;
     private pressureSample: InboxQueueReader.PressureSample | undefined;
     private pressureRefresh: Promise<void> | undefined;
+    private dequeuePassObserver: InboxQueueReader.DequeuePassObserver | undefined;
 
     private static readonly PRESSURE_WINDOW_MS = 1_000;
 
@@ -87,12 +99,37 @@ export class InboxQueueReader {
         this.reader.onRejectedMessageDo(callback);
     }
 
+    onDequeuePassDo(observer: InboxQueueReader.DequeuePassObserver): void {
+        if (this.dequeuePassObserver !== undefined) {
+            throw new Error('A dequeue-pass observer is already installed on this inbox reader');
+        }
+        this.dequeuePassObserver = observer;
+    }
+
+    /** One storage read naming the lanes the next pass may claim from; the engine's work probe for this queue. */
+    async readWorkAdvertisement(
+        typesToDequeue: Set<string>,
+        resilience: ResourceInboxResilience
+    ): Promise<DequeueController.WorkAdvertisement> {
+        this.dequeuePassObserver?.onProbeStarted();
+        const advertisedLanes = await this.inbox.readWorkAdvertisement(
+            typesToDequeue,
+            resilience.toWorkAdvertisementOptions()
+        );
+        this.dequeuePassObserver?.onProbeFinished(advertisedLanes);
+        return advertisedLanes;
+    }
+
     async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    /** Resolves with the number of entries this invocation claimed. */
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<number> {
+    /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */
+    async dequeueInbox(
+        typesToDequeue: Set<string>,
+        resilience: ResourceInboxResilience,
+        workAdvertisement?: DequeueController.WorkAdvertisement
+    ): Promise<number> {
         const isAppInbox = typesToDequeue.size === 1 && typesToDequeue.has(EnqueuedType.APP_INBOX);
         const scope = isAppInbox ? `${EnqueuedType.APP_INBOX}:${resilience.retryPolicy.maxAttempts}` : undefined;
         if (this.pressureScope !== scope) {
@@ -101,21 +138,37 @@ export class InboxQueueReader {
             this.pressureSample = undefined;
             this.pressureCursor = null;
         }
-        return await this.reader.dequeue(
-            typesToDequeue,
-            resilience,
-            isAppInbox ? () => this.readLaneBudgets(resilience.retryPolicy.maxAttempts) : undefined
-        );
+        const observer = this.dequeuePassObserver;
+        observer?.onPassStarted();
+        try {
+            return await this.reader.dequeue({
+                typesToDequeue,
+                resilience,
+                readLaneBudgets: isAppInbox
+                    ? () => this.readLaneBudgets(resilience.retryPolicy.maxAttempts, workAdvertisement)
+                    : undefined,
+                workAdvertisement,
+                handlerObserver: observer
+            });
+        }
+        finally {
+            observer?.onPassFinished();
+        }
     }
 
-    private readLaneBudgets(maxAttempts: number): DequeueController.LaneBudgets {
+    /** A probe that advertised no due retry makes a pressure page read pointless: it would observe none. */
+    private readLaneBudgets(
+        maxAttempts: number,
+        workAdvertisement: DequeueController.WorkAdvertisement | undefined
+    ): DequeueController.LaneBudgets {
         const now = this.nowEpochMs();
         const sample = this.pressureSample;
         const retryQuota = sample && now >= sample.observedAt &&
                 now - sample.observedAt < InboxQueueReader.PRESSURE_WINDOW_MS
             ? sample.retryQuota
             : 1;
-        if (!this.pressureRefresh && this.pressureRefreshLimiter.allowAt(now)) {
+        const retryAdvertised = workAdvertisement === undefined || workAdvertisement.RETRY;
+        if (retryAdvertised && !this.pressureRefresh && this.pressureRefreshLimiter.allowAt(now)) {
             this.pressureRefresh = this.refreshRetryPressure({
                 generation: this.pressureGeneration,
                 maxAttempts,

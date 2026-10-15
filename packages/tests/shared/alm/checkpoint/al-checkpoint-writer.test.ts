@@ -1,3 +1,4 @@
+import type { Timers } from '@shared/resilience/timers.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Temporal } from '@js-temporal/polyfill';
@@ -280,7 +281,7 @@ interface WriterFixture {
 /** `timerLateMs` fires every armed checkpoint that much after its delay, as a busy or throttled page does. */
 function createWriterFixture(timerLateMs = 0): WriterFixture {
     const nowMs = Date.now;
-    const timers: ALCheckpointWriter.Timers = {
+    const timers: Pick<Timers, 'schedule'> = {
         schedule: (run, delayMs) => {
             const handle = setTimeout(run, delayMs + timerLateMs);
             return () => clearTimeout(handle);

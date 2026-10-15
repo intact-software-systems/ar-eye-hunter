@@ -2131,7 +2131,38 @@ export const reviewedDispositions = Object.freeze([
         maximumMagnitude: 1
     }),
     ...reviewedScenarioDispositions,
-    ...reviewedBrowserDispositions
+    ...reviewedBrowserDispositions,
+    // The OpenAPI schema clone walks a JSON schema document whose nodes are objects, arrays and scalars until
+    // the self reference is rewritten; the JSON response serialises an already-validated value. Both are
+    // serialisation owners, not domain inputs; a touched use still needs the whole-owner review.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'cloneJsonSchema',
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonResponse',
+        maximumMagnitude: 1
+    }),
+    // The swagger module's JSON record alias names the raw schema document shape the two owners above walk.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Recipe failure details and outputs are recipe-authored JSON the control server carries verbatim into the
+    // artifact bundle; the consumer decodes them against the recipe's own contract. Three contract fields, no
+    // owner function; a fourth use needs its own review.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/control-snapshots.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    })
 ]);
 
 export function isReviewedDisposition(repoRoot, finding) {

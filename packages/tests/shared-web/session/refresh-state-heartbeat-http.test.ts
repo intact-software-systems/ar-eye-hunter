@@ -53,6 +53,7 @@ describe('state heartbeat HTTP workflow', () => {
             ],
             {
                 generationId: 'generation-1',
+                clientSnapshot: undefined,
                 policies: { command: { maxAttempts: 3 } }
             }
         );
@@ -94,6 +95,7 @@ describe('state heartbeat HTTP workflow', () => {
             [groupSnapshot('group-1', 'ar-eye-hunter')],
             {
                 generationId: 'generation-1',
+                clientSnapshot: undefined,
                 scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
                 policies: { command: { maxAttempts: 3 } }
             }
@@ -143,6 +145,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
             generationId: 'generation-1',
+            clientSnapshot: undefined,
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -180,6 +183,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [], {
             generationId: 'generation-1',
+            clientSnapshot: undefined,
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -195,6 +199,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [], {
             generationId: 'generation-1',
+            clientSnapshot: undefined,
             authSession: {
                 clientId: 'principal-1',
                 username: 'alice',

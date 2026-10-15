@@ -10,14 +10,12 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } fr
 
 export namespace ResourceInboxResilience {
     export interface StatusChecks {
-        readonly isEntryRateLimiter: RateLimiter;
         readonly lockEntryRateLimiter: RateLimiter;
     }
 
     export interface Dependencies {
         readonly circuitBreaker: CircuitBreaker;
         readonly checkReserveTimeouts: StatusChecks;
-        readonly checkFairness: StatusChecks;
         readonly checkFinalization: StatusChecks;
         readonly rateAdjuster: RateAdjuster;
         readonly retryPolicy: ResourceInboxRetryPolicy;
@@ -31,17 +29,16 @@ export namespace ResourceInboxResilience {
         readonly maxRate: number;
         readonly concurrencyIncreaseStep: number;
         readonly concurrencyReduceStep: number;
-        readonly maxFairnessSelectionsInWindow?: number;
         readonly retryPolicy?: ResourceInboxRetryPolicy;
         readonly reservationLeaseMs?: number;
     }
 }
 
 export class ResourceInboxResilience {
-    static readonly MAX_NUM_IS_ENTRY_CHECK = 1;
     static readonly MAX_NUM_DEQUEUE_IN_WINDOW = 10;
+    /** The opportunistic expired-row sweep a queue runs beside its probe: at most once per window. */
+    static readonly MAX_NUM_CLEANUP_IN_WINDOW = 1;
     static readonly RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS = 60_000;
-    static readonly RATE_LIMITER_FAIRNESS_CHECK_SLIDING_WINDOW_DURATION_MS = 60_000;
     static readonly MIN_CONSECUTIVE_SUCCESSES = 10;
     static readonly RATE_ADJUST_WINDOW_MS = 15 * 60_000;
     static readonly FINALIZATION_STALE_AFTER_MS = 5 * 60_000;
@@ -49,7 +46,6 @@ export class ResourceInboxResilience {
 
     readonly circuitBreaker: CircuitBreaker;
     readonly checkReserveTimeouts: ResourceInboxResilience.StatusChecks;
-    readonly checkFairness: ResourceInboxResilience.StatusChecks;
     readonly checkFinalization: ResourceInboxResilience.StatusChecks;
     readonly rateAdjuster: RateAdjuster;
     readonly retryPolicy: ResourceInboxRetryPolicy;
@@ -58,7 +54,6 @@ export class ResourceInboxResilience {
     constructor(dependencies: ResourceInboxResilience.Dependencies) {
         this.circuitBreaker = dependencies.circuitBreaker;
         this.checkReserveTimeouts = dependencies.checkReserveTimeouts;
-        this.checkFairness = dependencies.checkFairness;
         this.checkFinalization = dependencies.checkFinalization;
         this.rateAdjuster = dependencies.rateAdjuster;
         this.retryPolicy = dependencies.retryPolicy;
@@ -79,10 +74,6 @@ export class ResourceInboxResilience {
             checkReserveTimeouts: createResourceInboxStatusChecks(
                 ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
                 ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS
-            ),
-            checkFairness: createResourceInboxStatusChecks(
-                config.maxFairnessSelectionsInWindow ?? ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
-                ResourceInboxResilience.RATE_LIMITER_FAIRNESS_CHECK_SLIDING_WINDOW_DURATION_MS
             ),
             checkFinalization: createResourceInboxStatusChecks(
                 ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
@@ -105,12 +96,10 @@ export class ResourceInboxResilience {
 
     toWorkAdvertisementOptions(): ResourceInboxWorkAdvertisementOptions {
         return {
-            checkTimeout: this.checkReserveTimeouts.isEntryRateLimiter,
-            checkFairness: this.checkFairness.isEntryRateLimiter,
-            checkFinalization: this.checkFinalization.isEntryRateLimiter,
             maxAttempts: this.retryPolicy.maxAttempts,
             finalizationStaleAfterMs: ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS,
-            reservationLeaseMs: this.reservationLeaseMs
+            reservationLeaseMs: this.reservationLeaseMs,
+            staleDueThresholdMs: this.retryPolicy.staleDueThresholdMs
         };
     }
 
@@ -150,10 +139,6 @@ function createResourceInboxStatusChecks(
     windowDurationMs: number
 ): ResourceInboxResilience.StatusChecks {
     return {
-        isEntryRateLimiter: RateLimiter.init(
-            windowDurationMs,
-            ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
-        ),
         lockEntryRateLimiter: RateLimiter.init(
             windowDurationMs,
             maxSelectionsInWindow

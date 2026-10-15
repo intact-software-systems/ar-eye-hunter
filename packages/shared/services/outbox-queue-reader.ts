@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -45,11 +46,25 @@ export class OutboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    /** Resolves with the number of entries this invocation claimed. */
-    async dequeueOutbox(
+    async readWorkAdvertisement(
         typesToDequeue: Set<string>,
         resilience: ResourceInboxResilience
+    ): Promise<DequeueController.WorkAdvertisement> {
+        return await this.outbox.readWorkAdvertisement(typesToDequeue, resilience.toWorkAdvertisementOptions());
+    }
+
+    /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */
+    async dequeueOutbox(
+        typesToDequeue: Set<string>,
+        resilience: ResourceInboxResilience,
+        workAdvertisement?: DequeueController.WorkAdvertisement
     ): Promise<number> {
-        return await this.reader.dequeue(typesToDequeue, resilience);
+        return await this.reader.dequeue({
+            typesToDequeue,
+            resilience,
+            readLaneBudgets: undefined,
+            workAdvertisement,
+            handlerObserver: undefined
+        });
     }
 }

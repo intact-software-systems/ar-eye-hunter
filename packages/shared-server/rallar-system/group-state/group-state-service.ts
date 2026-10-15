@@ -6,7 +6,7 @@ import {
     captureAppInboxGroupMutationIngress,
     captureGroupMutationIngress,
     GroupMutationAuthorizationError,
-    readAndVerifyGroupMutationIngressAuthority,
+    readAndVerifyLiveGroupMutationSession,
     type GroupMutationAuthorityDependencies
 } from './group-mutation-authority.ts';
 import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutation-command.ts';
@@ -289,7 +289,7 @@ async function readGroupMutationAttempt(
         }
     }
     else {
-        await readAndVerifyGroupMutationIngressAuthority(authorityDependencies, ingress);
+        await readAndVerifyLiveGroupMutationSession(authorityDependencies, ingress);
     }
     const initialRead = await readGroupMutation(repositoryFor(runtime), ingress.command);
     const command = ingress.command;

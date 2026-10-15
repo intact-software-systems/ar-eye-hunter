@@ -6,6 +6,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -46,7 +47,8 @@ Deno.test(
                         runtimeRepository: runtime,
                         serviceId: 'pglite-auth'
                     }),
-                    credentialIssuer: credentialIssuer
+                    credentialIssuer: credentialIssuer,
+                    passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
                 },
                 {
                     serviceId: 'pglite-auth',
@@ -138,7 +140,8 @@ Deno.test(
                         runtimeRepository: runtime,
                         serviceId: 'pglite-auth'
                     }),
-                    credentialIssuer: credentialIssuer
+                    credentialIssuer: credentialIssuer,
+                    passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
                 },
                 {
                     serviceId: 'pglite-auth',

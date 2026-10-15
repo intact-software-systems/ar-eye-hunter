@@ -1,3 +1,4 @@
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
@@ -37,7 +38,8 @@ Deno.test('register prepares a mandatory user command without writing before App
             password: 'secret'
         },
         userRepository,
-        staticClients: STATIC_CLIENTS
+        staticClients: STATIC_CLIENTS,
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
     });
 
     assert.ok(session);
@@ -51,7 +53,8 @@ Deno.test('register prepares a mandatory user command without writing before App
                 password: 'wrong'
             },
             userRepository,
-            staticClients: STATIC_CLIENTS
+            staticClients: STATIC_CLIENTS,
+            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
         }),
         undefined
     );
@@ -97,7 +100,8 @@ Deno.test('an explicitly empty static-client policy frees demo client names', as
                 password: 'admin'
             },
             userRepository,
-            staticClients: []
+            staticClients: [],
+            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
         }),
         undefined
     );
@@ -108,7 +112,8 @@ Deno.test('an explicitly empty static-client policy frees demo client names', as
             password: 'secret'
         },
         userRepository,
-        staticClients: []
+        staticClients: [],
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 })
     });
     assert.ok(session);
     assert.equal(session.clientId, registered.clientId);

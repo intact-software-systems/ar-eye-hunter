@@ -12,6 +12,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import type { AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
@@ -74,7 +75,8 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
         authMutationService: recordMutationRejections(mutationService, mutationRejections),
-        credentialIssuer: createHmacAuthCredentialIssuer('binding-secret-0123456789abcdef-extra')
+        credentialIssuer: createHmacAuthCredentialIssuer('binding-secret-0123456789abcdef-extra'),
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
     }, {
         serviceId: 'ticket-binding',
         timing: undefined,

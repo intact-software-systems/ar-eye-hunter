@@ -1,4 +1,4 @@
-import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlRunSnapshot, ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 import type { ControlArtifactJsonlKind, ControlArtifactRecorder } from '../control-artifact-recorder.ts';
 import {
@@ -9,12 +9,15 @@ import {
     createControlRunArtifactFile
 } from '../control-artifacts.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
-import type { ControlHttpResponses } from '../http/control-http-responses.ts';
+import type { ControlHttpRejection, ControlHttpResponses } from '../http/control-http-responses.ts';
+import type { ControlCompletedRunArchive, ControlRunReadIssue } from '../run-completion/control-run-completion.ts';
 import { toNotFoundRejection } from './control-route-errors.ts';
 import { toPathParameters } from './control-route-requests.ts';
 
 export interface RunReadRouteDependencies {
-    readonly controlService: Pick<RallarBlackBoxControlService, 'snapshot' | 'snapshotRun'>;
+    readonly controlService: Pick<RallarBlackBoxControlService, 'snapshot'>;
+    /** Every single-run read goes through the archive: a live run from memory, a completed run from its file. */
+    readonly completedRuns: Pick<ControlCompletedRunArchive, 'readRun'>;
     readonly artifactRecorder: Pick<ControlArtifactRecorder, 'response'>;
     readonly responses: ControlHttpResponses;
 }
@@ -44,7 +47,6 @@ const RUN_ARTIFACT_FILE_PATH = /^\/runs\/([^/]+)\/artifacts\/([^/]+)$/;
 const RUN_EVENTS_JSONL_PATH = /^\/runs\/([^/]+)\/events\.jsonl$/;
 const RUN_RESULTS_JSONL_PATH = /^\/runs\/([^/]+)\/results\.jsonl$/;
 const RUN_FAILURE_BUNDLE_PATH = /^\/runs\/([^/]+)\/failure-bundle$/;
-const RUN_NOT_FOUND = toNotFoundRejection('Run not found.');
 
 export async function routeRunReadRequest(
     url: URL,
@@ -57,8 +59,11 @@ export async function routeRunReadRequest(
 
     const [runId] = toPathParameters(url.pathname, RUN_PATH) ?? [];
     if (runId !== undefined) {
-        const run = controlService.snapshotRun(runId, toRunSnapshotBounds(url));
-        return run ? responses.json(run, 200) : responses.rejection(RUN_NOT_FOUND);
+        return await readRunRoute(
+            { runId: runId, bounds: toRunSnapshotBounds(url) },
+            dependencies,
+            (run) => responses.json(run, 200)
+        );
     }
 
     const [fileRunId, fileName] = toPathParameters(url.pathname, RUN_ARTIFACT_FILE_PATH) ?? [];
@@ -72,13 +77,14 @@ async function routeRunArtifactReadRequest(
     url: URL,
     dependencies: RunReadRouteDependencies
 ): Promise<Response | undefined> {
-    const { controlService, responses } = dependencies;
+    const { responses } = dependencies;
     const [bundleRunId] = toPathParameters(url.pathname, RUN_ARTIFACTS_PATH) ?? [];
     if (bundleRunId !== undefined) {
-        const run = controlService.snapshotRun(bundleRunId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-        return run
-            ? responses.artifactBundle(createControlRunArtifactBundle(run), 200)
-            : responses.rejection(RUN_NOT_FOUND);
+        return await readRunRoute(
+            { runId: bundleRunId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+            dependencies,
+            (run) => responses.artifactBundle(createControlRunArtifactBundle(run), 200)
+        );
     }
 
     const [eventsRunId] = toPathParameters(url.pathname, RUN_EVENTS_JSONL_PATH) ?? [];
@@ -93,8 +99,11 @@ async function routeRunArtifactReadRequest(
 
     const [failureRunId] = toPathParameters(url.pathname, RUN_FAILURE_BUNDLE_PATH) ?? [];
     if (failureRunId !== undefined) {
-        const run = controlService.snapshotRun(failureRunId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-        return run ? responses.json(controlRunFailureBundle(run), 200) : responses.rejection(RUN_NOT_FOUND);
+        return await readRunRoute(
+            { runId: failureRunId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+            dependencies,
+            (run) => responses.json(controlRunFailureBundle(run), 200)
+        );
     }
     return undefined;
 }
@@ -111,26 +120,56 @@ async function readRunArtifactFileRoute(
         const kind = artifactFileName === 'events.jsonl' ? 'events' : 'results';
         return await readRunJsonlRoute({ runId, kind }, dependencies);
     }
-
-    const run = dependencies.controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-    if (!run) {
-        return dependencies.responses.rejection(RUN_NOT_FOUND);
-    }
-    return dependencies.responses.text(
-        createControlRunArtifactFile(run, artifactFileName, Date.now()),
-        200,
-        controlRunArtifactContentType(artifactFileName)
+    return await readRunRoute(
+        { runId: runId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+        dependencies,
+        (run) =>
+            dependencies.responses.text(
+                createControlRunArtifactFile(run, artifactFileName, Date.now()),
+                200,
+                controlRunArtifactContentType(artifactFileName)
+            )
     );
 }
 
 async function readRunJsonlRoute(
     { runId, kind }: RunJsonlRequest,
-    { controlService, artifactRecorder, responses }: RunReadRouteDependencies
+    dependencies: RunReadRouteDependencies
 ): Promise<Response> {
-    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
-    return run
-        ? await artifactRecorder.response({ runId, kind, fallbackRun: run, corsOrigins: responses.corsOrigins })
-        : responses.rejection(RUN_NOT_FOUND);
+    const { artifactRecorder, responses } = dependencies;
+    return await readRunRoute(
+        { runId: runId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+        dependencies,
+        (run) => artifactRecorder.response({ runId, kind, fallbackRun: run, corsOrigins: responses.corsOrigins })
+    );
+}
+
+interface RunReadTarget {
+    readonly runId: string;
+    readonly bounds: ControlRunSnapshotBounds;
+}
+
+async function readRunRoute(
+    { runId, bounds }: RunReadTarget,
+    { completedRuns, responses }: RunReadRouteDependencies,
+    respond: (run: ControlRunSnapshot) => Response | Promise<Response>
+): Promise<Response> {
+    return await (await completedRuns.readRun(runId, bounds)).fold(
+        (issue) => Promise.resolve(responses.rejection(toRunReadRejection(issue))),
+        async (run) => await respond(run)
+    );
+}
+
+/** A run whose file is gone is reported as gone, apart from a run that never existed. */
+function toRunReadRejection(issue: ControlRunReadIssue): ControlHttpRejection {
+    switch (issue.code) {
+        case 'run-not-found':
+            return toNotFoundRejection(issue.message);
+        case 'completed-run-file-missing':
+            return { status: 410, message: issue.message };
+        case 'completed-run-file-invalid':
+            return { status: 500, message: issue.message };
+    }
 }
 
 function toRunSnapshotBounds(url: URL): ControlRunSnapshotBounds {

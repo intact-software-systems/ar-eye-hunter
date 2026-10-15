@@ -1,4 +1,6 @@
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
@@ -8,7 +10,6 @@ import {
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
-import { createDefaultControlTimers } from '../src/control-timers.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
 import { ControlHttpSecurity } from '../src/http/control-http-security.ts';
 import { createControlRequestBodyReader } from '../src/http/control-request-body.ts';
@@ -139,9 +140,15 @@ function createRetentionRouteDependencies(
         artifactRecorder: new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         }),
+        completedRuns: {
+            readRun: (runId) =>
+                Promise.resolve(
+                    Either.ofRight(toControlRun(runId, 0))
+                )
+        },
         persistence: { persist: () => persistCalls.push('persist') },
         retentionPlanTokens: createRetentionPlanTokenAdapter({ key: new Uint8Array(32) }),
         commandDestinations: { httpAllowedHosts: [], httpAllowedOrigins: [], wsAllowedHosts: [], wsAllowedOrigins: [] },

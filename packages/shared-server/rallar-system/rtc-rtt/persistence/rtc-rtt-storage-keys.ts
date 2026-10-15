@@ -6,6 +6,14 @@ export function toRtcRttMeasurementStorageKey(left: string, right: string): stri
     return `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
 }
 
+export function toRtcRttMeasurementFromKeyPrefix(endpointId: string): string {
+    return `from=${encodeURIComponent(endpointId)}:`;
+}
+
+export function toRtcRttMeasurementToKeySuffix(endpointId: string): string {
+    return `:to=${encodeURIComponent(endpointId)}`;
+}
+
 export function decodeRtcRttMeasurementStorageKey(storageKey: string): readonly [string, string] {
     const parts = storageKey.split(':');
     if (parts.length !== 2 || !parts[0]!.startsWith('from=') || !parts[1]!.startsWith('to=')) {

@@ -8,6 +8,7 @@ import {
     assertClientMutationCommand,
     assertClientMutationFacts
 } from '../command-validation/assert-client-mutation-command.ts';
+import { resolveClientMutationAudienceReadScope } from '../resolve-client-mutation-audience-read-scope.ts';
 import { assertClientMutationRead } from './assert-client-mutation-read.ts';
 import { assertClientMutationResult } from './assert-client-mutation-result.ts';
 import { assertClientPersistenceRecords } from './assert-client-persistence.ts';
@@ -54,7 +55,7 @@ export function assertClientMutationInvariants(
         assertClientMutationReceiptIdentity(command, computed);
         assertClientPersistenceRecords(computed);
         if (computed.outcome === 'write') {
-            assertEffectfulClientMutation(read, computed);
+            assertEffectfulClientMutation(command, read, computed);
         }
     }
 }
@@ -99,9 +100,17 @@ function assertClientMutationReceiptIdentity(
 }
 
 function assertEffectfulClientMutation(
+    command: ClientMutationCommand,
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
+    const audienceScope = resolveClientMutationAudienceReadScope(command, read);
+    if (audienceScope === 'none') {
+        throw new ClientMutationRejectedError('Client mutation write requires the principal audience read');
+    }
+    if (audienceScope === 'own-sessions' && !isOwnSessionAudience(computed)) {
+        throw new ClientMutationRejectedError('Client session heartbeat audience is not the principal\'s own sessions');
+    }
     if (
         computed.receipt.outcome !== 'applied' ||
         computed.event.snapshotVersion !== computed.principal.value.snapshotVersion ||
@@ -113,6 +122,11 @@ function assertEffectfulClientMutation(
     assertClientPrincipalGuard(read, computed);
     assertClientSessionGuard(read, computed);
     assertClientInstanceGuard(read, computed);
+}
+
+function isOwnSessionAudience(computed: Extract<ClientMutationComputed, { outcome: 'write'; }>): boolean {
+    const ownSessionIds = new Set(computed.snapshot.activeSessions.map((session) => session.sessionId));
+    return computed.principalAudienceSessionIds.every((sessionId) => ownSessionIds.has(sessionId));
 }
 
 function assertClientPrincipalGuard(

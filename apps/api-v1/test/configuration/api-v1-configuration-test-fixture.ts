@@ -42,6 +42,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
             sessionTtlMs: 2_592_000_000,
             webSocketTicketTtlMs: 30_000,
             agentSessionTicketTtlMs: 60_000,
+            maxConcurrentPasswordDerivations: 3,
             rateLimits: {
                 windowMs: 60_000,
                 loginIp: 30,
@@ -105,8 +106,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 initialRate: 1,
                 maxRate: 10,
                 increaseRate: 1,
-                decreaseRate: 1,
-                maxFairnessSelectionsPerWindow: 10
+                decreaseRate: 1
             },
             delivery: {
                 publicationRetentionMs: 86_400_000,
@@ -180,6 +180,7 @@ export function validConfigurationStaticClientsSource(): readonly ApiV1Configura
 
 export function validDecodeApiV1ConfigurationInput(): MutableDecodeApiV1ConfigurationInput {
     return {
+        hardwareConcurrency: 4,
         profileName: 'dev',
         defaultsSource: validConfigurationDefaultsSource(),
         profileSource: validConfigurationProfileSource(),

@@ -675,7 +675,6 @@ function createResilience(): ResourceInboxResilience {
         maxRate: 10,
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1,
-        maxFairnessSelectionsInWindow: 10,
         retryPolicy: { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
     });
 }

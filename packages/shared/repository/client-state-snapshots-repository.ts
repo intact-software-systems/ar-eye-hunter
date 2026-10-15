@@ -188,11 +188,6 @@ function writeClientStateSnapshot(
 
     if (decision === 'inserted' || decision === 'advanced') {
         repository.set(repositoryKey, snapshot);
-        if (decision === 'advanced') {
-            console.log(
-                `Received updated client snapshot: ${snapshot.principal.principalId}`
-            );
-        }
         return decision;
     }
 

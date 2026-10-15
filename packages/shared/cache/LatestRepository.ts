@@ -1,9 +1,5 @@
 import { RateLimiter } from '../resilience/Resilience.ts';
-import {
-    startExpiredEntryEviction,
-    type ExpiredEntryEvictionHandle,
-    type ExpiredEntryEvictionOptions
-} from './ExpiredEntryEviction.ts';
+import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from './ExpiredEntryEviction.ts';
 import { LatestValue, LatestValueOptions, ValueValidityChecker } from './LatestValue.ts';
 import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions } from './RepositoryInterfaces.ts';
 
@@ -59,7 +55,7 @@ const MIN_EVICT_WINDOW_MS = 4;
 export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     private readonly entries = new Map<K, LatestValue<V>>();
     private readonly defaultValueOptions: LatestValueOptions<V>;
-    private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
+    private readonly stopExpiredEntryEviction: (() => void) | undefined;
     private readonly evictWindowMs: number;
     private readonly evictsPerWindow: number;
     private readonly maxEntries: number | undefined;
@@ -84,7 +80,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
         assertMaxEntries(options.maxEntries);
         this.maxEntries = options.maxEntries;
 
-        this.expiredEntryEviction = startExpiredEntryEviction(
+        this.stopExpiredEntryEviction = startExpiredEntryEviction(
             options,
             () => this.deleteExpired()
         );
@@ -381,7 +377,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     }
 
     public dispose(): void {
-        this.expiredEntryEviction?.dispose();
+        this.stopExpiredEntryEviction?.();
     }
 
     public size(): number {

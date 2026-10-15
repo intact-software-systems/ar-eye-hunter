@@ -8,7 +8,7 @@ import {
     type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
-import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import { normalizeAppInboxOptions, type AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
@@ -112,11 +112,15 @@ export class GroupStateInboxService {
         this.groupStateService = dependencies.groupStateService;
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
+        const phaseTiming = normalizeAppInboxOptions(config.options ?? {}).phaseTiming;
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
             resultReader: dependencies.resultReader,
             transactionWriter: this.transactionWriter,
+            lanePhaseTiming: phaseTiming && config.timing !== undefined
+                ? { sink: config.timing, serviceId: config.serviceId }
+                : undefined,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
             captureAuthenticatedMutationIngress: (descriptor, authority) =>

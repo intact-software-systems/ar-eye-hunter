@@ -13,10 +13,6 @@ export interface ScopedGroupMutationCommandIdentityInput {
     readonly requestId: GroupMutationDescriptor['request']['requestId'];
 }
 
-export function isScopedGroupMutationCommandId(commandId: string): boolean {
-    return commandId.startsWith(GROUP_APP_INBOX_COMMAND_ID_PREFIX);
-}
-
 export function toScopedGroupMutationCommandId(
     descriptor: GroupMutationDescriptor,
     callerPrincipalId: string

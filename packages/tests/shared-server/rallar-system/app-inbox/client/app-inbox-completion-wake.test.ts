@@ -1,3 +1,4 @@
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import {
     afterEach,
     describe,
@@ -28,16 +29,16 @@ describe('AppInbox local completion wait', () => {
         vi.useFakeTimers();
         let firstTimer: ReturnType<typeof setTimeout> | undefined;
         const notifications = new ResourceInboxCompletionNotifications({
+            nowMs: Date.now,
             schedule: (settle, delay) => {
                 const timer = setTimeout(settle, delay);
                 firstTimer ??= timer;
-                return timer;
-            },
-            cancel: (timer) => {
-                if (timer === firstTimer) {
-                    throw new Error('cancellation failed before clearing');
-                }
-                clearTimeout(timer);
+                return () => {
+                    if (timer === firstTimer) {
+                        throw new Error('cancellation failed before clearing');
+                    }
+                    clearTimeout(timer);
+                };
             }
         });
         let reads = 0;
@@ -356,7 +357,7 @@ class ObservedCompletionNotifications extends ResourceInboxCompletionNotificatio
     activeSubscriptions = 0;
 
     constructor() {
-        super({ schedule: setTimeout, cancel: clearTimeout });
+        super(createDefaultTimers());
     }
 
     override subscribe(identity: ResourceInboxCompletionNotifications.Identity): ResourceInboxCompletionNotifications.Subscription {

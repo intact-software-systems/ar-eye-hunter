@@ -14,6 +14,7 @@ import { createAuthMutationService } from '@shared-server/rallar-system/auth/aut
 import {
     createHmacAuthCredentialIssuer
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
@@ -84,6 +85,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
@@ -114,6 +116,7 @@ export interface ApiV1MutationRuntime {
     readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
     readonly createAppAuthInboxService: RallarAuthInboxServiceFactory;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
     readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
     readonly resilience: RallarMiddlewareResilience;
@@ -158,6 +161,7 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly authCredentialSecret: string;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 }
 
 export function createApiV1MutationRuntime(
@@ -170,6 +174,9 @@ export function createApiV1MutationRuntime(
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
     const groupStateService = createMutationGroupStateService(input, resources);
 
+    const passwordDerivationAdmission = new AuthPasswordDerivationAdmission({
+        maxConcurrentDerivations: input.maxConcurrentPasswordDerivations
+    });
     return {
         database: input.database,
         serviceId: input.serviceId,
@@ -196,8 +203,10 @@ export function createApiV1MutationRuntime(
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
-            authCredentialSecret: input.authCredentialSecret
+            authCredentialSecret: input.authCredentialSecret,
+            passwordDerivationAdmission
         }),
+        passwordDerivationAdmission,
         ...mutationFactories,
         resilience: input.resilience
     };
@@ -335,7 +344,8 @@ function createGroupStateInboxServiceFactory(
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
-            formationMetrics: input.groupFormationMetrics.presenceSummary
+            formationMetrics: input.groupFormationMetrics.presenceSummary,
+            timing: input.timing
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
@@ -397,6 +407,7 @@ function createAppAuthInboxServiceFactory(
     input: CreateAppAuthInboxServiceFactoryInput
 ): RallarAuthInboxServiceFactory {
     const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
+    const { passwordDerivationAdmission } = input;
 
     return ({ inboxQueueReader, wakeQueueEngine }) =>
         new AppAuthInboxService(
@@ -409,7 +420,8 @@ function createAppAuthInboxServiceFactory(
                     runtimeRepository: input.runtimeStateRepository,
                     serviceId: input.serviceId
                 }),
-                credentialIssuer: credentialIssuer
+                credentialIssuer: credentialIssuer,
+                passwordDerivationAdmission
             },
             {
                 serviceId: input.serviceId,

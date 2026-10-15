@@ -11,7 +11,10 @@ import {
     type ResourceInboxHandlerFinalizedSuccess
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
-import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type {
+    ResourceInboxAttempt,
+    ResourceInboxAttemptTelemetry
+} from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxCommandRejectedError } from '../queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
@@ -23,6 +26,12 @@ import {
 export namespace QueueBoxUtilities {
     export type CreationClock = () => Temporal.Instant;
 
+    /** Told when a claimed entry's handler starts and settles, whatever its outcome; the owner measures around them. */
+    export interface DequeueHandlerObserver {
+        onHandlerStarted(attempt: ResourceInboxAttempt): void;
+        onHandlerFinished(attempt: ResourceInboxAttempt): void;
+    }
+
     export interface DequeueInput {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
@@ -33,6 +42,9 @@ export namespace QueueBoxUtilities {
         ) => Promise<void | ResourceInboxHandlerFinalizedSuccess>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
+        /** The probe that preceded this pass; without one every lane is offered a reservation. */
+        readonly workAdvertisement?: DequeueController.WorkAdvertisement;
+        readonly handlerObserver?: DequeueHandlerObserver;
     }
 }
 
@@ -42,7 +54,16 @@ export class QueueBoxUtilities {
      * handler's outcome. A claim retried within the same invocation counts again.
      */
     static async defaultDequeue(
-        { qbox, typesToDequeue, resilience, onDequeuedDo, options, readLaneBudgets }: QueueBoxUtilities.DequeueInput
+        {
+            qbox,
+            typesToDequeue,
+            resilience,
+            onDequeuedDo,
+            options,
+            readLaneBudgets,
+            workAdvertisement,
+            handlerObserver
+        }: QueueBoxUtilities.DequeueInput
     ): Promise<number> {
         if (resilience.isNotAllowedThroughToDequeue()) {
             console.warn(
@@ -60,6 +81,7 @@ export class QueueBoxUtilities {
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
             maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
             readLaneBudgets,
+            workAdvertisement,
             resilience: resilience,
             options: options
         })
@@ -75,9 +97,15 @@ export class QueueBoxUtilities {
                     resilience.success();
                 }
             })
-            .dequeueForCompute(
-                async (_key, attempt) => (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined
-            );
+            .dequeueForCompute(async (_key, attempt) => {
+                handlerObserver?.onHandlerStarted(attempt);
+                try {
+                    return (await onDequeuedDo(attempt.entry, attempt.telemetry)) ?? undefined;
+                }
+                finally {
+                    handlerObserver?.onHandlerFinished(attempt);
+                }
+            });
         return claimedCount;
     }
 

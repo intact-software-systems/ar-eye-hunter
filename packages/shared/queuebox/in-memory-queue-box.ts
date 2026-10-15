@@ -9,6 +9,7 @@ import {
     computeResourceInboxRelease,
     toValidatedResourceInboxReleases
 } from './compute-resource-inbox-release.ts';
+import { hasAdvertisedDequeueWork, type DequeueController } from './dequeue/dequeue-controller.ts';
 import { InMemoryQueueWorkIndex } from './in-memory-queue-work-index.ts';
 import { matchesQueueBoxCompletedRetention, type QueueBoxCompletedRetention } from './queue-box-completed-retention.ts';
 import {
@@ -41,7 +42,6 @@ import {
     EntityStatus,
     isExpiredResourceEntry,
     Key,
-    NEW_AND_RETRY_STATUSES,
     ResourceEntry,
     ResourceEntryKeyString,
     toKeyAsString,
@@ -83,7 +83,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
-        ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
+        ResourceInboxResilience.MAX_NUM_CLEANUP_IN_WINDOW
     );
 
     constructor(
@@ -319,8 +319,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
 
             if (
-                entry.dequeueAudit.attempts < maxAttempts &&
-                this.isReservedEntryTimedOut(typeIds, entry, timeSinceStartTs)
+                entry.dequeueAudit.attempts < maxAttempts && typeIds.has(entry.typeId) &&
+                !isExpiredResourceEntry(entry, now) &&
+                isReservedEntryStartedBefore(entry, now.subtract(timeSinceStartTs))
             ) {
                 const updated = computeReservedResourceEntry(entry, now);
                 this.storeEntry(key, updated);
@@ -437,38 +438,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return reserved;
     }
 
-    async isAnyEntryToLock(
+    async readWorkAdvertisement(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
-    ): Promise<boolean> {
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } =
+    ): Promise<DequeueController.WorkAdvertisement> {
+        const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
-        const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkTimeout,
-            async () =>
-                this.isAnyReservedEntryTimedOut(
-                    typeIds,
-                    Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
-                    maxAttempts
-                ),
-            false
-        );
-
-        const newAndRetryEntryToLock = this.isAnyToLock(
-            typeIds,
-            NEW_AND_RETRY_STATUSES,
-            maxAttempts
-        );
-        const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
-            checkFinalization,
-            async () =>
-                this.hasRetryExhaustionFinalization(
-                    typeIds,
-                    maxAttempts,
-                    finalizationStaleAfterMs
-                ),
-            false
-        );
+        const now = this.now();
 
         this.cleanupAsync()
             .catch((e) => {
@@ -476,7 +452,28 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 return false;
             });
 
-        return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
+        return {
+            FINALIZATION: this.hasRetryExhaustionFinalization(typeIds, maxAttempts, finalizationStaleAfterMs),
+            NEW: this.hasEntry(typeIds, maxAttempts, (entry) => isNewEntryDue(entry, now)),
+            RETRY: this.hasEntry(typeIds, maxAttempts, (entry) => isRetryEntryDueBefore(entry, now)),
+            FAIRNESS: this.hasEntry(
+                typeIds,
+                maxAttempts,
+                (entry) => isRetryEntryDueBefore(entry, now.subtract({ milliseconds: staleDueThresholdMs }))
+            ),
+            TIMEOUT: this.hasEntry(
+                typeIds,
+                maxAttempts,
+                (entry) => isReservedEntryStartedBefore(entry, now.subtract({ milliseconds: reservationLeaseMs }))
+            )
+        };
+    }
+
+    async isAnyEntryToLock(
+        typeIds: Set<string>,
+        workInput: ResourceInboxWorkAdvertisementOptions
+    ): Promise<boolean> {
+        return hasAdvertisedDequeueWork(await this.readWorkAdvertisement(typeIds, workInput));
     }
 
     private hasRetryExhaustionFinalization(
@@ -538,61 +535,20 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    private isAnyToLock(
+    /** The first live row of these types below the attempt budget that the lane's predicate accepts. */
+    private hasEntry(
         typeIds: Set<string>,
-        statusesToFind: ReadonlySet<EntityStatus>,
-        maxAttempts: number
-    ) {
+        maxAttempts: number,
+        isCandidate: (entry: ResourceEntry) => boolean
+    ): boolean {
         for (const entry of this.data.values()) {
             if (
-                !isExpiredResourceEntry(entry) &&
-                typeIds.has(entry.typeId) &&
-                statusesToFind.has(entry.status) &&
-                entry.status !== EntityStatus.FAILED &&
-                entry.dequeueAudit.attempts < maxAttempts &&
-                (
-                    !entry.dequeueAudit.nextTs ||
-                    Temporal.Instant.compare(this.now(), entry.dequeueAudit.nextTs) >= 0
-                )
+                typeIds.has(entry.typeId) && !isExpiredResourceEntry(entry) &&
+                entry.dequeueAudit.attempts < maxAttempts && isCandidate(entry)
             ) {
                 return true;
             }
         }
-
-        return false;
-    }
-
-    private isAnyReservedEntryTimedOut(
-        typeIds: Set<string>,
-        duration: Temporal.Duration,
-        maxAttempts: number
-    ) {
-        for (const entry of this.data.values()) {
-            if (
-                entry.dequeueAudit.attempts < maxAttempts &&
-                this.isReservedEntryTimedOut(typeIds, entry, duration)
-            ) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private isReservedEntryTimedOut(typeIds: Set<string>, entry: ResourceEntry, duration: Temporal.Duration) {
-        if (
-            !isExpiredResourceEntry(entry) &&
-            typeIds.has(entry.typeId) &&
-            EntityStatus.RESERVED == entry.status &&
-            entry.dequeueAudit.startTs
-        ) {
-            return Temporal.Instant.compare(
-                this.now(),
-                entry.dequeueAudit.startTs.add(duration)
-            ) >=
-                0;
-        }
-
         return false;
     }
 
@@ -695,6 +651,21 @@ function computeReservedResourceEntry(entry: ResourceEntry, now: Temporal.Instan
             attempts: entry.dequeueAudit.attempts + 1
         }
     };
+}
+
+function isNewEntryDue(entry: ResourceEntry, now: Temporal.Instant): boolean {
+    return entry.status === EntityStatus.NEW &&
+        (entry.dequeueAudit.nextTs === undefined || Temporal.Instant.compare(entry.dequeueAudit.nextTs, now) <= 0);
+}
+
+function isRetryEntryDueBefore(entry: ResourceEntry, dueBefore: Temporal.Instant): boolean {
+    return entry.status === EntityStatus.RETRY && entry.dequeueAudit.nextTs !== undefined &&
+        Temporal.Instant.compare(entry.dequeueAudit.nextTs, dueBefore) <= 0;
+}
+
+function isReservedEntryStartedBefore(entry: ResourceEntry, startedBefore: Temporal.Instant): boolean {
+    return entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs !== undefined &&
+        Temporal.Instant.compare(entry.dequeueAudit.startTs, startedBefore) <= 0;
 }
 
 function isInMemoryQueueEntryReservable(read: InMemoryQueueBox.ReservationRead): boolean {

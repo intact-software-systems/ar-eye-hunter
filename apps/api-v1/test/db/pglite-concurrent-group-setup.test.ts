@@ -113,6 +113,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
         database: sql,
         serviceId: 'pglite-ordinary-setup',
         authCredentialSecret: 'group-setup-test-secret'.repeat(2),
+        maxConcurrentPasswordDerivations: 1,
         nowEpochMs: Date.now,
         timing: () => {},
         appInboxOptions: {

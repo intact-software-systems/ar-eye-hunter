@@ -180,6 +180,7 @@ export const facadeBehavior = {
     isConnected: vi.fn<BlackBoxBrowserRallarRuntimeDependency['isConnected']>(),
     readUsage: vi.fn<BlackBoxBrowserMessagesDependency['readUsage']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
+    hasRoomSnapshot: vi.fn<BlackBoxBrowserRallarRuntimeDependency['hasRoomSnapshot']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
     roomFormation: vi.fn<BlackBoxBrowserRoomsDependency['formation']>(),
@@ -470,6 +471,7 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
         facadeRecords.roomStateRefreshes.push([roomRef, options]);
         await facadeBehavior.roomStateRefresh(roomRef, options);
     },
+    hasRoomSnapshot: (roomRef) => facadeBehavior.hasRoomSnapshot(roomRef),
     status: () => connectState,
     isConnected: () => facadeBehavior.isConnected(),
     session: () => facadeSession,

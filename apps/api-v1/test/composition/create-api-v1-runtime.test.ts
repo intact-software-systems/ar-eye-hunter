@@ -114,6 +114,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'ws-test',
         authCredentialSecret: 'a'.repeat(32),
+        maxConcurrentPasswordDerivations: 1,
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },

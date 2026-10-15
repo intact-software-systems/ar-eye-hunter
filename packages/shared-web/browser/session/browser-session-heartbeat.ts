@@ -13,15 +13,17 @@ import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-t
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
-const intervalMsecs = 20000;
-const retryIntervalMsecs = 5000;
+export const SESSION_HEARTBEAT_INTERVAL_MS = 20_000;
+export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
     scope?: StateScope;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
-    onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    onAuthInvalid?: (error: Error) => void | Promise<void>;
 }>;
 
 let activeHeartbeat: RallarSessionHeartbeat | undefined;
@@ -31,7 +33,7 @@ class BrowserStateHeartbeatRuntime {
     readonly #clientData: ClientInfo;
     readonly #options: InitHeartbeatOptions;
     #stopped = false;
-    #timer: ReturnType<typeof setTimeout> | undefined;
+    #stopRepeating: (() => void) | undefined;
 
     public constructor(clientData: ClientInfo, options: InitHeartbeatOptions) {
         this.#clientData = clientData;
@@ -44,33 +46,27 @@ class BrowserStateHeartbeatRuntime {
     }
 
     public start(): void {
-        void this.runHeartbeat();
+        this.#stopRepeating = startRepeating({
+            timers: createDefaultTimers(),
+            intervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
+            retryBackoff: { baseMs: SESSION_HEARTBEAT_RETRY_MS, maxMs: SESSION_HEARTBEAT_RETRY_MS },
+            firstRun: 'after-interval',
+            run: () => this.runHeartbeat()
+        });
     }
 
     private stop(): void {
         this.#stopped = true;
-        if (this.#timer !== undefined) {
-            clearTimeout(this.#timer);
-            this.#timer = undefined;
-        }
+        this.#stopRepeating?.();
         if (activeHeartbeat === this.handle) {
             activeHeartbeat = undefined;
         }
     }
 
-    private schedule(delayMsecs: number): void {
-        if (this.#stopped) {
-            return;
-        }
-        this.#timer = setTimeout(() => void this.runHeartbeat(), delayMsecs);
-    }
-
+    /** A rejection asks the loop for the retry; a stopped or replaced heartbeat and an auth failure end quietly. */
     private async runHeartbeat(): Promise<void> {
         try {
             await this.refreshHeartbeat();
-            if (this.isCurrent()) {
-                this.schedule(intervalMsecs);
-            }
         }
         catch (error) {
             if (!this.isCurrent()) {
@@ -81,13 +77,11 @@ class BrowserStateHeartbeatRuntime {
                 await this.#options.onAuthInvalid?.(error);
                 return;
             }
-            if (!this.#stopped) {
-                console.warn(
-                    `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
-                    error
-                );
-                this.schedule(retryIntervalMsecs);
-            }
+            console.warn(
+                `State heartbeat failed for client ${this.#clientData.clientId} session ${this.#clientData.sessionId}:`,
+                error
+            );
+            throw error;
         }
     }
 
@@ -100,6 +94,9 @@ class BrowserStateHeartbeatRuntime {
             );
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
+            clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+                this.#clientData.clientId
+            ),
             authSession: this.#options.authSession,
             scope: this.#options.scope,
             policies: this.#options.policies
@@ -180,6 +177,6 @@ function isGroupSnapshotInScope(
         (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
 }
 
-function isUnauthorizedApiError(error: unknown): boolean {
+function isUnauthorizedApiError(error: unknown): error is ApiHttpError {
     return error instanceof ApiHttpError && error.status === 401;
 }

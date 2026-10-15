@@ -6,7 +6,10 @@ import {
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import {
+    normalizeAppInboxOptions,
+    type AppInboxOptions
+} from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
@@ -94,6 +97,7 @@ export interface CreateApiV1RuntimeInput {
     readonly queuePubSubLocalBus: LocalQueuePubSubBus;
     readonly wsRuntimeName: string;
     readonly authCredentialSecret: string;
+    readonly maxConcurrentPasswordDerivations: number;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
@@ -209,6 +213,7 @@ export function constructApiV1Runtime(
     return operations.requireRuntime({
         runtime,
         authSessionRepository: mutation.authSessionRepository,
+        passwordDerivationAdmission: mutation.passwordDerivationAdmission,
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
         almReceiptDiagnostics,
@@ -259,6 +264,7 @@ function toMutationRuntimeInput(
         database: input.database,
         serviceId: input.serviceId,
         authCredentialSecret: input.authCredentialSecret,
+        maxConcurrentPasswordDerivations: input.maxConcurrentPasswordDerivations,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
@@ -320,6 +326,9 @@ function createSharedMiddleware(
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
+        appInboxDequeuePassTiming: normalizeAppInboxOptions(mutation.appInboxOptions).phaseTiming
+            ? { database: mutation.database, serviceId: mutation.serviceId, sink: input.timing }
+            : undefined,
         webSocketServer: mutation.webSocketServer,
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),

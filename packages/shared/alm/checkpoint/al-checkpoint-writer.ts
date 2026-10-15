@@ -1,4 +1,5 @@
 import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
+import type { Timers } from '../../resilience/timers.ts';
 import { toError } from '../../resilience/to-error.ts';
 import type { InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
@@ -14,11 +15,6 @@ export namespace ALCheckpointWriter {
         readonly lagBoundMs: number;
     }
 
-    /** The one timer the checkpoint arms: `schedule` runs `run` once after `delayMs` and answers its cancel. */
-    export interface Timers {
-        readonly schedule: (run: () => void, delayMs: number) => () => void;
-    }
-
     export interface Input {
         /** The memory pair whose dirty keys each checkpoint reads as they are held then. */
         readonly memory: Pick<InMemoryAdmissionBackend, 'peek' | 'workQueue'>;
@@ -30,7 +26,8 @@ export namespace ALCheckpointWriter {
         readonly nowMs: () => number;
         /** Names each write once, so a restore can tell the rows of one checkpoint apart. */
         readonly newWriteToken: () => string;
-        readonly timers: Timers;
+        /** Arms the one checkpoint timer. */
+        readonly timers: Pick<Timers, 'schedule'>;
     }
 }
 

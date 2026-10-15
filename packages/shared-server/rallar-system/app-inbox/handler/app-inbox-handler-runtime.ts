@@ -41,6 +41,7 @@ export function createAppInboxHandlerRuntime(
         {
             resultRepository: input.resultRepository,
             transactionWriter,
+            database: input.database,
             nowEpochMs
         },
         {

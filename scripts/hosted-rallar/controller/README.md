@@ -819,6 +819,16 @@ created, including preparation, SSH, browser, or service failures that happen
 before distributed artifacts exist. No AI analysis is required to distinguish
 those failures.
 
+For the `run` and `full` phases the same artifact also carries `api-journal.log`
+and `control-journal.log`: the redacted raw journals of `rallar-api-v1.service`
+and `rallar-black-box-control.service` since the run phase began on the
+controller, each capped at its last 50 000 lines. The remote run phase records
+its start and exports both through `17-export-run-journals.sh` when it exits,
+whatever the recipe's outcome. The API deploys with `RALLAR_TIMING_LOGS=1` and
+`RALLAR_APP_INBOX_PHASE_TIMING=true`, so a hosted failure can be attributed on
+the server side; with both on, a 50-agent run writes about 9 000 API journal
+lines.
+
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,
 the missing distributed artifact is expected; use the operation report rather

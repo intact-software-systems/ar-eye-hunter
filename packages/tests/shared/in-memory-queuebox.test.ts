@@ -14,7 +14,6 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
@@ -400,12 +399,10 @@ describe('InMemoryQueueBox', () => {
         await expect(queue.isAnyEntryToLock(
             new Set([EnqueuedType.APP_INBOX]),
             {
-                checkTimeout: RateLimiter.init(60_000, 1),
-                checkFairness: RateLimiter.init(60_000, 1),
-                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 20,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
-                reservationLeaseMs: 5 * 60 * 1000
+                reservationLeaseMs: 5 * 60 * 1000,
+                staleDueThresholdMs: 30_000
             }
         )).resolves.toBe(false);
     });
@@ -509,12 +506,10 @@ describe('InMemoryQueueBox', () => {
         const advertised = await queue.isAnyEntryToLock(
             new Set([exhausted.typeId]),
             {
-                checkTimeout: RateLimiter.init(60_000, 1),
-                checkFairness: RateLimiter.init(60_000, 1),
-                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
-                reservationLeaseMs: 5 * 60 * 1000
+                reservationLeaseMs: 5 * 60 * 1000,
+                staleDueThresholdMs: 30_000
             }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY

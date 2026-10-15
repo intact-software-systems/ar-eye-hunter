@@ -40,6 +40,7 @@ const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const rtcCaptureModeSchema: JsonSchema = { type: 'string', enum: ['off', 'signaling', 'native'] };
+const directorStatusRefreshSchema: JsonSchema = { oneOf: [booleanSchema, { type: 'string', enum: ['when-absent'] }] };
 const eventHistorySchema: JsonSchema = {
     oneOf: [
         { type: 'object', properties: { mode: { const: 'full' } }, required: ['mode'], additionalProperties: false },
@@ -835,7 +836,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
     }),
     'director.status': strictCommandSchema('director.status', {
         ...commandRoomProperties,
-        refresh: booleanSchema,
+        refresh: directorStatusRefreshSchema,
         now: numberSchema
     }),
     'director.relay.start': strictCommandSchema('director.relay.start', {

@@ -117,11 +117,13 @@ class QueueComparison {
             await this.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, this.resilience);
         }
         else {
-            await this.genericReader.dequeue(
-                InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                this.resilience,
-                this.arm === 'current1000' ? undefined : () => fixedBudgets(this.arm === 'fixedRetry2' ? 2 : 1)
-            );
+            await this.genericReader.dequeue({
+                typesToDequeue: InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                resilience: this.resilience,
+                readLaneBudgets: this.arm === 'current1000' ? undefined : () => fixedBudgets(this.arm === 'fixedRetry2' ? 2 : 1),
+                workAdvertisement: undefined,
+                handlerObserver: undefined
+            });
         }
     }
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     initHeartbeat,
+    SESSION_HEARTBEAT_INTERVAL_MS,
     stopHeartbeat
 } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
@@ -537,6 +538,8 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         })
     );
 
+    const heartbeatAtEpochMs = Date.now();
+    vi.setSystemTime(heartbeatAtEpochMs - SESSION_HEARTBEAT_INTERVAL_MS);
     const heartbeat = await initHeartbeat(clientData, {
         authSession,
         scope: {
@@ -545,13 +548,12 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         },
         policies: { command: { maxAttempts: 1 } }
     });
-    await vi.waitFor(() => {
-        expect(
-            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
-                clientData.clientId
-            )
-        ).toBeDefined();
-    });
+    await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
+    expect(
+        clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+            clientData.clientId
+        )
+    ).toBeDefined();
     heartbeat.stop();
     await waitForGroupStateSnapshotChangesIdle();
     return fetchUrls;

@@ -6,6 +6,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -42,7 +43,8 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
                     runtimeRepository: runtime,
                     serviceId: 'pglite-auth'
                 }),
-                credentialIssuer: credentialIssuer
+                credentialIssuer: credentialIssuer,
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
             },
             {
                 serviceId: 'pglite-auth',
@@ -247,7 +249,8 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
                 }),
                 credentialIssuer: createHmacAuthCredentialIssuer(
                     'pglite-auth-policy-secret-0123456789abcdef'
-                )
+                ),
+                passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
             },
             {
                 serviceId: 'pglite-auth-policy',
@@ -330,7 +333,8 @@ Deno.test(
                             issuedAccessTokenSessionIds.push(sessionId);
                             return await issuer.issueAccessToken(sessionId);
                         }
-                    }
+                    },
+                    passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
                 },
                 {
                     serviceId: 'pglite-auth-delayed-facts',

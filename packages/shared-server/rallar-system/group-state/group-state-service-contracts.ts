@@ -180,7 +180,7 @@ export type GroupStateService =
         ): Promise<AuthorizedGroupMutation>;
         captureMutationIngress(
             descriptor: GroupMutationDescriptor,
-            authority: GroupMutationAuthority
+            authority: IssuedAuthSession
         ): Promise<GroupMutationIngress>;
         captureAppInboxMutationIngress(
             descriptor: GroupMutationDescriptor,

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect } from 'vitest';
 
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -255,14 +256,16 @@ async function writeLiveRtcRunSnapshotResponse(
     const url = new URL(incoming.url ?? '/', 'http://fixture.test');
     const routed = await routeRunReadRequest(url, {
         controlService: {
-            snapshot: () => ({ runs: [] }),
-            snapshotRun: (runId, bounds) => {
+            snapshot: () => ({ runs: [] })
+        },
+        completedRuns: {
+            readRun: async (runId, bounds) => {
                 if (runId !== run.runId) {
-                    return undefined;
+                    return Either.ofLeft({ code: 'run-not-found', message: 'Run not found.' });
                 }
                 const snapshot = toControlRunSnapshot(run, bounds ?? {}, []);
                 state.runReads.push({ url: url.pathname + url.search, snapshot });
-                return snapshot;
+                return Either.ofRight(snapshot);
             }
         },
         artifactRecorder: {

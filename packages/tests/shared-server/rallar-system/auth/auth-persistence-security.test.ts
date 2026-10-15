@@ -6,6 +6,7 @@ import {
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -159,7 +160,8 @@ async function runCurrentOperation<Result>(
                 runtimeRepository: runtime,
                 serviceId: 'current-auth-service'
             }),
-            credentialIssuer: createHmacAuthCredentialIssuer('current-auth-secret-0123456789abcdef')
+            credentialIssuer: createHmacAuthCredentialIssuer('current-auth-secret-0123456789abcdef'),
+            passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 2 })
         },
         {
             serviceId: 'current-auth-service'

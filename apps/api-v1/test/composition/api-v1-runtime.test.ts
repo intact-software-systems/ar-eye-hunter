@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
@@ -109,6 +110,7 @@ interface RuntimeFailureCase {
 
 interface RuntimeAdditions {
     readonly authSessionRepository: AuthSessionRepository;
+    readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -137,6 +139,7 @@ function createRuntimeCandidate(
 function createRuntimeAdditions(): RuntimeAdditions {
     return {
         authSessionRepository: {} as AuthSessionRepository,
+        passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
         clientRestSnapshotReadSelector: {} as ClientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: {} as GroupRestSnapshotReadSelector,
         groupFormationMetrics: {} as RallarGroupFormationMetricsRecorder,

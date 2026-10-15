@@ -56,6 +56,8 @@ export interface GroupPresenceSummaryWorkRead {
     readonly nowEpochMs: number;
     readonly reservation: GroupPresenceSummaryReservationRead;
     readonly presence: GroupPresenceSummaryRead;
+    /** Every event expanded from this read, in causal order; the first delta carries their merged slice, the others their own. */
+    readonly coalescedEvents: readonly GroupEvent[];
     readonly coalescedTopologyEntry: ResourceEntry | null;
     readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
 }
@@ -101,6 +103,7 @@ export interface ComputeGroupPresenceSummaryWorkOptions {
 
 export interface ComputeGroupPresenceSummaryOutboxInput {
     readonly work: GroupPresenceSummaryWorkData;
+    readonly coalescedEvents: readonly GroupEvent[];
     readonly summary: GroupPresenceSummaryComputed;
     readonly summaryPredecessorCausalRevision: GroupStateCausalRevision | null;
     readonly snapshot: GroupSnapshot;
@@ -110,6 +113,7 @@ export interface ComputeGroupPresenceSummaryOutboxInput {
 
 export interface ComputeGroupStateDeltaEnvelopeInput {
     readonly event: GroupEvent;
+    readonly coalescedEvents: readonly GroupEvent[];
     readonly summary: GroupPresenceSummaryComputed;
     readonly summaryPredecessorCausalRevision: GroupStateCausalRevision | null;
     readonly snapshot: GroupSnapshot;
@@ -212,7 +216,7 @@ export function toTopologyReplanEnqueueFacts(
     };
 }
 
-function toTopologyReplanOrigin(work: GroupPresenceSummaryWorkData): TopologyWorkOrigin {
+export function toTopologyReplanOrigin(work: GroupPresenceSummaryWorkData): TopologyWorkOrigin {
     return work.event.payload.topologyReplanOrigin === 'commanded' ? 'commanded' : 'automatic';
 }
 
@@ -282,6 +286,7 @@ function toGroupPresenceSummaryOutboxInput(
     const { work, read, summary, snapshot, options } = input;
     return {
         work,
+        coalescedEvents: read.coalescedEvents,
         summary,
         summaryPredecessorCausalRevision: read.presence.current?.value.causalRevision ?? null,
         snapshot,
@@ -321,6 +326,7 @@ function computeGroupStateEventEffect(
         payloadKind: 'delta-envelope',
         payload: computeGroupStateDeltaEnvelope({
             event: input.work.event,
+            coalescedEvents: input.coalescedEvents,
             summary: input.summary,
             summaryPredecessorCausalRevision: input.summaryPredecessorCausalRevision,
             snapshot: input.snapshot
@@ -332,26 +338,50 @@ export function computeGroupStateDeltaEnvelope(
     input: ComputeGroupStateDeltaEnvelopeInput
 ): GroupStateDeltaEnvelope {
     const { event, snapshot } = input;
+    const sliceEvents = resolveGroupStateDeltaSliceEvents(event, input.coalescedEvents);
     const activeSessionIds = snapshot.activeSessions.map((session) => session.sessionId);
-    const removedSessionIds = event.eventType === 'session-disconnected' &&
-            event.actor.kind === 'session' &&
-            !activeSessionIds.includes(event.actor.sessionId)
-        ? [event.actor.sessionId]
-        : [];
     return {
         event,
         predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision(input),
         resultingCausalRevision: snapshot.causalRevision,
-        members: snapshot.members.filter((member) => isGroupMemberWrittenByEvent(member, event)),
+        members: snapshot.members.filter((member) =>
+            sliceEvents.some((sliced) => isGroupMemberWrittenByEvent(member, sliced))
+        ),
         removedMemberPrincipalIds: [],
-        sessions: computeGroupStateDeltaSessions(event, snapshot),
-        removedSessionIds,
+        sessions: computeGroupStateDeltaSessions(sliceEvents, snapshot),
+        removedSessionIds: computeGroupStateDeltaRemovedSessionIds(sliceEvents, activeSessionIds),
         activeSessionIds,
         group: snapshot.group,
         memberCount: snapshot.memberCount,
         onlineMemberCount: snapshot.onlineMemberCount,
         audienceSessionIds: input.summary.summary.activeSessionIds
     };
+}
+
+/** The first delta of a coalesced batch carries the whole batch's slice; every later delta carries its own event's. */
+function resolveGroupStateDeltaSliceEvents(
+    event: GroupEvent,
+    coalescedEvents: readonly GroupEvent[]
+): readonly GroupEvent[] {
+    return coalescedEvents[0]?.eventId === event.eventId ? coalescedEvents : [event];
+}
+
+function computeGroupStateDeltaRemovedSessionIds(
+    sliceEvents: readonly GroupEvent[],
+    activeSessionIds: readonly string[]
+): readonly string[] {
+    const active = new Set(activeSessionIds);
+    const removed = new Set<string>();
+    for (const sliced of sliceEvents) {
+        if (
+            sliced.eventType === 'session-disconnected' &&
+            sliced.actor.kind === 'session' &&
+            !active.has(sliced.actor.sessionId)
+        ) {
+            removed.add(sliced.actor.sessionId);
+        }
+    }
+    return [...removed];
 }
 
 function resolveGroupStateDeltaPredecessorCausalRevision(
@@ -376,21 +406,18 @@ function isGroupMemberWrittenByEvent(member: GroupMember, event: GroupEvent): bo
 }
 
 function computeGroupStateDeltaSessions(
-    event: GroupEvent,
+    coalescedEvents: readonly GroupEvent[],
     snapshot: GroupSnapshot
 ): readonly GroupPresenceSession[] {
-    if (
-        event.eventType !== 'session-connected' &&
-        event.eventType !== 'session-heartbeat' &&
-        event.eventType !== 'session-disconnected'
-    ) {
-        return [];
-    }
-    if (event.actor.kind === 'service') {
-        return [];
-    }
-    const principalId = event.actor.principalId;
-    return snapshot.activeSessions.filter(
-        (session) => session.principalId === principalId
+    const principalIds = new Set(
+        coalescedEvents.flatMap((event) =>
+            (event.eventType === 'session-connected' ||
+                    event.eventType === 'session-heartbeat' ||
+                    event.eventType === 'session-disconnected') &&
+                event.actor.kind !== 'service'
+                ? [event.actor.principalId]
+                : []
+        )
     );
+    return snapshot.activeSessions.filter((session) => principalIds.has(session.principalId));
 }

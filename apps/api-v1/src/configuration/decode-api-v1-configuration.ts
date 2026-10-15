@@ -68,7 +68,8 @@ export function decodeApiV1Configuration(
         values: decoder,
         structuredValues,
         secrets,
-        staticClientsSource: input.staticClientsSource
+        staticClientsSource: input.staticClientsSource,
+        hardwareConcurrency: input.hardwareConcurrency
     });
     const stateApi = decodeStateApi(decoder);
     const group = decodeGroup(decoder);
@@ -235,6 +236,26 @@ function decodeDatabase(
     };
 }
 
+/** No committed profile names the bound: it follows the host unless a source names one. */
+function decodePasswordDerivationBound(
+    values: ApiV1ConfigurationValueDecoder,
+    hardwareConcurrency: number
+): number {
+    const path = 'authentication.maxConcurrentPasswordDerivations';
+    if (values.hasValue(path)) {
+        return values.integer(path, 1);
+    }
+    if (!Number.isSafeInteger(hardwareConcurrency) || hardwareConcurrency < 1) {
+        values.sourceIssue(
+            path,
+            'invalid-host-concurrency',
+            'Host logical core count must be a positive safe integer.'
+        );
+        return 1;
+    }
+    return Math.max(1, hardwareConcurrency - 1);
+}
+
 function decodeDatabasePool(
     decoder: ApiV1ConfigurationValueDecoder,
     path: 'database.applicationPool' | 'database.listenerPool'
@@ -250,6 +271,7 @@ interface DecodeAuthenticationInput {
     readonly structuredValues: ApiV1ConfigurationStructuredValueDecoder;
     readonly secrets: ApiV1ConfigurationSecrets;
     readonly staticClientsSource: ApiV1ConfigurationSourceValue | undefined;
+    readonly hardwareConcurrency: number;
 }
 
 function decodeAuthentication(
@@ -278,6 +300,7 @@ function decodeAuthentication(
         sessionTtlMs: input.values.integer('authentication.sessionTtlMs', 1),
         webSocketTicketTtlMs: input.values.integer('authentication.webSocketTicketTtlMs', 1),
         agentSessionTicketTtlMs: input.values.integer('authentication.agentSessionTicketTtlMs', 1),
+        maxConcurrentPasswordDerivations: decodePasswordDerivationBound(input.values, input.hardwareConcurrency),
         rateLimits: {
             windowMs: input.values.integer('authentication.rateLimits.windowMs', 1),
             loginIp: input.values.integer('authentication.rateLimits.loginIp', 1),
@@ -386,11 +409,7 @@ function decodeTopology(
             initialRate: decoder.integer('topology.queueResilience.initialRate', 1),
             maxRate: decoder.integer('topology.queueResilience.maxRate', 1),
             increaseRate: decoder.integer('topology.queueResilience.increaseRate', 1),
-            decreaseRate: decoder.integer('topology.queueResilience.decreaseRate', 1),
-            maxFairnessSelectionsPerWindow: decoder.integer(
-                'topology.queueResilience.maxFairnessSelectionsPerWindow',
-                1
-            )
+            decreaseRate: decoder.integer('topology.queueResilience.decreaseRate', 1)
         },
         delivery: {
             publicationRetentionMs: decoder.integer(

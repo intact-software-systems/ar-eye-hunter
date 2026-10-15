@@ -2,6 +2,7 @@ import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-
 import { RALLAR_BLACK_BOX_BARRIER_ARRIVED_TOPIC } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { assert, assertEquals } from '@std/assert';
 
@@ -15,6 +16,7 @@ import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-captu
 
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import {
     ControlArtifactRecorder,
@@ -22,8 +24,8 @@ import {
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { ControlSnapshotPersistence, toJsonPieces } from '../src/control-snapshot-persistence.ts';
-import { createDefaultControlTimers, type ControlTimers } from '../src/control-timers.ts';
+import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
+import { toJsonPieces } from '../src/run-completion/control-sliced-json-file.ts';
 import {
     assertRight,
     toCommandResultEnvelope,
@@ -33,7 +35,7 @@ import {
     toHeartbeatEnvelope,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
-import { createManualControlTimers } from './support/manual-control-timers.ts';
+import { createDistributedRunArtifactBundle } from './support/create-distributed-run-artifact-bundle.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 function toStagedService(): RallarBlackBoxControlService {
@@ -63,7 +65,7 @@ const FLUSH_INTERVAL_MS = 500;
 interface SnapshotPersistenceFixtureInput {
     readonly storageDir: string;
     readonly controlService: ConstructorParameters<typeof ControlSnapshotPersistence>[0]['controlService'];
-    readonly timers?: ControlTimers;
+    readonly timers?: Timers;
     readonly timingSink?: RallarTimingSink;
 }
 
@@ -75,7 +77,7 @@ function toSnapshotPersistence(input: SnapshotPersistenceFixtureInput): ControlS
         flushIntervalMs: FLUSH_INTERVAL_MS,
         controlService: input.controlService,
         deleteRuns: () => undefined,
-        timers: input.timers ?? createDefaultControlTimers(),
+        timers: input.timers ?? createDefaultTimers(),
         timingSink: input.timingSink
     });
 }
@@ -139,7 +141,7 @@ Deno.test('control snapshot restore brings back the runs and distributed runs th
 
 Deno.test('control snapshot persistence writes compact JSON once per changed snapshot and never serializes an unchanged one', async () => {
     const service = toStagedService();
-    const timers = createManualControlTimers(10_000);
+    const timers = createManualTimers(10_000);
     let serializations = 0;
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-change-' });
     const snapshotPath = `${storageDir}/control-snapshot.json`;
@@ -182,7 +184,7 @@ Deno.test('a 2 s burst of 1,000 accepted envelopes writes the snapshot at most o
     const burstMs = 2_000;
     const startEpochMs = 10_000;
     const service = toStagedService();
-    const timers = createManualControlTimers(startEpochMs);
+    const timers = createManualTimers(startEpochMs);
     let serializations = 0;
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-burst-' });
     try {
@@ -213,7 +215,7 @@ Deno.test('a 2 s burst of 1,000 accepted envelopes writes the snapshot at most o
 
 Deno.test('a distributed-run lifecycle change and shutdown write the snapshot at once', async () => {
     const service = toStagedService();
-    const timers = createManualControlTimers(10_000);
+    const timers = createManualTimers(10_000);
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-lifecycle-' });
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     const persistedState = async () => JSON.parse(await Deno.readTextFile(snapshotPath)).snapshot.distributedRuns[0].state;
@@ -314,7 +316,7 @@ Deno.test('capture admission preserves an unidentified capture blocker through d
     const { service, warnings } = await restoreSnapshotText(persisted);
     assertEquals(warnings, []);
     assertEquals(service.snapshotDistributedRun('dist-1')?.targetResolution?.blockers, [blocker]);
-    const bundle = service.createDistributedRunArtifactBundle('dist-1', {});
+    const bundle = createDistributedRunArtifactBundle(service, 'dist-1');
     assert(bundle);
     const exported = assertRight(decodeControlDistributedRunSnapshot(JSON.parse(bundle.files['distributed-run.json'])));
     assertEquals(exported.targetResolution?.blockers, [blocker]);
@@ -388,7 +390,7 @@ Deno.test({
             const recorder = new ControlArtifactRecorder({
                 storageDir,
                 commandSnapshots: restored,
-                timers: createDefaultControlTimers(),
+                timers: createDefaultTimers(),
                 config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
             });
             assert(Array.isArray(witness.envelopes));
@@ -404,12 +406,12 @@ Deno.test({
             const fallback = new ControlArtifactRecorder({
                 storageDir: undefined,
                 commandSnapshots: restored,
-                timers: createDefaultControlTimers(),
+                timers: createDefaultTimers(),
                 config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
             });
             const fallbackText = await (await fallback.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] })).text();
             assertSdkArtifactReceipt({ text: fallbackText, result: root.result, receipt: receipt, invocation: invocation });
-            const bundle = restored.createDistributedRunArtifactBundle('sdk-distributed', {});
+            const bundle = createDistributedRunArtifactBundle(restored, 'sdk-distributed');
             assert(bundle);
             const exported = assertRight(decodeControlRunSnapshot(JSON.parse(bundle.files['control-run.json'])));
             const exportedRoot = exported.results.find((entry) => entry.commandId === witness.commandId);
@@ -514,7 +516,7 @@ Deno.test('a barrier arrival during a slow snapshot flush is resolved on its soc
                 snapshotForPersistence: () => toSlowSnapshot()
             },
             deleteRuns: () => undefined,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             timingSink: (event) => timings.push(event)
         });
         persistence.persist();

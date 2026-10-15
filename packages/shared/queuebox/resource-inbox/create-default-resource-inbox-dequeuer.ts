@@ -122,6 +122,8 @@ export interface ResourceInboxDequeuerInput {
     readonly maxToReserve: () => number;
     readonly maxNumToDequeue: number;
     readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
+    /** The probe that preceded this pass; without one every lane is offered a reservation. */
+    readonly workAdvertisement?: DequeueController.WorkAdvertisement;
     readonly resilience: ResourceInboxResilience;
     readonly options?: DequeueResourceEntryOptions;
 }
@@ -206,6 +208,7 @@ function createResourceInboxFinalizationController<V>(
         .withInboxTypesToDequeue(input.typesToDequeue)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
+        .withWorkAdvertisement(input.workAdvertisement)
         .withMaxNumToReserve(input.maxToReserve)
         .onFinalizationEntriesReserveDo(
             dependencies.options.onRetryExhaustionRecovery
@@ -260,19 +263,8 @@ async function reserveResourceInboxTimeouts(
     return toResourceInboxAttempts(dependencies, entries, Reservator.TIMEOUT);
 }
 
+/** An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. */
 async function reserveResourceInboxFairness(
-    dependencies: ResourceInboxDequeueDependencies,
-    types: Set<string>,
-    maxToReserve: number
-): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
-    return await RateLimiter.tryToExecuteOrDefault(
-        dependencies.resilience.checkFairness.lockEntryRateLimiter,
-        () => readResourceInboxFairness(dependencies, types, maxToReserve),
-        new Map<Resource.Key, ResourceInboxAttempt>()
-    );
-}
-
-async function readResourceInboxFairness(
     dependencies: ResourceInboxDequeueDependencies,
     types: Set<string>,
     maxToReserve: number

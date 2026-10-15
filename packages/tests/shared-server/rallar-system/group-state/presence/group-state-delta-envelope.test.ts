@@ -22,7 +22,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, createService, summaryReservationRead } from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, createService, readSummaryWork } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -152,11 +152,7 @@ describe('group-state delta envelope construction', () => {
             },
             serviceId: 'summary-worker'
         });
-        const read = await work.read(
-            command,
-            summaryReservationRead(command.commandId),
-            BASE_EPOCH_MS + 1_000
-        );
+        const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
 
         const computed = work.compute(command, read);
 
@@ -262,11 +258,7 @@ async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSumm
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(
-        command,
-        summaryReservationRead(command.commandId),
-        BASE_EPOCH_MS + 1_000
-    );
+    const read = await readSummaryWork(work, command, BASE_EPOCH_MS + 1_000);
     const computed = work.compute(command, read);
     expect(work.validate(command, read, computed)).toEqual([]);
     return { command, read, computed };
@@ -276,8 +268,10 @@ function decodeGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): Gro
     if (entry === undefined) {
         throw new Error('Expected emitted group state event row');
     }
-    const message = decodePersistedALMessage(entry.resource);
-    const envelope: unknown = JSON.parse(message.payload.resource);
-    validateGroupStateDeltaEnvelope(envelope);
-    return envelope;
+    return decodeGroupStateDeltaEnvelope(JSON.parse(decodePersistedALMessage(entry.resource).payload.resource));
+}
+
+function decodeGroupStateDeltaEnvelope(value: unknown): GroupStateDeltaEnvelope {
+    validateGroupStateDeltaEnvelope(value);
+    return value;
 }

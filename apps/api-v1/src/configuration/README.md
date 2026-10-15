@@ -37,7 +37,14 @@ The configuration reader recognizes only these operational overrides:
 - Authentication: `AUTH_REGISTRATION_MODE`, `AUTH_ADMIN_CLIENT_IDS`,
   `AUTH_STATIC_CLIENTS_MODE`, `RALLAR_LOGIN_IP_RATE_LIMIT`,
   `RALLAR_LOGIN_USER_RATE_LIMIT`, `RALLAR_REGISTRATION_IP_RATE_LIMIT`,
-  `RALLAR_REGISTRATION_USER_RATE_LIMIT`.
+  `RALLAR_REGISTRATION_USER_RATE_LIMIT`,
+  `RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS`. The derivation bound
+  (`authentication.maxConcurrentPasswordDerivations`) caps how many PBKDF2
+  derivations (registration, login, replay verification) run at once; it must
+  be a positive integer. No committed profile names it: the decoder computes
+  the host's logical cores minus one (at least one) from the core count every
+  configuration reader supplies, and a profile or the environment variable
+  overrides that.
 - State API: `RALLAR_STATE_STRICT_READ_AUTH`.
 - Group admission: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
   `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,

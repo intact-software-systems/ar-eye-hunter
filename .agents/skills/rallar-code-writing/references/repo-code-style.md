@@ -32,6 +32,7 @@ restating a different version of these rules.
 - [Runtime exceptions and retry classification](#runtime-exceptions-and-retry-classification)
 - [Functional dataflow and state](#functional-dataflow-and-state)
 - [Services and responsibility boundaries](#services-and-responsibility-boundaries)
+- [Reusable mechanisms over business-specific one-offs](#reusable-mechanisms-over-business-specific-one-offs)
 - [Decision depth](#decision-depth)
 - [Database write safety](#database-write-safety)
 - [Configuration sources](#configuration-sources)
@@ -962,6 +963,23 @@ another indirection.
 
 Refactoring must preserve single responsibility and separation of concerns. Weakening either requires explicit human
 approval.
+
+## Reusable mechanisms over business-specific one-offs
+
+A generic mechanism is code whose correctness does not depend on the business case: a
+concurrency gate or semaphore, a rate limiter, a backoff schedule, a timer or clock seam, a
+repeating sweep, a trailing flush with one in-flight write, a serialized or single-flight
+promise chain, a bounded buffer, a coalescing claim. Such a mechanism lives once as a library
+primitive under `packages/shared/**` (resilience, cache, queuebox, or the package that owns the
+contract), with its own behaviour tests, named for the mechanism and not for its first caller.
+Domain code composes the primitive under its domain name: `AuthPasswordDerivationAdmission`
+composes `BoundedConcurrencyAdmission`; it does not reimplement the queue.
+
+Before writing a mechanism inside a feature folder, look for the primitive in
+`packages/shared/resilience/`, `packages/shared/cache/` and `packages/shared/queuebox/`.
+When none fits, add the primitive there first (RED test, then the class), then the domain
+composition. A mechanism written against one business case and a second copy elsewhere is
+duplication under the legacy rules above, even when the two copies have different names.
 
 ## Decision depth
 

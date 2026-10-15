@@ -6,6 +6,7 @@ import type { ControlHttpResponses } from '../http/control-http-responses.ts';
 import { isProtectedControlReadPath, type ControlHttpSecurity } from '../http/control-http-security.ts';
 import type { ControlRequestBodyReader } from '../http/control-request-body.ts';
 import type { RetentionPlanTokenAdapter } from '../retention-plan-token.ts';
+import type { ControlCompletedRunArchive } from '../run-completion/control-run-completion.ts';
 import type { BrowserCommandDestinationPolicy } from '../validate-browser-command-destination.ts';
 import { routeAgentWriteRequest } from './agent-routes-write.ts';
 import { ADMIN_TOKEN_REJECTION, toNotFoundRejection } from './control-route-errors.ts';
@@ -27,6 +28,7 @@ export interface ControlHttpRouteDependencies {
     readonly responses: ControlHttpResponses;
     readonly agentSockets: ControlAgentSockets;
     readonly artifactRecorder: ControlArtifactRecorder;
+    readonly completedRuns: Pick<ControlCompletedRunArchive, 'readRun'>;
     readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
     readonly retentionPlanTokens: RetentionPlanTokenAdapter;
     readonly commandDestinations: BrowserCommandDestinationPolicy;
@@ -95,7 +97,7 @@ async function routeControlReadRequest(
     dependencies: ControlHttpRouteDependencies
 ): Promise<Response | undefined> {
     return routeFleetReportReadRequest(url, dependencies) ??
-        routeDistributedRunReadRequest(url, dependencies) ??
+        await routeDistributedRunReadRequest(url, dependencies) ??
         await routeRunReadRequest(url, dependencies);
 }
 

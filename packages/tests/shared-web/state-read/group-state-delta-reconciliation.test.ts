@@ -189,6 +189,53 @@ describe('browser group-state delta reconciliation', () => {
         }
     );
 
+    it('applies a coalesced batch through its first delta and takes the sibling deltas as applied', async () => {
+        const runtime = new StateCacheRuntime();
+        const batch = createCoalescedBatch('room-coalesced-batch');
+        await runtime.hydrate([batch.predecessor]);
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+
+        for (const envelope of batch.envelopes) {
+            await runtime.receiveDeltaMessage(envelope);
+        }
+
+        expect(
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(batch.resulting.group)
+        ).toEqual(batch.resulting);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(deltaApplyResults()).toEqual(['applied', 'no-op', 'no-op', 'no-op']);
+    });
+
+    it('pulls at the floor for a coalesced batch when the cache is behind its predecessor', async () => {
+        const runtime = new StateCacheRuntime();
+        const batch = createCoalescedBatch('room-coalesced-stale');
+        const stale = createDeltaGroupSnapshot({
+            groupId: 'room-coalesced-stale',
+            memberPrincipalIds: ['m-alpha', 'm-bravo'],
+            activePrincipalIds: [],
+            causalRevision: { groupRevision: 5, presenceRevision: 0 }
+        });
+        await runtime.hydrate([stale]);
+        const fetchMock = vi.fn<typeof fetch>(
+            async () => groupSnapshotResponse(batch.resulting)
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        for (const envelope of batch.envelopes) {
+            await runtime.receiveDeltaMessage(envelope);
+        }
+
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+            '/groups/room-coalesced-stale?minGroupRevision=6&minPresenceRevision=4'
+        );
+        expect(
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(batch.resulting.group)
+        ).toEqual(batch.resulting);
+        expect(deltaApplyResults()).toEqual(['gap-pull', 'no-op', 'no-op', 'no-op']);
+    });
+
     it('pulls at the resulting floor when the cached snapshot is dominated but not the predecessor', async () => {
         const runtime = new StateCacheRuntime();
         const stale = createDeltaGroupSnapshot({
@@ -381,6 +428,71 @@ class StateCacheRuntime {
     };
 }
 
+interface CoalescedBatch {
+    readonly predecessor: GroupSnapshot;
+    readonly resulting: GroupSnapshot;
+    readonly envelopes: readonly GroupStateDeltaEnvelope[];
+}
+
+/**
+ * One presence-summary expansion of four pending events: two connects at the
+ * cached group revision, a join that bumps it, and the joiner's connect. Every
+ * delta is stamped predecessor -> resulting; the first carries the batch's
+ * merged slice and the later ones their own event's slice.
+ */
+function createCoalescedBatch(groupId: string): CoalescedBatch {
+    const predecessor = createDeltaGroupSnapshot({
+        groupId,
+        memberPrincipalIds: ['m-alpha', 'm-bravo'],
+        activePrincipalIds: [],
+        causalRevision: { groupRevision: 5, presenceRevision: 1 }
+    });
+    const resulting = createDeltaGroupSnapshot({
+        groupId,
+        memberPrincipalIds: ['m-alpha', 'm-bravo', 'm-charlie'],
+        activePrincipalIds: ['m-alpha', 'm-bravo', 'm-charlie'],
+        causalRevision: { groupRevision: 6, presenceRevision: 4 }
+    });
+    const joined = resulting.members.filter((member) => member.principalId === 'm-charlie');
+    const sessionOf = (principalId: string) => resulting.activeSessions.filter((session) => session.principalId === principalId);
+    const shared = { resulting, predecessorCausalRevision: predecessor.causalRevision };
+    return {
+        predecessor,
+        resulting,
+        envelopes: [
+            createDeltaEnvelope({
+                ...shared,
+                eventId: 'connect-alpha',
+                eventType: 'session-connected',
+                eventCausalRevision: { groupRevision: 5, presenceRevision: 2 },
+                members: joined,
+                sessions: resulting.activeSessions
+            }),
+            createDeltaEnvelope({
+                ...shared,
+                eventId: 'connect-bravo',
+                eventType: 'session-connected',
+                eventCausalRevision: { groupRevision: 5, presenceRevision: 3 },
+                sessions: sessionOf('m-bravo')
+            }),
+            createDeltaEnvelope({
+                ...shared,
+                eventId: 'join-charlie',
+                eventType: 'member-joined',
+                eventCausalRevision: { groupRevision: 6, presenceRevision: 3 },
+                members: joined
+            }),
+            createDeltaEnvelope({
+                ...shared,
+                eventId: 'connect-charlie',
+                eventType: 'session-connected',
+                eventCausalRevision: { groupRevision: 6, presenceRevision: 4 },
+                sessions: sessionOf('m-charlie')
+            })
+        ]
+    };
+}
+
 interface DeltaGroupSnapshotInput {
     readonly groupId: string;
     // Both principal lists are given in the server's canonical order: members
@@ -422,6 +534,7 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
 interface DeltaEnvelopeInput {
     readonly resulting: GroupSnapshot;
     readonly predecessorCausalRevision: GroupStateCausalRevision;
+    readonly eventId?: string;
     readonly eventCausalRevision?: GroupStateCausalRevision;
     readonly eventType?: GroupEvent['eventType'];
     readonly members?: readonly GroupMember[];
@@ -436,7 +549,8 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
             applicationId: resulting.group.applicationId,
             workspaceId: resulting.group.workspaceId,
             groupId: resulting.group.groupId,
-            eventId: `event-${resulting.group.groupId}-g${resulting.causalRevision.groupRevision}-p${resulting.causalRevision.presenceRevision}`,
+            eventId: input.eventId ??
+                `event-${resulting.group.groupId}-g${resulting.causalRevision.groupRevision}-p${resulting.causalRevision.presenceRevision}`,
             eventType: input.eventType ?? 'member-joined',
             snapshotVersion: resulting.group.snapshotVersion,
             causalRevision: input.eventCausalRevision ?? resulting.causalRevision,

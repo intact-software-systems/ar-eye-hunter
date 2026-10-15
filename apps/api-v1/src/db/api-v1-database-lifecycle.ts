@@ -15,6 +15,7 @@ import {
     type PGliteBlackBoxSnapshotPublisher
 } from './pglite-black-box-evidence-snapshot.ts';
 import { createPGliteSqlClient } from './pglite-sql-adapter.ts';
+import { createPostgresSqlClient, type PostgresSqlClientSource } from './postgres-sql-adapter.ts';
 
 export interface ApiV1DatabaseLifecycle {
     readonly database: PSqlSql;
@@ -286,9 +287,8 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
         })
 };
 
-export function toApiV1PostgresClient<Client extends object>(
-    client: Client
-): Client & ApiV1PostgresClient {
+/** The counting adapter over a complete postgres.js client; every statement the application issues passes through it. */
+export function toApiV1PostgresClient(client: object): ApiV1PostgresClient {
     if (
         typeof client !== 'function' ||
         !hasCallableProperty(client, 'begin') ||
@@ -298,7 +298,7 @@ export function toApiV1PostgresClient<Client extends object>(
     ) {
         throw new TypeError('Postgres client does not expose the required API-v1 capabilities.');
     }
-    return client as Client & ApiV1PostgresClient;
+    return createPostgresSqlClient(client as PostgresSqlClientSource);
 }
 
 function hasCallableProperty(value: object, property: string): boolean {

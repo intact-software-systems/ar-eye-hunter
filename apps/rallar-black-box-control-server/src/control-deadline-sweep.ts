@@ -1,11 +1,13 @@
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
+
 import type { ControlAgentSockets } from './control-agent-sockets.ts';
 import type { ControlSnapshotPersistence } from './control-snapshot-persistence.ts';
-import type { ControlTimers } from './control-timers.ts';
 
 export interface ControlDeadlineSweepInput {
     readonly agentSockets: Pick<ControlAgentSockets, 'sendDispatchableCommandsForConnectedRuns'>;
     readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
-    readonly timers: ControlTimers;
+    readonly timers: Timers;
     readonly intervalMs: number;
 }
 
@@ -14,14 +16,14 @@ export interface ControlDeadlineSweepInput {
  * the distributed rollup are judged on this fixed cadence instead. Answers the stop of the sweep.
  */
 export function startControlDeadlineSweep(input: ControlDeadlineSweepInput): () => void {
-    let cancel = input.timers.schedule(sweep, input.intervalMs);
-
-    function sweep(): void {
-        if (input.agentSockets.sendDispatchableCommandsForConnectedRuns() > 0) {
-            input.persistence.persist();
+    return startRepeating({
+        timers: input.timers,
+        intervalMs: input.intervalMs,
+        firstRun: 'after-interval',
+        run: () => {
+            if (input.agentSockets.sendDispatchableCommandsForConnectedRuns() > 0) {
+                input.persistence.persist();
+            }
         }
-        cancel = input.timers.schedule(sweep, input.intervalMs);
-    }
-
-    return () => cancel();
+    });
 }

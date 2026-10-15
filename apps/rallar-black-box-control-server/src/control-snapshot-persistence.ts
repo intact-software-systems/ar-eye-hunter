@@ -1,15 +1,25 @@
-import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import type { ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type {
+    ControlRunSnapshot,
+    ControlRunSnapshotBounds,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlRunCompletion } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import { decodeArrayItems } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
-import type { ControlTimers } from './control-timers.ts';
+import {
+    toJsonPieces,
+    writeSlicedJsonFile,
+    type SlicedJsonFileWrite
+} from './run-completion/control-sliced-json-file.ts';
 
 export interface ControlSnapshotPersistenceInput {
     readonly storageDir: string | undefined;
@@ -26,7 +36,7 @@ export interface ControlSnapshotPersistenceInput {
         | 'snapshotRevision'
     >;
     readonly deleteRuns: (runIds: readonly string[]) => void;
-    readonly timers: ControlTimers;
+    readonly timers: Timers;
     /** Absent when flushes are not timed. */
     readonly timingSink: RallarTimingSink | undefined;
 }
@@ -37,28 +47,13 @@ interface ScheduledSnapshotFlush {
 }
 
 interface WriteControlSnapshotFileInput {
-    readonly storageDir: string;
     readonly path: string;
     readonly tempPath: string;
     readonly savedAtEpochMs: number;
     readonly snapshot: ControlServerSnapshot;
 }
 
-interface ControlSnapshotFileWrite {
-    readonly written: boolean;
-    readonly bytes: number;
-    /** Time spent serializing and encoding, summed over the slices; the event loop runs between slices. */
-    readonly serializeMs: number;
-    readonly writeMs: number;
-}
-
-/** A 50-agent snapshot is tens of megabytes; serializing it in one call held every agent frame for seconds on the VM. */
-const SNAPSHOT_SLICE_LENGTH = 1024 * 1024;
-/** Runs, their command/result/event lists and those lists' entries are serialized one entry at a time. */
-const SLICED_DEPTH = 4;
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
-
-type JsonPieceSource = string | number | boolean | bigint | symbol | null | undefined | object;
 
 /**
  * Writes the whole snapshot at most once per flush interval, trailing the last change, and skips the serialization
@@ -106,7 +101,7 @@ export class ControlSnapshotPersistence {
     }
 
     private scheduleFlush(): void {
-        const nowEpochMs = this.input.timers.nowEpochMs();
+        const nowEpochMs = this.input.timers.nowMs();
         const lifecycleChanged = this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle;
         const dueEpochMs = lifecycleChanged
             ? nowEpochMs
@@ -134,14 +129,13 @@ export class ControlSnapshotPersistence {
     private async writeChangedSnapshot(): Promise<void> {
         const { storageDir, controlService, snapshotBounds, timers } = this.input;
         this.dirty = false;
-        this.lastFlushEpochMs = timers.nowEpochMs();
+        this.lastFlushEpochMs = timers.nowMs();
         const revision = controlService.snapshotRevision();
         this.flushedLifecycle = revision.lifecycle;
         if (!storageDir || revision.content === this.written?.content) {
             return;
         }
         const write = await writeControlSnapshotFile({
-            storageDir,
             path: toSnapshotPath(storageDir),
             tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${this.lastFlushEpochMs}-${this.sequence += 1}`,
             savedAtEpochMs: this.lastFlushEpochMs,
@@ -165,7 +159,7 @@ function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
 }
 
-function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: ControlSnapshotFileWrite): void {
+function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: SlicedJsonFileWrite): void {
     recordRallarTiming({
         sink,
         event: {
@@ -182,87 +176,23 @@ function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: Co
     });
 }
 
-/**
- * Streams the compact snapshot file into a temporary file one slice at a time and renames it over the snapshot. Each
- * slice write awaits the disk, so agent frames are handled between slices instead of after the whole serialization.
- */
-async function writeControlSnapshotFile(
-    input: WriteControlSnapshotFileInput
-): Promise<ControlSnapshotFileWrite> {
-    const encoder = new TextEncoder();
-    let bytes = 0;
-    let serializeMs = 0;
-    let writeMs = 0;
-    try {
-        await Deno.mkdir(input.storageDir, { recursive: true });
-        const file = await Deno.open(input.tempPath, { write: true, create: true, truncate: true });
-        const writer = file.writable.getWriter();
-        const slices = toSnapshotFileSlices(input.snapshot, input.savedAtEpochMs);
-        for (let startedMs = nowMs(), slice = slices.next(); !slice.done; startedMs = nowMs(), slice = slices.next()) {
-            const encoded = encoder.encode(slice.value);
-            const encodedMs = nowMs();
-            serializeMs += encodedMs - startedMs;
-            await writer.write(encoded);
-            writeMs += nowMs() - encodedMs;
-            bytes += encoded.length;
-        }
-        await writer.close();
-        await Deno.rename(input.tempPath, input.path);
-        return { written: true, bytes, serializeMs, writeMs };
+/** The file holds the sliced snapshot inside a small envelope; see `writeSlicedJsonFile` for the slicing. */
+async function writeControlSnapshotFile(input: WriteControlSnapshotFileInput): Promise<SlicedJsonFileWrite> {
+    const write = await writeSlicedJsonFile({
+        path: input.path,
+        tempPath: input.tempPath,
+        pieces: toSnapshotFilePieces(input.snapshot, input.savedAtEpochMs)
+    });
+    if (write.failure !== undefined) {
+        console.warn(`Could not persist control snapshot to ${input.path}: ${write.failure}`);
     }
-    catch (error) {
-        Deno.remove(input.tempPath).catch(() => undefined);
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Could not persist control snapshot to ${input.path}: ${message}`);
-        return { written: false, bytes, serializeMs, writeMs };
-    }
+    return write;
 }
 
-function* toSnapshotFileSlices(snapshot: ControlServerSnapshot, savedAtEpochMs: number): Generator<string> {
-    let parts = [`{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":`];
-    let length = parts[0].length;
-    for (const piece of toJsonPieces(snapshot, 0)) {
-        parts.push(piece);
-        length += piece.length;
-        if (length >= SNAPSHOT_SLICE_LENGTH) {
-            yield parts.join('');
-            parts = [];
-            length = 0;
-        }
-    }
-    parts.push('}');
-    yield parts.join('');
-}
-
-/** The pieces concatenate to `JSON.stringify(value)`; containers above the sliced depth are split at their entries. */
-export function* toJsonPieces(value: JsonPieceSource, depth: number): Generator<string> {
-    if (depth >= SLICED_DEPTH || value === null || typeof value !== 'object' || 'toJSON' in value) {
-        yield JSON.stringify(value) ?? 'null';
-        return;
-    }
-    if (Array.isArray(value)) {
-        yield '[';
-        for (const [index, item] of value.entries()) {
-            yield index === 0 ? '' : ',';
-            yield* isSkippedJsonValue(item) ? ['null'] : toJsonPieces(item, depth + 1);
-        }
-        yield ']';
-        return;
-    }
-    let separator = '';
-    yield '{';
-    for (const [key, item] of Object.entries(value)) {
-        if (!isSkippedJsonValue(item)) {
-            yield `${separator}${JSON.stringify(key)}:`;
-            yield* toJsonPieces(item, depth + 1);
-            separator = ',';
-        }
-    }
+function* toSnapshotFilePieces(snapshot: ControlServerSnapshot, savedAtEpochMs: number): Generator<string> {
+    yield `{"schemaVersion":${SNAPSHOT_FILE_SCHEMA_VERSION},"savedAtEpochMs":${savedAtEpochMs},"snapshot":`;
+    yield* toJsonPieces(snapshot, 0);
     yield '}';
-}
-
-function isSkippedJsonValue(value: JsonPieceSource): boolean {
-    return value === undefined || typeof value === 'function' || typeof value === 'symbol';
 }
 
 async function restoreSnapshotFile(
@@ -309,7 +239,7 @@ function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapsho
     return decodeArrayItems(
         runs,
         'runs',
-        (run, runPath) => decodeControlRunSnapshot(run).mapLeft((issue) => `${runPath}: ${issue}`)
+        (run, runPath) => decodePersistedControlRun(run).mapLeft((issue) => `${runPath}: ${issue}`)
     ).flatMap(
         (issue) => Either.ofLeft(issue),
         (restoredRuns) =>
@@ -318,5 +248,17 @@ function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapsho
                 distributedRuns: restoredDistributedRuns,
                 fleetReports: fleet.reports
             }))
+    );
+}
+
+/** The run decoder keeps the collections; a completed run's index entry is decoded beside them. */
+function decodePersistedControlRun(value: unknown): Either<string, ControlRunSnapshot> {
+    const completion = isJsonRecordValue(value) ? value.completion : undefined;
+    return decodeControlRunSnapshot(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (run) =>
+            completion === undefined
+                ? Either.ofRight(run)
+                : decodeControlRunCompletion(completion).mapRight((decoded) => ({ ...run, completion: decoded }))
     );
 }

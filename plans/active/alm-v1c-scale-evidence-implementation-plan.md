@@ -47,6 +47,13 @@ and V1d:
   skills and governance, and prefer an existing pattern (`Either`, `LatestRepository`, lane
   budgets, `RateLimiter`, the AppInbox doctrine) over a new one.
 - Test-driven and sub-agent-driven development with distinct implementation and review seats.
+- Added 2026-10-15 during step 2e: a generic mechanism (concurrency gate, rate limiter, backoff,
+  timer seam, repeating sweep, trailing flush, serialized or single-flight chain, bounded buffer,
+  coalescing claim) is written once as a `packages/shared` primitive with its own tests, and the
+  business case composes it under its domain name; a purpose-named copy in a feature folder is
+  duplication. The code standard now carries this rule (`repo-code-style.md`, "Reusable mechanisms
+  over business-specific one-offs"). The V1c audit of such copies and its ranked candidates are
+  listed under step 2e.
 
 ## Binding workload and acceptance
 
@@ -279,6 +286,40 @@ control server had died ≈70 s into every 50-agent run; it now persists on a bo
 per agent and records under a cap). Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
 player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
 derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
+
+### Step 2e: the hosted lane's per-player cost (this PR)
+
+Step 2d is merged (#667 as `e623aa7`). The phase-timing capture and the lane survey (proposal §4)
+located the cost: six serial lane items per player, an authorization capture repeated inside every
+group mutation, an O(N²) presence follow-on, no-op client heartbeats that still read the audience,
+three PBKDF2 derivations per agent and per-measurement RTT submissions. Decisions D233–D238
+(proposal §3), each RED first and judged by the local timing table and then the hosted 50-agent
+`rtc.connect` and sign-in medians; D239 records that the four-arm lane-policy benefit gate needs an
+arm selector, backend-operation counters and a retry-inducing workload before it can be evaluated,
+and stays an open item of this plan; D240–D241 record the join contract and a typed second lane as
+not taken. The first local rerun showed the handlers halved but the lane per-item fixed
+statements dominating the setup window, so D242 (executor statement counters in the phase timing) and
+D243 (one lane presence probe per pass, reservations only for non-empty lanes, a one-statement NEW claim)
+follow in the same step, each RED first and judged by statements per lane item and the inter-item gap.
+
+**As applied (PR #668).** D233–D238, D242–D249 and the shared primitives landed with four review-driven
+fix waves (proposal §3, §6). Measured (proposal §1.11): local 50 join wait 6.5 → 3.9 s and a lane item at 3
+statements in one transaction; hosted 30 connect p50 35.0 → 28.3 s; hosted 50 passes with sign-in 12.5 → 9.6 s,
+connect 64.9 → 54.9 s, director-status 4.3 s and 15 timeouts → 2 ms and none, setup-complete 8.9 s → 0.27 s,
+traffic-ready 82 s against 113 s. Open after this step: the six medium consolidation candidates of the audit
+(keyed rate limiter, trailing flush, serialized chain, queuebox sibling claim, JSON streaming, abort scope), the
+four-arm lane-policy gate (D239, now with executor counters), the join still waiting ≈9 s behind the hosted lane
+(the lane's remaining fixed cost and the per-player item count), and the RTT submission per round (D238).
+
+The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
+delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
+admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under
+purpose names found twelve; four small ones land in this step as shared primitives (a failure backoff
+state over the existing exponential delay, a timer and clock seam, a repeating run, a keyed
+single-flight), and the rest stay open items of this plan for a consolidation slice: a keyed rate
+limiter for the ACK relay, a trailing flush with one in-flight write (snapshot persistence, the AL
+checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
+claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
 
 ## Completion and handoff
 

@@ -1,8 +1,5 @@
-import {
-    startExpiredEntryEviction,
-    type ExpiredEntryEvictionHandle,
-    type ExpiredEntryEvictionOptions
-} from './ExpiredEntryEviction.ts';
+import { toError } from '../resilience/to-error.ts';
+import { startExpiredEntryEviction, type ExpiredEntryEvictionOptions } from './ExpiredEntryEviction.ts';
 import {
     assertMaxEntries,
     deleteOldestEntriesPastMax,
@@ -40,7 +37,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
     private readonly entries = new Map<K, ObservableLatestValue<V>>();
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
     private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
-    private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
+    private readonly stopExpiredEntryEviction: (() => void) | undefined;
     private readonly maxEntries: number | undefined;
     private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
     private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
@@ -55,7 +52,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         this.onObserverError = options.onObserverError;
         assertMaxEntries(options.maxEntries);
         this.maxEntries = options.maxEntries;
-        this.expiredEntryEviction = startExpiredEntryEviction(
+        this.stopExpiredEntryEviction = startExpiredEntryEviction(
             options,
             () => this.deleteExpired()
         );
@@ -283,7 +280,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
     }
 
     public dispose(): void {
-        this.expiredEntryEviction?.dispose();
+        this.stopExpiredEntryEviction?.();
     }
 
     public size(): number {
@@ -432,12 +429,12 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
             await listener(event);
         }
         catch (error) {
-            await this.handleObserverError(error, event);
+            await this.handleObserverError(toError(error), event);
         }
     }
 
     private async handleObserverError(
-        error: unknown,
+        error: Error,
         event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onObserverError) {

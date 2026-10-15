@@ -620,7 +620,8 @@ export interface BlackBoxRallarDirectorAppointInput extends BlackBoxRallarDirect
 }
 
 export interface BlackBoxRallarDirectorStatusInput extends BlackBoxRallarDirectorRoomInput {
-    readonly refresh?: boolean;
+    /** `true` re-reads the room over REST first; `when-absent` only while the page holds no snapshot of the room. */
+    readonly refresh?: boolean | 'when-absent';
     readonly now?: number;
 }
 

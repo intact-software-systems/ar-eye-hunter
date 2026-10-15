@@ -9,6 +9,8 @@ import {
 
 export interface ReadApiV1ConfigurationInput {
     readonly environment: ApiV1ConfigurationEnvironment;
+    /** The host's logical cores; the password derivation bound keeps one free for the JS thread. */
+    readonly hardwareConcurrency: number;
     readonly readTextFile: (url: URL) => Promise<string>;
     readonly defaultsUrl: URL;
     readonly profileUrls: Readonly<Record<ApiV1ConfigurationProfile['name'], URL>>;
@@ -59,6 +61,7 @@ export async function readApiV1Configuration(
     ]);
     const configuration = decodeApiV1Configuration({
         profileName: environment.profileName,
+        hardwareConcurrency: input.hardwareConcurrency,
         defaultsSource,
         profileSource,
         environmentSource: environment.environmentSource,
