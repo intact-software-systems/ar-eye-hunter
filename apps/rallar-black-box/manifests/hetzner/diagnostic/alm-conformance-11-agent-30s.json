@@ -1715,6 +1715,40 @@
             "timeoutMs": 5000
           },
           {
+            "kind": "loop",
+            "commandId": "alm-scale-director-layout-stable",
+            "count": 13,
+            "timeoutMs": 45000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-scale-director-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "wait",
+                "commandId": "alm-scale-director-layout-replan",
+                "absent": true,
+                "timeoutMs": 3500,
+                "match": {
+                  "topic": "rallar.browser.formation.layout",
+                  "payloadFields": {
+                    "data.kind": "layoutPlanned",
+                    "data.role": "planned"
+                  },
+                  "payloadPath": "data.identity.groupRevision",
+                  "contains": "{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.causalRevision.groupRevision}"
+                }
+              }
+            ]
+          },
+          {
             "kind": "barrier",
             "commandId": "alm-scale-director-setup-complete",
             "barrierId": "alm-scale-setup-complete",
@@ -5023,6 +5057,40 @@
             },
             "refresh": true,
             "timeoutMs": 5000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-scale-player-layout-stable",
+            "count": 13,
+            "timeoutMs": 45000,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-scale-player-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "wait",
+                "commandId": "alm-scale-player-layout-replan",
+                "absent": true,
+                "timeoutMs": 3500,
+                "match": {
+                  "topic": "rallar.browser.formation.layout",
+                  "payloadFields": {
+                    "data.kind": "layoutPlanned",
+                    "data.role": "planned"
+                  },
+                  "payloadPath": "data.identity.groupRevision",
+                  "contains": "{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.causalRevision.groupRevision}"
+                }
+              }
+            ]
           },
           {
             "kind": "barrier",

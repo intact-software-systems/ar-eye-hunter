@@ -12,6 +12,13 @@ artifact export. UI-facing summaries should use the display helpers so result
 values and errors pass through the same redaction rules as ordinary
 `rallar-bb-test` results.
 
+The nested tree lives in the command result: the runtime's result cache and the
+root result a control agent sends. Every child also emits its own
+`rallar.bb.command.result` event, so a composite's event carries counts in place
+of its children: `childResultCount`, `passed` and `failed`, and for `parallel`
+each group's outcome without its `results`. Read nested results from command
+results, never from result events.
+
 ## Path Format
 
 Composite result paths use version `1` and start at `$`.

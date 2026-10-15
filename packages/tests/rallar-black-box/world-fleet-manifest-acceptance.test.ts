@@ -177,7 +177,7 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity, now signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
+    it('keeps the authored workload identity, now holding setup-complete for a stable layout and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
         expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
@@ -194,7 +194,7 @@ describe('world-fleet native manifest acceptance', () => {
                 }
             }))
         };
-        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('2e95dabb8ff51938932051706b8b102e402c1a917fe206caeb944344a6181364');
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('b5b5ed314a15674172109d4fa1f84cb056a48c8cc5d0c91424fe1699990541c9');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);

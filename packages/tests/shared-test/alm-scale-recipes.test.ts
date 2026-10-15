@@ -226,6 +226,38 @@ describe('ALM scale recipes', () => {
         expect(groupRequests.map((command) => command.timeoutMs)).toEqual([5_000, 5_000, 5_000]);
     });
 
+    it.each(['director', 'player'] as const)('holds the %s at setup-complete until no newer plan replaces the ready layout', (role) => {
+        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+        const prefix = `alm-scale-${role}`;
+        const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
+
+        expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+        expect(recipe.commands[setupComplete - 1]).toEqual({
+            kind: 'loop',
+            commandId: `${prefix}-layout-stable`,
+            count: 13,
+            timeoutMs: 45_000,
+            until: 'first-success',
+            commands: [
+                { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
+                {
+                    kind: 'wait',
+                    commandId: `${prefix}-layout-replan`,
+                    absent: true,
+                    timeoutMs: 3_500,
+                    match: {
+                        topic: 'rallar.browser.formation.layout',
+                        payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
+                        payloadPath: 'data.identity.groupRevision',
+                        contains: `{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:${prefix}-layout-readiness` +
+                            '.value.formation.causalRevision.groupRevision}'
+                    }
+                }
+            ]
+        });
+    });
+
     it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics });
 

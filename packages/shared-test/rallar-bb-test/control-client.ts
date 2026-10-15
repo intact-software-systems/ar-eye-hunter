@@ -189,6 +189,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private publishedHistory: RallarBlackBoxEventHistory | undefined;
     private readonly completedControlCommandIds = new Set<string>();
     private readonly admittedControlCommandIds = new Set<string>();
+    private readonly runningControlCommands = new Map<string, Promise<void>>();
     private completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
     private frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
     private assignmentGeneration = 0;
@@ -249,6 +250,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.completedControlResults = new WeakSet<RallarBlackBoxTestResult>();
             this.frameLimitedResults = new WeakMap<RallarBlackBoxTestResult, RallarBlackBoxTestResult>();
             this.admittedControlCommandIds.clear();
+            this.runningControlCommands.clear();
             this.publishedEvents = new WeakSet<RallarBlackBoxTestEvent>();
             this.lastTerminalReportKey = undefined;
             const history = this.options.runtime.state().eventHistory;
@@ -374,7 +376,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             return;
         }
 
-        void this.runCommand(parsed.envelope);
+        void this.admitCommand(parsed.envelope);
     };
 
     private readonly onSocketClose = (): void => {
@@ -409,6 +411,21 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             this.reconnectTimer = undefined;
             this.openSocket('reconnecting');
         }, delayMs);
+    }
+
+    /** A redispatch of a command still running joins that execution, which sends the one result on the open socket. */
+    private admitCommand(envelope: ControlCommandEnvelope): Promise<void> {
+        const running = this.runningControlCommands.get(envelope.commandId);
+        if (running !== undefined) {
+            return running;
+        }
+        const execution = this.runCommand(envelope);
+        this.runningControlCommands.set(envelope.commandId, execution);
+        return execution.finally(() => {
+            if (this.runningControlCommands.get(envelope.commandId) === execution) {
+                this.runningControlCommands.delete(envelope.commandId);
+            }
+        });
     }
 
     private async runCommand(envelope: ControlCommandEnvelope): Promise<void> {
