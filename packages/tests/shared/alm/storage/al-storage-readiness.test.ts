@@ -123,6 +123,33 @@ describe('ALStorageReadiness', () => {
         expect(opens).toBe(2);
     });
 
+    it('joins accepted admission work before disposal finishes and refuses later admission', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const readiness = new ALStorageReadiness({
+            openStores: async () => {},
+            startWork: async () => {},
+            storageHealth: undefined
+        });
+        const admission = readiness.runStoreOperation(async () => {
+            entered.resolve();
+            await release.promise;
+            return 'persisted';
+        }, () => 'unavailable');
+        await entered.promise;
+        let disposed = false;
+        const closing = readiness.dispose().then(() => {
+            disposed = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(disposed).toBe(false);
+        release.resolve();
+        await expect(admission).resolves.toBe('persisted');
+        await closing;
+        await expect(readiness.runStoreOperation(async () => 'new', () => 'unavailable')).rejects.toThrow('disposed');
+    });
+
     it('rethrows an open failure that is no storage failure', async () => {
         const readiness = new ALStorageReadiness({
             openStores: async () => {

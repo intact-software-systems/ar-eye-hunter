@@ -9,6 +9,7 @@ import type {
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -40,6 +41,8 @@ export interface RallarSessionHeartbeat {
 
 /** Connected browser transport resources exposed through the advanced facade. */
 export interface RallarBrowserMiddleware {
+    /** Factory-created browser storage; absent for middleware with supplier-owned resources. */
+    readonly runtimeStorage?: ALRuntimeStorage;
     readonly qboxEngine: InboxOutboxEngine;
     readonly webSocketQueueBox: WsQueueBoxClientService;
     readonly webRtcConnectionService: WebRtcConnectionService;

@@ -50,6 +50,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundResyncRequired } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
@@ -245,15 +246,17 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: BrowserConnectOptions
 ): Promise<BrowserConnectedMiddleware> {
-    const storageAvailability = initialiseBrowserRuntimeStores(
-        session.sessionId,
-        options.scope ?? defaultStateScope(),
-        options.diagnosticsPorts
-    );
-    const transportInput = createBrowserTransportInput(session, options);
-    const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
+    const runtimeStorage = new ALRuntimeStorage();
+    let webSocketTransport: BrowserWebSocketTransport | undefined;
     let rtcTransport: BrowserRtcTransport | undefined;
     try {
+        const storageAvailability = initialiseBrowserRuntimeStores(
+            session.sessionId,
+            options.scope ?? defaultStateScope(),
+            { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
+        );
+        const transportInput = createBrowserTransportInput(session, options);
+        webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
         rtcTransport = await initialiseBrowserRtcTransport({
             ...transportInput,
             rtcSignalingTopicId,
@@ -284,13 +287,14 @@ export async function initialiseMiddleware(
                 ...webSocketTransport,
                 ...rtcTransport,
                 heartbeat: heartbeatHandle,
+                runtimeStorage,
                 storageAvailability
             }),
             checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
         };
     }
     catch (caught) {
-        await closeBrowserTransportResources({ ...webSocketTransport, ...rtcTransport })
+        await closeBrowserTransportResources({ ...webSocketTransport, ...rtcTransport, runtimeStorage })
             .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
         throw caught;
     }
@@ -432,13 +436,19 @@ function toCommandOptions<T>(
     };
 }
 
+interface BrowserRuntimeStorageInput {
+    readonly diagnosticsPorts: RallarDiagnosticsPorts;
+    readonly runtimeStorage: ALRuntimeStorage;
+}
+
 function initialiseBrowserRuntimeStores(
     sessionId: string,
     scope: StateScope,
-    diagnosticsPorts: RallarDiagnosticsPorts
+    storage: BrowserRuntimeStorageInput
 ): BrowserALStorageAvailability {
+    const { diagnosticsPorts, runtimeStorage } = storage;
     initialiseBrowserCacheRepositories();
-    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts });
+    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts, runtimeStorage });
     initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage: diagnosticsPorts.storage }).catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );

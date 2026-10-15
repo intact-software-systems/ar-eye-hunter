@@ -158,13 +158,17 @@ export class ALInboundStoreLane {
         return await this.readiness.ready();
     }
 
-    dispose(): Promise<void> {
+    async dispose(): Promise<void> {
         this.disposed = true;
         this.removeForeignCommitListener?.();
         this.admission.dispose();
         const workDisposed = this.work.dispose();
         this.delivery.dispose();
-        return workDisposed;
+        const outcomes = await Promise.allSettled([workDisposed, this.readiness.dispose()]);
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     }
 
     /** Another runtime of the session admitted to this lane's work type; inbound commits name no rows. */

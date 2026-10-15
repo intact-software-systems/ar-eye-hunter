@@ -32,7 +32,6 @@ import {
     readStoredQueueEntries,
     readStoredQueueEntriesByTypesAndStatuses,
     readStoredQueueEntry,
-    readStoredQueueWorkPage,
     readStoredQueueWorkPages,
     toIndexedDbQueueStoreDefinition
 } from './indexed-db-queue-box-store.ts';
@@ -103,14 +102,6 @@ interface IndexedDbQueueComputedWrite<Result> {
     readonly result: Result;
 }
 
-interface RetryExhaustionSelectionInput {
-    readonly typeIds: ReadonlySet<string>;
-    readonly stored: StoredResourceEntry;
-    readonly processingAttempts: number;
-    readonly now: Temporal.Instant;
-    readonly staleBefore: Temporal.Instant;
-}
-
 export type IndexedDbQueueBoxOptions =
     | Readonly<{
         dbName?: string;
@@ -168,34 +159,34 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const request = toValidatedWorkPageRequest(input);
-        const db = await this.#connection.open();
-        const stored = await readStoredQueueWorkPage(db, this.#storeName, request);
-        return toResourceInboxWorkPage(stored, request);
+        const [page] = await this.readWorkPages([input]);
+        return page;
     }
 
     /** One transaction serves every request, so a readiness scan is one operation, not one per page. */
     async readWorkPages(inputs: readonly ResourceInboxWorkPage.Request[]): Promise<readonly ResourceInboxWorkPage[]> {
-        if (inputs.length === 0) {
-            return [];
+        const operation = this.#connection.beginOperation();
+        try {
+            if (inputs.length === 0) {
+                return [];
+            }
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
+            const db = await operation.open();
+            const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
+            return pages.map((stored, index) => toResourceInboxWorkPage(stored, requests[index]));
         }
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
-        if (decision instanceof Promise) {
-            await decision;
+        finally {
+            operation.release();
         }
-        const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
-        const db = await this.#connection.open();
-        const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
-        return pages.map((stored, index) => toResourceInboxWorkPage(stored, requests[index]));
     }
 
     /** The opportunistic sweep hot paths trigger: rate limited, so it runs at most once per window. */
     cleanup(): void {
-        if (!this.#cleanupRateLimiter.allow()) {
+        if (this.#connection.isClosed || !this.#cleanupRateLimiter.allow()) {
             return;
         }
         void this.cleanupAsync().catch((e) => {
@@ -209,81 +200,103 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
      * until some later trigger.
      */
     async cleanupAsync(): Promise<IndexedDbQueueCleanupResult> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const now = this.#now();
+            const expired = await this.#readExpiredEntries(db, now);
+            const completed = await readDeletableCompletedStoredQueueEntries({
+                db,
+                storeName: this.#storeName,
+                statusIds: COMPLETED_STATUSES,
+                endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
+                maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
+                maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
+                isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
+            });
+            // A row can be expired and terminal at once; a duplicate key rejects the whole write.
+            const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
+                [...expired, ...completed].map((stored) => [stored.keyString, stored])
+            );
+            const deleted = await this.#write(db, {
+                mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
+                result: toDelete.size
+            });
+            return {
+                deleted,
+                saturated: expired.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE ||
+                    completed.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
+            };
         }
-        const db = await this.#connection.open();
-        const now = this.#now();
-        const expired = await this.#readExpiredEntries(db, now);
-        const completed = await readDeletableCompletedStoredQueueEntries({
-            db,
-            storeName: this.#storeName,
-            statusIds: COMPLETED_STATUSES,
-            endAtOrBeforeEpochMs: Number(now.epochMilliseconds),
-            maxToDelete: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE,
-            maxPages: INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_PAGES,
-            isDeletable: (stored) => !matchesQueueBoxCompletedRetention(stored, this.#completedRetention)
-        });
-        // A row can be expired and terminal at once; a duplicate key rejects the whole write.
-        const toDelete = new Map<ResourceEntryKeyString, StoredResourceEntry>(
-            [...expired, ...completed].map((stored) => [stored.keyString, stored])
-        );
-        const deleted = await this.#write(db, {
-            mutations: [...toDelete.values()].map(computeIndexedDbQueueDelete),
-            result: toDelete.size
-        });
-        return {
-            deleted,
-            saturated: expired.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE ||
-                completed.length >= INDEXED_DB_QUEUE_CLEANUP_MAX_COMPLETED_TO_DELETE
-        };
+        finally {
+            operation.release();
+        }
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const keyString = toKeyAsString(resourceEntry.key);
+            const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
+            return await this.#write(db, {
+                mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
+                result: stored ? decodeStoredResourceEntry(stored) : undefined
+            });
         }
-        const db = await this.#connection.open();
-        const keyString = toKeyAsString(resourceEntry.key);
-        const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
-        return await this.#write(db, {
-            mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
-            result: stored ? decodeStoredResourceEntry(stored) : undefined
-        });
+        finally {
+            operation.release();
+        }
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const db = await this.#connection.open();
-        const stored = await readStoredQueueEntry(
-            db,
-            this.#storeName,
-            toKeyAsString(resourceEntry.key)
-        );
-        if (stored && !isStoredQueueEntryExpired(stored, this.#now())) {
-            return decodeStoredResourceEntry(stored);
-        }
-        const computed = {
-            mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
-            result: resourceEntry
-        };
+        const operation = this.#connection.beginOperation();
         try {
-            return await this.#write(db, computed);
-        }
-        catch (error) {
-            if (!(error instanceof IndexedDbQueueWriteConflictError)) {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const stored = await readStoredQueueEntry(
+                db,
+                this.#storeName,
+                toKeyAsString(resourceEntry.key)
+            );
+            if (stored && !isStoredQueueEntryExpired(stored, this.#now())) {
+                return decodeStoredResourceEntry(stored);
+            }
+            const computed = {
+                mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
+                result: resourceEntry
+            };
+            try {
+                return await this.#write(db, computed);
+            }
+            catch (error) {
+                if (!(error instanceof IndexedDbQueueWriteConflictError)) {
+                    throw error;
+                }
+                const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+                if (decision instanceof Promise) {
+                    await decision;
+                }
+                const winner = await this.#readItem(db, resourceEntry.key);
+                if (winner) {
+                    return winner;
+                }
                 throw error;
             }
-            const winner = await this.getItem(resourceEntry.key);
-            if (winner) {
-                return winner;
-            }
-            throw error;
+        }
+        finally {
+            operation.release();
         }
     }
 
@@ -291,66 +304,78 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         expected: ResourceEntry,
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        if (toKeyAsString(expected.key) !== toKeyAsString(replacement.key)) {
-            throw new TypeError('Queue replacement key differs from its observation');
-        }
-        const db = await this.#connection.open();
-        const keyString = toKeyAsString(expected.key);
-        const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
-        if (
-            !stored ||
-            isStoredQueueEntryExpired(stored, this.#now()) ||
-            !hasSameResourceEntryValue(decodeStoredResourceEntry(stored), expected)
-        ) {
-            return null;
-        }
-
-        const computed = {
-            mutations: [computeIndexedDbQueuePut(stored, replacement)],
-            result: replacement
-        };
+        const operation = this.#connection.beginOperation();
         try {
-            return await this.#write(db, computed);
-        }
-        catch (error) {
-            if (error instanceof IndexedDbQueueWriteConflictError) {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            if (toKeyAsString(expected.key) !== toKeyAsString(replacement.key)) {
+                throw new TypeError('Queue replacement key differs from its observation');
+            }
+            const db = await operation.open();
+            const keyString = toKeyAsString(expected.key);
+            const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
+            if (
+                !stored ||
+                isStoredQueueEntryExpired(stored, this.#now()) ||
+                !hasSameResourceEntryValue(decodeStoredResourceEntry(stored), expected)
+            ) {
                 return null;
             }
-            throw error;
+
+            const computed = {
+                mutations: [computeIndexedDbQueuePut(stored, replacement)],
+                result: replacement
+            };
+            try {
+                return await this.#write(db, computed);
+            }
+            catch (error) {
+                if (error instanceof IndexedDbQueueWriteConflictError) {
+                    return null;
+                }
+                throw error;
+            }
+        }
+        finally {
+            operation.release();
         }
     }
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const validated = toValidatedResourceInboxReleases(releases);
-        if (validated.length === 0) {
-            return new Map<Key, ResourceEntry>();
-        }
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const validated = toValidatedResourceInboxReleases(releases);
+            if (validated.length === 0) {
+                return new Map<Key, ResourceEntry>();
+            }
 
-        const db = await this.#connection.open();
-        const releasedAt = this.#now();
-        const keyStrings = validated.map((release) => toKeyAsString(release.entry.key));
-        const storedEntries = await readStoredQueueEntries(db, this.#storeName, keyStrings);
-        const currentEntries = new Map(
-            [...storedEntries].map(([key, stored]) => [key, decodeStoredResourceEntry(stored)])
-        );
-        const computed = computeIndexedDbQueueRelease({
-            currentEntries,
-            releasedAt,
-            releases: validated,
-            storedEntries
-        });
-        if (computed.right === undefined) {
-            throw computed.left;
+            const db = await operation.open();
+            const releasedAt = this.#now();
+            const keyStrings = validated.map((release) => toKeyAsString(release.entry.key));
+            const storedEntries = await readStoredQueueEntries(db, this.#storeName, keyStrings);
+            const currentEntries = new Map(
+                [...storedEntries].map(([key, stored]) => [key, decodeStoredResourceEntry(stored)])
+            );
+            const computed = computeIndexedDbQueueRelease({
+                currentEntries,
+                releasedAt,
+                releases: validated,
+                storedEntries
+            });
+            if (computed.right === undefined) {
+                throw computed.left;
+            }
+            return await this.#write(db, computed.right);
         }
-        return await this.#write(db, computed.right);
+        finally {
+            operation.release();
+        }
     }
 
     /** An observed claim reads exactly the rows it observed; an unobserved one reads type/status pages. */
@@ -377,79 +402,91 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-        const observations = captureResourceEntryObservations(observedEntries);
-        if (observations?.size === 0 || maxToReserve === 0) {
-            return new Map();
+        const operation = this.#connection.beginOperation();
+        try {
+            const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+                reservationInput,
+                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            );
+            const observations = captureResourceEntryObservations(observedEntries);
+            if (observations?.size === 0 || maxToReserve === 0) {
+                return new Map();
+            }
+            const db = await operation.open();
+            const now = this.#now();
+            const candidates = await this.#readReservationCandidates({
+                db,
+                observations,
+                typeIds,
+                statusIds: [EntityStatus.RESERVED],
+                // Look ahead like the probe: a live RESERVED row sorting first must not hide older timed-out rows.
+                maxToReadPerCombination: Math.max(maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ)
+            });
+            const selection = computeIndexedDbReservation({
+                candidates,
+                observations,
+                maxToReserve,
+                now,
+                isReservable: (stored) =>
+                    stored.dequeueAudit.attempts < maxAttempts &&
+                    isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
+            });
+            const decision = this.#observeReservation(selection.mutations);
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
         }
-        const db = await this.#connection.open();
-        const now = this.#now();
-        const candidates = await this.#readReservationCandidates({
-            db,
-            observations,
-            typeIds,
-            statusIds: [EntityStatus.RESERVED],
-            // Look ahead like the probe: a live RESERVED row sorting first must not hide older timed-out rows.
-            maxToReadPerCombination: Math.max(maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ)
-        });
-        const selection = computeIndexedDbReservation({
-            candidates,
-            observations,
-            maxToReserve,
-            now,
-            isReservable: (stored) =>
-                stored.dequeueAudit.attempts < maxAttempts &&
-                isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
-        });
-        const decision = this.#observeReservation(selection.mutations);
-        if (decision instanceof Promise) {
-            await decision;
+        finally {
+            operation.release();
         }
-        return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
     }
 
     async reserveEntries(
         { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-        const observations = captureResourceEntryObservations(observedEntries);
-        if (observations?.size === 0 || maxToReserve === 0) {
-            return new Map();
+        const operation = this.#connection.beginOperation();
+        try {
+            const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
+                reservationInput,
+                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            );
+            const observations = captureResourceEntryObservations(observedEntries);
+            if (observations?.size === 0 || maxToReserve === 0) {
+                return new Map();
+            }
+            const db = await operation.open();
+            const now = this.#now();
+            // The index pages a claim in keyString order, not in readiness order; overdue rows that
+            // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
+            const candidates = await this.#readReservationCandidates({
+                db,
+                observations,
+                typeIds,
+                statusIds,
+                maxToReadPerCombination: maxToReserve
+            });
+            const selection = computeIndexedDbReservation({
+                candidates,
+                observations,
+                maxToReserve,
+                now,
+                isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
+            });
+            // An unreservable row that is also expired is swept by the write this claim already owes.
+            const expired = selection.ineligible.filter((stored) => isStoredQueueEntryExpired(stored, now));
+            const mutations = [...selection.mutations, ...expired.map(computeIndexedDbQueueDelete)];
+            const decision = this.#observeReservation(mutations);
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const reserved = await this.#write(db, { mutations, result: selection.reserved });
+            this.#addReservationExpiredDeletes(expired);
+            return reserved;
         }
-        const db = await this.#connection.open();
-        const now = this.#now();
-        // The index pages a claim in keyString order, not in readiness order; overdue rows that
-        // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
-        const candidates = await this.#readReservationCandidates({
-            db,
-            observations,
-            typeIds,
-            statusIds,
-            maxToReadPerCombination: maxToReserve
-        });
-        const selection = computeIndexedDbReservation({
-            candidates,
-            observations,
-            maxToReserve,
-            now,
-            isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
-        });
-        // An unreservable row that is also expired is swept by the write this claim already owes.
-        const expired = selection.ineligible.filter((stored) => isStoredQueueEntryExpired(stored, now));
-        const mutations = [...selection.mutations, ...expired.map(computeIndexedDbQueueDelete)];
-        const decision = this.#observeReservation(mutations);
-        if (decision instanceof Promise) {
-            await decision;
+        finally {
+            operation.release();
         }
-        const reserved = await this.#write(db, { mutations, result: selection.reserved });
-        this.#addReservationExpiredDeletes(expired);
-        return reserved;
     }
 
     /** Cumulative since this queue was constructed: of one work type, or of every type when none is named. */
@@ -472,127 +509,116 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        const options = toResourceInboxFairnessReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-        const { maxToReserve, maxAttempts } = options;
-        const maxToScan = typeof reservationInput === 'number'
-            ? Math.max(options.maxToScan, typeIds.size)
-            : options.maxToScan;
-        if (typeIds.size === 0 || maxToReserve <= 0) {
-            return new Map();
+        const operation = this.#connection.beginOperation();
+        try {
+            const options = toResourceInboxFairnessReservationOptions(
+                reservationInput,
+                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            );
+            const { maxToReserve, maxAttempts } = options;
+            const maxToScan = typeof reservationInput === 'number'
+                ? Math.max(options.maxToScan, typeIds.size)
+                : options.maxToScan;
+            if (typeIds.size === 0 || maxToReserve <= 0) {
+                return new Map();
+            }
+            if (maxToScan < typeIds.size) {
+                throw new Error('maxToScan must be at least the number of requested types');
+            }
+            const db = await operation.open();
+            const now = this.#now();
+            const requestedTypes = [...typeIds];
+            const entriesByType = await readFairnessStoredQueueEntries({
+                db,
+                storeName: this.#storeName,
+                indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
+                typeIds: requestedTypes,
+                overdueBeforeEpochMs,
+                maxToScan
+            });
+            const computed = computeIndexedDbFairnessReservation({
+                entriesByType,
+                maxAttempts,
+                maxToReserve,
+                maxToScan,
+                now,
+                requestedTypes
+            });
+            const decision = this.#observeReservation(computed.mutations);
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            return await this.#write(db, computed);
         }
-        if (maxToScan < typeIds.size) {
-            throw new Error('maxToScan must be at least the number of requested types');
+        finally {
+            operation.release();
         }
-        const db = await this.#connection.open();
-        const now = this.#now();
-        const requestedTypes = [...typeIds];
-        const entriesByType = await readFairnessStoredQueueEntries({
-            db,
-            storeName: this.#storeName,
-            indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
-            typeIds: requestedTypes,
-            overdueBeforeEpochMs,
-            maxToScan
-        });
-        const computed = computeIndexedDbFairnessReservation({
-            entriesByType,
-            maxAttempts,
-            maxToReserve,
-            maxToScan,
-            now,
-            requestedTypes
-        });
-        const decision = this.#observeReservation(computed.mutations);
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        return await this.#write(db, computed);
     }
 
     async reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
-        const options = toResourceInboxFinalizationReservationOptions(input);
-        if (typeIds.size === 0 || options.maxToReserve === 0) {
-            return new Map();
-        }
-        const db = await this.#connection.open();
-        const now = this.#now();
-        const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
-        // Read past maxToReserve so an exhausted (poison) generation cannot mask a valid sibling.
-        const perTypeMaxToRead = Math.max(options.maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ);
-        const candidates = await readStoredQueueEntriesByTypesAndStatuses({
-            db,
-            storeName: this.#storeName,
-            typeIds,
-            statusIds: [EntityStatus.RESERVED],
-            maxToReadPerCombination: perTypeMaxToRead
-        });
-        const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
-        const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of candidates) {
-            if (reserved.size >= options.maxToReserve) {
-                break;
+        const operation = this.#connection.beginOperation();
+        try {
+            const options = toResourceInboxFinalizationReservationOptions(input);
+            if (typeIds.size === 0 || options.maxToReserve === 0) {
+                return new Map();
             }
-            const selectedDueTs = selectRetryExhaustionDueTimestamp({
+            const db = await operation.open();
+            const now = this.#now();
+            // Read past maxToReserve so an exhausted (poison) generation cannot mask a valid sibling.
+            const perTypeMaxToRead = Math.max(options.maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ);
+            const candidates = await readStoredQueueEntriesByTypesAndStatuses({
+                db,
+                storeName: this.#storeName,
                 typeIds,
-                stored,
-                processingAttempts: options.processingAttempts,
-                now,
-                staleBefore
+                statusIds: [EntityStatus.RESERVED],
+                maxToReadPerCombination: perTypeMaxToRead
             });
-            if (!selectedDueTs) {
-                continue;
+            const computed = computeIndexedDbFinalizationReservation({ candidates, typeIds, options, now });
+            const decision = this.#observeReservation(computed.mutations);
+            if (decision instanceof Promise) {
+                await decision;
             }
-            const entry = decodeStoredResourceEntry(stored);
-            const updated: ResourceEntry = {
-                ...entry,
-                dequeueAudit: {
-                    attempts: entry.dequeueAudit.attempts + 1,
-                    startTs: now,
-                    endTs: undefined,
-                    nextTs: undefined
-                }
-            };
-            reserved.set(updated.key, { entry: updated, selectedDueTs });
-            mutations.push(computeIndexedDbQueuePut(stored, updated));
+            return await this.#write(db, computed);
         }
-        const decision = this.#observeReservation(mutations);
-        if (decision instanceof Promise) {
-            await decision;
+        finally {
+            operation.release();
         }
-        return await this.#write(db, { mutations, result: reserved });
     }
 
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const options = toResourceInboxWorkAdvertisementOptions(workInput);
+            const db = await operation.open();
+            const now = this.#now();
+            const anyEntryToLock = await hasIndexedDbEntryToLock({
+                newAndRetryCandidates: [
+                    ...await this.#readNewProbeEntries(db, typeIds),
+                    ...await this.#readDueRetryProbeEntries(db, typeIds, now)
+                ],
+                reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
+                options,
+                typeIds,
+                now
+            });
+
+            this.cleanup();
+
+            return anyEntryToLock;
         }
-        const options = toResourceInboxWorkAdvertisementOptions(workInput);
-        const db = await this.#connection.open();
-        const now = this.#now();
-        const anyEntryToLock = await hasIndexedDbEntryToLock({
-            newAndRetryCandidates: [
-                ...await this.#readNewProbeEntries(db, typeIds),
-                ...await this.#readDueRetryProbeEntries(db, typeIds, now)
-            ],
-            reservedCandidates: await this.#readReservedProbeEntries(db, typeIds),
-            options,
-            typeIds,
-            now
-        });
-
-        this.cleanup();
-
-        return anyEntryToLock;
+        finally {
+            operation.release();
+        }
     }
 
     async #readNewProbeEntries(
@@ -681,11 +707,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async getItem(key: Key): Promise<ResourceEntry | undefined> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            return await this.#readItem(db, key);
         }
-        const db = await this.#connection.open();
+        finally {
+            operation.release();
+        }
+    }
+
+    /** The conflict winner is read inside the same accepted operation, even during retirement. */
+    async #readItem(db: IDBDatabase, key: Key): Promise<ResourceEntry | undefined> {
         const keyString = toKeyAsString(key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
         if (!stored) {
@@ -703,64 +740,82 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         value: ResourceEntry,
         _options: PersistenceSetItemOptions
     ): Promise<void> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const entry: ResourceEntry = {
+                ...value,
+                key
+            };
+            const keyString = toKeyAsString(key);
+            const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
+            await this.#write(db, {
+                mutations: [computeIndexedDbQueuePut(stored, entry)],
+                result: undefined
+            });
         }
-        const db = await this.#connection.open();
-        const entry: ResourceEntry = {
-            ...value,
-            key
-        };
-        const keyString = toKeyAsString(key);
-        const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
-        await this.#write(db, {
-            mutations: [computeIndexedDbQueuePut(stored, entry)],
-            result: undefined
-        });
+        finally {
+            operation.release();
+        }
     }
 
     async removeItem(key: Key): Promise<void> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            await writeComputedIndexedDbQueueMutations({
+                db: db,
+                storeName: this.#storeName,
+                mutations: [
+                    computeIndexedDbQueueUnconditionalDelete(toKeyAsString(key))
+                ]
+            });
         }
-        const db = await this.#connection.open();
-        await writeComputedIndexedDbQueueMutations({
-            db: db,
-            storeName: this.#storeName,
-            mutations: [
-                computeIndexedDbQueueUnconditionalDelete(toKeyAsString(key))
-            ]
-        });
+        finally {
+            operation.release();
+        }
     }
 
     async getAllKeys(): Promise<Key[]> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const db = await this.#connection.open();
-        // Unscoped by type or status: every other read narrows by an index, this one cannot, so
-        // it reads the store directly instead of a single-caller store-module export for it.
-        const transaction = db.transaction(this.#storeName, 'readonly');
-        const rawValues = await readIndexedDbTransaction(
-            transaction,
-            async () => await readIndexedDbRequest(transaction.objectStore(this.#storeName).getAll())
-        );
-        const entries = rawValues.map(decodeStoredResourceEntryValue);
-        const now = this.#now();
-        const keys: Key[] = [];
-        const mutations: ComputedIndexedDbQueueMutation[] = [];
-        for (const stored of entries) {
-            if (isStoredQueueEntryExpired(stored, now)) {
-                mutations.push(computeIndexedDbQueueDelete(stored));
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+            if (decision instanceof Promise) {
+                await decision;
             }
-            else {
-                keys.push({ ...stored.key });
+            const db = await operation.open();
+            // Unscoped by type or status: every other read narrows by an index, this one cannot, so
+            // it reads the store directly instead of a single-caller store-module export for it.
+            const transaction = db.transaction(this.#storeName, 'readonly');
+            const rawValues = await readIndexedDbTransaction(
+                transaction,
+                async () => await readIndexedDbRequest(transaction.objectStore(this.#storeName).getAll())
+            );
+            const entries = rawValues.map(decodeStoredResourceEntryValue);
+            const now = this.#now();
+            const keys: Key[] = [];
+            const mutations: ComputedIndexedDbQueueMutation[] = [];
+            for (const stored of entries) {
+                if (isStoredQueueEntryExpired(stored, now)) {
+                    mutations.push(computeIndexedDbQueueDelete(stored));
+                }
+                else {
+                    keys.push({ ...stored.key });
+                }
             }
+            return await this.#write(db, { mutations, result: keys });
         }
-        return await this.#write(db, { mutations, result: keys });
+        finally {
+            operation.release();
+        }
     }
 
     /**
@@ -768,16 +823,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
      * signal that more expired rows remain, so the bound belongs to the caller and not to a loop here.
      */
     async deleteExpired(): Promise<number> {
-        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const expired = await this.#readExpiredEntries(db, this.#now());
+            return await this.#write(db, {
+                mutations: expired.map(computeIndexedDbQueueDelete),
+                result: expired.length
+            });
         }
-        const db = await this.#connection.open();
-        const expired = await this.#readExpiredEntries(db, this.#now());
-        return await this.#write(db, {
-            mutations: expired.map(computeIndexedDbQueueDelete),
-            result: expired.length
-        });
+        finally {
+            operation.release();
+        }
     }
 }
 
@@ -820,26 +881,6 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
         mutations.push(computeIndexedDbQueuePut(stored, updated));
     }
     return { reserved, mutations, ineligible };
-}
-
-function selectRetryExhaustionDueTimestamp(
-    input: RetryExhaustionSelectionInput
-): Temporal.Instant | undefined {
-    const startTs = input.stored.dequeueAudit.startTs
-        ? Temporal.Instant.from(input.stored.dequeueAudit.startTs)
-        : undefined;
-    if (
-        !input.typeIds.has(input.stored.typeId) ||
-        input.stored.status !== EntityStatus.RESERVED ||
-        isStoredQueueEntryExpired(input.stored, input.now) ||
-        input.stored.dequeueAudit.attempts < input.processingAttempts ||
-        input.stored.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER ||
-        startTs === undefined ||
-        Temporal.Instant.compare(startTs, input.staleBefore) > 0
-    ) {
-        return undefined;
-    }
-    return startTs;
 }
 
 interface IndexedDbEntryToLockInput {
@@ -891,30 +932,6 @@ async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promis
     return newAndRetryEntryToLock || isTimedOutEntryToLock || finalizationEntryToLock;
 }
 
-interface IndexedDbFinalizationWorkInput {
-    readonly entries: readonly StoredResourceEntry[];
-    readonly typeIds: ReadonlySet<string>;
-    readonly now: Temporal.Instant;
-    readonly maxAttempts: number;
-    readonly finalizationStaleAfterMs: number;
-}
-
-function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): boolean {
-    if (!input.typeIds.has(EnqueuedType.APP_INBOX)) {
-        return false;
-    }
-    const staleBefore = input.now.subtract({ milliseconds: input.finalizationStaleAfterMs });
-    return input.entries.some((stored) =>
-        selectRetryExhaustionDueTimestamp({
-            typeIds: new Set([EnqueuedType.APP_INBOX]),
-            stored,
-            processingAttempts: input.maxAttempts,
-            now: input.now,
-            staleBefore
-        }) !== undefined
-    );
-}
-
 function toValidatedWorkPageRequest(input: ResourceInboxWorkPage.Request): ResourceInboxWorkPage.Request {
     const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
     const validated = validateResourceInboxWorkPageRequest(request);
@@ -934,4 +951,97 @@ function toResourceInboxWorkPage(
             ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
             : null
     };
+}
+interface IndexedDbFinalizationReservationInput {
+    readonly candidates: readonly StoredResourceEntry[];
+    readonly typeIds: ReadonlySet<string>;
+    readonly options: ResourceInboxFinalizationReservationOptions;
+    readonly now: Temporal.Instant;
+}
+interface IndexedDbFinalizationReservation {
+    readonly mutations: readonly ComputedIndexedDbQueueMutation[];
+    readonly result: Map<Key, ResourceInboxFinalizationSelection>;
+}
+function computeIndexedDbFinalizationReservation(
+    input: IndexedDbFinalizationReservationInput
+): IndexedDbFinalizationReservation {
+    const staleBefore = input.now.subtract({ milliseconds: input.options.staleAfterMs });
+    const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
+    const mutations: ComputedIndexedDbQueueMutation[] = [];
+    for (const stored of input.candidates) {
+        if (reserved.size >= input.options.maxToReserve) {
+            break;
+        }
+        const selectedDueTs = selectRetryExhaustionDueTimestamp({
+            typeIds: input.typeIds,
+            stored,
+            processingAttempts: input.options.processingAttempts,
+            now: input.now,
+            staleBefore
+        });
+        if (!selectedDueTs) {
+            continue;
+        }
+        const entry = decodeStoredResourceEntry(stored);
+        const updated: ResourceEntry = {
+            ...entry,
+            dequeueAudit: {
+                attempts: entry.dequeueAudit.attempts + 1,
+                startTs: input.now,
+                endTs: undefined,
+                nextTs: undefined
+            }
+        };
+        reserved.set(updated.key, { entry: updated, selectedDueTs });
+        mutations.push(computeIndexedDbQueuePut(stored, updated));
+    }
+    return { mutations, result: reserved };
+}
+interface RetryExhaustionSelectionInput {
+    readonly typeIds: ReadonlySet<string>;
+    readonly stored: StoredResourceEntry;
+    readonly processingAttempts: number;
+    readonly now: Temporal.Instant;
+    readonly staleBefore: Temporal.Instant;
+}
+function selectRetryExhaustionDueTimestamp(
+    input: RetryExhaustionSelectionInput
+): Temporal.Instant | undefined {
+    const startTs = input.stored.dequeueAudit.startTs
+        ? Temporal.Instant.from(input.stored.dequeueAudit.startTs)
+        : undefined;
+    if (
+        !input.typeIds.has(input.stored.typeId) ||
+        input.stored.status !== EntityStatus.RESERVED ||
+        isStoredQueueEntryExpired(input.stored, input.now) ||
+        input.stored.dequeueAudit.attempts < input.processingAttempts ||
+        input.stored.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER ||
+        startTs === undefined ||
+        Temporal.Instant.compare(startTs, input.staleBefore) > 0
+    ) {
+        return undefined;
+    }
+    return startTs;
+}
+interface IndexedDbFinalizationWorkInput {
+    readonly entries: readonly StoredResourceEntry[];
+    readonly typeIds: ReadonlySet<string>;
+    readonly now: Temporal.Instant;
+    readonly maxAttempts: number;
+    readonly finalizationStaleAfterMs: number;
+}
+function hasIndexedDbFinalizationWork(input: IndexedDbFinalizationWorkInput): boolean {
+    if (!input.typeIds.has(EnqueuedType.APP_INBOX)) {
+        return false;
+    }
+    const staleBefore = input.now.subtract({ milliseconds: input.finalizationStaleAfterMs });
+    return input.entries.some((stored) =>
+        selectRetryExhaustionDueTimestamp({
+            typeIds: new Set([EnqueuedType.APP_INBOX]),
+            stored,
+            processingAttempts: input.maxAttempts,
+            now: input.now,
+            staleBefore
+        }) !== undefined
+    );
 }
