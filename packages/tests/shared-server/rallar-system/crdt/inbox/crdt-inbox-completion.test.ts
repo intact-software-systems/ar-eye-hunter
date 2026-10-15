@@ -13,7 +13,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 describe('CRDT inbox completion candidate', () => {
     it('computes append state, outbox and completion from explicit facts', async () => {
         const read = await createRead();
-        const computed = await computeCrdtInboxMutation(read);
+        const computed = computeCrdtInboxMutation(read);
 
         expect(computed.mutation).toMatchObject({ outcome: 'write', document: { documentRevision: 1, updateCount: 1 } });
         expect(computed.mutation).toHaveProperty('documentWrite');
@@ -36,12 +36,12 @@ describe('CRDT inbox completion candidate', () => {
         });
         expect(computed.completion.durableResult).toBe(computed.mutation.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
-        expect(await validateCrdtInboxMutation(read, computed)).toEqual([]);
+        expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
     });
 
     it('preserves rejected and replay results while validating their completion', async () => {
         const read = await createRead();
-        const accepted = await computeCrdtInboxMutation(read);
+        const accepted = computeCrdtInboxMutation(read);
         const replayRead = {
             ...read,
             read: {
@@ -51,20 +51,20 @@ describe('CRDT inbox completion candidate', () => {
                 existingAppend: accepted.mutation.append
             }
         };
-        const replay = await computeCrdtInboxMutation(replayRead);
+        const replay = computeCrdtInboxMutation(replayRead);
         expect(replay.mutation.outcome).toBe('replay');
         expect(replay.completion.durableResult.status).toBe('replay');
-        expect(await validateCrdtInboxMutation(replayRead, replay)).toEqual([]);
+        expect(validateCrdtInboxMutation(replayRead, replay)).toEqual([]);
         const deniedRead = { ...read, read: { ...read.read, authorized: false, authorizationCode: 'authorization-denied', publicationAuthority: null } };
-        const denied = await computeCrdtInboxMutation(deniedRead);
+        const denied = computeCrdtInboxMutation(deniedRead);
         expect(denied.mutation.outcome).toBe('rejected');
         expect(denied.completion.durableResult.status).toBe('rejected');
-        expect(await validateCrdtInboxMutation(deniedRead, denied)).toEqual([]);
+        expect(validateCrdtInboxMutation(deniedRead, denied)).toEqual([]);
         const changed = { ...accepted, mutation: { ...accepted.mutation, outboxWrites: [] } };
-        expect((await validateCrdtInboxMutation(read, changed)).length).toBeGreaterThan(0);
+        expect((validateCrdtInboxMutation(read, changed)).length).toBeGreaterThan(0);
         expect(changed.mutation.outboxWrites).toEqual([]);
         expect(
-            (await validateCrdtInboxMutation(read, {
+            (validateCrdtInboxMutation(read, {
                 ...accepted,
                 completion: {
                     ...accepted.completion,
@@ -79,7 +79,7 @@ describe('CRDT inbox completion candidate', () => {
 
     it('rejects hidden missing outbox writes without invoking a serialization callback', async () => {
         const read = await createRead();
-        const computed = await computeCrdtInboxMutation(read);
+        const computed = computeCrdtInboxMutation(read);
         let callbackCalls = 0;
         const candidate = {
             ...computed,
@@ -93,7 +93,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = await validateCrdtInboxMutation(read, candidate);
+        const issues = validateCrdtInboxMutation(read, candidate);
 
         expect.soft(callbackCalls).toBe(0);
         expect.soft(issues.length).toBeGreaterThan(0);
@@ -102,7 +102,7 @@ describe('CRDT inbox completion candidate', () => {
 
     it('rejects substituted Temporal outbox facts without invoking their callback', async () => {
         const read = await createRead();
-        const computed = await computeCrdtInboxMutation(read);
+        const computed = computeCrdtInboxMutation(read);
         const firstWrite = computed.mutation.outboxWrites[0];
         if (firstWrite === undefined) {
             throw new Error('Expected a CRDT outbox write');
@@ -130,7 +130,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = await validateCrdtInboxMutation(read, candidate);
+        const issues = validateCrdtInboxMutation(read, candidate);
 
         expect.soft(callbackCalls).toBe(0);
         expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
@@ -138,7 +138,7 @@ describe('CRDT inbox completion candidate', () => {
 
     it('rejects computed accessors without invoking them during validation', async () => {
         const read = await createRead();
-        const computed = await computeCrdtInboxMutation(read);
+        const computed = computeCrdtInboxMutation(read);
         const firstWrite = computed.mutation.outboxWrites[0];
         if (firstWrite === undefined) {
             throw new Error('Expected a CRDT outbox write');
@@ -165,7 +165,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = await validateCrdtInboxMutation(read, candidate);
+        const issues = validateCrdtInboxMutation(read, candidate);
 
         expect.soft(accessorCalls).toBe(0);
         expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
@@ -173,8 +173,8 @@ describe('CRDT inbox completion candidate', () => {
 
     it('binds computed persistence values without serializing after transaction entry', async () => {
         const read = await createRead();
-        const computed = await computeCrdtInboxMutation(read);
-        expect(await validateCrdtInboxMutation(read, computed)).toEqual([]);
+        const computed = computeCrdtInboxMutation(read);
+        expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
         const statements: string[] = [];
         const transaction = createCrdtWriteTransaction(statements);
         const serialize = vi.spyOn(JSON, 'stringify').mockImplementation(() => {

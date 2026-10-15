@@ -11,8 +11,8 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireText,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -125,11 +125,11 @@ export function requireTopologyMutationOwners(
     };
 }
 
-export async function topologyConfigCommand(
+export function topologyConfigCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): Promise<GroupTopologyConfigMutationCommand> {
+): GroupTopologyConfigMutationCommand {
     const command = {
         operation: 'putConfig',
         aggregateRef: groupRef,
@@ -144,16 +144,16 @@ export async function topologyConfigCommand(
     } as const;
     return {
         ...command,
-        commandHash: await hashMutationCommand(command),
+        commandHash: computeMutationCommandDigest(command),
         capturedAtEpochMs: 1_000
     };
 }
 
-export async function topologyOverrideCommand(
+export function topologyOverrideCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): Promise<GroupTopologyConfigMutationCommand> {
+): GroupTopologyConfigMutationCommand {
     const command = {
         operation: 'putOverride',
         aggregateRef: groupRef,
@@ -168,7 +168,7 @@ export async function topologyOverrideCommand(
     } as const;
     return {
         ...command,
-        commandHash: await hashMutationCommand(command),
+        commandHash: computeMutationCommandDigest(command),
         capturedAtEpochMs: 1_000
     };
 }

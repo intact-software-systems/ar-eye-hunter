@@ -204,6 +204,25 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
         expect(fixture.channels.c!.sent.map((sent) => sent.id.msgId)).toEqual([message.id.msgId]);
     });
 
+    it('reports each new high of the bytes a ready next hop held queued at a submission, and nothing for a lower one', async () => {
+        const fixture = createBackpressureOriginFixture();
+        const readHighWater = () => fixture.diagnostics.filter((event) => event.kind === 'rtc-queued-bytes-high-water');
+        holdBuffered(fixture.channels.b!, 1_000);
+        holdBuffered(fixture.channels.c!, 1_000);
+        await enqueueAndDrain(fixture.manager, createOriginReceiverMulticast('first-high'));
+        holdBuffered(fixture.channels.b!, 500);
+        holdBuffered(fixture.channels.c!, 800);
+        await enqueueAndDrain(fixture.manager, createOriginReceiverMulticast('lower'));
+        holdBuffered(fixture.channels.b!, 4_000);
+        holdBuffered(fixture.channels.c!, 0);
+        await enqueueAndDrain(fixture.manager, createOriginReceiverMulticast('second-high'));
+
+        expect(readHighWater()).toEqual([
+            { kind: 'rtc-queued-bytes-high-water', queuedBytes: 1_000 },
+            { kind: 'rtc-queued-bytes-high-water', queuedBytes: 4_000 }
+        ]);
+    });
+
     it('holds the carrier backpressured for a message a scripted RTC fault matches, whatever its channels hold', async () => {
         const faults = createScriptedTransportFaultPort();
         faults.inject(createChatFault('rtc'));

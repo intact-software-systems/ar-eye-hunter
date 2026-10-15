@@ -1,8 +1,8 @@
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
+    computeRtcTopologyExecutionCommandDigest,
     createRtcTopologyExecutionReceipt,
-    hashRtcTopologyExecutionCommand,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
@@ -113,7 +113,7 @@ describe('RTC topology publication repository', () => {
                 throw new Error('Expected topology snapshot seed to be accepted');
             }
             const receipt = createRtcTopologyExecutionReceipt(publication, {
-                commandHash: await hashRtcTopologyExecutionCommand(publication),
+                commandHash: computeRtcTopologyExecutionCommandDigest(publication),
                 attemptCount: 1,
                 acceptedStorageRevision: guard.storageRevision
             });

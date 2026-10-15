@@ -1,6 +1,6 @@
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
-import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -98,24 +98,24 @@ interface ToTopologyPublicationInput {
     readonly facts: RtcOverlayTopologyMessageFacts;
 }
 
-export async function computeRtcTopologyWork(
+export function computeRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
-): Promise<RtcTopologyWorkComputation> {
-    const accepted = await computeAcceptedRtcTopologyWork(input);
+): RtcTopologyWorkComputation {
+    const accepted = computeAcceptedRtcTopologyWork(input);
     if (accepted.right === undefined) {
         return Either.ofLeft(accepted.left!);
     }
     return Either.ofRight({
         accepted: accepted.right,
-        write: await computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted.right))
+        write: computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted.right))
     });
 }
 
-export async function validateRtcTopologyWork(
+export function validateRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput,
     computed: RtcTopologyWorkComputation
-): Promise<readonly RtcTopologyWorkValidationIssue[]> {
-    const expected = await computeRtcTopologyWork(input);
+): readonly RtcTopologyWorkValidationIssue[] {
+    const expected = computeRtcTopologyWork(input);
     return [
         ...validateComputedEitherProjection(expected, computed, 'computed'),
         ...(expected.right === undefined ? [] : validateAcceptedTopologyDecision(expected.right.accepted))
@@ -182,13 +182,13 @@ function toRtcTopologyWorkWriteInput(
     };
 }
 
-async function computeAcceptedRtcTopologyWork(
+function computeAcceptedRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
-): Promise<Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork>> {
+): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
     const { facts, read } = input;
     const work = facts.workEnvelope.data;
     const { authority, promotion: promotionRead } = read;
-    const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
+    const inputFingerprint = computeAuthorityTopologyInputFingerprint(authority);
     const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
     if (fingerprintSkip !== null) {
         return Either.ofRight(fingerprintSkip);
@@ -225,7 +225,7 @@ async function computeAcceptedRtcTopologyWork(
             planningObservation: computedTopology.planningObservation
         });
     }
-    return await computeAcceptedTopologyMutation({
+    return computeAcceptedTopologyMutation({
         facts,
         mutationRead: read.mutation,
         authority,
@@ -265,9 +265,9 @@ function hasRequiredPresenceCoverage(
     return snapshot.sourceGroupStateCausalRevision.presenceRevision >= requiredPresenceRevision;
 }
 
-async function computeAcceptedTopologyMutation(
+function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
-): Promise<Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork>> {
+): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
     const { authority, planned, inputFingerprint, promotionRead, publicationExpireAtTimestamp } = input;
     const { workEnvelope, workId, attemptCount } = input.facts;
     const work = workEnvelope.data;
@@ -286,7 +286,7 @@ async function computeAcceptedTopologyMutation(
     const facts = publication && publicationExpireAtTimestamp !== null
         ? {
             publicationExpireAtTimestamp,
-            commandHash: await hashRtcTopologyExecutionCommand(publication),
+            commandHash: computeRtcTopologyExecutionCommandDigest(publication),
             attemptCount
         }
         : ({ publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null } as const);

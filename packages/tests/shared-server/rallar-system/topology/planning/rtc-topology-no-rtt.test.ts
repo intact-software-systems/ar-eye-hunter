@@ -6,7 +6,12 @@ import { computeNoRttTopologyNextHops } from '@shared-server/rallar-system/topol
 import { computeNoRttTreeNextHops } from '@shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
-import { createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds } from '../rtc-topology-test-fixtures.ts';
+import {
+    computeRtcTopologyHopEccentricity,
+    createRtcTopologyGroupSnapshot,
+    createRtcTopologyMemberIds,
+    toRtcTopologyGroupWithDirector
+} from '../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology planning without RTT measurements', () => {
     it('does not build a weighted room graph for star topology', () => {
@@ -90,6 +95,20 @@ describe('RTC topology planning without RTT measurements', () => {
         expect(result.snapshot.nextHopsBySessionId).toEqual(graphPathResult.snapshot.nextHopsBySessionId);
     });
 
+    it('roots a no-RTT tree at the appointed director', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(30);
+        const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({ now: () => 100, meshMinSize: 999 });
+
+        const leaderless = service.updateGroupTopology(group);
+        const appointed = service.updateGroupTopology(toRtcTopologyGroupWithDirector(group, 'peer-12'));
+
+        expect(appointed.snapshot.topology).toBe('tree');
+        expect(computeRtcTopologyHopEccentricity(appointed.snapshot.nextHopsBySessionId, 'peer-12')).toBeLessThan(
+            computeRtcTopologyHopEccentricity(leaderless.snapshot.nextHopsBySessionId, 'peer-12')
+        );
+    });
+
     it.each(
         [
             [5, 'tree'],
@@ -115,6 +134,7 @@ describe('RTC topology planning without RTT measurements', () => {
             computeNoRttTopologyNextHops({
                 topology: 'star',
                 activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                preferredSourceSessionId: undefined,
                 degreeLimit: 2,
                 meshParamK: 2
             })
@@ -132,6 +152,7 @@ describe('RTC topology planning without RTT measurements', () => {
             computeNoRttTopologyNextHops({
                 topology: 'tree',
                 activeSessionIds: canonicalTreeSessionIds,
+                preferredSourceSessionId: undefined,
                 degreeLimit: 2,
                 meshParamK: 2
             })
@@ -139,6 +160,7 @@ describe('RTC topology planning without RTT measurements', () => {
             computeNoRttTopologyNextHops({
                 topology: 'tree',
                 activeSessionIds: shuffledCanonicalTreeSessionIds,
+                preferredSourceSessionId: undefined,
                 degreeLimit: 2,
                 meshParamK: 2
             })
@@ -149,6 +171,7 @@ describe('RTC topology planning without RTT measurements', () => {
         expect(
             computeNoRttTreeNextHops({
                 activeSessionIds: ['peer-1', 'peer-2', 'peer-3', 'peer-4'],
+                preferredSourceSessionId: undefined,
                 degreeLimit: 2
             })
         ).toEqual(
@@ -166,6 +189,7 @@ describe('RTC topology planning without RTT measurements', () => {
             computeNoRttTopologyNextHops({
                 topology: 'mesh',
                 activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                preferredSourceSessionId: undefined,
                 degreeLimit: 1,
                 meshParamK: 2
             })

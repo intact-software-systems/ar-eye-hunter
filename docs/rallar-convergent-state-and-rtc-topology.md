@@ -301,6 +301,16 @@ and mutable counters respectively.
 Config query, config mutation, reconfiguration, planning, execution, and runtime owners are
 constructed directly; there is no broad topology-management facade.
 
+A tree is rooted at the group's appointed director when the director is a member: the weighted and
+the no-RTT tree both use it as their source, and so does the no-RTT seed that completes a sparse
+weighted room graph. The director's session id is part of the topology input fingerprint, so an
+appointment after the first plan produces work. A tree with a leader plans a full rebuild rather
+than an incremental one when the membership did not change or when the leader is one of the joined
+sessions. A group without a leader omits the key, so its fingerprint and plan are as before.
+In a weighted room graph an unmeasured pair weighs the worst measured RTT plus its hashed canonical
+spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
+the no-RTT tree rooted at it.
+
 Every work item reads the current durable group snapshot and selects its
 planning input causally. `group-revision` work keeps its embedded snapshot
 even when the current snapshot dominates it, so revision N is never replaced

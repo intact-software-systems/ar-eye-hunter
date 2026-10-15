@@ -111,7 +111,7 @@ describe('Hetzner scale catalog', () => {
 });
 
 describe('ALM scale manifest acceptance', () => {
-    it('requires complete per-role sampler, workload, arrival and storage evidence for each frozen participant', () => {
+    it('requires complete per-role sampler, workload, arrival and storage evidence, with the ALM diagnostic stream only on diagnostic checkpoints', () => {
         const entries = createHetznerDistributedManifestCatalog().filter((entry) => entry.manifest.metadata?.family === 'alm-scale');
         expect(entries.map((entry) => entry.agentCount)).toEqual([15, 30, 50, 6, 11]);
         for (const entry of entries) {
@@ -120,7 +120,10 @@ describe('ALM scale manifest acceptance', () => {
                 const commands = toHetznerRecipeCommands(selection?.recipe?.commands ?? []);
                 expect(commands.find((command) => command.commandId === `${recipeId}-connect`)).toMatchObject({
                     readiness: { minReadyPeers: 1, timeoutMs: 45_000, intervalMs: 100 },
-                    rallar: { messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1'] }
+                    rallar: {
+                        almDiagnostics: entry.diagnostic,
+                        messageTypeIds: ['room.ar-eye-hunter.director.intent.v1', 'room.ar-eye-hunter.director.event.v1']
+                    }
                 });
                 expect(commands.find((command) => command.commandId === `${recipeId}-window`)).toMatchObject({ kind: 'parallel', timeoutMs: 30_000 });
                 expect(commands.find((command) => command.commandId === `${recipeId}-sampler`)).toMatchObject({ kind: 'parallel', maxConcurrency: 7 });

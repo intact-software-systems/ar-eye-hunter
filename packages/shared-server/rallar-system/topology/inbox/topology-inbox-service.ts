@@ -23,8 +23,8 @@ import type { IssuedAuthSession } from '../../auth/persistence/auth-session-type
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import {
-    readDurableTopologyAppInboxCommand,
-    toPersistedTopologyHttpMutationSemanticHash,
+    computePersistedTopologyHttpMutationSemanticDigest,
+    decodeDurableTopologyAppInboxCommand,
     toTopologyAppInboxType,
     toTopologyHttpMutationContextId
 } from './topology-app-inbox-command.ts';
@@ -117,31 +117,31 @@ export class TopologyInboxService {
         ) => await this.handler.processMutation(context, dependencies.mutationOwners);
         handlers.registerHandler({
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-            decodeCommand: readDurableTopologyAppInboxCommand,
+            decodeCommand: decodeDurableTopologyAppInboxCommand,
             encodeResult: encodeTopologyResult,
             handle: processTopologyMutation
         });
         handlers.registerHandler({
             type: AppInboxType.TOPOLOGY_CONFIG_DELETE,
-            decodeCommand: readDurableTopologyAppInboxCommand,
+            decodeCommand: decodeDurableTopologyAppInboxCommand,
             encodeResult: encodeTopologyResult,
             handle: processTopologyMutation
         });
         handlers.registerHandler({
             type: AppInboxType.TOPOLOGY_OVERRIDE_PUT,
-            decodeCommand: readDurableTopologyAppInboxCommand,
+            decodeCommand: decodeDurableTopologyAppInboxCommand,
             encodeResult: encodeTopologyResult,
             handle: processTopologyMutation
         });
         handlers.registerHandler({
             type: AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
-            decodeCommand: readDurableTopologyAppInboxCommand,
+            decodeCommand: decodeDurableTopologyAppInboxCommand,
             encodeResult: encodeTopologyResult,
             handle: processTopologyMutation
         });
         handlers.registerHandler({
             type: AppInboxType.TOPOLOGY_RECONFIGURE,
-            decodeCommand: readDurableTopologyAppInboxCommand,
+            decodeCommand: decodeDurableTopologyAppInboxCommand,
             encodeResult: encodeTopologyResult,
             handle: processTopologyMutation
         });
@@ -203,7 +203,7 @@ export class TopologyInboxService {
                     currentSession
                 )
         );
-        const command = readDurableTopologyAppInboxCommand(reserved.enqueue.data);
+        const command = decodeDurableTopologyAppInboxCommand(reserved.enqueue.data);
         if (
             command.operation !== reservation.operation ||
             command.requestId !== reservation.requestId ||
@@ -214,7 +214,7 @@ export class TopologyInboxService {
             reserved.enqueue.resourceId !== key.resourceId ||
             reserved.enqueue.contextId !== key.contextId ||
             reserved.enqueue.senderId !== reservation.callerId ||
-            (await toPersistedTopologyHttpMutationSemanticHash(command)) !== reservation.semanticHash
+            (computePersistedTopologyHttpMutationSemanticDigest(command)) !== reservation.semanticHash
         ) {
             throw new AppInboxIdempotencyConflictError(
                 reservation.requestId,

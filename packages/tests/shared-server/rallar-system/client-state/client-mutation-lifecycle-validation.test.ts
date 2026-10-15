@@ -3,10 +3,11 @@ import {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     describe,
     expect,
@@ -165,7 +166,7 @@ function expectCorruptComputedRejection(
         }
     };
     expect(() =>
-        assertClientMutation({
+        assertClientMutationMatchesRecompute({
             command,
             read: emptyClientMutationRead(),
             computed: invalidSessionComputed
@@ -253,8 +254,4 @@ function storedEntry<Value>(value: Value): RuntimeStateEntryValue<Value> {
         },
         value
     };
-}
-
-function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
 }

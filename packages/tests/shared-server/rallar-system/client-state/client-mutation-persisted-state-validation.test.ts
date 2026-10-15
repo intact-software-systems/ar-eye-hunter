@@ -2,7 +2,6 @@ import {
     type ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import {
@@ -11,6 +10,7 @@ import {
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type {
@@ -327,7 +327,7 @@ describe('client mutation persisted-state validation', () => {
             receipt: { ...computed.receipt, snapshotVersion: -1 }
         };
         expect(() =>
-            assertClientMutation({
+            assertClientMutationMatchesRecompute({
                 command,
                 read,
                 computed: invalidComputed
@@ -383,7 +383,7 @@ async function removePersistedWorkspaceId(
     );
 }
 
-function assertUntrustedClientMutationComputeInput(input: unknown): void {
+function assertUntrustedClientMutationComputeInput(input: object): void {
     Reflect.apply(computeClientMutation, undefined, [input]);
 }
 

@@ -1,5 +1,6 @@
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -111,6 +112,50 @@ export function createRtcTopologyGroupSnapshot(
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length
     };
+}
+
+export function toRtcTopologyGroupWithDirector(
+    group: GroupSnapshot,
+    directorSessionId: string
+): GroupSnapshot {
+    return {
+        ...group,
+        group: {
+            ...group.group,
+            metadata: mergeRallarGroupDirectorMetadata(
+                group.group.metadata,
+                createRallarGroupDirectorAppointment({
+                    session: { clientId: directorSessionId, sessionId: directorSessionId },
+                    now: 1
+                })
+            )
+        }
+    };
+}
+
+export function computeRtcTopologyHopEccentricity(
+    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
+    sessionId: string
+): number {
+    const hopsBySessionId = new Map([[sessionId, 0]]);
+    const frontier = [sessionId];
+    for (const current of frontier) {
+        for (const neighbour of nextHopsBySessionId[current] ?? []) {
+            if (!hopsBySessionId.has(neighbour)) {
+                hopsBySessionId.set(neighbour, (hopsBySessionId.get(current) ?? 0) + 1);
+                frontier.push(neighbour);
+            }
+        }
+    }
+    return Math.max(...hopsBySessionId.values());
+}
+
+export function computeRtcTopologyHopRadius(
+    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>
+): number {
+    return Math.min(
+        ...Object.keys(nextHopsBySessionId).map((sessionId) => computeRtcTopologyHopEccentricity(nextHopsBySessionId, sessionId))
+    );
 }
 
 export function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {

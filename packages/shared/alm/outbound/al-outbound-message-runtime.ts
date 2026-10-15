@@ -248,11 +248,17 @@ export interface ALOutboundCongestionDiagnostic {
     readonly msgId: string;
 }
 
-/** The congestion decisions of one session, counted from its `congestion` diagnostics by action (D186). */
+/**
+ * The congestion decisions of one session, counted from its `congestion` diagnostics by action (D186), beside the
+ * messages its RTC hand-off protections refused and the most bytes an RTC channel of it held queued at a submission.
+ */
 export interface ALCongestionCounters {
     readonly dropped: number;
     readonly deferred: number;
     readonly handedOver: number;
+    readonly rateLimited: number;
+    readonly circuitOpen: number;
+    readonly queuedBytesHighWater: number;
 }
 
 export interface WriteALOutboundCongestionDeferralInput {
@@ -284,9 +290,24 @@ export interface ALOutboundRtcAckSubmission {
     readonly observedAtEpochMs: number;
 }
 
+/** One hand-off of the session's messages that the RTC carrier's rate limiter or open circuit breaker refused. */
+export interface ALOutboundRtcHandoffRefusal {
+    readonly kind: 'rtc-handoff-refusal';
+    readonly reason: 'rate-limited' | 'circuit-open';
+    readonly messageCount: number;
+}
+
+/** A new high of the bytes an RTC data channel of the session held queued when a submission read it. */
+export interface ALOutboundRtcQueuedBytesHighWater {
+    readonly kind: 'rtc-queued-bytes-high-water';
+    readonly queuedBytes: number;
+}
+
 export type ALOutboundRuntimeDiagnosticsEvent =
     | ALOutboundReceiptConfirmationDiagnostic
     | ALOutboundRtcAckSubmission
+    | ALOutboundRtcHandoffRefusal
+    | ALOutboundRtcQueuedBytesHighWater
     | Readonly<{
         kind: 'sender-queue-wait';
         senderId: string;

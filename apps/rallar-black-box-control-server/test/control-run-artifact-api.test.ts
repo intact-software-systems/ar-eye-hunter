@@ -311,7 +311,7 @@ Deno.test('disk-backed result and event rows retain command metadata', async () 
         RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: '0'
     });
     let socket: WebSocket | undefined;
-    let dispatchTimeout: number | undefined;
+    let dispatchTimeout: ReturnType<typeof setTimeout> | undefined;
     try {
         socket = await registerAgent(server.baseUrl, 'metadata-run', 'agent-a');
         const dispatched = Promise.withResolvers<MessageEvent>();

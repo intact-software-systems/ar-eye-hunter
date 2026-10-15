@@ -20,9 +20,9 @@ export interface GroupDeltaProvenanceInsert {
 }
 
 /** The summary owner validates its complete computed rows before binding this proof. */
-export async function computeGroupDeltaProvenance(
+export function computeGroupDeltaProvenance(
     computed: GroupPresenceSummaryComputedWork
-): Promise<readonly GroupDeltaProvenanceInsert[]> {
+): readonly GroupDeltaProvenanceInsert[] {
     const proofs: GroupDeltaProvenanceInsert[] = [];
     for (const write of computed.downstreamOutboxWrites) {
         if (write.entry.typeId !== EnqueuedType.WS_OUTBOX) {
@@ -46,7 +46,7 @@ export async function computeGroupDeltaProvenance(
         proofs.push({
             queueKey: write.entry.key,
             key: toWsOutboxProvenanceKey(write.entry.key),
-            value: JSON.stringify({ ...facts, digest: await computeWsOutboxProvenanceDigest(write.entry, facts) }),
+            value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) }),
             expiresAt: write.expiresAt
         });
     }

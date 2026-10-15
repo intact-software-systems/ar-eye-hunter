@@ -40,8 +40,8 @@ import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-st
 import { createClientStateTestDriver } from './client-state-test-runtime.ts';
 
 describe('client mutation idempotency compute', () => {
-    it('replays the exact stored receipt, snapshot, and event', async () => {
-        const command = await principalCommand();
+    it('replays the exact stored receipt, snapshot, and event', () => {
+        const command = principalCommand();
         const applied = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (!applied.idempotency) {
             throw new Error('Expected idempotency record');
@@ -59,8 +59,8 @@ describe('client mutation idempotency compute', () => {
         });
     });
 
-    it('returns exact command hashes for conflicting idempotency content', async () => {
-        const command = await principalCommand();
+    it('returns exact command hashes for conflicting idempotency content', () => {
+        const command = principalCommand();
         const applied = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (!applied.idempotency) {
             throw new Error('Expected idempotency record');

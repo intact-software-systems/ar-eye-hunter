@@ -903,3 +903,40 @@ runtime-diagnostic-contract.md the ordering-tracks storage event.
 Verification:
 npx vitest run packages/tests/shared-test/alm-conformance-fairness.test.ts packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/alm-observation-ledger.test.ts packages/tests/shared-test/alm-observation-regime.test.ts
 ```
+
+```text
+Title: stats.rallar.congestion counts refused RTC hand-offs and the peak RTC queue
+Date: 2026-10-14
+Owner: ALM V1c step 2b
+
+Change type:
+- Compatible addition to a result value; a stricter decode of recorded stats
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the stats result value and its decoder change
+
+Old shape:
+stats.rallar.congestion was { dropped, deferred, handedOver }. A hand-off the RTC carrier's rate limiter or open
+circuit breaker refused, and the bytes its data channels held queued, reached no stats block.
+
+New shape:
+stats.rallar.congestion is { dropped, deferred, handedOver, rateLimited, circuitOpen, queuedBytesHighWater }:
+rateLimited and circuitOpen count the messages of each hand-off the page's RTC carrier refused for that reason, from
+its rtc-handoff-refusal outbound diagnostics, and queuedBytesHighWater is the most bytes an RTC data channel of the
+page held queued when a submission read it, from its rtc-queued-bytes-high-water diagnostics. All three reset at the
+page's close. A page answer missing any of them fails the stats command, naming each bad field.
+
+Migration:
+None for recipes. A recorded stats event from before this change no longer decodes and is skipped, so re-reading an
+older artifact reports no-readings for its congestion.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the stats block; runtime-diagnostic-contract.md the two outbound diagnostics;
+docs/rallar-api-reference.md the carrier's protections.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/rallar-browser-runtime/read-congestion-counters.test.ts packages/tests/shared/multicast/rtc-enqueue-protection.test.ts packages/tests/shared/multicast/web-rtc-overlay-backpressure.test.ts
+```

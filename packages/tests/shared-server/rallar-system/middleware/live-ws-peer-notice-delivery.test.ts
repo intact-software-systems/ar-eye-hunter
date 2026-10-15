@@ -48,7 +48,7 @@ describe('middleware remote live WS notices', () => {
             concurrencyIncreaseStep: 1,
             concurrencyReduceStep: 1
         });
-        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
         const engine = new InboxOutboxEngine();
         const runtime = createRallarMiddlewareInfrastructure({
             ...fixture.options,
@@ -143,7 +143,7 @@ describe('middleware remote live WS notices', () => {
             concurrencyIncreaseStep: 1,
             concurrencyReduceStep: 1
         });
-        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
         const engine = new InboxOutboxEngine();
         const expiresAtMs = nowMs + 100;
         const runtime = createRallarMiddlewareInfrastructure({

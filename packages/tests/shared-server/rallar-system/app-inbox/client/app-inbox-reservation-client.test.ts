@@ -140,7 +140,8 @@ function createReservedContext(): AppInboxMessageContext<JsonWireValue> {
             entry: entry,
             selectedLane: Reservator.NEW,
             selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-            selectedDueAtEpochMs: undefined
+            selectedDueAtEpochMs: undefined,
+            reservationLeaseMs: 60_000
         }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Reservation client test result')
     };

@@ -215,7 +215,13 @@ describe('Committed AppInbox completion publication', () => {
         });
         const computed = computeAppInboxCompletion({ entry: harness.entry, completedAtEpochMs: 1000, status: EntityStatus.NON_RETRYABLE, durableResult: null });
         await writer.writeComputedQueueFailure(
-            computeResourceInboxAttempt({ entry: harness.entry, selectedLane: Reservator.NEW, selectedAtEpochMs: 1000, selectedDueAtEpochMs: undefined }),
+            computeResourceInboxAttempt({
+                entry: harness.entry,
+                selectedLane: Reservator.NEW,
+                selectedAtEpochMs: 1000,
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
+            }),
             computed
         );
         await vi.advanceTimersByTimeAsync(0);

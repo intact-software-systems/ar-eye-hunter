@@ -21,8 +21,8 @@ export async function writeClientMutation(
         await writeClientEvent(transaction, computed.persistence.eventWrite);
     }
     if (computed.outcome === 'write') {
-        for (const outboxWrite of computed.outboxWrites) {
-            await writeAppOutboxInsert(transaction, outboxWrite);
+        for (const { write } of computed.outbox) {
+            await writeAppOutboxInsert(transaction, write);
         }
     }
     return computed.receipt;

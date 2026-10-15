@@ -11,6 +11,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -82,7 +83,7 @@ export function createRallarMiddlewareInfrastructure(
         wsQBoxServerService,
         inboxQueueReader: new InboxQueueReader(
             options.inbox,
-            options.appInboxDequeueOptions
+            { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
         ),
         outboxQueueReader: new OutboxQueueReader(options.outbox ?? options.inbox),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
@@ -106,7 +107,7 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
-        dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
+        dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         outboundDiagnostics: options.wsOutboundDiagnostics,
         outboundSettlements: options.wsOutboundSettlements,

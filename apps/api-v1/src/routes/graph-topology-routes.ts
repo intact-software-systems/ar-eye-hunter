@@ -19,8 +19,8 @@ import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
-    toTopologyAppInboxCommand,
-    toTopologyHttpMutationSemanticHash
+    computeTopologyHttpMutationSemanticDigest,
+    toTopologyAppInboxCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
@@ -519,7 +519,7 @@ function topologyRequestError(message: string): Error & { status: number; } {
 async function writeTopologyAppInboxCommand(
     input: WriteTopologyAppInboxCommandInput
 ): Promise<TopologyAppInboxResult> {
-    const semanticHash = await toTopologyHttpMutationSemanticHash({
+    const semanticHash = computeTopologyHttpMutationSemanticDigest({
         principalId: input.authSession.clientId,
         groupRef: input.groupRef,
         requestId: input.requestId,
@@ -532,7 +532,7 @@ async function writeTopologyAppInboxCommand(
         groupRef: input.groupRef,
         semanticHash,
         materialize: async () =>
-            await toTopologyAppInboxCommand({
+            toTopologyAppInboxCommand({
                 actor: {
                     principalId: input.authSession.clientId,
                     sessionId: input.authSession.sessionId

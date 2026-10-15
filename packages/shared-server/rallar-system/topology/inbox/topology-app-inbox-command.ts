@@ -10,8 +10,8 @@ import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
@@ -38,13 +38,13 @@ interface TopologyAppInboxCommandIdentity {
     readonly capturedAtEpochMs: number;
 }
 
-export async function toTopologyAppInboxCommand(
+export function toTopologyAppInboxCommand(
     input: CreateTopologyAppInboxCommandInput
-): Promise<TopologyAppInboxCommand> {
-    const actor = readTopologyActor(
+): TopologyAppInboxCommand {
+    const actor = decodeTopologyActor(
         decodeJsonWireValue(input.actor, 'Topology AppInbox actor')
     );
-    const groupRef = readTopologyGroupRef(
+    const groupRef = decodeTopologyGroupRef(
         decodeJsonWireValue(input.groupRef, 'Topology AppInbox groupRef')
     );
     if (
@@ -62,36 +62,36 @@ export async function toTopologyAppInboxCommand(
         operation: payload.operation,
         payload
     } as const;
-    return topologyAppInboxCommand(
+    return toTypedTopologyAppInboxCommand(
         {
             actor,
             groupRef,
             requestId: input.requestId,
             capturedAtEpochMs: input.capturedAtEpochMs,
-            commandHash: await hashMutationCommand(stableCommand)
+            commandHash: computeMutationCommandDigest(stableCommand)
         },
         payload
     );
 }
 
-export async function toTopologyHttpMutationSemanticHash(
+export function computeTopologyHttpMutationSemanticDigest(
     input: Readonly<{
         principalId: string;
         groupRef: TopologyAppInboxCommand['groupRef'];
         requestId: string;
         payload: TopologyAppInboxRequestPayload;
     }>
-): Promise<string> {
-    return await hashTopologyHttpMutationSemantic({
+): string {
+    return computeCanonicalTopologyHttpMutationDigest({
         ...input,
         payload: toCanonicalTopologyAppInboxPayload(input.payload)
     });
 }
 
-export async function toPersistedTopologyHttpMutationSemanticHash(
+export function computePersistedTopologyHttpMutationSemanticDigest(
     command: TopologyAppInboxCommand
-): Promise<string> {
-    return await hashTopologyHttpMutationSemantic({
+): string {
+    return computeCanonicalTopologyHttpMutationDigest({
         principalId: command.actor.principalId,
         groupRef: command.groupRef,
         requestId: command.requestId,
@@ -99,15 +99,15 @@ export async function toPersistedTopologyHttpMutationSemanticHash(
     });
 }
 
-async function hashTopologyHttpMutationSemantic(
+function computeCanonicalTopologyHttpMutationDigest(
     input: Readonly<{
         principalId: string;
         groupRef: TopologyAppInboxCommand['groupRef'];
         requestId: string;
         payload: TopologyAppInboxPayload;
     }>
-): Promise<string> {
-    return await hashMutationCommand({
+): string {
+    return computeMutationCommandDigest({
         operation: input.payload.operation,
         requestId: input.requestId,
         callerId: input.principalId,
@@ -116,21 +116,21 @@ async function hashTopologyHttpMutationSemantic(
     });
 }
 
-export async function readAuthenticatedTopologyCommand(
+export function decodeAuthenticatedTopologyCommand(
     enqueue: AppInboxEnqueueInput,
     authority: IssuedAuthSession
-): Promise<TopologyAppInboxCommand> {
-    return await readTopologyCommandForValidatedSession(enqueue, {
+): TopologyAppInboxCommand {
+    return decodeTopologyCommandForValidatedSession(enqueue, {
         principalId: authority.clientId,
         sessionId: authority.sessionId
     });
 }
 
-export async function readTopologyCommandForValidatedSession(
+export function decodeTopologyCommandForValidatedSession(
     enqueue: AppInboxEnqueueInput,
     expectedActor: Readonly<{ principalId: string; sessionId: string; }>
-): Promise<TopologyAppInboxCommand> {
-    const command = readDurableTopologyAppInboxCommand(enqueue.data);
+): TopologyAppInboxCommand {
+    const command = decodeDurableTopologyAppInboxCommand(enqueue.data);
     if (
         command.actor.principalId !== expectedActor.principalId ||
         command.actor.sessionId !== expectedActor.sessionId ||
@@ -147,7 +147,7 @@ export async function readTopologyCommandForValidatedSession(
         operation: command.operation,
         payload: command.payload
     };
-    if ((await hashMutationCommand(stableCommand)) !== command.commandHash) {
+    if (computeMutationCommandDigest(stableCommand) !== command.commandHash) {
         throw new GroupMutationAuthorizationError('Topology AppInbox command hash is invalid.');
     }
     return command;
@@ -167,7 +167,7 @@ export function toTopologyHttpMutationContextId(
         .join(':');
 }
 
-export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
+export function decodeDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
     const command = requireTopologyObject(
         decodeJsonWireValue(value, 'Topology durable AppInbox command'),
         'Topology durable AppInbox command'
@@ -181,19 +181,19 @@ export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppI
         'operation',
         'payload'
     ], 'Topology durable AppInbox command');
-    const actor = readTopologyActor(command.actor);
-    const groupRef = readTopologyGroupRef(command.groupRef);
-    const requestId = readTopologyString(command.requestId, 'requestId');
-    const commandHash = readTopologyString(command.commandHash, 'commandHash');
-    const capturedAtEpochMs = readTopologyEpoch(
+    const actor = decodeTopologyActor(command.actor);
+    const groupRef = decodeTopologyGroupRef(command.groupRef);
+    const requestId = decodeTopologyString(command.requestId, 'requestId');
+    const commandHash = decodeTopologyString(command.commandHash, 'commandHash');
+    const capturedAtEpochMs = decodeTopologyEpoch(
         command.capturedAtEpochMs,
         'capturedAtEpochMs'
     );
-    const payload = readTopologyAppInboxPayload(command.payload);
+    const payload = decodeTopologyAppInboxPayload(command.payload);
     if (command.operation !== payload.operation) {
         throw new TypeError('Topology durable command operation does not match its payload');
     }
-    return topologyAppInboxCommand(
+    return toTypedTopologyAppInboxCommand(
         { actor, groupRef, requestId, commandHash, capturedAtEpochMs },
         payload
     );
@@ -204,28 +204,28 @@ export function toTopologyConfigMutationCommand(
 ): GroupTopologyConfigMutationCommand {
     switch (command.payload.operation) {
         case 'putConfig':
-            return topologyConfigMutationCommand({
+            return createTopologyConfigMutationCommand({
                 command,
                 config: fromCanonicalGroupTopologyConfigPatch(command.payload.config),
                 ttlMs: null,
                 expiresAtEpochMs: null
             });
         case 'deleteConfig':
-            return topologyConfigMutationCommand({
+            return createTopologyConfigMutationCommand({
                 command,
                 config: null,
                 ttlMs: null,
                 expiresAtEpochMs: null
             });
         case 'putOverride':
-            return topologyConfigMutationCommand({
+            return createTopologyConfigMutationCommand({
                 command,
                 config: fromCanonicalGroupTopologyConfigPatch(command.payload.config),
                 ttlMs: command.payload.ttlMs,
                 expiresAtEpochMs: command.payload.expiresAtEpochMs
             });
         case 'deleteOverride':
-            return topologyConfigMutationCommand({
+            return createTopologyConfigMutationCommand({
                 command,
                 config: null,
                 ttlMs: null,
@@ -265,8 +265,8 @@ function toCanonicalTopologyAppInboxPayload(
             return {
                 operation: request.operation,
                 config: toCanonicalGroupTopologyConfigPatch(request.config),
-                ttlMs: readFiniteNumberOrNull(request.ttlMs, 'Topology override ttlMs'),
-                expiresAtEpochMs: readFiniteNumberOrNull(
+                ttlMs: decodeFiniteNumberOrNull(request.ttlMs, 'Topology override ttlMs'),
+                expiresAtEpochMs: decodeFiniteNumberOrNull(
                     request.expiresAtEpochMs,
                     'Topology override expiresAtEpochMs'
                 )
@@ -292,7 +292,7 @@ function toCanonicalTopologyAppInboxPayload(
     }
 }
 
-function readTopologyAppInboxPayload(
+function decodeTopologyAppInboxPayload(
     value: JsonWireValue | undefined
 ): TopologyAppInboxPayload {
     const payload = requireTopologyObject(value, 'Topology durable AppInbox payload');
@@ -314,8 +314,8 @@ function readTopologyAppInboxPayload(
             return {
                 operation: payload.operation,
                 config: readCanonicalGroupTopologyConfigPatch(payload.config),
-                ttlMs: readFiniteNumberOrNull(payload.ttlMs, 'Topology durable override ttlMs'),
-                expiresAtEpochMs: readFiniteNumberOrNull(
+                ttlMs: decodeFiniteNumberOrNull(payload.ttlMs, 'Topology durable override ttlMs'),
+                expiresAtEpochMs: decodeFiniteNumberOrNull(
                     payload.expiresAtEpochMs,
                     'Topology durable override expiresAtEpochMs'
                 )
@@ -358,7 +358,7 @@ export function toTopologyAppInboxType(
     }
 }
 
-function topologyConfigMutationCommand(
+function createTopologyConfigMutationCommand(
     input: TopologyConfigMutationCommandInput
 ): GroupTopologyConfigMutationCommand {
     const { command, config, expiresAtEpochMs, ttlMs } = input;
@@ -381,7 +381,7 @@ function topologyConfigMutationCommand(
     };
 }
 
-function topologyAppInboxCommand(
+function toTypedTopologyAppInboxCommand(
     identity: TopologyAppInboxCommandIdentity,
     payload: TopologyAppInboxPayload
 ): TopologyAppInboxCommand {
@@ -399,18 +399,18 @@ function topologyAppInboxCommand(
     }
 }
 
-function readTopologyActor(
+function decodeTopologyActor(
     value: JsonWireValue | undefined
 ): TopologyAppInboxCommand['actor'] {
     const actor = requireTopologyObject(value, 'Topology AppInbox actor');
     requireExactKeys(actor, ['principalId', 'sessionId'], 'Topology AppInbox actor');
     return {
-        principalId: readTopologyString(actor.principalId, 'actor principalId'),
-        sessionId: readTopologyString(actor.sessionId, 'actor sessionId')
+        principalId: decodeTopologyString(actor.principalId, 'actor principalId'),
+        sessionId: decodeTopologyString(actor.sessionId, 'actor sessionId')
     };
 }
 
-function readTopologyGroupRef(
+function decodeTopologyGroupRef(
     value: JsonWireValue | undefined
 ): TopologyAppInboxCommand['groupRef'] {
     const groupRef = requireTopologyObject(value, 'Topology AppInbox groupRef');
@@ -420,20 +420,20 @@ function readTopologyGroupRef(
         'Topology AppInbox groupRef'
     );
     return {
-        applicationId: readTopologyString(groupRef.applicationId, 'group applicationId'),
-        workspaceId: readTopologyString(groupRef.workspaceId, 'group workspaceId'),
-        groupId: readTopologyString(groupRef.groupId, 'group groupId')
+        applicationId: decodeTopologyString(groupRef.applicationId, 'group applicationId'),
+        workspaceId: decodeTopologyString(groupRef.workspaceId, 'group workspaceId'),
+        groupId: decodeTopologyString(groupRef.groupId, 'group groupId')
     };
 }
 
-function readTopologyString(value: JsonWireValue | undefined, label: string): string {
+function decodeTopologyString(value: JsonWireValue | undefined, label: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`Topology AppInbox ${label} is invalid`);
     }
     return value;
 }
 
-function readTopologyEpoch(value: JsonWireValue | undefined, label: string): number {
+function decodeTopologyEpoch(value: JsonWireValue | undefined, label: string): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`Topology AppInbox ${label} is invalid`);
     }
@@ -460,7 +460,7 @@ function requireExactKeys(
     }
 }
 
-function readFiniteNumberOrNull(
+function decodeFiniteNumberOrNull(
     value: JsonWireValue | undefined,
     label: string
 ): number | null {

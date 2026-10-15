@@ -19,9 +19,9 @@ import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-syste
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
+    computeTopologyHttpMutationSemanticDigest,
     toTopologyAppInboxCommand,
-    toTopologyConfigMutationCommand,
-    toTopologyHttpMutationSemanticHash
+    toTopologyConfigMutationCommand
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
@@ -72,7 +72,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         wakeQueue.mockClear();
         queueWakeCount = 0;
         const initialOutboxCount = harness.database.outboxEntries.size;
-        const command = await topologyCommand('same-request', 4);
+        const command = topologyCommand('same-request', 4);
         const enqueue = topologyEnqueue(command);
 
         const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
@@ -103,8 +103,8 @@ describe('topology AppInbox transaction and idempotency', () => {
         const harness = await createAuthorityHarness(['owner']);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         configureTopology(harness);
-        const firstCommand = await topologyCommand('divergent-request', 4);
-        const secondCommand = await topologyCommand('divergent-request', 7);
+        const firstCommand = topologyCommand('divergent-request', 4);
+        const secondCommand = topologyCommand('divergent-request', 7);
         const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
             topologyEnqueue(firstCommand),
             harness.sessions.owner
@@ -138,7 +138,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         let firstMaterializationCount = 0;
         const firstMaterialize = vi.fn(async () => {
             firstMaterializationCount += 1;
-            return await topologyCommand('reserved-config-request', 4);
+            return topologyCommand('reserved-config-request', 4);
         });
         const renewed = authSession({
             clientId: 'owner',
@@ -151,7 +151,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         const secondMaterialize = vi.fn(
             async () => {
                 secondMaterializationCount += 1;
-                return await topologyCommand('reserved-config-request', 4, {
+                return topologyCommand('reserved-config-request', 4, {
                     principalId: renewed.clientId,
                     sessionId: renewed.sessionId,
                     capturedAtEpochMs: 2_000
@@ -159,11 +159,11 @@ describe('topology AppInbox transaction and idempotency', () => {
             }
         );
         const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: firstMaterialize }),
+            configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: firstMaterialize }),
             harness.sessions.owner
         );
         const second = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: secondMaterialize }),
+            configReservation({ callerId: 'owner', requestId: 'reserved-config-request', degreeLimit: 4, materialize: secondMaterialize }),
             renewed
         );
         await waitForQueueEntry(harness.queue);
@@ -185,10 +185,10 @@ describe('topology AppInbox transaction and idempotency', () => {
         let materializationCount = 0;
         const materialize = vi.fn(async () => {
             materializationCount += 1;
-            return await topologyCommand('renewed-config-request', 4);
+            return topologyCommand('renewed-config-request', 4);
         });
         const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: materialize }),
+            configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: materialize }),
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
@@ -206,7 +206,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         const replayMaterialize = vi.fn(
             async () => {
                 replayMaterializationCount += 1;
-                return await topologyCommand('renewed-config-request', 4, {
+                return topologyCommand('renewed-config-request', 4, {
                     principalId: renewed.clientId,
                     sessionId: renewed.sessionId,
                     capturedAtEpochMs: 2_000
@@ -215,7 +215,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         );
         await expect(
             topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-                await configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: replayMaterialize }),
+                configReservation({ callerId: 'owner', requestId: 'renewed-config-request', degreeLimit: 4, materialize: replayMaterialize }),
                 renewed
             )
         ).resolves.toEqual(firstResult);
@@ -228,24 +228,24 @@ describe('topology AppInbox transaction and idempotency', () => {
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         configureTopology(harness);
         const owner = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation(
+            configReservation(
                 {
                     callerId: 'owner',
                     requestId: 'shared-graph-request',
                     degreeLimit: 4,
-                    materialize: async () => await topologyCommand('shared-graph-request', 4)
+                    materialize: async () => topologyCommand('shared-graph-request', 4)
                 }
             ),
             harness.sessions.owner
         );
         const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation(
+            configReservation(
                 {
                     callerId: 'other',
                     requestId: 'shared-graph-request',
                     degreeLimit: 4,
                     materialize: async () =>
-                        await topologyCommand('shared-graph-request', 4, {
+                        topologyCommand('shared-graph-request', 4, {
                             principalId: 'other',
                             sessionId: 'other-session',
                             capturedAtEpochMs: 1_000
@@ -266,6 +266,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         onTestFinished(() => engine.stop());
         registerApplicationQueueReaderTasks({
             engine,
+            nowEpochMs: Date.now,
             inboxQueueReader: harness.reader,
             outboxQueueReader: new OutboxQueueReader(harness.queue),
             appInboxResilience: createResilience(),
@@ -291,12 +292,12 @@ describe('topology AppInbox transaction and idempotency', () => {
         let materializationCount = 0;
         const materialize = vi.fn(async () => {
             materializationCount += 1;
-            return await reconfigureCommand(
+            return reconfigureCommand(
                 { requestId: 'shared-admin-request', principalId: 'owner', sessionId: 'owner-session', capturedAtEpochMs: 1_000 }
             );
         });
         const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await adminReconfigureReservation('owner', materialize),
+            adminReconfigureReservation('owner', materialize),
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
@@ -314,14 +315,14 @@ describe('topology AppInbox transaction and idempotency', () => {
         const replayMaterialize = vi.fn(
             async () => {
                 replayMaterializationCount += 1;
-                return await reconfigureCommand(
+                return reconfigureCommand(
                     { requestId: 'shared-admin-request', principalId: renewed.clientId, sessionId: renewed.sessionId, capturedAtEpochMs: 2_000 }
                 );
             }
         );
         await expect(
             topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-                await adminReconfigureReservation('owner', replayMaterialize),
+                adminReconfigureReservation('owner', replayMaterialize),
                 renewed
             )
         ).resolves.toEqual(firstResult);
@@ -331,12 +332,12 @@ describe('topology AppInbox transaction and idempotency', () => {
         let otherMaterializationCount = 0;
         const otherMaterialize = vi.fn(async () => {
             otherMaterializationCount += 1;
-            return await reconfigureCommand(
+            return reconfigureCommand(
                 { requestId: 'shared-admin-request', principalId: 'other', sessionId: 'other-session', capturedAtEpochMs: 3_000 }
             );
         });
         const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await adminReconfigureReservation('other', otherMaterialize),
+            adminReconfigureReservation('other', otherMaterialize),
             harness.sessions.other
         );
         await vi.waitFor(async () => {
@@ -363,7 +364,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         wakeQueue.mockClear();
         queueWakeCount = 0;
         const initialOutboxCount = harness.database.outboxEntries.size;
-        const command = await topologyCommand('collision-request', 5);
+        const command = topologyCommand('collision-request', 5);
         const mutationCommand = toTopologyConfigMutationCommand(command);
         const mutation = management.mutationOwners.configMutationService;
         const read = await mutation.read(mutationCommand);
@@ -433,7 +434,14 @@ describe('topology AppInbox transaction and idempotency', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: { ...entry.dequeueAudit, attempts: 1 }
                     },
-                    attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 0 },
+                    attemptTelemetry: {
+                        selectedLane: Reservator.NEW,
+                        queueAgeMs: 0,
+                        dueAgeMs: 0,
+                        attempt: 1,
+                        selectedDueAtEpochMs: 0,
+                        reservationLeaseMs: 60_000
+                    },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 management.mutationOwners
@@ -522,7 +530,7 @@ interface TopologyCommandFacts {
     readonly capturedAtEpochMs: number;
 }
 
-async function topologyCommand(
+function topologyCommand(
     requestId: string,
     degreeLimit: number,
     facts: TopologyCommandFacts = {
@@ -530,8 +538,8 @@ async function topologyCommand(
         sessionId: 'owner-session',
         capturedAtEpochMs: 1_000
     }
-): Promise<TopologyAppInboxCommand> {
-    return await toTopologyAppInboxCommand({
+): TopologyAppInboxCommand {
+    return toTopologyAppInboxCommand({
         actor: {
             principalId: facts.principalId,
             sessionId: facts.sessionId
@@ -550,11 +558,11 @@ interface ReconfigureCommandInput extends TopologyCommandFacts {
     readonly requestId: string;
 }
 
-async function reconfigureCommand(
+function reconfigureCommand(
     input: ReconfigureCommandInput
-): Promise<TopologyAppInboxCommand> {
+): TopologyAppInboxCommand {
     const { requestId, principalId, sessionId, capturedAtEpochMs } = input;
-    return await toTopologyAppInboxCommand({
+    return toTopologyAppInboxCommand({
         actor: { principalId, sessionId },
         groupRef: GROUP_REF,
         requestId,
@@ -563,16 +571,16 @@ async function reconfigureCommand(
     });
 }
 
-async function adminReconfigureReservation(
+function adminReconfigureReservation(
     callerId: string,
     materialize: () => Promise<TopologyAppInboxCommand>
-): Promise<TopologyInboxService.HttpCommandReservation> {
+): TopologyInboxService.HttpCommandReservation {
     return {
         operation: 'reconfigureTopology',
         requestId: 'shared-admin-request',
         callerId,
         groupRef: GROUP_REF,
-        semanticHash: await toTopologyHttpMutationSemanticHash({
+        semanticHash: computeTopologyHttpMutationSemanticDigest({
             principalId: callerId,
             groupRef: GROUP_REF,
             requestId: 'shared-admin-request',
@@ -589,16 +597,16 @@ interface ConfigReservationInput {
     readonly materialize: () => Promise<TopologyAppInboxCommand>;
 }
 
-async function configReservation(
+function configReservation(
     input: ConfigReservationInput
-): Promise<TopologyInboxService.HttpCommandReservation> {
+): TopologyInboxService.HttpCommandReservation {
     const { callerId, requestId, degreeLimit, materialize } = input;
     return {
         operation: 'putConfig',
         requestId,
         callerId,
         groupRef: GROUP_REF,
-        semanticHash: await toTopologyHttpMutationSemanticHash({
+        semanticHash: computeTopologyHttpMutationSemanticDigest({
             principalId: callerId,
             groupRef: GROUP_REF,
             requestId,

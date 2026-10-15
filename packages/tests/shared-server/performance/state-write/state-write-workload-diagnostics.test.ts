@@ -39,7 +39,7 @@ function createRuntime(failure: Error | undefined): StateWriteWorkloadRuntime {
                 return Either.ofRight({ status: 'inactive', sessionId: enqueue.data.sessionId, generationId: enqueue.data.request.generationId });
             }
         },
-        inbox: { dequeueInbox: async () => undefined },
+        inbox: { dequeueInbox: async () => 0 },
         resilience: ResourceInboxResilience.createDefault({
             circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
             initialRate: 10,

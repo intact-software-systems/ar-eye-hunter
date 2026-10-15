@@ -21,10 +21,10 @@ export interface RtcTopologyOutboxProvenanceInsert {
     readonly expiresAt: string;
 }
 
-export async function computeRtcTopologyOutboxProvenance(
+export function computeRtcTopologyOutboxProvenance(
     publication: RtcTopologyPublication,
     outboxWrites: readonly AppOutboxInsert[]
-): Promise<readonly RtcTopologyOutboxProvenanceInsert[]> {
+): readonly RtcTopologyOutboxProvenanceInsert[] {
     assertRtcTopologyPublicationOutbox(publication, outboxWrites.map((write) => write.entry));
     const proofs: RtcTopologyOutboxProvenanceInsert[] = [];
     for (const write of outboxWrites) {
@@ -54,7 +54,7 @@ export async function computeRtcTopologyOutboxProvenance(
         proofs.push({
             queueKey: write.entry.key,
             key: toWsOutboxProvenanceKey(write.entry.key),
-            value: JSON.stringify({ ...facts, digest: await computeWsOutboxProvenanceDigest(write.entry, facts) }),
+            value: JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) }),
             expiresAt: write.expiresAt
         });
     }

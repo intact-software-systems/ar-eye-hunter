@@ -10,7 +10,10 @@ import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { computeProductionOutboxExpectations } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-expectations.ts';
-import { validateExpectedProductionOutboxRecord, type ProductionOutboxRow } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-resource-codec.ts';
+import {
+    validateExpectedProductionOutboxRecord,
+    type ProductionOutboxRow
+} from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-resource-codec.ts';
 import type { ProductionReceiptEvidence } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-receipt-evidence.ts';
 import { validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
 import { createClientSnapshot } from '../../rallar-system/state-sync/http/rest-state-snapshot-read-test-fixtures.ts';
@@ -164,7 +167,7 @@ function createOperationEntries(operation: 'profile' | 'instance', sessionCount:
             { effectKind: 'principal-state', payloadKind: 'snapshot', payload: snapshot },
             { effectKind: 'principal-state', payloadKind: 'event', payload: createEvent(snapshot, commandId) }
         ]
-    }, 'server-1');
+    }, 'server-1').map(({ entry }) => entry);
 }
 
 function createInstance(snapshot: ClientSnapshot, clientInstanceId: string): ClientSnapshot['instances'][number] {

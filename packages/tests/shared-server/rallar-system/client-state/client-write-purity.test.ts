@@ -6,14 +6,14 @@ import {
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation write purity', () => {
     it('serializes runtime and event rows during compute', async () => {
-        const command = await principalCommand('write-purity');
+        const command = principalCommand('write-purity');
         const computed = computeClientMutation({ command, read: emptyRead(command) });
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
@@ -35,8 +35,8 @@ describe('client mutation write purity', () => {
         }
     });
 
-    it('rejects a persistence projection that differs from the computed domain result', async () => {
-        const command = await principalCommand('write-purity-validation');
+    it('rejects a persistence projection that differs from the computed domain result', () => {
+        const command = principalCommand('write-purity-validation');
         const read = emptyRead(command);
         const computed = computeClientMutation({ command, read });
         expect(computed.outcome).toBe('write');
@@ -53,7 +53,7 @@ describe('client mutation write purity', () => {
             }
         };
 
-        expect(() => assertClientMutation({ command, read, computed: tampered })).toThrow(
+        expect(() => assertClientMutationMatchesRecompute({ command, read, computed: tampered })).toThrow(
             'Client mutation computed.persistence.runtimeWrites.0.key differs from the computed value'
         );
     });

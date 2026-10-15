@@ -95,6 +95,18 @@ retryable failure releases the reservation to QueueBox; the next attempt starts
 from a fresh read. A terminal failure writes the sole current `AppInboxFailure`
 shape to `resource_inbox_results`.
 
+An AppInbox claim holds a 60 s reservation lease
+(`APP_INBOX_RESERVATION_LEASE_MS`); both outboxes keep the five-minute default.
+A claim that outlives its lease is reclaimed by the TIMEOUT lane for a new
+attempt. There is no heartbeat and no lease renewal. The abandoned attempt's
+late finish fails its attempt guard and rolls back, so a transactional handler
+never commits twice, but a handler that writes its result outside its own
+transaction may run again and replace that result. The work of one delivery must
+therefore stay below the lease: long maintenance such as admin prune, CRDT
+compaction and expired-session sweeps must run in bounded pages, one page per
+delivery. `AppInboxHandlerExecutor` reports a handler that outlives its claim's
+lease as a `handler-outran-lease` timing event.
+
 ## Outbox and publication boundary
 
 `APP_OUTBOX` and `WS_OUTBOX` are semantic intents written with authoritative

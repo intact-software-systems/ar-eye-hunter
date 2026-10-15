@@ -354,7 +354,7 @@ class RoomFixture {
         const raw = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
         expect(decodePersistedALMessage(raw.resource)).toEqual(message);
         const entry = corruption === 'forged-canonical-key' ? { ...raw, key: { ...raw.key, topicId: 'AL_OUTBOUND_MESSAGE' } } : raw;
-        const proof = await createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });
+        const proof = createProof(message, entry, { audience, wrongRoom: corruption === 'wrong-room' });
         if (corruption !== 'missing') {
             await this.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key), JSON.stringify(proof), proof.expiresAtMs);
         }
@@ -368,7 +368,7 @@ interface RoomProofInput {
     readonly wrongRoom: boolean;
 }
 
-async function createProof(message: ALMessage, entry: ResourceEntry, input: RoomProofInput): Promise<WsOutboxProvenance> {
+function createProof(message: ALMessage, entry: ResourceEntry, input: RoomProofInput): WsOutboxProvenance {
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'state-sync',
@@ -379,7 +379,7 @@ async function createProof(message: ALMessage, entry: ResourceEntry, input: Room
         expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
         target: { kind: 'scoped-room-broadcast', groupRef: input.wrongRoom ? { ...ROOM, groupId: 'other' } : ROOM, admittedAudience: input.audience }
     };
-    return { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+    return { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
 }
 
 class RecordingBridge implements QueueBoxPubSubBridge {

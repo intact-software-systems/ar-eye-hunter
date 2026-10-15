@@ -11,6 +11,11 @@ const stateGroupPathPattern = new RegExp(
         String.raw`(?:/(?!requests(?:/|$))([^/]+))?(?=/|$)`
 );
 
+// A workspace-scoped self read carries application and workspace but no group segment.
+const stateWorkspaceReadPathPattern = new RegExp(
+    String.raw`^/api/state/apps/([^/]+)/workspaces/([^/]+)(?=/stats/me/realtime$)`
+);
+
 const identityFieldNames = new Set(['applicationId', 'workspaceId', 'groupId', 'roomId']);
 
 // Match complete JSON string tokens without requiring the surrounding fragment or runtime placeholders to parse.
@@ -32,6 +37,30 @@ export function toEffectiveHetznerRunManifestScope(value, sourceGroupRef, effect
     );
 }
 
+function toStatePathScope(value) {
+    const group = value.match(stateGroupPathPattern);
+    if (group) {
+        return {
+            prefix: group[0],
+            applicationId: group[1],
+            workspaceId: group[2],
+            groupId: group[3],
+            groupScoped: true
+        };
+    }
+    const workspace = value.match(stateWorkspaceReadPathPattern);
+    if (workspace) {
+        return {
+            prefix: workspace[0],
+            applicationId: workspace[1],
+            workspaceId: workspace[2],
+            groupId: undefined,
+            groupScoped: false
+        };
+    }
+    return undefined;
+}
+
 function decodePathSegment(value, location, issues) {
     try {
         return decodeURIComponent(value);
@@ -50,14 +79,16 @@ function validateEmbeddedPathScope(value, expectedGroupRef, location) {
     }
 
     const issues = [];
-    const match = value.match(stateGroupPathPattern);
-    if (!match) {
+    const pathScope = toStatePathScope(value);
+    if (!pathScope) {
         return [`${location} has an unrecognized state group path ${JSON.stringify(value)}`];
     }
 
-    const applicationId = decodePathSegment(match[1], location, issues);
-    const workspaceId = decodePathSegment(match[2], location, issues);
-    const groupId = match[3] === undefined ? undefined : decodePathSegment(match[3], location, issues);
+    const applicationId = decodePathSegment(pathScope.applicationId, location, issues);
+    const workspaceId = decodePathSegment(pathScope.workspaceId, location, issues);
+    const groupId = pathScope.groupId === undefined
+        ? undefined
+        : decodePathSegment(pathScope.groupId, location, issues);
     if (applicationId !== expectedGroupRef.applicationId) {
         issues.push(
             `${location} contains application ${JSON.stringify(applicationId)}; ` +
@@ -221,14 +252,15 @@ function toEmbeddedScope(value, groupRefs, traversal) {
         return toSerializedRoomScope(value, groupRefs);
     }
     if (key === 'path') {
-        const match = value.match(stateGroupPathPattern);
-        if (!match) {
+        const pathScope = toStatePathScope(value);
+        if (!pathScope) {
             return value;
         }
-        const effectivePrefix = `/api/state/apps/${encodeURIComponent(effectiveGroupRef.applicationId)}` +
-            `/workspaces/${encodeURIComponent(effectiveGroupRef.workspaceId)}/groups`;
-        const groupSegment = match[3] === undefined ? '' : `/${encodeURIComponent(effectiveGroupRef.groupId)}`;
-        return `${effectivePrefix}${groupSegment}${value.slice(match[0].length)}`;
+        const workspacePrefix = `/api/state/apps/${encodeURIComponent(effectiveGroupRef.applicationId)}` +
+            `/workspaces/${encodeURIComponent(effectiveGroupRef.workspaceId)}`;
+        const groupsSegment = pathScope.groupScoped ? '/groups' : '';
+        const groupSegment = pathScope.groupId === undefined ? '' : `/${encodeURIComponent(effectiveGroupRef.groupId)}`;
+        return `${workspacePrefix}${groupsSegment}${groupSegment}${value.slice(pathScope.prefix.length)}`;
     }
     if (key !== 'requestId' && key.toLowerCase() !== 'idempotency-key') {
         return value;

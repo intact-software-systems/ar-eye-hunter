@@ -19,7 +19,7 @@ beforeEach(() =>
 );
 
 describe('engine', () => {
-    it.each(['readiness', 'concurrency'] as const)('recovers from eleven %s failures using only its supplied clock', async (port) => {
+    it('recovers from eleven concurrency failures using only its supplied clock', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         let nowEpochMs = 10_000;
@@ -33,14 +33,9 @@ describe('engine', () => {
         engine.includeTask('owned', {
             name: 'owned',
             maxConcurrency: () => {
-                if (port === 'concurrency') {
-                    throw 'registered pass unavailable';
-                }
-                return 1;
-            },
-            isWork: () => {
                 throw 'registered pass unavailable';
             },
+            isWork: () => true,
             runnable: () => {},
             ongoingTasks: []
         });
@@ -67,6 +62,42 @@ describe('engine', () => {
         expect(runs).toBe(1);
     });
 
+    it('reports one task readiness failure and still submits another task that has work', async () => {
+        const failures: string[] = [];
+        const engine = new InboxOutboxEngine({
+            nowEpochMs: () => 10_000,
+            random: () => 0.5,
+            reportTaskFailure: (taskId, error) => {
+                failures.push(`${taskId}: ${error.message}`);
+                return undefined;
+            }
+        });
+        onTestFinished(() => engine.stop());
+        let healthyRuns = 0;
+        engine.includeTask('faulty', {
+            name: 'faulty',
+            maxConcurrency: () => 1,
+            isWork: () => {
+                throw new Error('readiness storage unavailable');
+            },
+            runnable: () => {},
+            ongoingTasks: []
+        });
+        engine.includeTask('healthy', {
+            name: 'healthy',
+            maxConcurrency: () => 1,
+            isWork: () => healthyRuns === 0,
+            runnable: () => {
+                healthyRuns += 1;
+            },
+            ongoingTasks: []
+        });
+
+        expect(await engine.executeOnce()).toBe(true);
+        await vi.waitFor(() => expect(healthyRuns).toBe(1));
+        expect(failures).toEqual(['faulty: readiness storage unavailable']);
+    });
+
     it('restarts the supplied-clock reset period after a failed half-open pass', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
@@ -78,13 +109,13 @@ describe('engine', () => {
         });
         onTestFinished(() => engine.stop());
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        let failure = new Error('initial readiness failure');
+        let failure = new Error('initial concurrency failure');
         engine.includeTask('owned', {
             name: 'owned',
-            maxConcurrency: () => 1,
-            isWork: () => {
+            maxConcurrency: () => {
                 throw failure;
             },
+            isWork: () => true,
             runnable: () => {},
             ongoingTasks: []
         });
@@ -92,7 +123,7 @@ describe('engine', () => {
             expect(await engine.executeOnce()).toBe(false);
         }
         nowEpochMs = 20_001;
-        failure = new Error('half-open readiness failure');
+        failure = new Error('half-open concurrency failure');
         expect(await engine.executeOnce()).toBe(false);
         expect(consoleError).toHaveBeenCalledWith('TaskEngine error', failure);
         let runs = 0;

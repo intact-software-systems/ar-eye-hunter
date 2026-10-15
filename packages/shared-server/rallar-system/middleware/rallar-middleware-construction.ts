@@ -72,7 +72,7 @@ export interface RallarAppClientInboxServiceFactoryInput {
 
 export interface RallarMiddlewareResilience {
     readonly inbox: ResourceInboxResilience;
-    readonly outbox?: ResourceInboxResilience;
+    readonly outbox: ResourceInboxResilience;
     readonly appInbox?: ResourceInboxResilience;
     readonly appOutbox: ResourceInboxResilience;
 }

@@ -2,6 +2,8 @@ export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
 export const DEFAULT_APP_INBOX_WAIT_JITTER_RATIO = 0.2;
+/** Above the hosted p99 handler time; an abandoned claim's late finish still fails its attempt guard after a reclaim. */
+export const APP_INBOX_RESERVATION_LEASE_MS = 60_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;

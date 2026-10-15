@@ -1502,6 +1502,24 @@
         "commands": [
           {
             "kind": "http.request",
+            "commandId": "alm-scale-director-sign-in",
+            "metadata": {
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+            },
+            "request": {
+              "method": "GET",
+              "path": "/api/state/apps/rallar-server/workspaces/default/stats/me/realtime"
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            },
+            "timeoutMs": 45000
+          },
+          {
+            "kind": "http.request",
             "commandId": "alm-scale-director-ensure-group",
             "timeoutMs": 5000,
             "metadata": {
@@ -4557,6 +4575,24 @@
           ]
         },
         "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "alm-scale-player-sign-in",
+            "metadata": {
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+            },
+            "request": {
+              "method": "GET",
+              "path": "/api/state/apps/rallar-server/workspaces/default/stats/me/realtime"
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            },
+            "timeoutMs": 45000
+          },
           {
             "kind": "barrier",
             "commandId": "alm-scale-player-group-created",

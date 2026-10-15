@@ -157,6 +157,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
     });
     registerApplicationQueueReaderTasks({
         engine,
+        nowEpochMs: Date.now,
         inboxQueueReader,
         outboxQueueReader,
         appInboxResilience: mutation.resilience.inbox,

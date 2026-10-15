@@ -301,7 +301,7 @@ describe('TopologyAppInboxHandler', () => {
 async function topologyContext(
     phases: string[]
 ): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
-    const command = await toTopologyAppInboxCommand({
+    const command = toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
             applicationId: 'app-1',
@@ -328,7 +328,7 @@ async function topologyContext(
 async function reconfigureTopologyContext(
     phases: string[]
 ): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
-    const command = await toTopologyAppInboxCommand({
+    const command = toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
             applicationId: 'app-1',
@@ -383,7 +383,7 @@ function createMessageContext(
     return {
         enqueue,
         message,
-        attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0 },
+        attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0, reservationLeaseMs: 60_000 },
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,

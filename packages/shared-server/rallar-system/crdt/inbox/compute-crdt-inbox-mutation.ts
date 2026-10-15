@@ -28,20 +28,20 @@ interface CrdtInboxMutationComputed {
     readonly provenanceWrites: readonly CrdtOutboxProvenanceInsert[];
 }
 
-export async function computeCrdtInboxMutation(read: CrdtInboxMutationRead): Promise<CrdtInboxMutationComputed> {
+export function computeCrdtInboxMutation(read: CrdtInboxMutationRead): CrdtInboxMutationComputed {
     const mutation = computeCrdtMutation(read);
     const completion = computeAppInboxCompletion({
         ...read.completionFacts,
         durableResult: mutation.result,
         status: EntityStatus.COMPLETED
     });
-    return { mutation, completion, provenanceWrites: await computeCrdtOutboxProvenance(mutation) };
+    return { mutation, completion, provenanceWrites: computeCrdtOutboxProvenance(mutation) };
 }
 
-export async function validateCrdtInboxMutation(
+export function validateCrdtInboxMutation(
     read: CrdtInboxMutationRead,
     computed: CrdtInboxMutationComputed
-): Promise<readonly CrdtMutationValidationIssue[]> {
+): readonly CrdtMutationValidationIssue[] {
     const issues = [...validateCrdtMutation({
         command: read.command,
         read: read.read,
@@ -59,7 +59,7 @@ export async function validateCrdtInboxMutation(
         }))
     );
     const expectedMutation = computeCrdtMutation(read);
-    const expectedProvenance = await computeCrdtOutboxProvenance(expectedMutation);
+    const expectedProvenance = computeCrdtOutboxProvenance(expectedMutation);
     issues.push(
         ...validateComputedProjection(expectedProvenance, computed.provenanceWrites, 'computed.provenanceWrites')
             .map((issue) => ({ code: 'provenance-invalid', message: issue.message }))

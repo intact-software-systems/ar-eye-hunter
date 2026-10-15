@@ -30,6 +30,7 @@ interface AlmScalePhaseCase {
 }
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
+const INPUT = { participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false } as const;
 
 beforeEach(() => {
     resetFacade();
@@ -86,32 +87,62 @@ async function createAuthenticatedWorkerBrowser(): Promise<RallarBlackBoxBrowser
     });
 }
 
-async function bootstrapWorkerBrowser(): Promise<RallarBlackBoxBrowserTestRuntime> {
+async function configureWorkerBrowser(register?: 'if-needed'): Promise<RallarBlackBoxBrowserTestRuntime> {
     const browser = await createAuthenticatedWorkerBrowser();
     await browser.execute({
         kind: 'configure',
         config: {
             apiBaseUrl: 'https://api.example.test',
+            runId: 'scale-run',
+            agentId: 'controller-04',
             sessionId: facade.session.sessionId,
-            rallar: { username: facade.session.username, password: 'fixture-password' }
+            rallar: { username: facade.session.username, password: 'fixture-password', ...(register ? { register } : {}) }
         }
     });
-    // The first group API command authenticates the worker before the recipe connects RTC.
-    const bootstrapped = await browser.execute({
-        kind: 'http.request',
-        request: { method: 'GET', path: '/api/state/apps/scale-app/workspaces/scale-workspace/groups/scale-room' },
-        response: { body: 'json', acceptedStatusCodes: [200] }
-    });
-    expect(bootstrapped.ok).toBe(true);
+    return browser;
+}
+
+async function bootstrapWorkerBrowser(role: 'director' | 'player'): Promise<RallarBlackBoxBrowserTestRuntime> {
+    const browser = await configureWorkerBrowser();
+    const [signIn] = createAlmScaleSetupCommands(INPUT, role);
+    const signedIn = await browser.execute(signIn!);
+    expect(signedIn.ok).toBe(true);
     expect(facade.records.loginAttempts).toHaveLength(1);
     facade.behavior.restore.mockReturnValue(facade.session);
     return browser;
 }
 
-it.each(['director', 'player'] as const)('restores the authenticated %s worker identity through the browser connect boundary', async (role) => {
-    const browser = await bootstrapWorkerBrowser();
+// Registrations serialize on the API (≈350 ms each), so the back of a cohort waits seconds for its session.
+it.each(['director', 'player'] as const)('signs a queued %s in under the setup allowance so its group requests keep 5 s', async (role) => {
+    const browser = await configureWorkerBrowser('if-needed');
+    vi.useFakeTimers();
+    facade.behavior.registerAndLogin.mockImplementation(async () => {
+        await sleep(10_000);
+        localStorage.setItem('auth.session', JSON.stringify(facade.session));
+        return facade.session;
+    });
+    const commands = createAlmScaleSetupCommands(INPUT, role);
 
-    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, role);
+    const pending = browser.execute(commands[0]!);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const signedIn = await pending;
+    const groupRequests = commands.filter((command) => /-ensure-(group|member)$/.test(command.commandId ?? ''));
+    const ensured: Awaited<ReturnType<typeof browser.execute>>[] = [];
+    for (const command of groupRequests) {
+        ensured.push(await browser.execute(command));
+    }
+
+    expect(signedIn).toMatchObject({ ok: true, durationMs: 10_000 });
+    expect(ensured).toHaveLength(2);
+    expect(ensured.map((result) => [result.ok, result.durationMs])).toEqual([[true, 0], [true, 0]]);
+    expect(facade.records.registrationAttempts).toHaveLength(1);
+    await browser.execute({ kind: 'close' });
+});
+
+it.each(['director', 'player'] as const)('restores the authenticated %s worker identity through the browser connect boundary', async (role) => {
+    const browser = await bootstrapWorkerBrowser(role);
+
+    const commands = createAlmScaleSetupCommands(INPUT, role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
     if (connect?.kind !== 'rtc.connect') {
         throw new Error('The scale setup has no connect command.');
@@ -142,7 +173,7 @@ it.each<AlmScalePhaseCase>([
     { role: 'player', delayMs: 40_000, readinessDelayMs: 20_000, outcome: 'connected' },
     { role: 'player', delayMs: 0, readinessDelayMs: 45_001, outcome: 'readiness-timeout' }
 ])('bounds separate $role phases: $delayMs ms socket, $readinessDelayMs ms RTC readiness ($outcome)', async (phaseCase) => {
-    const browser = await bootstrapWorkerBrowser();
+    const browser = await bootstrapWorkerBrowser(phaseCase.role);
     vi.useFakeTimers();
     // The real socket owner uses this Command/default pair; delay only its network completion.
     facade.behavior.connect.mockImplementation(async (options) => {
@@ -156,7 +187,7 @@ it.each<AlmScalePhaseCase>([
         await sleep(phaseCase.readinessDelayMs, options?.signal);
         return readyRoom;
     });
-    const commands = createAlmScaleSetupCommands({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 }, phaseCase.role);
+    const commands = createAlmScaleSetupCommands(INPUT, phaseCase.role);
     const connect = commands.find((command) => command.kind === 'rtc.connect');
     if (connect?.kind !== 'rtc.connect') {
         throw new Error('The scale setup has no connect command.');

@@ -580,6 +580,55 @@ describe('Hetzner materialization contracts and effects', () => {
         expect(await readFile(sourcePath, 'utf8')).toBe(sourceText);
     });
 
+    it('rewrites the scale sign-in read to the effective workspace and still refuses unknown state paths', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-workspace-read-materialization-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const sourcePath = path.join(repoRoot, 'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json');
+        const outputPath = path.join(directory, 'manifest.json');
+        const invocation = {
+            ...materializerInvocationDefaults,
+            sourcePath,
+            outputPath,
+            recordPath: path.join(directory, 'record.json'),
+            applicationId: 'effective app',
+            workspaceId: 'effective-workspace'
+        } as const;
+
+        await runMaterializer(context, invocation);
+
+        const manifest = await readManifest(outputPath);
+        const scope = '/api/state/apps/effective%20app/workspaces/effective-workspace';
+        const room = encodeURIComponent(manifest.group.groupId);
+        expect(manifest.group).toMatchObject({ applicationId: 'effective app', workspaceId: 'effective-workspace' });
+        expect(manifest.recipes.map((selection) => {
+            const requests = (selection.recipe?.commands ?? []).flatMap((command) => command.kind === 'loop' ? command.commands : [command]).filter((command) =>
+                command.kind === 'http.request'
+            );
+            return requests.map((command) => command.kind === 'http.request' ? command.request.path : undefined);
+        })).toEqual(['director', 'player'].map((role) => [
+            `${scope}/stats/me/realtime`,
+            `${scope}/groups/requests/alm-scale-${role}-ensure-group-{runtimeIdentity}`,
+            `${scope}/groups/${room}/members/{auth.clientId}/requests/alm-scale-${role}-ensure-member-{runtimeIdentity}`,
+            `${scope}/groups/${room}`
+        ]));
+
+        const unknownPath = '/api/state/apps/rallar-server/workspaces/default/stats/summary';
+        const source = JSON.parse(await readFile(sourcePath, 'utf8'));
+        source.recipes[0].recipe.commands[0].request.path = unknownPath;
+        const unknownSourcePath = path.join(directory, 'unknown-source.json');
+        await writeFile(unknownSourcePath, `${JSON.stringify(source, null, 2)}\n`);
+        await expect(runMaterializer(context, {
+            ...invocation,
+            sourcePath: unknownSourcePath,
+            outputPath: path.join(directory, 'unknown.json'),
+            recordPath: path.join(directory, 'unknown-record.json')
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining(
+                `$.recipes[0].recipe.commands[0].request.path has an unrecognized state group path ${JSON.stringify(unknownPath)}`
+            )
+        });
+    });
+
     it('refuses null source as validation before materialization effects', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-materializer-null-source-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));

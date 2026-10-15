@@ -7,6 +7,7 @@ import {
 
 export interface ComputeNoRttTreeNextHopsInput {
     readonly activeSessionIds: readonly string[];
+    readonly preferredSourceSessionId: string | undefined;
     readonly degreeLimit: number;
 }
 
@@ -45,7 +46,7 @@ export function computeNoRttTreeNextHops(
         return new Map([[input.activeSessionIds[0], new Set()]]);
     }
 
-    const source = pickNoRttTreeSource(input.activeSessionIds);
+    const source = resolveNoRttTreeSource(input);
     const state = initializeNoRttTreeState(input.activeSessionIds, source);
 
     if (state.nearest.node === undefined) {
@@ -91,6 +92,14 @@ export function computeNoRttTreeNextHops(
     }
 
     return state.nextHopsBySessionId;
+}
+
+function resolveNoRttTreeSource(input: ComputeNoRttTreeNextHopsInput): string {
+    const { preferredSourceSessionId, activeSessionIds } = input;
+    if (preferredSourceSessionId !== undefined && activeSessionIds.includes(preferredSourceSessionId)) {
+        return preferredSourceSessionId;
+    }
+    return pickNoRttTreeSource(activeSessionIds);
 }
 
 function pickNoRttTreeSource(activeSessionIds: readonly string[]): string {

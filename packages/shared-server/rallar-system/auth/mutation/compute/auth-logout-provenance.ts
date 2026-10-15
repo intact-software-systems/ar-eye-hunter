@@ -20,9 +20,9 @@ export interface AuthLogoutProvenanceInsert {
     readonly queueKey: WsOutboxProvenance['queueKey'];
 }
 
-export async function computeAuthLogoutProvenance(
+export function computeAuthLogoutProvenance(
     computed: AuthMutationComputed
-): Promise<AuthLogoutProvenanceInsert | null> {
+): AuthLogoutProvenanceInsert | null {
     const write = computed.persistence.logoutOutbox;
     if (write === null) {
         return null;
@@ -59,7 +59,7 @@ export async function computeAuthLogoutProvenance(
             admittedAudience: [sessionInvalidation.sessionId]
         }
     };
-    const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(write.entry, facts) };
+    const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(write.entry, facts) };
     return {
         key: toWsOutboxProvenanceKey(write.entry.key),
         value: JSON.stringify(proof),

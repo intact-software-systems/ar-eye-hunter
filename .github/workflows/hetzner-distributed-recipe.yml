@@ -62,7 +62,7 @@ on:
       register_before_login:
         description: Register disposable test users before login
         type: boolean
-        default: false
+        default: true
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: choice

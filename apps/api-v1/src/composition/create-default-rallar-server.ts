@@ -14,7 +14,7 @@ import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-co
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
 import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
-import { createApiV1QueueResilience } from '../middleware-resilience.ts';
+import { createApiV1MiddlewareResilience } from '../middleware-resilience.ts';
 import {
     myPublisherId,
     myRtcTopologyStreamId,
@@ -203,11 +203,7 @@ function createConfiguredApiV1Runtime(
         rtcTopologyOptions,
         rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        resilience: {
-            inbox: createApiV1QueueResilience(configuration.topology.queueResilience),
-            outbox: createApiV1QueueResilience(configuration.topology.queueResilience),
-            appOutbox: createApiV1QueueResilience(configuration.topology.queueResilience)
-        },
+        resilience: createApiV1MiddlewareResilience(configuration.topology.queueResilience),
         backgroundTasks
     });
 }

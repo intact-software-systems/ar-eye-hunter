@@ -4,7 +4,7 @@ import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppInboxType, type AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-contracts.ts';
-import { hashMutationCommand } from '../../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest } from '../../protocol/json-wire-identity.ts';
 import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export const ADMIN_APP_INBOX_TOPIC = AppInboxType.ADMIN_PRUNE_EXPIRED;
@@ -31,9 +31,9 @@ export interface AdminPruneTimingIdentity {
     readonly requestedSessionId: string;
 }
 
-export async function createAdminPruneIdempotencyIdentity(
+export function createAdminPruneIdempotencyIdentity(
     input: AdminPruneIdempotencyIdentityInput
-): Promise<AdminPruneIdempotencyIdentity> {
+): AdminPruneIdempotencyIdentity {
     const categories = ADMIN_PRUNE_EXPIRED_CATEGORIES.filter((category) => input.categories.includes(category));
     const key = toStrictAppInboxQueueKey({
         topicId: ADMIN_APP_INBOX_TOPIC,
@@ -44,8 +44,8 @@ export async function createAdminPruneIdempotencyIdentity(
         version: 1,
         ...input,
         contextId: key.contextId,
-        jobId: await toAdminPruneJobId(key),
-        semanticHash: await hashMutationCommand({
+        jobId: toAdminPruneJobId(key),
+        semanticHash: computeMutationCommandDigest({
             version: 1,
             categories,
             appData: input.appData,
@@ -95,7 +95,7 @@ export function assertMatchingAdminPruneIdentity(
     }
 }
 
-export async function assertAdminPruneStoredIdentity(
+export function assertAdminPruneStoredIdentity(
     key: Key,
     enqueue: Readonly<{
         readonly topicId?: string;
@@ -104,13 +104,13 @@ export async function assertAdminPruneStoredIdentity(
         readonly senderId?: string;
     }>,
     command: AdminPruneCommand
-): Promise<void> {
+): void {
     if (
         enqueue.topicId !== key.topicId ||
         enqueue.resourceId !== key.resourceId ||
         enqueue.contextId !== key.contextId ||
         enqueue.senderId !== command.requestedSessionId ||
-        command.jobId !== (await toAdminPruneJobId(key))
+        command.jobId !== (toAdminPruneJobId(key))
     ) {
         throw new AppInboxIdempotencyConflictError(
             key.resourceId,
@@ -120,16 +120,16 @@ export async function assertAdminPruneStoredIdentity(
     }
 }
 
-export async function assertAdminPruneQueueIdentity(
+export function assertAdminPruneQueueIdentity(
     command: AdminPruneCommand,
     context: AppInboxExecutionMetadata
-): Promise<void> {
+): void {
     const strictContextId = toStrictAppInboxQueueKey({
         topicId: ADMIN_APP_INBOX_TOPIC,
         resourceId: context.entry.key.resourceId,
         contextId: toAdminPruneContextId(command.requestedBy, command.appData)
     }).contextId;
-    const strictIdentity = command.jobId === (await toAdminPruneJobId(context.entry.key)) &&
+    const strictIdentity = command.jobId === (toAdminPruneJobId(context.entry.key)) &&
         context.entry.key.contextId === strictContextId;
     if (
         context.enqueue.type !== AppInboxType.ADMIN_PRUNE_EXPIRED ||
@@ -154,8 +154,8 @@ export function toAdminPruneContextId(
         .join(':');
 }
 
-export async function toAdminPruneJobId(key: Key): Promise<string> {
-    const digest = await hashMutationCommand({
+export function toAdminPruneJobId(key: Key): string {
+    const digest = computeMutationCommandDigest({
         domain: 'admin-prune-job.v1',
         topicId: key.topicId,
         contextId: key.contextId,

@@ -65,7 +65,7 @@ export class AppInboxQueueEntryWriter {
             this.createMessage({ key, enqueue, serviceId: this.serviceId })
         );
         this.wakeOwningQueue?.();
-        await assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
+        assertMatchingAppInboxCommand(entry, enqueue, receivedIdentity);
         return entry;
     }
 

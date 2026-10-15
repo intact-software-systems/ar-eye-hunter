@@ -111,7 +111,7 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
             'snapshot',
             'idempotency',
             'stateSync',
-            'outboxWrites',
+            'outbox',
             'principalAudienceSessionIds',
             'persistence'
         ],
@@ -151,8 +151,8 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
         rejectClientMutation('Client mutation computed stateSync must contain snapshot and event');
     }
-    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length < 2) {
-        rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
+    if (!Array.isArray(value.outbox) || value.outbox.length < 2) {
+        rejectClientMutation('Client mutation computed outbox must contain snapshot and event');
     }
     const principalAudienceSessionIds = value.principalAudienceSessionIds;
     if (

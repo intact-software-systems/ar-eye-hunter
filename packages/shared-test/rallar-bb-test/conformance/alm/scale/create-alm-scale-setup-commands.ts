@@ -17,6 +17,7 @@ export function createAlmScaleSetupCommands(
     });
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
+        createSignInCommand(input, prefix),
         ...(role === 'director' ? [...ensure, created] : [created, ...ensure]),
         createConnectCommand(input, prefix),
         createSetupBarrier(input, prefix, 'connected'),
@@ -44,6 +45,24 @@ export function createAlmScaleSetupCommands(
     ];
 }
 
+function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    return {
+        kind: 'http.request',
+        commandId: `${prefix}-sign-in`,
+        metadata: {
+            purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
+                'so the lazy sign-in must not spend the group requests\' 5 s.'
+        },
+        request: {
+            method: 'GET',
+            path: `/api/state/apps/${encodeURIComponent(input.group.applicationId)}` +
+                `/workspaces/${encodeURIComponent(input.group.workspaceId)}/stats/me/realtime`
+        },
+        response: { body: 'json', acceptedStatusCodes: [200] },
+        timeoutMs: input.readyTimeoutMs
+    };
+}
+
 function createSetupBarrier(input: AlmScaleRecipeInput, prefix: string, phase: string): RallarBlackBoxTestCommand {
     return {
         kind: 'barrier',
@@ -68,7 +87,7 @@ function createConnectCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
         readiness: { minReadyPeers: 1, timeoutMs: input.readyTimeoutMs, intervalMs: 100 },
         rallar: {
             ...RESTORED_SESSION_RALLAR,
-            almDiagnostics: true,
+            almDiagnostics: input.almDiagnostics,
             username: '{auth.username}',
             timeoutMs: input.readyTimeoutMs,
             typeId: 'room.ar-eye-hunter.director.intent.v1',

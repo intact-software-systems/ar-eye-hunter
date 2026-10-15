@@ -232,6 +232,7 @@ function createQueueTaskInput(
     });
     return {
         wsQBoxServerService,
+        nowEpochMs: Date.now,
         inboxQueueReader: new InboxQueueReader(queue),
         outboxQueueReader: new OutboxQueueReader(queue),
         appInboxResilience: resilience,

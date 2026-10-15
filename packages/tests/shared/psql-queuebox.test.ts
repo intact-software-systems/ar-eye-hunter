@@ -326,7 +326,8 @@ describe('PSqlQueueBox', () => {
                 checkFairness: RateLimiter.init(60_000, 1),
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
-                finalizationStaleAfterMs: 5 * 60 * 1000
+                finalizationStaleAfterMs: 5 * 60 * 1000,
+                reservationLeaseMs: 5 * 60 * 1000
             }
         );
 
@@ -445,7 +446,7 @@ describe('PSqlQueueBox', () => {
             });
     });
 
-    it('treats the exact already-completed AppInbox reservation as an idempotent PostgreSQL success release', async () => {
+    it('rejects releasing an AppInbox reservation its handler already finalized in PostgreSQL', async () => {
         const reserved = {
             ...createEntry('atomic-success', EntityStatus.RESERVED),
             typeId: EnqueuedType.APP_INBOX,
@@ -469,19 +470,9 @@ describe('PSqlQueueBox', () => {
             Temporal.Now.instant
         );
 
-        const released = await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
-
-        expect([...released.values()][0]).toBe(completed);
-        expect(findAnyByKey).toHaveBeenCalledWith(reserved.key);
         await expect(
-            queue.releaseEntries([{
-                entry: { ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } },
-                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-            }])
+            queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }])
         ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.FAILED, delayMs: null } }])).rejects.toMatchObject({
-            code: 'resource-inbox-lost-reservation'
-        });
     });
 
     it.each(

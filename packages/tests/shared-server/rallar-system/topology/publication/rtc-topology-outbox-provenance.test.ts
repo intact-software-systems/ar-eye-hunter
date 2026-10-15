@@ -30,9 +30,9 @@ import {
 } from '../rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology producer provenance', () => {
-    it('refuses a page audience or scope that differs from the accepted publication', async () => {
+    it('refuses a page audience or scope that differs from the accepted publication', () => {
         const publication = createPublication(createTopologySnapshot(createGroupRef(), 1), 'work-proof');
-        const delivery = await computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
+        const delivery = computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
         for (const defect of ['audience', 'scope'] as const) {
             const changed = delivery.outboxWrites.map((write) => {
                 const message = decodePersistedALMessage(write.entry.resource);
@@ -55,7 +55,7 @@ describe('RTC topology producer provenance', () => {
                     }
                 };
             });
-            await expect(computeRtcTopologyOutboxProvenance(publication, changed)).rejects.toThrow('differs from its publication');
+            expect(() => computeRtcTopologyOutboxProvenance(publication, changed)).toThrow('differs from its publication');
         }
     });
 
@@ -68,7 +68,7 @@ describe('RTC topology producer provenance', () => {
                 createdAtEpochMs: Date.now(),
                 expiresAtEpochMs: Date.now() + 60_000
             };
-            const computed = await computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
+            const computed = computeRtcTopologyPublicationDeliveryWrite(publication, undefined);
             const repository = new FakeRuntimeStateRepository();
             for (const proof of computed.provenanceWrites) {
                 if (recipient === 'missing-proof') {
@@ -79,7 +79,7 @@ describe('RTC topology producer provenance', () => {
                     ? { ...decoded, target: { kind: 'scoped-room-broadcast' as const, groupRef, admittedAudience: ['session-a'] } }
                     : decoded;
                 const value = recipient === 'changed-proof-audience'
-                    ? JSON.stringify({ ...facts, digest: await computeWsOutboxProvenanceDigest(computed.outboxWrites[0]!.entry, facts) })
+                    ? JSON.stringify({ ...facts, digest: computeWsOutboxProvenanceDigest(computed.outboxWrites[0]!.entry, facts) })
                     : proof.value;
                 await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, proof.key, value, publication.expiresAtEpochMs);
             }

@@ -26,7 +26,7 @@ import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runt
 describe('Rallar middleware queue wake', () => {
     it.each([true, false])('drives the registered outbound owner (producer proof available: %s)', async (proofAvailable) => {
         const resilience = createResilience();
-        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
         const queueEngine = new InboxOutboxEngine();
         const infrastructure = createRallarMiddlewareInfrastructure(
             {

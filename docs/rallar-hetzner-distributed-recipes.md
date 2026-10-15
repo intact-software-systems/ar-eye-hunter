@@ -27,7 +27,7 @@ control_http_url: https://control.rallar.intactss.com
 manifest_path: path/to/distributed-manifest.json
 application_id: rallar-server
 workspace_id: default
-register_before_login: false
+register_before_login: true
 browser_log_level: warning         # warning | info | debug
 headless_entry: headless           # operator-spa keeps the rollback route
 browser_engine: chromium           # chromium | firefox | webkit
@@ -88,6 +88,18 @@ green run order:
 | `diagnostic/rtc-messages-all-peer-50-agent-30s-20hz-tree.json`          |     50 | 20 Hz all-peer multicast over a forced tree.                                          |
 | `diagnostic/rtc-messages-{all-peer,principal}-50-agent-60m-*-tree.json` |     50 | 60-minute tree soaks at 5, 10, or 20 Hz.                                              |
 | `diagnostic/matrix/*.json`                                              |  10–30 | Principal and all-peer tree matrix at 10/15/20/30 agents, 30 s or 5 min, 10 or 20 Hz. |
+| `diagnostic/alm-conformance-{6,11}-agent-30s.json`                      |   6/11 | The ALM scale workload at six and eleven browsers, with the ALM diagnostic stream on. |
+
+The ALM scale manifests share one recipe builder and differ in the connect's
+`almDiagnostics` flag. The canonical 15/30/50-agent manifests (19–21) connect
+with it off: no scale assertion reads the `rallar.browser.alm.*` topics, and at
+50 agents that stream was measured at about 9,000 events per second, 94 % of the
+harness events, with 75 % of events reaching the control server more than a second
+late and 13 agents' recipe results lost. The congestion, hand-off refusal and
+ordering-track counters the assertions and samplers read are counted before the
+flag, so they hold with the stream off. The 6- and 11-browser diagnostic
+checkpoints keep it on, for the per-message inbound and ACK evidence a diagnosis
+needs.
 
 Regenerate or verify the checked-in JSON from the TypeScript catalog:
 
@@ -126,11 +138,25 @@ scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   --ref main
 ```
 
-The dispatch helper sends `register_before_login=true` by default because the
-Hetzner controller currently uses a memory-backed API and a full rollout clears
-the disposable test user. Override with `--register-before-login false` only
-when the target API already has persistent pre-provisioned users. The raw
-workflow input still defaults to `false` for manual compatibility.
+The workflow input and the dispatch helper both default
+`register_before_login=true` because the Hetzner controller currently uses a
+memory-backed API and a full rollout clears its users; a direct
+`gh workflow run` that left the input at its former `false` default failed with
+a 401 at the first login. Override with `--register-before-login false` (or
+`-f register_before_login=false`) only when the target API already has
+persistent pre-provisioned users; those runs keep signing every agent in as the
+shared `RALLAR_BLACK_BOX_USERNAME`. With registration on, each hosted agent
+registers and signs in as its own user named after its agent id
+(`controller-01`, `controller-02`, ...) with the shared password, matching the
+all-local lifecycle and the GitHub Free job, because every WebSocket connect of
+one shared principal fans out a full snapshot to all of that principal's
+sessions on the serial AppInbox and stalls a 15-agent room join. The
+`RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
+controller smoke and other operator phases. The ALM scale recipes (19–21 and
+their diagnostic checkpoints) sign in as their first step, a read of
+`stats/me/realtime` under the 45-second setup allowance, because a cohort's
+registrations serialize on the API and must not consume the group requests'
+5-second allowance.
 
 Headless agents on the controller VM register and log in from one IP. The API
 default of 20 registrations and 30 logins per IP per minute refuses cohorts
@@ -397,7 +423,9 @@ backpressure count counts frames a carrier refused at admission for its own rate
 limit or open circuit (`rate-limited`, `circuit-open`), not channel
 backpressure: a carrier at its high watermark refuses an ALM send `congested`
 or holds it `not-ready`, which the agent's `stats.rallar.congestion` counters
-read.
+read. The same block counts the refused hand-offs per reason (`rateLimited`,
+`circuitOpen`) and the most bytes an RTC data channel held queued at a
+submission (`queuedBytesHighWater`).
 
 ## SPA Review
 

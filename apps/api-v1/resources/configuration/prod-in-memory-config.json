@@ -29,6 +29,11 @@
   "stateApi": {
     "strictReadAuthorization": true
   },
+  "appInbox": {
+    "completionWait": {
+      "maxRetryIntervalMs": 5000
+    }
+  },
   "ice": {
     "mode": "local"
   },

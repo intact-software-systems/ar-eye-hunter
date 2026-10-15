@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
@@ -159,6 +160,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appOutbox: createResilience()
             }
         });
@@ -182,6 +184,44 @@ describe('createRallarMiddleware', () => {
         await vi.waitFor(() => expect(receivedMessages).toEqual([message]));
     });
 
+    it.each([
+        { failure: 'retryable conflict', expectedBlocked: false },
+        { failure: 'operational failure', expectedBlocked: true }
+    ])('counts an eleventh AppInbox $failure toward the dequeue circuit: $expectedBlocked', async ({ failure, expectedBlocked }) => {
+        const testRuntime = createRallarMiddlewareTestRuntime({
+            resilience: {
+                inbox: createResilience(),
+                outbox: createResilience(),
+                appOutbox: createResilience()
+            }
+        });
+        const runtime = createRallarMiddleware(testRuntime.options);
+        runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
+            onMessage: async (_message, entry) => {
+                throw failure === 'retryable conflict'
+                    ? new AppInboxReservationConflictError(entry.key)
+                    : new Error('Storage transport unavailable');
+            }
+        });
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            for (let request = 0; request < 11; request += 1) {
+                await runtime.inboxQueueReader.enqueueIfAbsent(newALUntargetedMessage(
+                    'api-v1',
+                    newALRoute('app-inbox.group-state', 'group-1', `request-${request}`),
+                    'group-state.create.v1',
+                    { requestId: `request-${request}` }
+                ));
+                await runtime.inboxQueueReader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, runtime.appInboxResilience);
+            }
+        }
+        finally {
+            errorLog.mockRestore();
+        }
+
+        expect(runtime.appInboxResilience.isNotAllowedThroughToDequeue()).toBe(expectedBlocked);
+    });
+
     it('uses one custom retry budget for app inbox advertisement and reservation', async () => {
         const retryPolicy = {
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
@@ -191,6 +231,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: resilience,
+                outbox: resilience,
                 appInbox: resilience,
                 appOutbox: createResilience()
             }
@@ -230,6 +271,7 @@ describe('createRallarMiddleware', () => {
             outbox,
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             }
@@ -261,6 +303,7 @@ describe('createRallarMiddleware', () => {
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
+                outbox: createResilience(),
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             }
@@ -338,6 +381,7 @@ function createReadinessMiddlewareOptions(
     return createRallarMiddlewareTestRuntime({
         resilience: {
             inbox: createResilience(),
+            outbox: createResilience(),
             appOutbox: createResilience()
         },
         readiness,

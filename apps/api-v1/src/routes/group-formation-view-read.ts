@@ -256,15 +256,11 @@ async function readLayoutStale({ groupRef, authority, planned, deps }: ReadLayou
     if (acceptedIdentity === null) {
         return false;
     }
-    const [plannedFingerprint, planningAuthorityFingerprint] = await Promise.all([
-        deps.readPlannedLayoutFingerprint(groupRef),
-        computeAuthorityTopologyInputFingerprint(authority)
-    ]);
     return computeLayoutStale({
         acceptedIdentity,
         plannedIdentity: planned === null ? null : toGroupLayoutIdentity(planned),
-        plannedFingerprint,
-        planningAuthorityFingerprint
+        plannedFingerprint: await deps.readPlannedLayoutFingerprint(groupRef),
+        planningAuthorityFingerprint: computeAuthorityTopologyInputFingerprint(authority)
     });
 }
 

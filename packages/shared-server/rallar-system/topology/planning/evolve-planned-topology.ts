@@ -17,6 +17,7 @@ import { computeCanonicalTopologyPairWeight } from './canonical-topology-plannin
 export interface EvolvePlannedTopologyInput {
     readonly previous: RallarOverlayTopologySnapshot;
     readonly group: GroupSnapshot;
+    readonly leaderSessionId: string | undefined;
     readonly activeSessionIds: readonly string[];
     readonly globalGraph: WeightedGraph;
     readonly kind: Extract<RallarRtcTopologyKind, 'tree' | 'mesh'>;
@@ -29,6 +30,7 @@ export type EvolvePlannedTopologyResult =
     | Readonly<{ outcome: 'full-rebuild'; reason: EvolvePlannedTopologyFullRebuildReason; }>;
 
 export type EvolvePlannedTopologyFullRebuildReason =
+    | 'leader-rooting'
     | 'delta-too-large'
     | 'update-failed'
     | 'invariant-violation';
@@ -52,6 +54,13 @@ export function computeEvolvedTopologyNextHops(
     const removedSessionIds = input.previous.activeSessionIds.filter(
         (sessionId) => !currentSessionIds.has(sessionId)
     );
+
+    if (
+        input.kind === 'tree' && input.leaderSessionId !== undefined &&
+        (addedSessionIds.length + removedSessionIds.length === 0 || addedSessionIds.includes(input.leaderSessionId))
+    ) {
+        return { outcome: 'full-rebuild', reason: 'leader-rooting' };
+    }
 
     const deltaBudget = Math.max(2, Math.ceil(input.previous.activeSessionIds.length / 4));
     if (addedSessionIds.length + removedSessionIds.length > deltaBudget) {

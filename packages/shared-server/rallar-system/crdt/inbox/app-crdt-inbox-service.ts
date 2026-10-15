@@ -310,8 +310,8 @@ export class AppCrdtInboxService {
             serviceId: this.serviceId,
             completionFacts: this.transactionWriter.readCompletionFacts(appInboxContext)
         };
-        const computed = await computeCrdtInboxMutation(read);
-        const issues = await validateCrdtInboxMutation(read, computed);
+        const computed = computeCrdtInboxMutation(read);
+        const issues = validateCrdtInboxMutation(read, computed);
         if (issues[0] !== undefined) {
             throw new TypeError(issues[0].message);
         }

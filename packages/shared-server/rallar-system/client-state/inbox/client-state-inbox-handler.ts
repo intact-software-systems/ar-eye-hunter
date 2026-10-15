@@ -17,7 +17,6 @@ import {
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
 import {
-    timeClientStateMutationAsyncPhase,
     timeClientStateMutationCommit,
     timeClientStateMutationPhase,
     type ClientStateMutationTiming
@@ -107,9 +106,9 @@ export class ClientStateInboxHandler {
         input: ClientMutationCommandInput
     ): Promise<ClientStateWritten> {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
-        const command = await this.toCommand(context, input);
+        const command = this.toCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = await this.measureMutationComputation({
+        const computed = this.measureMutationComputation({
             command,
             read,
             completionFacts,
@@ -130,9 +129,9 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
-        const command = await this.toAuthorisedWsConnectCommand(context, connection);
+        const command = this.toAuthorisedWsConnectCommand(context, connection);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = await this.measureAuthorisedConnectComputation({
+        const computed = this.measureAuthorisedConnectComputation({
             connection,
             command,
             read,
@@ -162,7 +161,7 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const lifecycleFacts = toAuthorisedWsDisconnectLifecycleFacts(input);
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
-        const command = await this.toAuthorisedWsDisconnectCommand(context, input);
+        const command = this.toAuthorisedWsDisconnectCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
         if (!read.session) {
             const computed = this.measureMissingDisconnectComputation({
@@ -180,7 +179,7 @@ export class ClientStateInboxHandler {
                     await this.dependencies.sessionGenerationLifecycle.write(transaction, computed.lifecycleComputed)
             );
         }
-        const computed = await this.measureMutationComputation({
+        const computed = this.measureMutationComputation({
             command,
             read,
             completionFacts,
@@ -201,7 +200,7 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const page = await this.dependencies.expiryCandidates.readExpiredSessionPage(input);
         const reads = await this.readExpiredSessionMutations(context, page.candidates);
-        const computed = await this.measureExpiredSessionsComputation({
+        const computed = this.measureExpiredSessionsComputation({
             context,
             pageInput: input,
             page,
@@ -232,42 +231,42 @@ export class ClientStateInboxHandler {
     ): Promise<ClientExpiredSessionMutationRead[]> {
         const reads: ClientExpiredSessionMutationRead[] = [];
         for (const candidate of candidates) {
-            const command = await this.toCommand(context, toExpireClientSessionMutationInput(candidate));
+            const command = this.toCommand(context, toExpireClientSessionMutationInput(candidate));
             reads.push({ command, read: await this.dependencies.mutationService.read(command) });
         }
         return reads;
     }
 
-    private async measureMutationComputation(
+    private measureMutationComputation(
         input: ComputeClientMutationOperationInput
-    ): Promise<ClientMutationOperationComputed> {
+    ): ClientMutationOperationComputed {
         const { command, read } = input;
-        const computed = await timeClientStateMutationAsyncPhase(
+        const computed = timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
             () => computeClientMutationOperation(input)
         );
-        await timeClientStateMutationAsyncPhase(
+        timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            async () => {
-                await assertClientMutationOperation({ ...input, computed });
+            () => {
+                assertClientMutationOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
             }
         );
         return computed;
     }
 
-    private async measureAuthorisedConnectComputation(
+    private measureAuthorisedConnectComputation(
         input: ComputeAuthorisedWsConnectOperationInput
-    ): Promise<AuthorisedWsConnectOperationComputed> {
+    ): AuthorisedWsConnectOperationComputed {
         const { command, read } = input;
-        const computed = await timeClientStateMutationAsyncPhase(
+        const computed = timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
             () => computeAuthorisedWsConnectOperation(input)
         );
-        await timeClientStateMutationAsyncPhase(
+        timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            async () => {
-                await assertAuthorisedWsConnectOperation({ ...input, computed });
+            () => {
+                assertAuthorisedWsConnectOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
             }
         );
@@ -292,23 +291,23 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    private async measureExpiredSessionsComputation(
+    private measureExpiredSessionsComputation(
         input: ComputeExpiredSessionsOperationInput
-    ): Promise<ExpiredSessionsOperationComputed> {
+    ): ExpiredSessionsOperationComputed {
         const firstRead = input.reads[0];
         if (!firstRead) {
-            const computed = await computeExpiredSessionsOperation(input);
-            await assertExpiredSessionsOperation({ ...input, computed });
+            const computed = computeExpiredSessionsOperation(input);
+            assertExpiredSessionsOperation({ ...input, computed });
             return computed;
         }
-        const computed = await timeClientStateMutationAsyncPhase(
+        const computed = timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.compute' },
             () => computeExpiredSessionsOperation(input)
         );
-        await timeClientStateMutationAsyncPhase(
+        timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.validate' },
-            async () => {
-                await assertExpiredSessionsOperation({ ...input, computed });
+            () => {
+                assertExpiredSessionsOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(
                     input.reads.flatMap(({ command, read }) => validateClientMutationAuthorityPolicy(command, read))
                 );
@@ -373,23 +372,23 @@ export class ClientStateInboxHandler {
         }
     }
 
-    private async toCommand(
+    private toCommand(
         context: AppInboxExecutionMetadata,
         input: ClientMutationCommandInput
-    ): Promise<ClientMutationCommand> {
-        return await toClientMutationCommand(
+    ): ClientMutationCommand {
+        return toClientMutationCommand(
             input,
             toClientMutationPersistedFacts(context, input.commandId, this.dependencies),
             readClientMutationAuthority(context.enqueue.authority, input.operation)
         );
     }
 
-    private async toAuthorisedWsConnectCommand(
+    private toAuthorisedWsConnectCommand(
         context: AppInboxExecutionMetadata,
         connection: ClientAuthorisedWsSessionConnectAppInboxPayload
-    ): Promise<ClientMutationCommand> {
+    ): ClientMutationCommand {
         const requestId = toAuthorisedWsRequestId('connect', connection);
-        return await this.toCommand(
+        return this.toCommand(
             context,
             toConnectClientSessionMutationInput({
                 operation: 'connectAuthorisedWsSession',
@@ -421,12 +420,12 @@ export class ClientStateInboxHandler {
         );
     }
 
-    private async toAuthorisedWsDisconnectCommand(
+    private toAuthorisedWsDisconnectCommand(
         context: AppInboxExecutionMetadata,
         input: ClientAuthorisedWsSessionDisconnectAppInboxPayload
-    ): Promise<ClientMutationCommand> {
+    ): ClientMutationCommand {
         const connection = input.connection;
-        return await this.toCommand(
+        return this.toCommand(
             context,
             toDisconnectClientSessionMutationInput({
                 operation: 'disconnectAuthorisedWsSession',
