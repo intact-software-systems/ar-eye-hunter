@@ -8,6 +8,7 @@ import {
 
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import type { RallarCrdtServerAcceptedEnvelope } from '@shared-server/rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
@@ -363,7 +364,7 @@ describe('installRallarCrdtWsTopics', () => {
             now: () => 2_000,
             serverId: 'server-1'
         });
-        const accepted: unknown[] = [];
+        const accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'update'; }>[] = [];
         installRallarCrdtWsTopics(router, {
             logRepository,
             mutationIngress: {
@@ -471,7 +472,7 @@ describe('installRallarCrdtWsTopics', () => {
             now: () => 2_000,
             serverId: 'server-1'
         });
-        const accepted: unknown[] = [];
+        const accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'update'; }>[] = [];
         installRallarCrdtWsTopics(router, {
             allowPrincipalDocuments: true,
             logRepository,
@@ -513,7 +514,7 @@ describe('installRallarCrdtWsTopics', () => {
             lifecycle: 'archived',
             changedAtEpochMs: 1_500
         });
-        const accepted: unknown[] = [];
+        const accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'update'; }>[] = [];
         installRallarCrdtWsTopics(router, {
             logRepository,
             mutationIngress: {

@@ -9,6 +9,7 @@ import {
 import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -271,8 +272,4 @@ class CloseSocket extends EventTarget implements WebSocket {
     dispatchClose(): void {
         this.dispatchEvent(new CloseEvent('close', { code: 1000, reason: 'closed' }));
     }
-}
-
-function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
 }

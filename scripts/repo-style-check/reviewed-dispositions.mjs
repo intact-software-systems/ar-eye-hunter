@@ -38,6 +38,14 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'onUnhandled',
         maximumMagnitude: 3
     }),
+    // These two process rejection listeners take Node's unknown reason and normalize it directly to Error for
+    // absence assertions on the lifecycle's retries; they supply no production input or policy.
+    Object.freeze({
+        path: 'packages/tests/shared-server/rallar-system/websocket/ws-lifecycle-real-server-retry.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'onUnhandled',
+        maximumMagnitude: 2
+    }),
     // The anonymous stop-result callback immediately normalizes its rejection
     // to Error before the test checks the exact AggregateError membership.
     Object.freeze({
