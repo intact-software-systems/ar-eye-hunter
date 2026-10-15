@@ -1,7 +1,7 @@
 import { createControlDistributedRunArtifactBundle } from '../control-artifacts.ts';
-import type { ControlCompletedRunArchive } from '../control-run-completion.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlHttpResponses } from '../http/control-http-responses.ts';
+import type { ControlCompletedRunArchive } from '../run-completion/control-run-completion.ts';
 import { toNotFoundRejection } from './control-route-errors.ts';
 import { toPathParameters } from './control-route-requests.ts';
 import { ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS } from './run-routes-read.ts';

@@ -1,5 +1,9 @@
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import type { ControlRunSnapshot, ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    ControlRunSnapshot,
+    ControlRunSnapshotBounds,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlRunCompletion } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import { decodeArrayItems } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
@@ -11,7 +15,11 @@ import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
-import { toJsonPieces, writeSlicedJsonFile, type SlicedJsonFileWrite } from './control-sliced-json-file.ts';
+import {
+    toJsonPieces,
+    writeSlicedJsonFile,
+    type SlicedJsonFileWrite
+} from './run-completion/control-sliced-json-file.ts';
 
 export interface ControlSnapshotPersistenceInput {
     readonly storageDir: string | undefined;

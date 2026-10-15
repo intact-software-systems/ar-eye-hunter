@@ -1,6 +1,9 @@
-import type { ControlHeartbeatEnvelope, ControlRegisterEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type {
+    ControlHeartbeatEnvelope,
+    ControlRegisterEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 
-import type { ControlAgentState } from './control-service-state.ts';
+import type { ControlAgentState } from '../control-service-state.ts';
 
 /** A registration after a disconnect is a reconnect; either way the socket sequence and the resume set move. */
 export function markControlAgentRegistered(

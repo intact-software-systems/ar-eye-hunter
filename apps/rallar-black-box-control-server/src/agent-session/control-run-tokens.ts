@@ -1,4 +1,4 @@
-import type { ControlRunState } from './control-service-state.ts';
+import type { ControlRunState } from '../control-service-state.ts';
 
 export interface ValidControlRunTokenInput {
     readonly run: ControlRunState | undefined;
@@ -8,7 +8,11 @@ export interface ValidControlRunTokenInput {
 }
 
 /** Whether any token issued to the agent for the run is still within its time to live. */
-export function hasActiveControlRunToken(run: ControlRunState | undefined, agentId: string, nowEpochMs: number): boolean {
+export function hasActiveControlRunToken(
+    run: ControlRunState | undefined,
+    agentId: string,
+    nowEpochMs: number
+): boolean {
     return Array.from(run?.tokens.values() ?? [])
         .some((token) => token.agentId === agentId && token.expiresAtEpochMs > nowEpochMs);
 }

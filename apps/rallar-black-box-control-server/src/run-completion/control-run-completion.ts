@@ -9,16 +9,16 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
-import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
+import { startRepeating } from '@shared/resilience/start-repeating.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
-import { toArtifactRunDirectory, toRunDirectoryName } from './control-artifact-recorder.ts';
-import { toBoundedTail } from './control-runtime-retention.ts';
-import { toControlServiceFailure, type ControlServiceFailure } from './control-service-failure.ts';
-import type { ControlDistributedRunState, ControlRunState } from './control-service-state.ts';
-import type { RallarBlackBoxControlService } from './control-service.ts';
-import type { ControlSnapshotPersistence } from './control-snapshot-persistence.ts';
+import { toArtifactRunDirectory, toRunDirectoryName } from '../control-artifact-recorder.ts';
+import { toBoundedTail } from '../control-runtime-retention.ts';
+import { toControlServiceFailure, type ControlServiceFailure } from '../control-service-failure.ts';
+import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
+import type { RallarBlackBoxControlService } from '../control-service.ts';
+import type { ControlSnapshotPersistence } from '../control-snapshot-persistence.ts';
 import { toJsonPieces, writeSlicedJsonFile, type SlicedJsonFileWrite } from './control-sliced-json-file.ts';
 
 export interface ControlRunCompletionConfig {
@@ -72,9 +72,9 @@ export interface ControlCompletedRunArchiveDependencies {
     readonly controlService: Pick<
         RallarBlackBoxControlService,
         | 'archiveCompletedRun'
-        | 'listCompletedRunIds'
         | 'markCompletedRunFileMissing'
         | 'resolveCompletableRunIds'
+        | 'snapshot'
         | 'snapshotRun'
         | 'snapshotRunForCompletion'
     >;
@@ -89,7 +89,9 @@ export interface ControlCompletedRunArchiveDependencies {
  * A live run is completable once every distributed run it hosts is terminal, every agent has left and nothing
  * changed it since the quiet instant; a run without a distributed run is a plain command queue and stays live.
  */
-export function isCompletableControlRun({ run, distributedRuns, quietSinceEpochMs }: ControlCompletableRunInput): boolean {
+export function isCompletableControlRun(
+    { run, distributedRuns, quietSinceEpochMs }: ControlCompletableRunInput
+): boolean {
     if (run.completion !== undefined || run.updatedAtEpochMs > quietSinceEpochMs) {
         return false;
     }
@@ -113,10 +115,6 @@ export function resolveCompletableControlRunIds(input: ControlCompletableRunsInp
         .map((run) => run.runId);
 }
 
-export function listCompletedControlRunIds(runs: Iterable<ControlRunState>): readonly string[] {
-    return Array.from(runs).filter((run) => run.completion !== undefined).map((run) => run.runId);
-}
-
 /** The run may be archived only from the revision its file was written from; a run that moved on keeps its rows. */
 export function resolveArchivableControlRun(
     run: ControlRunState | undefined,
@@ -137,8 +135,8 @@ export function resolveLiveControlRun(run: ControlRunState | undefined): Control
 }
 
 /** The index entry reports the loss and moves the retention revision; the retention order is unchanged. */
-export function markControlRunFileMissing(run: ControlRunState): void {
-    if (run.completion === undefined || run.completion.file.state === 'missing') {
+export function markControlRunFileMissing(run: ControlRunState | undefined): void {
+    if (run?.completion === undefined || run.completion.file.state === 'missing') {
         return;
     }
     run.completion = { ...run.completion, file: { ...run.completion.file, state: 'missing' } };
@@ -228,9 +226,10 @@ export class ControlCompletedRunArchive {
         if (!storageDir) {
             return;
         }
-        for (const runId of controlService.listCompletedRunIds()) {
-            const completion = controlService.snapshotRun(runId)?.completion;
-            if (completion?.file.state === 'present' && !(await isPresentFile(`${storageDir}/${completion.file.path}`))) {
+        for (const { runId, completion } of controlService.snapshot().runs) {
+            if (
+                completion?.file.state === 'present' && !(await isPresentFile(`${storageDir}/${completion.file.path}`))
+            ) {
                 this.reportMissingFile(runId, completion);
             }
         }

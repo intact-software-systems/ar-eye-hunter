@@ -5,7 +5,6 @@ import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { ControlAgentSockets } from './control-agent-sockets.ts';
 import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from './control-artifact-recorder.ts';
 import { startControlDeadlineSweep } from './control-deadline-sweep.ts';
-import { ControlCompletedRunArchive, DEFAULT_CONTROL_RUN_COMPLETION_CONFIG } from './control-run-completion.ts';
 import {
     readBlackBoxControlServerConfiguration,
     validateBlackBoxControlServerConfiguration
@@ -19,6 +18,10 @@ import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
 import { createRetentionPlanTokenAdapter } from './retention-plan-token.ts';
 import { routeControlHttpRequest } from './routes/control-http-router.ts';
+import {
+    ControlCompletedRunArchive,
+    DEFAULT_CONTROL_RUN_COMPLETION_CONFIG
+} from './run-completion/control-run-completion.ts';
 
 const DEFAULT_PORT = 5180;
 

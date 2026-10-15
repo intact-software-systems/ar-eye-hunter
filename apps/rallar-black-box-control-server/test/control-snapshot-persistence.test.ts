@@ -24,8 +24,8 @@ import {
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { toJsonPieces } from '../src/control-sliced-json-file.ts';
 import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
+import { toJsonPieces } from '../src/run-completion/control-sliced-json-file.ts';
 import {
     assertRight,
     toCommandResultEnvelope,

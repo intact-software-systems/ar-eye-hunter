@@ -51,7 +51,8 @@ import type {
 import { snapshotExecutableCommand } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { markControlAgentHeartbeat, markControlAgentRegistered } from './control-agent-presence.ts';
+import { markControlAgentHeartbeat, markControlAgentRegistered } from './agent-session/control-agent-presence.ts';
+import { hasActiveControlRunToken, isValidControlRunToken } from './agent-session/control-run-tokens.ts';
 import { toDuplicateAgentSocketDiagnostic } from './control-agent-sockets.ts';
 import {
     computeControlCommandQueueWrite,
@@ -68,17 +69,6 @@ import {
     toSettledAssessmentCommandIds,
     toStoredControlResultEnvelope
 } from './control-evidence-compaction.ts';
-import {
-    completeControlRun,
-    listCompletedControlRunIds,
-    markControlRunFileMissing,
-    resolveArchivableControlRun,
-    resolveCompletableControlRunIds,
-    resolveLiveControlRun,
-    type ArchiveCompletedRunInput,
-    type ControlRunCompletionSnapshot
-} from './control-run-completion.ts';
-import { hasActiveControlRunToken, isValidControlRunToken } from './control-run-tokens.ts';
 import {
     clearControlRunEvidence,
     trimControlReportDedupeKeys,
@@ -177,6 +167,15 @@ import {
     toReloadCleanupFailureResult,
     toReloadCompletionResult
 } from './recipe-reload/control-reload-completion-result.ts';
+import {
+    completeControlRun,
+    markControlRunFileMissing,
+    resolveArchivableControlRun,
+    resolveCompletableControlRunIds,
+    resolveLiveControlRun,
+    type ArchiveCompletedRunInput,
+    type ControlRunCompletionSnapshot
+} from './run-completion/control-run-completion.ts';
 
 export interface RallarBlackBoxControlServiceDependencies {
     readonly now: () => number;
@@ -669,10 +668,6 @@ export class RallarBlackBoxControlService {
         return resolveCompletableControlRunIds({ runs: this.runs.values(), distributedRuns, quietSinceEpochMs });
     }
 
-    listCompletedRunIds(): readonly string[] {
-        return listCompletedControlRunIds(this.runs.values());
-    }
-
     /** The run's every row, with its fleet reports generated while the rows are still here. */
     snapshotRunForCompletion(runId: string): ControlRunCompletionSnapshot | undefined {
         const run = resolveLiveControlRun(this.runs.get(runId));
@@ -696,10 +691,7 @@ export class RallarBlackBoxControlService {
     }
 
     markCompletedRunFileMissing(runId: string): void {
-        const run = this.runs.get(runId);
-        if (run !== undefined) {
-            markControlRunFileMissing(run);
-        }
+        markControlRunFileMissing(this.runs.get(runId));
     }
 
     private receiveEnvelope(envelope: ControlClientEnvelope): ControlEnvelopeReceipt {

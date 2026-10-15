@@ -1,12 +1,12 @@
 import type { ControlAgentSockets } from '../control-agent-sockets.ts';
 import type { ControlArtifactRecorder } from '../control-artifact-recorder.ts';
-import type { ControlCompletedRunArchive } from '../control-run-completion.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlSnapshotPersistence } from '../control-snapshot-persistence.ts';
 import type { ControlHttpResponses } from '../http/control-http-responses.ts';
 import { isProtectedControlReadPath, type ControlHttpSecurity } from '../http/control-http-security.ts';
 import type { ControlRequestBodyReader } from '../http/control-request-body.ts';
 import type { RetentionPlanTokenAdapter } from '../retention-plan-token.ts';
+import type { ControlCompletedRunArchive } from '../run-completion/control-run-completion.ts';
 import type { BrowserCommandDestinationPolicy } from '../validate-browser-command-destination.ts';
 import { routeAgentWriteRequest } from './agent-routes-write.ts';
 import { ADMIN_TOKEN_REJECTION, toNotFoundRejection } from './control-route-errors.ts';

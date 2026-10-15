@@ -8,9 +8,9 @@ import {
     createControlRunArtifactBundle,
     createControlRunArtifactFile
 } from '../control-artifacts.ts';
-import type { ControlCompletedRunArchive, ControlRunReadIssue } from '../control-run-completion.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlHttpRejection, ControlHttpResponses } from '../http/control-http-responses.ts';
+import type { ControlCompletedRunArchive, ControlRunReadIssue } from '../run-completion/control-run-completion.ts';
 import { toNotFoundRejection } from './control-route-errors.ts';
 import { toPathParameters } from './control-route-requests.ts';
 
