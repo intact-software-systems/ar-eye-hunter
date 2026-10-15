@@ -630,7 +630,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
      * cancelled. Idempotent; a message already cancelled or handed over is left as it is.
      */
     async handOver(msgId: string): Promise<void> {
-        if (this.sendControls.handOver(msgId) === 'already-ended') {
+        if (this.disposed || this.sendControls.handOver(msgId) === 'already-ended') {
             return;
         }
         await this.ready();
@@ -667,6 +667,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
     async retransmitAdmittedMessage(
         retransmission: ALOutboundMessageRuntime.Retransmission<TPrepared>
     ): Promise<ALOutboundEnqueueResult> {
+        if (this.disposed) {
+            return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
+        }
         await this.ready();
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
@@ -719,6 +722,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
         msg: ALMessage,
         source: ALOutboundControlSource
     ): Promise<ALOutboundControlAdmissionResult> {
+        if (this.disposed) {
+            return { kind: 'not-handled' };
+        }
         await this.ready();
         if (this.disposed) {
             return { kind: 'not-handled' };
@@ -728,6 +734,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     /** A server receipt control about a message this owner originated; it writes the receipt row, never work. */
     async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+        if (this.disposed) {
+            return { kind: 'not-handled' };
+        }
         await this.ready();
         if (this.disposed) {
             return { kind: 'not-handled' };

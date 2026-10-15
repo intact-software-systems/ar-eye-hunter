@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -19,6 +20,7 @@ import {
     AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
     ALOutboundCanonicalHandoff
 } from '@shared/alm/outbound/lane/al-outbound-canonical-handoff.ts';
+import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import {
     createCountingIndexedDbOperationObserver,
     type CountingIndexedDbOperationObserver
@@ -30,7 +32,6 @@ import '../../../setup-browser-indexeddb.ts';
 import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
-    createIndexedDbOutboundTestStores,
     createOutboundMessage,
     createRecordingOutboundTestRuntime,
     createVolatileOutboundTestStores,
@@ -61,13 +62,18 @@ function openHandoffTestPair(
     storageResets?: ALStorageResetListeners
 ): HandoffTestPair {
     const counting = createCountingIndexedDbOperationObserver();
-    const stores = createIndexedDbOutboundTestStores({
+    const runtimeStorage = new ALRuntimeStorage();
+    onTestFinished(() => runtimeStorage.close());
+    const stores = createDefaultIndexedDbALOutboundRuntimeStores({
         observer: counting,
         namespace: HANDOFF_NAMESPACE,
+        canonicalScope: HANDOFF_NAMESPACE,
         dbName,
-        storageResets
+        decodePrepared: decodeOutboundTestPayload,
+        supersedenceTrackTtlMs: 60_000,
+        runtimeStorage
     });
-    return { stores, counting };
+    return { stores: { ...stores, storageResets }, counting };
 }
 
 /** The canonical key of every bundle a lane's hand-off is given, in order; the hand-off still holds each. */
@@ -507,19 +513,52 @@ describe('the committed canonical message handed to dispatch', () => {
     it('records nothing from a commit that resolves after its runtime was disposed', async () => {
         const { stores } = openHandoffTestPair(`handoff-late-commit-${crypto.randomUUID()}`);
         const handedOff = recordHandoffCommits();
-        const runtime = createRecordingOutboundTestRuntime(stores, []);
+        const sent: ALMessage[] = [];
+        const runtime = createRecordingOutboundTestRuntime(stores, sent);
         const claims = holdOutboundClaims(stores);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let disposing: Promise<void> | undefined;
+        let disposed = false;
         const commit = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         // The commit lands, then the runtime is disposed before its result reaches the lane.
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
             const committed = await commit(bundle, observation);
-            await runtime.dispose();
+            disposing = runtime.dispose().then(() => {
+                disposed = true;
+            });
+            entered.resolve();
+            await release.promise;
             return committed;
         });
 
-        await runtime.enqueueIfAbsent(createOutboundMessage('handoff-late-commit'));
-
-        expect(handedOff, 'a disposed lane holds nothing a claim could reach').toEqual([]);
-        await claims.release(runtime);
+        const admission = runtime.enqueueIfAbsent(createOutboundMessage('handoff-late-commit'));
+        onTestFinished(async () => {
+            release.resolve();
+            try {
+                await Promise.all([admission, disposing, runtime.dispose()]);
+            }
+            finally {
+                await claims.release(runtime);
+            }
+        });
+        try {
+            await entered.promise;
+            await Promise.resolve();
+            expect(disposed, 'shutdown joins the accepted commit result').toBe(false);
+            release.resolve();
+            await admission;
+            await disposing;
+            expect(disposed).toBe(true);
+            expect(handedOff, 'a disposed lane holds nothing a claim could reach').toEqual([]);
+            await claims.release(runtime);
+            await runOutboundWorkTask(runtime);
+            expect(sent).toEqual([]);
+        }
+        finally {
+            release.resolve();
+            await Promise.all([admission, disposing, runtime.dispose()]);
+            await claims.release(runtime);
+        }
     });
 });

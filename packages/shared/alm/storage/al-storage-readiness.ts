@@ -16,11 +16,13 @@ export namespace ALStorageReadiness {
 
 /**
  * A storage failure is recorded on the pair's health and answered as a value; an open that failed
- * is tried again by the next call. Any other failure throws.
+ * is tried again by the next live call. Retirement preserves the accepted opening for observation
+ * without starting another open or work. Any other failure throws.
  */
 export class ALStorageReadiness {
     private readonly input: ALStorageReadiness.Input;
-    private opening: Promise<ALStorageReadiness.Outcome> | undefined;
+    private opening: Promise<ALStorageReadiness.Outcome>;
+    private retryOpening = false;
     private disposed = false;
     private readonly operations = new Set<Promise<void>>();
 
@@ -30,15 +32,15 @@ export class ALStorageReadiness {
     }
 
     async ready(): Promise<ALStorageReadiness.Outcome> {
-        if (this.disposed) {
-            throw new Error('AL storage readiness is disposed');
+        if (!this.disposed && this.retryOpening) {
+            this.opening = this.readOpen();
+            this.retryOpening = false;
         }
-        const opening = this.opening ?? this.readOpen();
-        this.opening = opening;
+        const opening = this.opening;
         const opened = await opening;
         if (opened.left !== undefined) {
             if (this.opening === opening) {
-                this.opening = undefined;
+                this.retryOpening = true;
             }
             return opened;
         }
@@ -62,8 +64,8 @@ export class ALStorageReadiness {
         if (this.disposed) {
             return whileUnavailable;
         }
-        const opened = this.opening === undefined ? undefined : await this.opening;
-        return opened?.right === undefined ? whileUnavailable : await read();
+        const opened = await this.opening;
+        return opened.right === undefined ? whileUnavailable : await read();
     }
 
     /** A whole admission, including gaps between its reads and writes, belongs to this lane until settled. */

@@ -5,6 +5,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -215,20 +216,46 @@ describe('RTC admitted-message consumption', () => {
 
     it('does not start delivery or schedule a retry when disposed during an admission commit', async () => {
         const fixture = createReplayFixture(false);
+        const committed = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let disposing: Promise<void> | undefined;
+        let disposed = false;
         const commit = fixture.stores.admissionStore.commitBundle.bind(fixture.stores.admissionStore);
         vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
             const result = await commit(bundle);
             fixture.observed.snapshot = undefined;
-            await fixture.runtime.dispose();
+            disposing = fixture.runtime.dispose().then(() => {
+                disposed = true;
+            });
+            committed.resolve();
+            await release.promise;
             return result;
         });
-
-        await fixture.runtime.admitIncomingMessage(createMessage({ seq: 1, versioned: true, acknowledge: false }), { kind: 'rtc-peer', peerId: 'sender' });
-
-        expect(vi.getTimerCount()).toBe(0);
-        fixture.observed.snapshot = createCurrentSnapshot();
-        await fixture.engine.executeOnce();
-        expect(fixture.delivered).toEqual([]);
+        const admission = fixture.runtime.admitIncomingMessage(
+            createMessage({ seq: 1, versioned: true, acknowledge: false }),
+            { kind: 'rtc-peer', peerId: 'sender' }
+        );
+        onTestFinished(async () => {
+            release.resolve();
+            await Promise.all([admission, disposing, fixture.runtime.dispose()]);
+        });
+        try {
+            await committed.promise;
+            await Promise.resolve();
+            expect(disposed, 'shutdown joins the accepted commit result').toBe(false);
+            release.resolve();
+            await admission;
+            await disposing;
+            expect(disposed).toBe(true);
+            expect(vi.getTimerCount()).toBe(0);
+            fixture.observed.snapshot = createCurrentSnapshot();
+            await fixture.engine.executeOnce();
+            expect(fixture.delivered).toEqual([]);
+        }
+        finally {
+            release.resolve();
+            await Promise.all([admission, disposing, fixture.runtime.dispose()]);
+        }
     });
 
     it('requests resynchronization when its predecessor retry work has expired', async () => {
@@ -321,7 +348,7 @@ describe('RTC admitted-message consumption', () => {
             expect(readCompleted, 'The owned storage read must return before its disposal can join the same batch').toBe(true);
         }
         finally {
-            await Promise.allSettled([disposing, fixture.runtime.dispose(), fixture.engine.stop()]);
+            await Promise.all([disposing, fixture.runtime.dispose(), fixture.engine.stop()]);
         }
         expect(readCompleted).toBe(true);
         expect(fixture.delivered).toEqual([]);
@@ -334,7 +361,31 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const controls: ALMessage[] = [];
-    const planner: ALInboundPlanner = (message, source, observations) =>
+    const planner = createReplayPlanner(observed, relay);
+    const engine = new InboxOutboxEngine();
+    const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'rtc',
+        selfPeerId: 'receiver',
+        stores,
+        queueEngine: engine,
+        planIncomingMessage: planner,
+        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()),
+        dispatchInboxEntry: async (entry) => {
+            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
+        },
+        forwardMessage: async ({ msg }) => {
+            forwarded.push(msg.id.msgId);
+        },
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
+        },
+        diagnostics: undefined
+    });
+    return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
+}
+
+function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALInboundPlanner {
+    return (message, source, observations) =>
         planRtcRoomSnapshotAdmission({
             message,
             plan: planALMessageHandling(message, {
@@ -367,26 +418,6 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
             },
             nowMs: observations.nowMs
         });
-    const engine = new InboxOutboxEngine();
-    const runtime = createDefaultALInboundMessageRuntime({
-        carrier: 'rtc',
-        selfPeerId: 'receiver',
-        stores,
-        queueEngine: engine,
-        planIncomingMessage: planner,
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()),
-        dispatchInboxEntry: async (entry) => {
-            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
-        },
-        forwardMessage: async ({ msg }) => {
-            forwarded.push(msg.id.msgId);
-        },
-        sendControlMessages: async (messages) => {
-            controls.push(...messages);
-        },
-        diagnostics: undefined
-    });
-    return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
 }
 
 /** Every RTC copy of a room multicast carries the audience its origin froze. */

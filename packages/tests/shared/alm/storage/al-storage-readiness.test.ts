@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
@@ -99,16 +105,21 @@ describe('ALStorageReadiness', () => {
     // Two callers awaiting one failed open both clear it; the later clear must not discard an open started between them.
     it('keeps an open started while another caller of the failed open has yet to resume', async () => {
         let opens = 0;
+        const release = Promise.withResolvers<void>();
         const readiness = new ALStorageReadiness({
             openStores: async () => {
                 opens += 1;
                 if (opens === 1) {
                     throw OPEN_FAILED;
                 }
-                await new Promise<void>(() => {});
+                await release.promise;
             },
             startWork: async () => {},
             storageHealth: undefined
+        });
+        onTestFinished(async () => {
+            release.resolve();
+            await readiness.dispose();
         });
         await readiness.readOpenedStore(async () => 'row', 'none');
 
@@ -136,6 +147,11 @@ describe('ALStorageReadiness', () => {
             await release.promise;
             return 'persisted';
         }, () => 'unavailable');
+        onTestFinished(async () => {
+            release.resolve();
+            await admission;
+            await readiness.dispose();
+        });
         await entered.promise;
         let disposed = false;
         const closing = readiness.dispose().then(() => {
@@ -148,6 +164,91 @@ describe('ALStorageReadiness', () => {
         await expect(admission).resolves.toBe('persisted');
         await closing;
         await expect(readiness.runStoreOperation(async () => 'new', () => 'unavailable')).rejects.toThrow('disposed');
+    });
+
+    it.each(['success', 'storage-failure', 'unexpected-failure'] as const)(
+        'observes the accepted %s after disposal without reopening or starting work',
+        async (outcome) => {
+            const failure = new Error('original opening failure');
+            const calls: string[] = [];
+            const readiness = new ALStorageReadiness({
+                openStores: async () => {
+                    calls.push('open');
+                    if (outcome === 'storage-failure') {
+                        throw OPEN_FAILED;
+                    }
+                    if (outcome === 'unexpected-failure') {
+                        throw failure;
+                    }
+                },
+                startWork: async () => {
+                    calls.push('work');
+                },
+                storageHealth: undefined
+            });
+            if (outcome === 'unexpected-failure') {
+                await expect(readiness.ready()).rejects.toBe(failure);
+                await expect(readiness.dispose()).rejects.toBe(failure);
+                await expect(readiness.ready()).rejects.toBe(failure);
+            }
+            else {
+                const accepted = await readiness.ready();
+                await readiness.dispose();
+                expect(await readiness.ready()).toEqual(accepted);
+                expect(accepted.right).toBe(outcome === 'success' ? 'ready' : undefined);
+                expect(accepted.left).toEqual(outcome === 'storage-failure' ? OPEN_FAILED.unavailable : undefined);
+            }
+            expect(calls).toEqual(outcome === 'success' ? ['open', 'work'] : ['open']);
+            await expect(readiness.runStoreOperation(async () => 'new')).rejects.toThrow('disposed');
+        }
+    );
+
+    it.each(['success', 'failure'] as const)('joins a pending %s observation after retirement', async (outcome) => {
+        const opening = Promise.withResolvers<void>();
+        const failure = new Error('pending opening failed');
+        const calls: string[] = [];
+        const readiness = new ALStorageReadiness({
+            openStores: () => {
+                calls.push('open');
+                return opening.promise;
+            },
+            startWork: async () => {
+                calls.push('work');
+            },
+            storageHealth: undefined
+        });
+        const closing = readiness.dispose();
+        const observed = readiness.ready();
+        const settled = Promise.allSettled([closing, observed]);
+        onTestFinished(async () => {
+            opening.resolve();
+            for (const result of await settled) {
+                if (result.status === 'rejected') {
+                    expect(outcome).toBe('failure');
+                    expect(result.reason).toBe(failure);
+                }
+            }
+        });
+        let observationFinished = false;
+        void observed.then(() => {
+            observationFinished = true;
+        }, () => {
+            observationFinished = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(observationFinished).toBe(false);
+        if (outcome === 'failure') {
+            opening.reject(failure);
+            await expect(observed).rejects.toBe(failure);
+            await expect(closing).rejects.toBe(failure);
+        }
+        else {
+            opening.resolve();
+            expect((await observed).right).toBe('ready');
+            await closing;
+        }
+        expect(calls).toEqual(['open']);
     });
 
     it('rethrows an open failure that is no storage failure', async () => {
