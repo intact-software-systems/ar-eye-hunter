@@ -182,57 +182,44 @@ wake, the completion notification and `observeSnapshot`), with one resolvable ty
 `GroupStateMutationService.write` and no search escape. The static audit, the GitHub Free review and
 decisions D194 to D204 live in
 [alm-v1c-step2-design-proposal.md](../../playground/alm/alm-v1c-step2-design-proposal.md); this plan
-binds the two slices that follow from them.
+binds the two slices that follow from them; step 2a is merged (#662) and step 2b is this PR.
 
-### Step 2a: the leader-ACK path and the harness amplification
+Step 2a (the leader-ACK path and the harness amplification, D199, D200, D202) is merged as #662.
 
-Deliver D202, D199 and D200 as one reviewed increment on the current branch:
+### Step 2b: the engine, the handler cost, the director-rooted tree and the diagnostic volume (this PR)
 
-- Leader-ACK path (D202): a logical recipient of a `group-leader` or `receiver` send acknowledges
-  itself immediately with status `accepted` beside the deferred subtree row; relays forward only
-  ACKs whose logical recipient is in the frozen audience; `send-control` ranks first in an inbound
-  batch; the in-memory QueueBox prunes COMPLETED rows on release; a server receipt that loses three
-  commit conflicts is retained as pending-control work; the server ACK relay budgets per held
-  aggregate and reports a failed NOTIFY as a typed failure. Routing, authority, frozen audiences,
-  QoS, the 30 s TTL, the fallback trigger and D56's late-ACK rule are unchanged.
-- Harness (D199, D200): one rollup per affecting control message with agent-indexed evidence; no
-  array copy under unbounded retention; compact change-driven snapshot persistence; an oversize
-  result frame recorded as a diagnostic with a gap record and bounded replay; the agent page's
-  per-event work independent of history (event cursor, report projection only while shown,
-  incremental wait matching); the headless app's paced render and `hmr: false` under the
-  full-stack lifecycle.
-- Docs: the runbook's complete local all-local command and the GitHub Free verdict.
+Delivered on `claude/alm-v1c-step-2b-engine-topology` (draft PR #664) as D194–D205, D207 and D208, with
+D206 refuted and withdrawn (a probe showed a relay already forwards in the committing batch; the
+per-hop cost at 50 is queueing behind serial 16-row batches at hubs). Measured locally on the same
+machine and regime: 15 and 30 pass; 50 sets up, its 294 shots are all acknowledged through the
+director-rooted 4-deep tree (18 shot timeouts before), and only the director's window fails because
+the end-of-match all-recipient ACK starts with 0.39 s of the 30 s window left (25 s shot schedule,
+≈2.7 s ACK tail at depth 3–4, ≈1.15 s barrier resolution at 50, ≈1.5 s for 49 confirmations). The
+hosted plane got one user per agent (the shared operator principal fanned out 1+N snapshot pages per
+connect) and an explicit sign-in step under the 45 s setup allowance (registrations serialize at
+≈350 ms each behind the password derivation). The window, the cadence, the allowances and every
+assertion are unchanged. Hosted 15 from the branch is recorded in the PR.
 
-Every change is RED first at its owned boundary (the proofs are listed in the proposal §4).
-Measured before and after in the same regime (D204): the local all-local 15-agent run on this
-machine, which fails today with 240 delivery-state timeouts after every page sets up. Publish the
-slice through the draft PR, keep this plan, and wait for the user's manual merge.
+### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted
 
-### Step 2b: the engine, its fault tolerance and the handler cost, then 15 → 30 → 50
-
-Step 2a is merged (#662 as `2c167a72`). On branch `claude/alm-v1c-step-2b-engine-topology` from that main: D194 to D198 (a handler-finalized
-success skips the post-commit release; the registration runnable wakes the engine after a batch
-that claimed work; typed retryable conflicts are not breaker failures, an open breaker reports no
-work and wakes at its reopen time, one task's `isWork` failure does not abort the pass, a reserve
-or release error backs off through `wakeAt`; the AppInbox TIMEOUT lane's 60 s lease;
-`resource_inbox_results` eviction; the `prod-in-memory` completion-wait ceiling) and D201 (the
-synchronous canonical SHA-256 with every caller renamed, provenance from the computed rows, one
-projection per validation, the bounded audience re-read once its linearization point is ruled),
-each RED first, with the state-write comparator and the unweakened Postgres medium-scale gate.
-Step 2a's hosted 15-agent run from the branch fails at that burst (13 join requests and one
-presence update refused 503 "App inbox entry did not complete within the wait budget"), so this is
-the first hosted blocker. Step 2b also takes the 50-agent local blocker measured in the proposal
-§1.6: topology planning places the appointed director at the root of the tree (or at the node of
-minimum eccentricity) for a room whose traffic is leader-addressed, instead of a leaf at depth 7;
-the per-hop ALM cost and the retry churn at hub relays are measured at their owners before a
-change; the harness diagnostic volume (≈9,000 events per second at 50, 94 % ALM diagnostics,
-13 lost results) is bounded by sampling or by a per-recipe opt-in that keeps the assertions'
-evidence; the RTC limiter, breaker and data-channel queue get a diagnostic so they can be ruled
-in or out. Then establish the original capture-off fifteen acceptance before thirty and thirty before fifty,
-locally first and then through the hosted manifests, and run the four-arm lane-policy benefit gate
-bound above. A failed run earns exact current evidence review and a meaningful change before
-another workload; no unchanged acceptance retry is selected. Configurable AppInbox concurrency and
-the cross-server AppInbox wake (F4, F5) need Postgres evidence and stay outcome-shaped.
+After step 2b is manually merged, on a fresh branch, from the measured 50-agent evidence (proposal
+§1.8): the shot-ACK tail grows with depth (p50 49 ms at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
+and completes in steps (≈1.25 s, then every 0.5 s), which is a retry or acknowledgement timer, not
+queue draining; attempts per acknowledged shot equal the sender's degree, so every shot still floods
+the tree; the per-session 20/s limiter refuses 4,793 hand-offs at 50 (1,228 at 30, 72 at 15) on every
+agent, the director included, and its imposed wait is unmeasured. Owners: `packages/shared` ALM
+outbound repair and acknowledgement timers, the multicast manager's hand-off limiter. First measure
+(per-message hop timestamps, the acknowledgement-timeout schedule, the limiter's wait), then one
+change at a time with RED → GREEN at the owner, judged by the local 50-agent run under the unchanged
+window. Harness: barrier resolution takes 0.75–1.65 s at 50 (0.004–0.23 s at 30) because parent
+result frames re-embed their children's results (≈58 MB of 159 MB); measure the control server's
+receive and resolution times, then stop re-embedding. Topology: the accepted layout landed 0.95 s
+before traffic; the `traffic-ready` barrier should follow a stable layout. Then the hosted cohorts
+through `Run Hetzner Distributed Recipe` and `Run GitHub Free Distributed Recipe` in `hetzner-control`
+mode, 15 before 30 before 50, and the four-arm lane-policy benefit gate bound above. Configurable
+AppInbox concurrency and the cross-server AppInbox wake (F4, F5) still need Postgres evidence and stay
+outcome-shaped. A failed run earns exact evidence review and a meaningful change before another
+workload; no unchanged acceptance retry is selected.
 
 ## Completion and handoff
 

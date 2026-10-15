@@ -133,6 +133,20 @@ The sign-in therefore becomes an explicit first recipe step under the 45 s setup
 the design's phase-budget rule applied to authentication. The registration cost itself is the
 password derivation's security parameter and stays; a cohort of 50 then signs in within ≈18 s.
 
+### 1.8 Measured on the step 2b head (local, this Mac)
+
+| Cohort | Result                                                  | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15     | passed, 231/231                                         | 6,187 events (37,022 on the step 2a head)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 30     | passed, 231/231                                         | 12,889 events; shot-ACK latency p50 399 ms, p90 1.27 s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 50     | all 294 shots acknowledged; the director's window fails | 24,553 events (272,925 before); the director is the root of a 4-deep tree (degree 5); shot-ACK p50 1.29 s, p90 2.07 s, by depth 49 ms / 542 ms / 1.54 s / 1.79 s at depths 1–4; attempts per acknowledged shot equal the sender's degree; `rateLimited` 4,793 (1,228 at 30, 72 at 15) on every agent; the start event's 49 confirmations took 1.51 s; the shots-complete barrier resolved 1.15 s after its last arrival (0.02 s at 30); the end event was sent at 29.62 s and its ACK was cut off at 30.01 s with every player having received it |
+
+The remaining 50-agent gap is the window budget, not a lost message: the 25 s shot schedule, the
+depth tail, the barrier and the 49-recipient end ACK sum to ≈31 s. The window stays (D204); step 2c
+takes the acknowledgement tail (its stepped completion at ≈1.25 s then every 0.5 s points at a retry
+or acknowledgement timer; the limiter's wait is unmeasured) and the control plane's barrier latency
+(parent result frames re-embed their children's results, ≈58 MB of 159 MB).
+
 ## 2. GitHub Free review
 
 The repository is public, so standard-runner minutes are free; the hard limits are ≈20 concurrent
@@ -240,6 +254,18 @@ before and after (D204); the Branch Release Gate, Formation and Medium-Scale hos
 head; a hosted 15-agent dispatch from the branch when the local run passes.
 
 ## 6. As applied
+
+**Step 2b (PR #664).** D194–D198 and D201 landed with the review rulings (a readiness failure joins the
+registration backoff; the breaker wakes at its real reopen instant; a handler-finalized success is
+returned only for a COMPLETED entry; the committer is the single completion publisher; the claim
+carries its 60 s lease and a handler that outruns it is reported, with no heartbeat; the outbox
+resilience is required; the client outbox is one list of write/message pairs). D205 landed with the
+fingerprint omitting the leader key when there is no leader, the sparse seed rooted at the director,
+a director join rebuilding, replans idempotent, and unmeasured pairs weighed above the largest
+measured RTT (average director depth 2.96/3.70/4.08 at 15/30/50, never deeper than the rooted
+no-RTT tree). D206 was refuted and withdrawn. D207 and D208 landed as decided. Hosted: one user per
+agent (`controller-NN`) and the explicit sign-in step; the run-manifest scope classifier accepts the
+workspace-level sign-in read. Measured in §1.7 and §1.8.
 
 **Step 2a (PR #662, head after the fix waves).** D202 landed as recorded in its row (immediate
 `accepted`, status-aware duplicate key, upward filter by frozen audience, volatile-lane control
