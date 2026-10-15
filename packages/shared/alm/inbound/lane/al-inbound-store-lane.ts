@@ -1,9 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import { Either } from '../../../resilience/Either.ts';
-import { toError } from '../../../resilience/to-error.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
@@ -489,8 +487,7 @@ export class ALInboundStoreLane {
      * The first control claim of a batch sends every control message that batch reserved, and the
      * rest await that one send. The round is the array the selection returned, so a retried row in a later
      * batch never joins a finished round, and a claim absent from the selected batch sends
-     * alone. A local readiness refusal admitted nothing, so every claim waits without individual fallback.
-     * Ordinary batch failures retry each message alone: idempotent admission answers `duplicate` for a
+     * alone. A batch failure retries each message alone: idempotent admission answers `duplicate` for a
      * message the round already admitted, so partially admitted claims settle independently.
      */
     private async sendControlInRound(
@@ -517,11 +514,7 @@ export class ALInboundStoreLane {
             await this.controlRound.sent;
             evidence?.handoffState('batch-returned');
         }
-        catch (caught) {
-            const error = toError(caught);
-            if (isNotReadyException(error)) {
-                return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
-            }
+        catch {
             evidence?.handoffState('fallback-pending');
             return await this.sendSingleControl(msg, evidence, 'fallback-returned');
         }
@@ -533,18 +526,9 @@ export class ALInboundStoreLane {
         evidence: ALInboundAcknowledgementEvidence | undefined,
         returned: 'single-returned' | 'fallback-returned'
     ): Promise<ALWorkOutcome> {
-        try {
-            await this.dependencies.sendControlMessages([msg]);
-            evidence?.handoffState(returned);
-            return { status: 'completed' };
-        }
-        catch (caught) {
-            const error = toError(caught);
-            if (isNotReadyException(error)) {
-                return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
-            }
-            throw error;
-        }
+        await this.dependencies.sendControlMessages([msg]);
+        evidence?.handoffState(returned);
+        return { status: 'completed' };
     }
 
     /**

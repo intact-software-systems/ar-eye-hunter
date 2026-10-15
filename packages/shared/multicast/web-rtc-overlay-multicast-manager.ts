@@ -16,7 +16,10 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { resolveALOwnedChildPeerIds } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import {
+    resolveALOwnedChildPeerIds,
+    toALAcceptedOverlayAdjacency
+} from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -1042,12 +1045,15 @@ export class WebRtcOverlayMulticastManager {
         }
 
         if (request.failedPeerIds.length > 0) {
+            const selfPeerId = this.connectionService.input.sessionId;
             return planRtcFailedPeerRepair({
                 msg,
                 request,
-                selfPeerId: this.connectionService.input.sessionId,
-                nextHopsBySessionId: toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay
-                    .nextHopsBySessionId,
+                selfPeerId,
+                adjacency: toALAcceptedOverlayAdjacency(
+                    selfPeerId,
+                    toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
+                ),
                 planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan')
             });
         }

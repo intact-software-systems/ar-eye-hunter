@@ -39,7 +39,7 @@ describe('computeMissingRecipientRepair', () => {
             frozen: ['r', 'b', 'c', 'e'],
             confirmed: ['c'],
             tree: { nextHopPeerIds: ['r', 'c', 'e'], completedHopPeerIds: ['c'] },
-            path: undefined
+            adjacency: undefined
         })).toEqual({ nextHopPeerIds: ['r', 'e'] });
     });
 
@@ -48,7 +48,7 @@ describe('computeMissingRecipientRepair', () => {
             frozen: ['r', 'b', 'c'],
             confirmed: ['r', 'c'],
             tree: { nextHopPeerIds: ['r', 'c'], completedHopPeerIds: ['c'] },
-            path: undefined
+            adjacency: undefined
         })).toEqual({ nextHopPeerIds: ['r'] });
     });
 
@@ -57,7 +57,7 @@ describe('computeMissingRecipientRepair', () => {
             frozen: ['r', 'b', 'c'],
             confirmed: ['c'],
             tree: { nextHopPeerIds: ['r', 'x'], completedHopPeerIds: [] },
-            path: {
+            adjacency: {
                 selfPeerId: 'a',
                 nextHopsBySessionId: { a: ['r', 'x'], r: ['a', 'b'], b: ['r'], x: ['a', 'c'], c: ['x'] }
             }
@@ -69,7 +69,7 @@ describe('computeMissingRecipientRepair', () => {
             frozen: ['r', 'b'],
             confirmed: ['b', 'r'],
             tree: { nextHopPeerIds: ['r', 'x'], completedHopPeerIds: [] },
-            path: undefined
+            adjacency: undefined
         })).toEqual({ nextHopPeerIds: [] });
     });
 });

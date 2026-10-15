@@ -9,7 +9,6 @@ import {
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { type ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -21,7 +20,7 @@ import {
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -84,14 +83,16 @@ it.each(
 )('maps RTC control result %s to inbound owner %s', async (verdict, ownerStatus) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const { receiver, sender } = createConnectedEndpoints();
-    vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueAllIfAbsent').mockImplementation(async (messages) =>
-        messages.map((message) => ({
-            verdict,
-            message,
-            entries: [],
-            trackedReceiptAlgo: 'none'
-        }))
-    );
+    const enqueueAllIfAbsent = ALOutboundMessageRuntime.prototype.enqueueAllIfAbsent;
+    // Only the receiver's control admission answers the observed verdict; every other admission runs for real.
+    vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueAllIfAbsent').mockImplementation(async function (
+        this: ALOutboundMessageRuntime<ALOutboundTransportMessage>,
+        messages
+    ) {
+        return messages.every((message) => message.id.senderId === 'receiver')
+            ? messages.map((message) => ({ verdict, message, entries: [], trackedReceiptAlgo: 'none' }))
+            : await enqueueAllIfAbsent.call(this, messages);
+    });
     const message = newALUnicastMessage(
         'sender',
         { topicId: 'tasks', resourceId: 'status', contextId: 'queue' },
@@ -106,6 +107,52 @@ it.each(
     const work = await readControlWork(receiver, ownerStatus);
     expect(work).toHaveLength(1);
     expect(work[0]!.dequeueAudit.attempts).toBe(1);
+});
+
+it('preserves independent idempotent fallback after a partially admitted ordinary batch', async () => {
+    const admitted = new Set<string>();
+    const run = createControlRecoveryRuntime(() => CONTROL_RECOVERY_STARTED_AT_MS, async (messages) => {
+        for (const message of messages) {
+            if (message.id.msgId === 'recovery-control-2') {
+                throw new Error('Storage unavailable after partial batch admission');
+            }
+            admitted.add(message.id.msgId);
+        }
+    });
+    const entries = await Promise.all([1, 2].map((sequence) => seedControlRecoveryWork(run, sequence, CONTROL_RECOVERY_STARTED_AT_MS + 10_000)));
+    await run.runtime.ready();
+    await run.batches.waitForPublishedBatches();
+    expect(await run.resources.workQueue.getItem(entries[0]!.key)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+    expect(await run.resources.workQueue.getItem(entries[1]!.key)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
+    expect([...admitted]).toEqual(['recovery-control-1']);
+});
+
+it('exhausts a genuine failing control after exactly twenty charged attempts with ordinary backoff', async () => {
+    let now = CONTROL_RECOVERY_STARTED_AT_MS;
+    const run = createControlRecoveryRuntime(() => now, async () => {
+        throw new Error('Storage admission failed');
+    });
+    const entry = await seedControlRecoveryWork(run, 1, CONTROL_RECOVERY_STARTED_AT_MS + 600_000);
+    await run.runtime.ready();
+    await run.batches.waitForPublishedBatches();
+    const delays = [1, 2, 4, 8, 16, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000];
+    for (let attempt = 1; attempt <= 20; attempt++) {
+        let released = (await run.resources.workQueue.getItem(entry.key))!;
+        expect(released).toMatchObject({ status: attempt === 20 ? EntityStatus.FAILED : EntityStatus.RETRY, dequeueAudit: { attempts: attempt } });
+        if (attempt === 20) {
+            expect(released.dequeueAudit.nextTs).toBeUndefined();
+            break;
+        }
+        expect(Number(released.dequeueAudit.nextTs!.epochMilliseconds) - now).toBe(delays[attempt - 1]);
+        now = Number(released.dequeueAudit.nextTs!.epochMilliseconds);
+        await expect.poll(async () => {
+            await run.engine.executeOnce();
+            await run.batches.waitForPublishedBatches();
+            await run.engine.stop();
+            released = (await run.resources.workQueue.getItem(entry.key))!;
+            return released.dequeueAudit.attempts;
+        }).toBe(attempt + 1);
+    }
 });
 
 interface ConnectedRtcEndpoints {
@@ -139,136 +186,11 @@ async function readControlWork(
     });
 }
 
-it('retains the whole not-ready batch without admitting either control through individual fallback', async () => {
-    let now = CONTROL_RECOVERY_STARTED_AT_MS;
-    let ready = false;
-    const admitted: string[] = [];
-    const run = createControlRecoveryRuntime(() => now, async (messages) => {
-        if (!ready && messages.length > 1) {
-            throw new NotReadyException(1251);
-        }
-        admitted.push(...messages.map((message) => message.id.msgId));
-    });
-    const entries = await Promise.all([1, 2].map((sequence) => seedControlRecoveryWork(run, sequence, CONTROL_RECOVERY_STARTED_AT_MS + 10_000)));
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    for (const entry of entries) {
-        expect(await run.resources.workQueue.getItem(entry.key))
-            .toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0, nextTs: expect.anything() } });
-        expect(Number((await run.resources.workQueue.getItem(entry.key))!.dequeueAudit.nextTs!.epochMilliseconds)).toBe(CONTROL_RECOVERY_STARTED_AT_MS + 1251);
-    }
-    expect(admitted).toEqual([]);
-    ready = true;
-    now = CONTROL_RECOVERY_STARTED_AT_MS + 1251;
-    await expect.poll(async () => {
-        await run.engine.executeOnce();
-        await run.batches.waitForPublishedBatches();
-        await run.engine.stop();
-        return Promise.all(entries.map((entry) => run.resources.workQueue.getItem(entry.key)));
-    }).toMatchObject(entries.map(() => ({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } })));
-    expect(admitted).toEqual(['recovery-control-1', 'recovery-control-2']);
-});
-
-it('preserves independent idempotent fallback after a partially admitted ordinary batch', async () => {
-    const admitted = new Set<string>();
-    const run = createControlRecoveryRuntime(() => CONTROL_RECOVERY_STARTED_AT_MS, async (messages) => {
-        for (const message of messages) {
-            if (message.id.msgId === 'recovery-control-2') {
-                throw new Error('Storage unavailable after partial batch admission');
-            }
-            admitted.add(message.id.msgId);
-        }
-    });
-    const entries = await Promise.all([1, 2].map((sequence) => seedControlRecoveryWork(run, sequence, CONTROL_RECOVERY_STARTED_AT_MS + 10_000)));
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    expect(await run.resources.workQueue.getItem(entries[0]!.key)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
-    expect(await run.resources.workQueue.getItem(entries[1]!.key)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-    expect([...admitted]).toEqual(['recovery-control-1']);
-});
-
-it.each([
-    new Error('rate-limited'),
-    Object.assign(new Error('RTC enqueue rate limit exceeded'), { name: 'NotReadyException' }),
-    new NotReadyException(0),
-    new NotReadyException(-1),
-    new NotReadyException(1.5),
-    new NotReadyException(Number.MAX_SAFE_INTEGER + 1)
-])('charges an ordinary processing attempt for an unvalidated readiness exception %s', async (error) => {
-    const run = createControlRecoveryRuntime(() => CONTROL_RECOVERY_STARTED_AT_MS, async () => {
-        throw error;
-    });
-    const entry = await seedControlRecoveryWork(run, 1, CONTROL_RECOVERY_STARTED_AT_MS + 10_000);
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    const released = (await run.resources.workQueue.getItem(entry.key))!;
-    expect(released).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-    expect(Number(released.dequeueAudit.nextTs!.epochMilliseconds)).toBe(CONTROL_RECOVERY_STARTED_AT_MS + 1);
-});
-
-it.each([
-    { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1250, next: CONTROL_RECOVERY_STARTED_AT_MS + 1250, admitted: [] },
-    { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1251, next: CONTROL_RECOVERY_STARTED_AT_MS + 1251, admitted: [] },
-    { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1252, next: CONTROL_RECOVERY_STARTED_AT_MS + 1251, admitted: ['recovery-control-1'] }
-])('clips control readiness to expiry $deadline and never sends an expired control', async ({ deadline, next, admitted: expected }) => {
-    let now = CONTROL_RECOVERY_STARTED_AT_MS;
-    const admitted: string[] = [];
-    const run = createControlRecoveryRuntime(() => now, async (messages) => {
-        if (now < CONTROL_RECOVERY_STARTED_AT_MS + 1251) {
-            throw new NotReadyException(1251);
-        }
-        admitted.push(...messages.map((message) => message.id.msgId));
-    });
-    const entry = await seedControlRecoveryWork(run, 1, deadline);
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    const released = (await run.resources.workQueue.getItem(entry.key))!;
-    expect(released).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
-    expect(Number(released.dequeueAudit.nextTs!.epochMilliseconds)).toBe(next);
-    now = CONTROL_RECOVERY_STARTED_AT_MS + 1251;
-    await expect.poll(async () => {
-        await run.engine.executeOnce();
-        await run.batches.waitForPublishedBatches();
-        await run.engine.stop();
-        return deadline > now ? (await run.resources.workQueue.getItem(entry.key))?.status : await run.resources.workQueue.getItem(entry.key);
-    }).toBe(deadline > now ? EntityStatus.COMPLETED : undefined);
-    expect(admitted).toEqual(expected);
-});
-
-it('exhausts a genuine failing control after exactly twenty charged attempts with ordinary backoff', async () => {
-    let now = CONTROL_RECOVERY_STARTED_AT_MS;
-    const run = createControlRecoveryRuntime(() => now, async () => {
-        throw new Error('Storage admission failed');
-    });
-    const entry = await seedControlRecoveryWork(run, 1, CONTROL_RECOVERY_STARTED_AT_MS + 600_000);
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    const delays = [1, 2, 4, 8, 16, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000];
-    for (let attempt = 1; attempt <= 20; attempt++) {
-        let released = (await run.resources.workQueue.getItem(entry.key))!;
-        expect(released).toMatchObject({ status: attempt === 20 ? EntityStatus.FAILED : EntityStatus.RETRY, dequeueAudit: { attempts: attempt } });
-        if (attempt === 20) {
-            expect(released.dequeueAudit.nextTs).toBeUndefined();
-            break;
-        }
-        expect(Number(released.dequeueAudit.nextTs!.epochMilliseconds) - now).toBe(delays[attempt - 1]);
-        now = Number(released.dequeueAudit.nextTs!.epochMilliseconds);
-        await expect.poll(async () => {
-            await run.engine.executeOnce();
-            await run.batches.waitForPublishedBatches();
-            await run.engine.stop();
-            released = (await run.resources.workQueue.getItem(entry.key))!;
-            return released.dequeueAudit.attempts;
-        }).toBe(attempt + 1);
-    }
-});
-
 interface ControlRecoveryRuntime {
     readonly runtime: ALInboundMessageRuntime;
     readonly resources: ALInboundMessageRuntime.Resources;
     readonly engine: InboxOutboxEngine;
     readonly batches: ALWorkBatchTestObserver;
-    readonly delivered: string[];
 }
 
 function createControlRecoveryRuntime(
@@ -295,20 +217,17 @@ function createControlRecoveryRuntime(
     const diagnostics: ALInboundRuntimeDiagnosticsSink = Object.assign(() => {}, {
         acknowledgementCapture: { evidence: ALInboundAcknowledgementEvidence, batchObservations: batches.batchObservations }
     });
-    const delivered: string[] = [];
     const runtime = new ALInboundMessageRuntime({
         ...resources,
         carrier: 'rtc',
         planIncomingMessage: (message, _source, observations) =>
             planALMessageHandling(message, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
-        dispatchInboxEntry: async (entry) => {
-            delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
-        },
+        dispatchInboxEntry: async () => {},
         sendControlMessages,
         diagnostics
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, resources, engine, batches, delivered };
+    return { runtime, resources, engine, batches };
 }
 
 async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: number, expireAtTimestamp: number): Promise<ResourceEntry> {
@@ -333,38 +252,3 @@ async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: nu
     });
     return await run.resources.workQueue.enqueueIfAbsent(computed.entry);
 }
-
-it('keeps per-control expiry clipping and delivers new work while the not-ready batch waits', async () => {
-    let now = CONTROL_RECOVERY_STARTED_AT_MS;
-    const admitted: string[] = [];
-    const run = createControlRecoveryRuntime(() => now, async (messages) => {
-        if (now < CONTROL_RECOVERY_STARTED_AT_MS + 1251) {
-            throw new NotReadyException(1251);
-        }
-        admitted.push(...messages.map((message) => message.id.msgId));
-    });
-    const entries = await Promise.all([1250, 10_000].map((ttl, index) => seedControlRecoveryWork(run, index + 1, now + ttl)));
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    const released = await Promise.all(entries.map((entry) => run.resources.workQueue.getItem(entry.key)));
-    expect(released.map((entry) => Number(entry!.dequeueAudit.nextTs!.epochMilliseconds) - now)).toEqual([1250, 1251]);
-    expect(released.map((entry) => entry!.dequeueAudit.attempts)).toEqual([0, 0]);
-    const independent = newALUnicastMessage('sender', { topicId: 'tasks', resourceId: 'new-progress', contextId: 'queue' }, 'receiver', 'tasks.job.v1', {
-        text: 'new work'
-    });
-    const acceptance = await run.runtime.admitIncomingMessage(independent, { kind: 'rtc-peer', peerId: 'sender' });
-    expect(acceptance.left).toBeUndefined();
-    expect(acceptance.right).toMatchObject({ kind: 'admitted' });
-    await run.batches.waitForPublishedBatches();
-    expect(run.delivered).toEqual([independent.id.msgId]);
-    expect(await Promise.all(entries.map((entry) => run.resources.workQueue.getItem(entry.key)))).toEqual(released);
-    now += 1251;
-    await expect.poll(async () => {
-        await run.engine.executeOnce();
-        await run.batches.waitForPublishedBatches();
-        await run.engine.stop();
-        return run.resources.workQueue.getItem(entries[1]!.key);
-    }).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
-    expect(await run.resources.workQueue.getItem(entries[0]!.key)).toBeUndefined();
-    expect(admitted).toEqual(['recovery-control-2']);
-});

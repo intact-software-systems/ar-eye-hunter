@@ -66,6 +66,12 @@ export namespace ALOutboundRepairAdmission {
         readonly pending: ALOutboundPendingAckSnapshot;
         readonly messageExpiresAtMs: number;
     }
+
+    /** The fence of a receipt's next retry, and whether this peer can re-plan its message to retry it. */
+    export interface AckTimeoutRetry {
+        readonly expectedVersion: number | undefined;
+        readonly replannable: boolean;
+    }
 }
 
 /**
@@ -231,7 +237,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         };
         const bundle = this.toAckTimeoutRepairBundle(
             { msg, pending: nextPending, messageExpiresAtMs },
-            read.clientRecord?.version
+            {
+                expectedVersion: read.clientRecord?.version,
+                replannable: read.plan !== undefined && !read.plan.dropReason
+            }
         );
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
@@ -270,15 +279,35 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
+    /**
+     * The next retry of a receipt, and its repair hint when this peer can re-plan the message. A copy this peer
+     * cannot re-plan, such as a relay's forwarded copy, has no retry of its own: its origin retries it, so the
+     * hint would only fail its read.
+     */
     private toAckTimeoutRepairBundle(
         receipt: ALOutboundRepairAdmission.RetriedReceipt,
-        expectedVersion: number | undefined
+        retry: ALOutboundRepairAdmission.AckTimeoutRetry
     ): ALOutboundCommitBundle<TPrepared> {
         const { msg, pending, messageExpiresAtMs } = receipt;
         const failedPeerIds = pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
+        const repairHint: ALOutboundDurableEffectWrite<TPrepared> = {
+            effectId: toALOutboundEffectId([
+                'repair-hint',
+                msg.id.msgId,
+                'ack-timeout',
+                pending.attempts,
+                pending.deadlineAtMs
+            ]),
+            expireAtTimestamp: resolveALMessageExpireAtMs(msg),
+            payload: {
+                kind: 'repair-hint',
+                msgId: msg.id.msgId,
+                request: { trigger: 'ack-timeout', failedPeerIds, missingRanges: [] }
+            }
+        };
         return {
             senderId: msg.id.senderId,
-            expectedVersion,
+            expectedVersion: retry.expectedVersion,
             mutations: [{
                 kind: 'set-pending-ack',
                 originPeerId: msg.id.senderId,
@@ -287,21 +316,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
-                {
-                    effectId: toALOutboundEffectId([
-                        'repair-hint',
-                        msg.id.msgId,
-                        'ack-timeout',
-                        pending.attempts,
-                        pending.deadlineAtMs
-                    ]),
-                    expireAtTimestamp: resolveALMessageExpireAtMs(msg),
-                    payload: {
-                        kind: 'repair-hint',
-                        msgId: msg.id.msgId,
-                        request: { trigger: 'ack-timeout', failedPeerIds, missingRanges: [] }
-                    }
-                }
+                ...(retry.replannable ? [repairHint] : [])
             ]
         };
     }

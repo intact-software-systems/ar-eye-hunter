@@ -6,7 +6,7 @@ import {
 import type { ALAckAlgo } from '../al-contracts/al-policy.ts';
 import {
     resolveALChildPeerIdsTowardRecipients,
-    type ALAcceptedOverlayPath
+    type ALAcceptedOverlayAdjacency
 } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
@@ -31,16 +31,16 @@ export interface ComputeMissingRecipientRepairInput {
     readonly frozen: readonly string[];
     readonly confirmed: readonly string[];
     readonly tree: OverlayTree;
-    /** The origin in its accepted layout; absent when it holds no accepted layout to route by. */
-    readonly path: ALAcceptedOverlayPath | undefined;
+    /** Absent when the origin holds no accepted layout to route by. */
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
 }
 
 export interface PlanRtcFailedPeerRepairInput {
     readonly msg: ALMessage;
     readonly request: ALOutboundRepairRequest;
     readonly selfPeerId: string;
-    /** The accepted layout's whole adjacency; absent when the origin holds no accepted layout. */
-    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
+    /** Absent when the origin holds no accepted layout to route by. */
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
 }
 
@@ -56,7 +56,7 @@ interface RtcMissingRecipientRepairInput {
     readonly ackTracking: ALOutboundAckTrackingPlan;
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
-    readonly path: ALAcceptedOverlayPath | undefined;
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
 }
 
 /**
@@ -69,13 +69,13 @@ interface RtcMissingRecipientRepairInput {
  */
 export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepairInput): OverlayRepairPlan {
     const confirmed = new Set(input.confirmed);
-    const missing = input.frozen.filter((peerId) => !confirmed.has(peerId));
-    if (missing.length === 0) {
+    const missing = new Set(input.frozen.filter((peerId) => !confirmed.has(peerId)));
+    if (missing.size === 0) {
         return { nextHopPeerIds: [] };
     }
     const completed = new Set(input.tree.completedHopPeerIds);
-    const owing = input.tree.nextHopPeerIds.filter((peerId) => missing.includes(peerId) || !completed.has(peerId));
-    return { nextHopPeerIds: resolveALChildPeerIdsTowardRecipients(owing, input.path, missing) };
+    const owing = input.tree.nextHopPeerIds.filter((peerId) => missing.has(peerId) || !completed.has(peerId));
+    return { nextHopPeerIds: resolveALChildPeerIdsTowardRecipients(owing, input.adjacency, [...missing]) };
 }
 
 /**
@@ -98,9 +98,7 @@ export function planRtcFailedPeerRepair(
             ackTracking: outgoing.ackTracking,
             request: input.request,
             frozen,
-            path: input.nextHopsBySessionId === undefined
-                ? undefined
-                : { selfPeerId: input.selfPeerId, nextHopsBySessionId: input.nextHopsBySessionId }
+            adjacency: input.adjacency
         })
         : planRtcAlternateParentRepair(input);
 }
@@ -163,7 +161,7 @@ function toMissingRecipientRepairPlan(
             nextHopPeerIds: outgoing.preparedMessages.flatMap((prepared) => prepared.forwarding?.nextHopPeerIds ?? []),
             completedHopPeerIds: request.completedHopPeerIds
         },
-        path: input.path
+        adjacency: input.adjacency
     });
     const targets = new Set(repair.nextHopPeerIds);
     const preparedMessages = outgoing.preparedMessages.filter((prepared) => isAddressedToAny(prepared, targets));
