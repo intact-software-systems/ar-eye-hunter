@@ -647,7 +647,7 @@ it('holds setup-complete until the layout re-planned after readiness stays unrep
     const results = await execution;
 
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
-    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(3_500);
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(6_000);
 });
 
 it.each([

@@ -1031,12 +1031,10 @@ export interface RallarBlackBoxTestParallelResultValue {
 }
 
 export interface RallarBlackBoxTestWaitResultValue {
-    readonly commandId: string;
     readonly matched: boolean;
     readonly absent?: true;
     readonly timedOut?: boolean;
     readonly cancelled?: boolean;
-    readonly match: RallarBlackBoxTestWaitMatch;
     readonly event?: RallarBlackBoxTestEvent;
 }
 

@@ -5,7 +5,8 @@ import {
     type RallarBlackBoxCompositeResultSummary
 } from '../composite-results.ts';
 import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../control-snapshots.ts';
-import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
+import { decodeRecipeExecutionSegment } from '../recipe/run-recipe-commands.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
     toDistributedRunCompositeChildDecodeIssues,
@@ -25,11 +26,13 @@ type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
 interface DistributedRunCompositeRoots {
     readonly roots: readonly RallarBlackBoxTestResult[];
+    /** Aligned with `roots`; an entry is absent when the observation does not carry that root's authored command. */
+    readonly authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[];
     readonly rootDecodeIssues: readonly DistributedRunCompositeChildDecodeIssueRow[];
 }
 
 const COMPOSITE_CHILD_UNDECODABLE_CODE = 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE';
-const NO_COMPOSITE_ROOTS: DistributedRunCompositeRoots = { roots: [], rootDecodeIssues: [] };
+const NO_COMPOSITE_ROOTS: DistributedRunCompositeRoots = { roots: [], authoredRoots: [], rootDecodeIssues: [] };
 
 export function toDistributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
@@ -37,14 +40,17 @@ export function toDistributedRunCompositeDrilldowns(
     linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>
 ): readonly DistributedRunCompositeDrilldown[] {
     return results.flatMap((result) => {
-        const { roots, rootDecodeIssues } = toDistributedRunCompositeRoots(result.result);
-        const rows = toDistributedRunCompositeRows(roots);
+        const command = commands.get(result.commandId);
+        const { roots, authoredRoots, rootDecodeIssues } = toDistributedRunCompositeRoots(
+            result.result,
+            command?.envelope.command
+        );
+        const rows = toDistributedRunCompositeRows(roots, authoredRoots);
         if (rows.length === 0 && rootDecodeIssues.length === 0) {
             return [];
         }
 
         const link = linksByCommandId.get(result.commandId);
-        const command = commands.get(result.commandId);
         return [{
             key: `${result.agentId}:${result.commandId}`,
             commandId: result.commandId,
@@ -120,20 +126,45 @@ function toChildDecodeIssueFailureRow(
 }
 
 /** The recorded results a drilldown walks, and every recipe.run result item that does not decode as a result. */
-function toDistributedRunCompositeRoots(result: RallarBlackBoxTestResult | undefined): DistributedRunCompositeRoots {
+function toDistributedRunCompositeRoots(
+    result: RallarBlackBoxTestResult | undefined,
+    authored: RallarBlackBoxTestCommand | undefined
+): DistributedRunCompositeRoots {
     if (!result) {
         return NO_COMPOSITE_ROOTS;
     }
 
-    const recipeRun = toRecipeRunChildResults(result);
+    const recipeRun = toRecipeRunChildResults(result, toAuthoredRecipeChildCommands(result, authored));
     if (recipeRun.roots.length > 0 || recipeRun.rootDecodeIssues.length > 0) {
+        const relevant = recipeRun.roots.some(isCompositeMonitorRelevantResult);
         return {
-            roots: recipeRun.roots.some(isCompositeMonitorRelevantResult) ? recipeRun.roots : [],
+            roots: relevant ? recipeRun.roots : [],
+            authoredRoots: relevant ? recipeRun.authoredRoots : [],
             rootDecodeIssues: recipeRun.rootDecodeIssues
         };
     }
 
-    return { roots: isCompositeMonitorRelevantResult(result) ? [result] : [], rootDecodeIssues: [] };
+    return isCompositeMonitorRelevantResult(result)
+        ? { roots: [result], authoredRoots: [authored], rootDecodeIssues: [] }
+        : NO_COMPOSITE_ROOTS;
+}
+
+/** A segmented run records the results of its segment's commands only. */
+function toAuthoredRecipeChildCommands(
+    result: RallarBlackBoxTestResult,
+    authored: RallarBlackBoxTestCommand | undefined
+): readonly RallarBlackBoxTestCommand[] {
+    const recipe = authored?.kind === 'recipe.run' ? authored.recipe : undefined;
+    if (recipe === undefined) {
+        return [];
+    }
+    const segment = decodeRecord(decodeRecord(result.value).invocation).segment;
+    return segment === undefined
+        ? recipe.commands
+        : decodeRecipeExecutionSegment(segment).fold(
+            () => [],
+            ({ start, end }) => recipe.commands.slice(start, end)
+        );
 }
 
 function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boolean {
@@ -145,10 +176,13 @@ function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boo
     ) {
         return true;
     }
-    return toRecipeRunChildResults(result).roots.some(isCompositeMonitorRelevantResult);
+    return toRecipeRunChildResults(result, []).roots.some(isCompositeMonitorRelevantResult);
 }
 
-function toRecipeRunChildResults(result: RallarBlackBoxTestResult): DistributedRunCompositeRoots {
+function toRecipeRunChildResults(
+    result: RallarBlackBoxTestResult,
+    authoredChildren: readonly RallarBlackBoxTestCommand[]
+): DistributedRunCompositeRoots {
     const recorded = result.kind === 'recipe.run' ? decodeRecord(result.value).results : undefined;
     if (!Array.isArray(recorded)) {
         return NO_COMPOSITE_ROOTS;
@@ -156,6 +190,7 @@ function toRecipeRunChildResults(result: RallarBlackBoxTestResult): DistributedR
     const decoded = recorded.map((item) => decodeRallarBlackBoxTestResult(item));
     return {
         roots: decoded.flatMap((root) => root.right === undefined ? [] : [root.right]),
+        authoredRoots: decoded.flatMap((root, index) => root.right === undefined ? [] : [authoredChildren[index]]),
         rootDecodeIssues: decoded.flatMap((root, index) =>
             root.left === undefined ? [] : [{
                 parentPath: RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,

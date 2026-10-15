@@ -1,9 +1,11 @@
 import {
     toRallarBlackBoxCompositeDisplayResults,
     toRallarBlackBoxCompositeResultFlatEntries,
+    type RallarBlackBoxCompositeResultFlatEntry,
     type RallarBlackBoxCompositeResultPosition
 } from '../composite-results.ts';
 import type {
+    RallarBlackBoxTestCommand,
     RallarBlackBoxTestParallelGroupResult,
     RallarBlackBoxTestResult
 } from '../rallar-black-box-test-contracts.ts';
@@ -32,14 +34,18 @@ type CompositeRowPosition = Pick<
     | 'originalCommandId'
 >;
 
+const SOURCE_RECIPE_PATH_STEP = /^(?:\.groups\[(\d+)\])?\.commands\[(\d+)\]/u;
+
 export function toDistributedRunCompositeRows(
-    roots: readonly RallarBlackBoxTestResult[]
+    roots: readonly RallarBlackBoxTestResult[],
+    authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[]
 ): readonly DistributedRunCompositeRow[] {
     const entries = toRallarBlackBoxCompositeResultFlatEntries(roots);
     const displayByPath = new Map(
         toRallarBlackBoxCompositeDisplayResults(roots, {})
             .map((row) => [row.path, row])
     );
+    const authoredByPath = toAuthoredCompositeCommandsByPath(entries, authoredRoots);
 
     return entries.map((entry) => {
         const display = displayByPath.get(entry.path);
@@ -64,7 +70,7 @@ export function toDistributedRunCompositeRows(
             startedAtEpochMs: entry.startedAtEpochMs,
             endedAtEpochMs: entry.endedAtEpochMs,
             durationMs: entry.durationMs,
-            summary: toCompositeResultSummary(entry.result, display?.value),
+            summary: toCompositeResultSummary(entry.result, display?.value, authoredByPath.get(entry.path)),
             detail: toCompositeResultDetail(entry.result, display?.value, errorSummary),
             errorSummary,
             valueSummary: toCompositeValueSummary(display?.value)
@@ -157,4 +163,68 @@ function toCompositeGroupStatus(
         return 'empty';
     }
     return 'passed';
+}
+
+/**
+ * Pairs each composite entry with the command it ran, when the observation carries the authored root command.
+ * Entries list each root before its descendants, so a root entry opens the authored tree its descendants walk.
+ */
+function toAuthoredCompositeCommandsByPath(
+    entries: readonly RallarBlackBoxCompositeResultFlatEntry[],
+    authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[]
+): ReadonlyMap<string, RallarBlackBoxTestCommand> {
+    const authoredByPath = new Map<string, RallarBlackBoxTestCommand>();
+    let rootIndex = -1;
+    let rootSourceRecipePath = '';
+    for (const entry of entries) {
+        if (entry.depth === 0) {
+            rootIndex += 1;
+            rootSourceRecipePath = entry.sourceRecipePath;
+        }
+        const authored = entry.sourceRecipePath.startsWith(rootSourceRecipePath)
+            ? resolveAuthoredCommand(
+                authoredRoots[rootIndex],
+                entry.sourceRecipePath.slice(rootSourceRecipePath.length)
+            )
+            : undefined;
+        if (authored?.kind === entry.kind) {
+            authoredByPath.set(entry.path, authored);
+        }
+    }
+    return authoredByPath;
+}
+
+function resolveAuthoredCommand(
+    root: RallarBlackBoxTestCommand | undefined,
+    relativeSourceRecipePath: string
+): RallarBlackBoxTestCommand | undefined {
+    let command = root;
+    let remainingPath = relativeSourceRecipePath;
+    while (command !== undefined && remainingPath.length > 0) {
+        const step = SOURCE_RECIPE_PATH_STEP.exec(remainingPath);
+        if (!step) {
+            return undefined;
+        }
+        command = resolveAuthoredChildCommand(
+            command,
+            step[1] === undefined ? undefined : Number(step[1]),
+            Number(step[2])
+        );
+        remainingPath = remainingPath.slice(step[0].length);
+    }
+    return command;
+}
+
+function resolveAuthoredChildCommand(
+    parent: RallarBlackBoxTestCommand,
+    groupIndex: number | undefined,
+    commandIndex: number
+): RallarBlackBoxTestCommand | undefined {
+    if (groupIndex !== undefined) {
+        return parent.kind === 'parallel' ? parent.groups[groupIndex]?.commands[commandIndex] : undefined;
+    }
+    if (parent.kind === 'loop') {
+        return parent.commands[commandIndex];
+    }
+    return parent.kind === 'recipe.run' ? parent.recipe?.commands[commandIndex] : undefined;
 }

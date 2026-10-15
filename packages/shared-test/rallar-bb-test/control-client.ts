@@ -952,6 +952,7 @@ function toControlResultEnvelope(
     };
 }
 
+/** The bounded result keeps the verdict of the result it replaces, without that result's value or error details. */
 function toFrameLimitedResult(
     result: RallarBlackBoxTestResult,
     frameBytes: number,
@@ -969,7 +970,17 @@ function toFrameLimitedResult(
             code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
             message:
                 `The result frame of ${frameBytes} bytes exceeds the control frame limit of ${maxFrameBytes} bytes.`,
-            details: { frameBytes, maxFrameBytes }
+            details: {
+                frameBytes,
+                maxFrameBytes,
+                oversizeResult: {
+                    status: result.status,
+                    ok: result.ok,
+                    ...(result.error === undefined
+                        ? {}
+                        : { error: { code: result.error.code, message: result.error.message } })
+                }
+            }
         }
     };
 }

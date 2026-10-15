@@ -561,6 +561,11 @@ describe('distributed recipes monitor', () => {
         };
         const controlRunWithComposite: ControlRunSnapshot = {
             ...distributedControlRun,
+            commands: distributedControlRun.commands.map((command) =>
+                command.envelope.commandId === 'start-b'
+                    ? { ...command, envelope: { ...command.envelope, command: { kind: 'recipe.run', recipe: compositeRecipe } } }
+                    : command
+            ),
             results: distributedControlRun.results.map((result) =>
                 result.commandId === 'start-b'
                     ? {
@@ -644,9 +649,9 @@ describe('distributed recipes monitor', () => {
             originalCommandId: 'assert-event-count',
             status: 'failed'
         });
-        expect(drilldown.firstFailure?.summary).toContain('expected 99');
+        expect(drilldown.firstFailure?.summary).toContain('events.length gte - expected 99');
         expect(drilldown.firstFailure?.errorSummary).toContain('RALLAR_BLACK_BOX_ASSERT_FAILED');
-        expect(drilldown.rows.find((row) => row.kind === 'wait')?.summary).toContain('matched');
+        expect(drilldown.rows.find((row) => row.kind === 'wait')?.summary).toMatch(/^matched - rallar\.test\.ready, state, equals /);
         expect(drilldown.groupSummaries).toEqual(expect.arrayContaining([
             expect.objectContaining({ groupId: 'left', status: 'passed' }),
             expect.objectContaining({ groupId: 'right', status: 'failed' })
@@ -681,6 +686,13 @@ describe('distributed recipes monitor', () => {
             expect.objectContaining({ kind: 'event', id: 'composite-event' })
         ]));
         expect(evidenceDestinations.some((destination) => destination.kind === 'artifact')).toBe(false);
+
+        const unmatchedRecipeMonitor = deriveDistributedRunMonitor({
+            distributedRun: compositeRun,
+            controlRun: { ...controlRunWithComposite, commands: distributedControlRun.commands }
+        });
+        expect(unmatchedRecipeMonitor.compositeDrilldowns[0].rows.find((row) => row.kind === 'wait')?.summary).toBe('matched');
+        expect(unmatchedRecipeMonitor.compositeDrilldowns[0].firstFailure?.summary).toBe('failed - gte - expected 99');
     });
 
     it('lists composite children that do not decode and reports each as a monitor failure', () => {

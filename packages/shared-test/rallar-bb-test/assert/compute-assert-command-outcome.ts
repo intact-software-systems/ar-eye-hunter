@@ -143,10 +143,7 @@ function toAssertResultValue(input: ToAssertResultValueInput): RallarBlackBoxTes
     const { command, source, comparison, passed } = input;
     if (command.operator === 'sameUniqueStringSet') {
         return {
-            commandId: command.commandId,
-            source: command.source,
             operator: command.operator,
-            comparisonSource: command.comparisonSource,
             actual: source.exists ? source.value : undefined,
             comparisonActual: comparison?.exists ? comparison.value : undefined,
             exists: source.exists,
@@ -155,8 +152,6 @@ function toAssertResultValue(input: ToAssertResultValueInput): RallarBlackBoxTes
         };
     }
     return {
-        commandId: command.commandId,
-        source: command.source,
         operator: command.operator,
         expected: command.expected,
         actual: source.exists ? source.value : undefined,
@@ -172,17 +167,12 @@ function toInvalidAssertOutcome(
 ): RallarBlackBoxTestCommandOutcome {
     const value: RallarBlackBoxTestAssertResultValue = command.operator === 'sameUniqueStringSet'
         ? {
-            commandId: command.commandId,
-            source: command.source,
             operator: command.operator,
-            comparisonSource: typeof command.comparisonSource === 'string' ? command.comparisonSource : '',
             exists: false,
             comparisonExists: false,
             passed: false
         }
         : {
-            commandId: command.commandId,
-            source: command.source,
             operator: command.operator,
             expected: command.expected,
             exists: false,

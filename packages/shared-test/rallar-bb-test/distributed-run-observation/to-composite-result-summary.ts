@@ -1,5 +1,10 @@
-import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
-import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestWaitMatch
+} from '../rallar-black-box-test-contracts.ts';
 import {
     decodeAssertResultValue,
     decodeLoopResultValue,
@@ -9,14 +14,19 @@ import {
 import { decodeFirstNonBlankText, toDistributedRunPayloadSummary } from './distributed-run-payload-summary.ts';
 import { toCompositeValueSummary } from './to-composite-result-detail.ts';
 
+/** A wait or assert names what it checked only when the authored command it ran is known. */
 export function toCompositeResultSummary(
     result: RallarBlackBoxTestResult,
-    displayValue: unknown
+    displayValue: ApiJsonValue | undefined,
+    authored: RallarBlackBoxTestCommand | undefined
 ): string {
-    return toKindResultSummary(result) ?? toCompositeValueSummary(displayValue) ?? result.kind;
+    return toKindResultSummary(result, authored) ?? toCompositeValueSummary(displayValue) ?? result.kind;
 }
 
-function toKindResultSummary(result: RallarBlackBoxTestResult): string | undefined {
+function toKindResultSummary(
+    result: RallarBlackBoxTestResult,
+    authored: RallarBlackBoxTestCommand | undefined
+): string | undefined {
     if (result.kind === 'loop') {
         return toLoopResultSummary(result);
     }
@@ -24,10 +34,10 @@ function toKindResultSummary(result: RallarBlackBoxTestResult): string | undefin
         return toParallelResultSummary(result);
     }
     if (result.kind === 'wait') {
-        return toWaitResultSummary(result);
+        return toWaitResultSummary(result, authored?.kind === 'wait' ? authored.match : undefined);
     }
     if (result.kind === 'assert') {
-        return toAssertResultSummary(result);
+        return toAssertResultSummary(result, authored?.kind === 'assert' ? authored.source : undefined);
     }
     return undefined;
 }
@@ -68,31 +78,33 @@ function toParallelResultSummary(result: RallarBlackBoxTestResult): string | und
     ].filter(Boolean).join(' - ');
 }
 
-function toWaitResultSummary(result: RallarBlackBoxTestResult): string | undefined {
+function toWaitResultSummary(
+    result: RallarBlackBoxTestResult,
+    match: RallarBlackBoxTestWaitMatch | undefined
+): string | undefined {
     const value = decodeWaitResultValue(result.value);
     if (!value) {
         return undefined;
     }
     return [
         value.matched ? 'matched' : value.timedOut ? 'timed out' : value.cancelled ? 'cancelled' : 'pending',
-        toWaitMatchSummary(value.match)
+        match === undefined ? undefined : toWaitMatchSummary(match)
     ].filter(Boolean).join(' - ');
 }
 
-function toAssertResultSummary(result: RallarBlackBoxTestResult): string | undefined {
+function toAssertResultSummary(result: RallarBlackBoxTestResult, source: string | undefined): string | undefined {
     const value = decodeAssertResultValue(result.value);
     if (!value) {
         return undefined;
     }
     return [
         value.passed ? 'passed' : 'failed',
-        `${value.source} ${value.operator}`,
+        source === undefined ? value.operator : `${source} ${value.operator}`,
         value.expected !== undefined ? `expected ${toDistributedRunPayloadSummary(value.expected)}` : undefined
     ].filter(Boolean).join(' - ');
 }
 
-function toWaitMatchSummary(value: unknown): string | undefined {
-    const match = decodeRecord(value);
+function toWaitMatchSummary(match: RallarBlackBoxTestWaitMatch): string | undefined {
     return [
         decodeFirstNonBlankText(match.topic),
         decodeFirstNonBlankText(match.commandId),

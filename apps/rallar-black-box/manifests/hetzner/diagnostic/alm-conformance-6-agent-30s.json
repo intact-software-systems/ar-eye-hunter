@@ -1504,7 +1504,7 @@
             "kind": "http.request",
             "commandId": "alm-scale-director-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
             },
             "request": {
               "method": "GET",
@@ -1521,7 +1521,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-director-ensure-group",
-            "timeoutMs": 5000,
+            "timeoutMs": 6500,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -1553,7 +1553,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-director-ensure-member",
-            "timeoutMs": 5000,
+            "timeoutMs": 6500,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -1717,8 +1717,8 @@
           {
             "kind": "loop",
             "commandId": "alm-scale-director-layout-stable",
-            "count": 13,
-            "timeoutMs": 45000,
+            "count": 12,
+            "timeoutMs": 48500,
             "until": "first-success",
             "commands": [
               {
@@ -1742,8 +1742,8 @@
                     "data.kind": "layoutPlanned",
                     "data.role": "planned"
                   },
-                  "payloadPath": "data.identity.groupRevision",
-                  "contains": "{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.causalRevision.groupRevision}"
+                  "payloadPath": "data.identity",
+                  "contains": "\"groupRevision\":{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.causalRevision.groupRevision},"
                 }
               }
             ]
@@ -4613,7 +4613,7 @@
             "kind": "http.request",
             "commandId": "alm-scale-player-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
             },
             "request": {
               "method": "GET",
@@ -4636,7 +4636,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-player-ensure-group",
-            "timeoutMs": 5000,
+            "timeoutMs": 6500,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -4668,7 +4668,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-player-ensure-member",
-            "timeoutMs": 5000,
+            "timeoutMs": 6500,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -4816,8 +4816,8 @@
           {
             "kind": "loop",
             "commandId": "alm-scale-player-layout-stable",
-            "count": 13,
-            "timeoutMs": 45000,
+            "count": 12,
+            "timeoutMs": 48500,
             "until": "first-success",
             "commands": [
               {
@@ -4841,8 +4841,8 @@
                     "data.kind": "layoutPlanned",
                     "data.role": "planned"
                   },
-                  "payloadPath": "data.identity.groupRevision",
-                  "contains": "{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.causalRevision.groupRevision}"
+                  "payloadPath": "data.identity",
+                  "contains": "\"groupRevision\":{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.causalRevision.groupRevision},"
                 }
               }
             ]

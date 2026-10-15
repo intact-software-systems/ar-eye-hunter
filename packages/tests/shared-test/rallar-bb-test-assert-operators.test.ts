@@ -50,14 +50,14 @@ describe('rallar-bb-test extended assert operators', () => {
             operator: 'sameUniqueStringSet',
             comparisonSource: 'messages.0.payload.expected'
         });
-        expect(result).toMatchObject({
-            ok: true,
-            value: {
-                comparisonSource: 'messages.0.payload.expected',
-                exists: true,
-                comparisonExists: true,
-                passed: true
-            }
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual({
+            operator: 'sameUniqueStringSet',
+            actual: ['player-b', 'player-a'],
+            comparisonActual: ['player-a', 'player-b'],
+            exists: true,
+            comparisonExists: true,
+            passed: true
         });
         expect(
             (await runtime.execute({

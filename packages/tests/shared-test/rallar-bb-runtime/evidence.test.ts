@@ -191,9 +191,7 @@ describe('rallar-bb runtime evidence', () => {
         });
 
         expect(result.ok).toBe(true);
-        expect(result.value).toMatchObject({
-            commandId: 'assert-message-count',
-            source: 'state.messages.length',
+        expect(result.value).toEqual({
             operator: 'gte',
             expected: 1,
             actual: 1,

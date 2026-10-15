@@ -6,18 +6,22 @@ import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
 /** Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan. */
 const LAYOUT_QUIET_WINDOW_MS = 3_500;
+/** The API serves a cohort's group joins one at a time, so their allowance grows with the cohort. */
+const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
+const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
 
 export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = `alm-scale-${role}`;
+    const groupRequestTimeoutMs = computeGroupRequestTimeoutMs(input);
     const ensure = createRallarBlackBoxEnsureGroupCommands({
         commandPrefix: prefix,
         requestPrefix: prefix,
         group: input.group,
         actor: '{auth.clientId}'
-    });
+    }).map((command) => ({ ...command, timeoutMs: groupRequestTimeoutMs }));
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
         createSignInCommand(input, prefix),
@@ -49,13 +53,20 @@ export function createAlmScaleSetupCommands(
     ];
 }
 
+function computeGroupRequestTimeoutMs(input: AlmScaleRecipeInput): number {
+    return Math.min(
+        GROUP_REQUEST_BASE_TIMEOUT_MS + GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount,
+        input.readyTimeoutMs
+    );
+}
+
 function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
     return {
         kind: 'http.request',
         commandId: `${prefix}-sign-in`,
         metadata: {
             purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
-                'so the lazy sign-in must not spend the group requests\' 5 s.'
+                'so the lazy sign-in must not spend the group requests\' allowance.'
         },
         request: {
             method: 'GET',
@@ -165,8 +176,8 @@ function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): Ral
     return {
         kind: 'loop',
         commandId: `${prefix}-layout-stable`,
-        count: Math.ceil(input.readyTimeoutMs / LAYOUT_QUIET_WINDOW_MS),
-        timeoutMs: input.readyTimeoutMs,
+        count: Math.floor(input.readyTimeoutMs / LAYOUT_QUIET_WINDOW_MS),
+        timeoutMs: input.readyTimeoutMs + LAYOUT_QUIET_WINDOW_MS,
         until: 'first-success',
         commands: [
             {
@@ -183,9 +194,9 @@ function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): Ral
                 match: {
                     topic: 'rallar.browser.formation.layout',
                     payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
-                    payloadPath: 'data.identity.groupRevision',
-                    contains: `{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:${prefix}-layout-readiness` +
-                        '.value.formation.causalRevision.groupRevision}'
+                    payloadPath: 'data.identity',
+                    contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                        `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
                 }
             }
         ]
