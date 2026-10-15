@@ -135,6 +135,8 @@ The sign-in therefore becomes an explicit first recipe step under the 45 s setup
 the design's phase-budget rule applied to authentication. The registration cost itself is the
 password derivation's security parameter and stays; a cohort of 50 then signs in within ≈18 s.
 
+| `9884c5078` (GitHub Free `hetzner-control`, browsers on GitHub runners) | **passed**, 15/15, 231/231, 76.7 s | run 38662616218: zero failed, missing or stale agents; the first hosted 15-agent pass of the V1c workload |
+
 The hosted 15-agent limit is now the co-located VM: planning and ICE are fine, the shared host
 stalls both server processes once the browsers start. The GitHub Free workflow's `hetzner-control`
 mode (§2) places the browsers on GitHub runners and leaves the VM to the API and the control
@@ -274,7 +276,7 @@ a director join rebuilding, replans idempotent, and unmeasured pairs weighed abo
 measured RTT (average director depth 2.96/3.70/4.08 at 15/30/50, never deeper than the rooted
 no-RTT tree). D206 was refuted and withdrawn. D207 and D208 landed as decided. Hosted: one user per
 agent (`controller-NN`) and the explicit sign-in step; the run-manifest scope classifier accepts the
-workspace-level sign-in read. Measured in §1.7 and §1.8.
+workspace-level sign-in read. Measured in §1.7 and §1.8; hosted 15 passes through the GitHub Free `hetzner-control` mode (231/231).
 
 **Step 2a (PR #662, head after the fix waves).** D202 landed as recorded in its row (immediate
 `accepted`, status-aware duplicate key, upward filter by frozen audience, volatile-lane control

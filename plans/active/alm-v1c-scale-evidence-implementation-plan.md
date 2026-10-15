@@ -198,7 +198,9 @@ the end-of-match all-recipient ACK starts with 0.39 s of the 30 s window left (2
 hosted plane got one user per agent (the shared operator principal fanned out 1+N snapshot pages per
 connect) and an explicit sign-in step under the 45 s setup allowance (registrations serialize at
 ≈350 ms each behind the password derivation). The window, the cadence, the allowances and every
-assertion are unchanged. Hosted 15 from the branch is recorded in the PR.
+assertion are unchanged. Hosted 15 from the branch passes through `Run GitHub Free Distributed Recipe` in
+`hetzner-control` mode (15/15, 231/231, run 38662616218); the all-on-one-VM Hetzner run still fails at RTC
+readiness because the co-located host stalls once the browsers start (recorded in the proposal §1.7).
 
 ### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted
 
