@@ -28,6 +28,7 @@ describe('Relic Hunter server configuration', () => {
                     return values[name];
                 }
             },
+            hardwareConcurrency: 4,
             readTextFile: Deno.readTextFile,
             defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
             profileUrls: {
@@ -140,6 +141,7 @@ async function readConfiguration(
     };
     return await readRelicHunterServerConfiguration({
         environment: { get: (name) => values[name] },
+        hardwareConcurrency: 4,
         readTextFile: Deno.readTextFile,
         defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
         profileUrls: {

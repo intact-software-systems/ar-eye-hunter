@@ -27,6 +27,7 @@ loadEnvironment();
 const app: Hono = new Hono();
 const configuration = await readRelicHunterServerConfiguration({
     environment: Deno.env,
+    hardwareConcurrency: navigator.hardwareConcurrency,
     readTextFile: Deno.readTextFile,
     defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {
