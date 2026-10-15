@@ -28,6 +28,7 @@ import {
     type ResourceInboxAttempt,
     type ResourceInboxAttemptReleaseTelemetry
 } from './resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxCommandRejectedError } from './resource-inbox-command-rejected-error.ts';
 import type { ResourceInboxCompletionNotifications } from './resource-inbox-completion-notifications.ts';
 import { ResourceInboxResilience } from './resource-inbox-resilience.ts';
 
@@ -207,6 +208,7 @@ function createResourceInboxFinalizationController<V>(
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
         .withMaxNumToReserve(input.maxToReserve)
+        .withExpectedFailure(isExpectedResourceInboxFailure)
         .onFinalizationEntriesReserveDo(
             dependencies.options.onRetryExhaustionRecovery
                 ? (types, maxToReserve) => reserveResourceInboxFinalizations(dependencies, types, maxToReserve)
@@ -455,6 +457,12 @@ async function finalizeResourceInboxFailure(
     const finalized = await dependencies.options.onRetryExhausted!(exhaustion);
     dependencies.options.onRetryExhaustionTelemetry?.(exhaustion);
     return finalized;
+}
+
+function isExpectedResourceInboxFailure(exception: Error): boolean {
+    return isNotReadyException(exception) ||
+        (exception instanceof ResourceInboxHandlerEntryError &&
+            exception.handlerError instanceof ResourceInboxCommandRejectedError);
 }
 
 function computeResourceInboxFailureDecision(

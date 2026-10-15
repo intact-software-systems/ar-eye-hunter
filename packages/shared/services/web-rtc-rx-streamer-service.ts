@@ -42,6 +42,7 @@ import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import {
     defaultMaxMissedPings,
     defaultPingFrequencyMsecs,
+    isHeartbeatMessage,
     WebRtcHeartbeatService,
     type PingResult
 } from './web-rtc-heartbeat-service.ts';
@@ -99,6 +100,13 @@ export namespace WebRtcRxStreamerService {
     }
 }
 
+interface ObservedRtcAdmission {
+    readonly message: ALMessage;
+    readonly source: ALInboundMessageRuntime.Source;
+    readonly observation: ALInboundRtcAckObservation | undefined;
+    readonly pass: ALInboundRtcAckObservation.AdmissionInput['pass'];
+}
+
 export class WebRtcRxStreamerService {
     private static readonly ALL_IN = '*';
 
@@ -118,6 +126,12 @@ export class WebRtcRxStreamerService {
     };
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
+    private readonly rejectedAdmissionCounts: Record<ALMessageRejection['code'], number> = {
+        malformed: 0,
+        oversized: 0,
+        unauthorized: 0,
+        unsupported: 0
+    };
     private readonly peersByPeerId = new Map<PeerId, WebRtcConnectionService.Peer>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private disposed = false;
@@ -194,27 +208,20 @@ export class WebRtcRxStreamerService {
     }
 
     private async admitPeerMessage(peer: WebRtcConnectionService.Peer, value: unknown): Promise<void> {
-        if (this.disposed || this.peersByPeerId.get(peer.peerId) !== peer) {
+        if (this.disposed || this.peersByPeerId.get(peer.peerId) !== peer || isHeartbeatMessage(value)) {
             return;
         }
-        const message = decodeALMessageValue(value).right;
+        const decoded = decodeALMessageValue(value);
+        if (decoded.left) {
+            this.rejectedAdmissionCounts[decoded.left.code] += 1;
+            return;
+        }
+        const message = decoded.right!;
         const source = toALRtcPeerSource(peer.peerId, message);
         const observation = ALInboundRtcAckObservation.tryCreate(this.dependencies, message, peer.peerId);
         observation?.callbackEntered();
-        let acceptance: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
-        try {
-            acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
-        }
-        catch (caught) {
-            observation?.admissionResult({ pass: 'initial', admitted: 'threw' });
-            throw caught;
-        }
-        observation?.admissionResult({ pass: 'initial', admitted: acceptance });
-        if (acceptance.left) {
-            console.warn('Rejected RTC message', acceptance.left.code);
-            return;
-        }
-        if (!acceptance.right || !message) {
+        const acceptance = await this.admitObservedRtcMessage({ message, source, observation, pass: 'initial' });
+        if (!acceptance.right) {
             return;
         }
         const refreshed = await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
@@ -224,18 +231,25 @@ export class WebRtcRxStreamerService {
         if (!refreshed || this.disposed || this.peersByPeerId.get(peer.peerId) !== peer) {
             return;
         }
-        let retry: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
+        await this.admitObservedRtcMessage({ message, source, observation, pass: 'after-authority-refresh' });
+    }
+
+    private async admitObservedRtcMessage(
+        admission: ObservedRtcAdmission
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        let admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
         try {
-            retry = await this.inboundRuntime.admitIncomingMessage(message, source);
+            admitted = await this.inboundRuntime.admitIncomingMessage(admission.message, admission.source);
         }
         catch (caught) {
-            observation?.admissionResult({ pass: 'after-authority-refresh', admitted: 'threw' });
+            admission.observation?.admissionResult({ pass: admission.pass, admitted: 'threw' });
             throw caught;
         }
-        observation?.admissionResult({ pass: 'after-authority-refresh', admitted: retry });
-        if (retry.left) {
-            console.warn('Rejected RTC message after authority refresh', retry.left.code);
+        admission.observation?.admissionResult({ pass: admission.pass, admitted });
+        if (admitted.left) {
+            this.rejectedAdmissionCounts[admitted.left.code] += 1;
         }
+        return admitted;
     }
 
     private registerPeerMedia(peer: WebRtcConnectionService.Peer): void {
@@ -325,6 +339,10 @@ export class WebRtcRxStreamerService {
         if (failure) {
             throw failure;
         }
+    }
+
+    getRejectedAdmissionCounts(): Readonly<Record<ALMessageRejection['code'], number>> {
+        return { ...this.rejectedAdmissionCounts };
     }
 
     setRttReportingPeerIds(peerIds: readonly PeerId[]): void {
