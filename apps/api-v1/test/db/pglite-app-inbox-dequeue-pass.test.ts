@@ -12,9 +12,10 @@ import {
     computeAppInboxCompletion,
     validateAppInboxCompletion
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
+import { AppInboxDequeuePassTiming } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { nowMs, type RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
@@ -98,10 +99,10 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
     });
 });
 
-Deno.test('PGlite AppInbox dequeue pass claims an overdue retry on the FAIRNESS lane although its selection limiter is exhausted', async () => {
+Deno.test('PGlite AppInbox dequeue pass claims an overdue retry on the FAIRNESS lane', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = createDequeuePassRuntime(sql);
-        const { timing, engine, queueInbox, resilience } = runtime;
+        const { timing, engine, queueInbox } = runtime;
         const enqueued = await runtime.enqueue(OVERDUE_REQUEST_ID);
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await sql`
@@ -112,9 +113,6 @@ Deno.test('PGlite AppInbox dequeue pass claims an overdue retry on the FAIRNESS 
                 next_ts = (now() at time zone 'UTC') - interval '31 seconds'
             where ri_resource_id = ${OVERDUE_REQUEST_ID}
         `;
-        while (resilience.inbox.checkFairness.lockEntryRateLimiter.allow()) {
-            continue;
-        }
 
         await engine.executeOnce();
         await engine.stop();
@@ -143,6 +141,9 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
         onRetryExhausted: finalizeAppInboxRetry,
         onRetryExhaustionRecovery: finalizeAppInboxRetry
     });
+    inboxQueueReader.onDequeuePassDo(
+        new AppInboxDequeuePassTiming({ database: sql, nowMs }, { serviceId: SERVICE_ID, sink: (event) => timing.push(event) })
+    );
     const outboxQueueReader = new OutboxQueueReader(new InMemoryQueueBox());
     const queueEntryWriter = createAppInboxClientRuntime({
         inboxQueueReader,

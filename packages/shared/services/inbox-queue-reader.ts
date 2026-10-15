@@ -100,6 +100,9 @@ export class InboxQueueReader {
     }
 
     onDequeuePassDo(observer: InboxQueueReader.DequeuePassObserver): void {
+        if (this.dequeuePassObserver !== undefined) {
+            throw new Error('A dequeue-pass observer is already installed on this inbox reader');
+        }
         this.dequeuePassObserver = observer;
     }
 

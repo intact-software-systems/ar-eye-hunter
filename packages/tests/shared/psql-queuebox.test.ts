@@ -25,7 +25,6 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 import { createResourceInboxQueryCapture } from './p-sql-resource-inbox-test-harness.ts';
@@ -259,9 +258,6 @@ describe('PSqlQueueBox', () => {
         const advertised = await queue.isAnyEntryToLock(
             new Set(['type-1']),
             {
-                checkTimeout: RateLimiter.init(60_000, 1),
-                checkFairness: RateLimiter.init(60_000, 1),
-                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
                 reservationLeaseMs: 5 * 60 * 1000,

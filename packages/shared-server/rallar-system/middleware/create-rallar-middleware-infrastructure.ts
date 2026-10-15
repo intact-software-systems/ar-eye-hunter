@@ -12,7 +12,9 @@ import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
+import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { nowMs } from '../observability/timing.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
@@ -82,10 +84,7 @@ export function createRallarMiddlewareInfrastructure(
 
     return {
         wsQBoxServerService,
-        inboxQueueReader: new InboxQueueReader(
-            options.inbox,
-            { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
-        ),
+        inboxQueueReader: createMiddlewareInboxQueueReader(options),
         outboxQueueReader: new OutboxQueueReader(options.outbox ?? options.inbox),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
@@ -93,6 +92,23 @@ export function createRallarMiddlewareInfrastructure(
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {
+    const inboxQueueReader = new InboxQueueReader(
+        options.inbox,
+        { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
+    );
+    const timing = options.appInboxDequeuePassTiming;
+    if (timing !== undefined) {
+        inboxQueueReader.onDequeuePassDo(
+            new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
+                serviceId: timing.serviceId,
+                sink: timing.sink
+            })
+        );
+    }
+    return inboxQueueReader;
 }
 
 function createMiddlewareWsQueueBoxServer(
@@ -186,10 +202,13 @@ function authorizeMiddlewareALIngress(message: ALMessage): Either<ALMessageRejec
 
 function isStateSnapshotPageResource(resource: string): boolean {
     try {
-        const value: unknown = JSON.parse(resource);
-        return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'state-snapshot-page';
+        return isStateSnapshotPageValue(JSON.parse(resource));
     }
     catch {
         return false;
     }
+}
+
+function isStateSnapshotPageValue(value: unknown): value is Readonly<{ kind: 'state-snapshot-page'; }> {
+    return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'state-snapshot-page';
 }

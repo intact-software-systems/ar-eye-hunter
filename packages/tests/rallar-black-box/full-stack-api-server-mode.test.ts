@@ -358,6 +358,7 @@ describe('rallar-black-box full-stack API server mode', () => {
             const resource = name => new URL("./apps/api-v1/resources/configuration/" + name + "-config.json", import.meta.url);
             const configuration = await readApiV1Configuration({
                 environment: { get: name => Deno.env.get(name) },
+                hardwareConcurrency: navigator.hardwareConcurrency,
                 readTextFile: url => Deno.readTextFile(url),
                 defaultsUrl: resource("defaults"),
                 profileUrls: { dev: resource("dev"), prod: resource("prod"), "prod-hardened": resource("prod-hardened"), "prod-in-memory": resource("prod-in-memory") },

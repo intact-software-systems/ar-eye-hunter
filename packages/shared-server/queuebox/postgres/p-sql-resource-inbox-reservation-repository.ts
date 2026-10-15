@@ -23,6 +23,7 @@ import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-
 import {
     rowsToMap,
     toDomain,
+    toInstant,
     type ResourceInboxRow
 } from './resource-inbox-row-codec.ts';
 
@@ -449,13 +450,23 @@ function toSelectedResourceInboxRow(row: ClaimedResourceInboxRow): ResourceInbox
     };
 }
 
-/** The selection order: due time first with unscheduled rows ahead, then row identity; both sort as text. */
+/** The selection order: due instant first with unscheduled rows ahead, then row identity. */
 function compareClaimedRows(left: ClaimedResourceInboxRow, right: ClaimedResourceInboxRow): number {
-    return toClaimOrderKey(left).localeCompare(toClaimOrderKey(right));
+    const dueOrder = compareSelectedDueTs(left.selected_next_ts, right.selected_next_ts);
+    return dueOrder !== 0 ? dueOrder : compareRowIds(left.ri_row_id, right.ri_row_id);
 }
 
-function toClaimOrderKey(row: ClaimedResourceInboxRow): string {
-    return `${row.selected_next_ts ?? ''}|${String(row.ri_row_id).padStart(20, '0')}`;
+function compareSelectedDueTs(left: string | null, right: string | null): number {
+    if (left === null || right === null) {
+        return left === right ? 0 : left === null ? -1 : 1;
+    }
+    return Temporal.Instant.compare(toInstant(left), toInstant(right));
+}
+
+function compareRowIds(left: bigint, right: bigint): number {
+    const leftId = BigInt(left);
+    const rightId = BigInt(right);
+    return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
 function validateWorkPosition(

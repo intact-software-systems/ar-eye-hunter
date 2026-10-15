@@ -12,7 +12,7 @@ import {
 interface RecordedCall {
     readonly handle: 'root' | 'transaction' | 'savepoint';
     readonly text: string;
-    readonly values: readonly unknown[];
+    readonly values: readonly PSqlParameter[];
 }
 
 interface FakePostgresClient {
@@ -26,7 +26,7 @@ Deno.test('Postgres SQL client counts every statement of its root and transactio
     const sql = createPostgresSqlClient(fake.client);
 
     assert.deepEqual(sql.getExecutorCounters(), { statements: 0, executorWaitMs: 0 });
-    assert.deepEqual(await sql<readonly unknown[]>`select ${1} as one`, [{ one: 1 }]);
+    assert.deepEqual(await sql<readonly Record<string, number>[]>`select ${1} as one`, [{ one: 1 }]);
     assert.deepEqual(sql([1, 2]), { helper: [1, 2] });
     const inTransaction = await sql.begin(async (transaction) => {
         await transaction`update rows set value = ${2}`;

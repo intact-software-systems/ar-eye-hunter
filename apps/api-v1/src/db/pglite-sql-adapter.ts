@@ -1,11 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlExecutorCounters, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlExecutorCounters, PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 
 type PGliteQueryExecutor = Readonly<{
     query<T>(
         query: string,
-        params?: unknown[],
+        params?: readonly PSqlParameter[],
         options?: PGliteQueryOptions
     ): Promise<{ rows: T[]; }>;
 }>;
@@ -19,10 +19,10 @@ type PGliteSavepointState = {
 };
 
 /** Owned by the root handle and shared with every transaction handle it opens. */
-type PGliteExecutorCounterState = {
+interface PGliteExecutorCounterState {
     statements: number;
     executorWaitMs: number;
-};
+}
 
 type PGliteSavepointSql = PSqlSql & {
     savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
@@ -30,7 +30,7 @@ type PGliteSavepointSql = PSqlSql & {
 
 type PGliteSqlArrayFragment = Readonly<{
     kind: 'array';
-    values: readonly unknown[];
+    values: readonly PSqlParameter[];
 }>;
 
 const PGLITE_QUERY_OPTIONS: PGliteQueryOptions = {
@@ -42,7 +42,7 @@ const PGLITE_QUERY_OPTIONS: PGliteQueryOptions = {
 type SqlCallableOptions = Readonly<{
     raw: PGlite;
     executor: PGliteQueryExecutor;
-    ready: Promise<unknown>;
+    ready: Promise<void>;
     counters: PGliteExecutorCounterState;
     stopBeforeClose?: () => Promise<void>;
     inTransaction: boolean;
@@ -52,13 +52,13 @@ type SqlCallableOptions = Readonly<{
 export type PGliteSql = PSqlSql & {
     readonly raw: PGlite;
     close(): Promise<void>;
-    exec(sql: string): Promise<unknown>;
+    exec(sql: string): Promise<void>;
     notify(channel: string, payload: string): Promise<void>;
     listen(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>;
 };
 
 export type PGliteSqlClientOptions = Readonly<{
-    ready?: Promise<unknown>;
+    ready?: Promise<void>;
     stopBeforeClose?: () => Promise<void>;
 }>;
 
@@ -79,9 +79,9 @@ export function createPGliteSqlClient(
 
 function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
     const sql = ((
-        stringsOrValues: TemplateStringsArray | readonly unknown[],
-        ...values: unknown[]
-    ): Promise<unknown> | PGliteSqlArrayFragment => {
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<PSqlRows> | PGliteSqlArrayFragment => {
         if (!isTemplateCall(stringsOrValues)) {
             return {
                 kind: 'array',
@@ -166,7 +166,7 @@ function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGlit
         },
         exec: async (query: string) => {
             await options.ready;
-            return await options.raw.exec(query);
+            await options.raw.exec(query);
         },
         notify: async (channel: string, payload: string) => {
             await options.ready;
@@ -182,11 +182,11 @@ function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGlit
 async function queryRows(
     options: SqlCallableOptions,
     strings: TemplateStringsArray,
-    values: readonly unknown[]
-): Promise<readonly Record<string, unknown>[]> {
+    values: readonly PSqlParameter[]
+): Promise<PSqlRows> {
     await options.ready;
     const query = renderPGliteTemplate(strings, values);
-    const result = await executeCountedStatement<Record<string, unknown>>(options, query.text, query.params);
+    const result = await executeCountedStatement<object>(options, query.text, query.params);
 
     return result.rows;
 }
@@ -194,7 +194,7 @@ async function queryRows(
 async function executeCountedStatement<T>(
     options: Pick<SqlCallableOptions, 'executor' | 'counters'>,
     text: string,
-    params: unknown[] = []
+    params: readonly PSqlParameter[] = []
 ): Promise<{ rows: T[]; }> {
     options.counters.statements += 1;
     const calledAt = performance.now();
@@ -208,10 +208,10 @@ async function executeCountedStatement<T>(
 
 function renderPGliteTemplate(
     strings: TemplateStringsArray,
-    values: readonly unknown[]
-): Readonly<{ text: string; params: unknown[]; }> {
+    values: readonly PSqlParameter[]
+): Readonly<{ text: string; params: readonly PSqlParameter[]; }> {
     const textParts: string[] = [];
-    const params: unknown[] = [];
+    const params: PSqlParameter[] = [];
 
     for (let index = 0; index < values.length; index += 1) {
         textParts.push(strings[index]);
@@ -235,7 +235,7 @@ function renderPGliteTemplate(
 
 function renderArrayFragment(
     fragment: PGliteSqlArrayFragment,
-    params: unknown[]
+    params: PSqlParameter[]
 ): string {
     if (fragment.values.length === 0) {
         return '(null)';
@@ -249,7 +249,7 @@ function renderArrayFragment(
     return `(${placeholders.join(', ')})`;
 }
 
-function isPGliteSqlArrayFragment(value: unknown): value is PGliteSqlArrayFragment {
+function isPGliteSqlArrayFragment(value: PSqlParameter): value is PGliteSqlArrayFragment {
     return Boolean(
         value &&
             typeof value === 'object' &&
@@ -258,6 +258,6 @@ function isPGliteSqlArrayFragment(value: unknown): value is PGliteSqlArrayFragme
     );
 }
 
-function isTemplateCall(value: unknown): value is TemplateStringsArray {
+function isTemplateCall(value: TemplateStringsArray | readonly PSqlParameter[]): value is TemplateStringsArray {
     return Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'raw');
 }

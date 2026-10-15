@@ -79,16 +79,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<DequeueController.WorkAdvertisement> {
-        const {
-            checkTimeout,
-            checkFinalization,
-            maxAttempts,
-            finalizationStaleAfterMs,
-            reservationLeaseMs,
-            staleDueThresholdMs
-        } = toResourceInboxWorkAdvertisementOptions(workInput);
-        const timeoutAdvertised = checkTimeout.allow();
-        const finalizationAdvertised = checkFinalization.allow();
+        const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } =
+            toResourceInboxWorkAdvertisementOptions(workInput);
         const presence = await this.resourceInbox.reservations.readWorkPresence({
             typeIds,
             maxAttempts,
@@ -98,11 +90,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         });
 
         return {
-            FINALIZATION: finalizationAdvertised && presence.staleExhaustedReservation,
+            FINALIZATION: presence.staleExhaustedReservation,
             NEW: presence.newRow,
             RETRY: presence.dueRetry,
             FAIRNESS: presence.overdueRetry,
-            TIMEOUT: timeoutAdvertised && presence.timedOutReservation
+            TIMEOUT: presence.timedOutReservation
         };
     }
 

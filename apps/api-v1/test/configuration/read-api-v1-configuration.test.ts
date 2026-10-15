@@ -98,16 +98,12 @@ Deno.test('configuration reader bounds password derivations by the host cores mi
 });
 
 Deno.test('configuration reader rejects a password derivation bound below one', async () => {
-    await assert.rejects(
-        () =>
-            readApiV1Configuration(readerInput({
-                ...validConfigurationEnvironment(),
-                RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '0'
-            }, 4)),
-        (error: unknown) =>
-            error instanceof ApiV1ConfigurationError &&
-            error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations')
-    );
+    const error = await captureConfigurationError(readerInput({
+        ...validConfigurationEnvironment(),
+        RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '0'
+    }, 4));
+
+    assert.equal(error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations'), true);
 });
 
 Deno.test('configuration reader keeps production hardening profile-owned', async () => {

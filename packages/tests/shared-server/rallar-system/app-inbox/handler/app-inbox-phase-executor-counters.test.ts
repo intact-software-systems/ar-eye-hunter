@@ -71,7 +71,7 @@ describe('AppInbox phase timing executor counters', () => {
         const harness = createAtomicHarness();
         const database = createCountingDatabase();
         const uncounted = Object.assign(
-            (...input: Parameters<PSqlSql>) => (database.sql as (...input: Parameters<PSqlSql>) => unknown)(...input),
+            (...input: Parameters<PSqlSql>) => (database.sql as (...input: Parameters<PSqlSql>) => object)(...input),
             { begin: database.sql.begin }
         ) as PSqlSql;
         const timing: RallarTimingEvent[] = [];

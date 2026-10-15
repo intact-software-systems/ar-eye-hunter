@@ -1,9 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
+import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { hasAdvertisedDequeueWork, Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
@@ -54,36 +59,71 @@ describe('InboxQueueReader work advertisement', () => {
             .toEqual([['overdue', Reservator.FAIRNESS], ['due', Reservator.RETRY]]);
     });
 
-    it('claims an overdue retry on the FAIRNESS lane after a probe even when the fairness selection limiter is exhausted', async () => {
+    it('claims an overdue retry on the FAIRNESS lane on every pass, probed or not, with no selection limiter in play', async () => {
         const observed = createObservedReader();
-        await seedRetry(observed.queue, 'overdue');
-        observed.advanceNow(31_000);
         const resilience = createQueueResilience();
-        while (resilience.checkFairness.lockEntryRateLimiter.allow()) {
-            continue;
+        const passes = ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW + 1;
+
+        for (let pass = 0; pass < passes; pass += 1) {
+            await seedOverdueRetry(observed, `overdue-${pass}`);
+            const advertisedLanes = pass % 2 === 0
+                ? await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)
+                : undefined;
+            expect(await observed.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience, advertisedLanes)).toBe(1);
         }
 
-        const advertisedLanes = await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
-        expect(await observed.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience, advertisedLanes)).toBe(1);
-
-        expect(observed.claimed.map((attempt) => [attempt.entry.key.resourceId, attempt.telemetry.selectedLane]))
-            .toEqual([['overdue', Reservator.FAIRNESS]]);
-        expect(observed.claimed[0]?.telemetry.dueAgeMs).toBeGreaterThanOrEqual(30_000);
+        expect(observed.claimed.map((attempt) => attempt.telemetry.selectedLane)).toEqual(Array(passes).fill(Reservator.FAIRNESS));
+        expect(observed.claimed.every((attempt) => attempt.telemetry.dueAgeMs >= 30_000)).toBe(true);
     });
 
-    it('lets the exhausted limiter hold the overdue scan only for a pass that no probe preceded', async () => {
+    it('recovers every timed-out reservation within as many passes as there are reservations, then idles', async () => {
         const observed = createObservedReader();
-        await seedRetry(observed.queue, 'overdue');
-        observed.advanceNow(31_000);
         const resilience = createQueueResilience();
-        while (resilience.checkFairness.lockEntryRateLimiter.allow()) {
-            continue;
-        }
+        await seedReservations(observed, 5);
+        observed.advanceNow(resilience.reservationLeaseMs + 1);
 
-        expect(await observed.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience)).toBe(1);
+        const recovered = await runPasses(observed, resilience, 5);
 
-        expect(observed.claimed.map((attempt) => [attempt.entry.key.resourceId, attempt.telemetry.selectedLane]))
-            .toEqual([['overdue', Reservator.RETRY]]);
+        expect(recovered.lanesPerPass).toEqual(['TIMEOUT', 'TIMEOUT', 'TIMEOUT', 'TIMEOUT', 'TIMEOUT']);
+        expect(observed.claimed.map((attempt) => attempt.telemetry.selectedLane)).toEqual(Array(5).fill(Reservator.TIMEOUT));
+        expect(hasAdvertisedDequeueWork(await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience))).toBe(false);
+    });
+
+    it('finalizes every stale exhausted reservation within as many passes as there are reservations, then idles', async () => {
+        const finalized: string[] = [];
+        const observed = createObservedReader({
+            onRetryExhaustionRecovery: async (recovery) => {
+                finalized.push(recovery.entry.key.resourceId);
+                const [failed] = (await observed.queue.releaseEntries([
+                    { entry: recovery.entry, disposition: { status: EntityStatus.FAILED, delayMs: null } }
+                ])).values();
+                return failed;
+            }
+        });
+        const resilience = createQueueResilience(1);
+        await seedReservations(observed, 5);
+        observed.advanceNow(ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS + 1);
+
+        const recovered = await runPasses(observed, resilience, 5);
+
+        expect(recovered.lanesPerPass).toEqual(Array(5).fill('FINALIZATION'));
+        expect(finalized).toHaveLength(5);
+        expect(hasAdvertisedDequeueWork(await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience))).toBe(false);
+    });
+
+    it('refuses a second dequeue-pass observer: the reader owner installs the one observer', () => {
+        const observed = createObservedReader();
+
+        expect(() =>
+            observed.reader.onDequeuePassDo({
+                onProbeStarted: () => undefined,
+                onProbeFinished: () => undefined,
+                onPassStarted: () => undefined,
+                onPassFinished: () => undefined,
+                onHandlerStarted: () => undefined,
+                onHandlerFinished: () => undefined
+            })
+        ).toThrow('A dequeue-pass observer is already installed on this inbox reader');
     });
 
     it('advertises nothing for an empty queue and runs no pass for it', async () => {
@@ -110,10 +150,10 @@ describe('InboxQueueReader work advertisement', () => {
     });
 });
 
-function createObservedReader(): ObservedReader {
+function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}): ObservedReader {
     let now = Temporal.Now.instant();
     const queue = new InMemoryQueueBox(new Map(), () => now);
-    const reader = new InboxQueueReader(queue, { nowEpochMs: () => Number(now.epochMilliseconds) });
+    const reader = new InboxQueueReader(queue, { ...dequeueOptions, nowEpochMs: () => Number(now.epochMilliseconds) });
     const events: string[] = [];
     const claimed: ResourceInboxAttempt[] = [];
     reader.onDequeuePassDo({
@@ -137,4 +177,56 @@ function createObservedReader(): ObservedReader {
             now = now.add({ milliseconds });
         }
     };
+}
+
+/** A command that outlives the lease, the stale-finalization window and a run of overdue passes: an expired row is never claimed. */
+function createLongLivedQueueMessage(resourceId: string): ALMessage {
+    return newALUntargetedMessage(
+        'api-v1',
+        newALRoute('app-inbox.fair-service', 'test-scope', resourceId),
+        'test.fair-service',
+        { resourceId },
+        { ttlMs: 3_600_000 }
+    );
+}
+
+async function seedReservations(observed: ObservedReader, count: number): Promise<void> {
+    for (let index = 0; index < count; index += 1) {
+        await observed.reader.enqueueIfAbsent(createLongLivedQueueMessage(`reserved-${index}`));
+    }
+    const reserved = await observed.queue.reserveEntries({
+        typeIds: new Set([EnqueuedType.APP_INBOX]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: count
+    });
+    expect(reserved.size).toBe(count);
+}
+
+/** Probe then pass, as the engine does, once per requested pass; the lanes each probe advertised. */
+async function runPasses(
+    observed: ObservedReader,
+    resilience: ResourceInboxResilience,
+    passes: number
+): Promise<{ lanesPerPass: string[]; }> {
+    const lanesPerPass: string[] = [];
+    for (let pass = 0; pass < passes; pass += 1) {
+        const advertisedLanes = await observed.reader.readWorkAdvertisement(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience);
+        lanesPerPass.push(Object.values(Reservator).filter((lane) => advertisedLanes[lane]).join(','));
+        await observed.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, resilience, advertisedLanes);
+    }
+    return { lanesPerPass };
+}
+
+/** One retry whose due time is past the overdue threshold on the queue's clock after this call. */
+async function seedOverdueRetry(observed: ObservedReader, resourceId: string): Promise<void> {
+    const entry = await observed.reader.enqueueIfAbsent(createLongLivedQueueMessage(resourceId));
+    const [claimed] = (await observed.queue.reserveEntries({
+        typeIds: new Set([EnqueuedType.APP_INBOX]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: [await observed.queue.getItem(entry.key) ?? entry]
+    })).values();
+    expect(claimed?.key.resourceId).toBe(resourceId);
+    await observed.queue.releaseEntries([{ entry: claimed!, disposition: { status: EntityStatus.RETRY, delayMs: 1 } }]);
+    observed.advanceNow(31_000);
 }

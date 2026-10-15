@@ -1,9 +1,6 @@
 import { ApiV1ConfigurationError } from './api-v1-configuration-error.ts';
 import type { ApiV1Configuration, ApiV1ConfigurationProfile } from './api-v1-configuration.ts';
-import {
-    isApiV1ConfigurationSourceRecord,
-    type ApiV1ConfigurationSourceValue
-} from './decode-api-v1-configuration-source.ts';
+import type { ApiV1ConfigurationSourceValue } from './decode-api-v1-configuration-source.ts';
 import { decodeApiV1Configuration } from './decode-api-v1-configuration.ts';
 import {
     readApiV1ConfigurationEnvironment,
@@ -64,7 +61,8 @@ export async function readApiV1Configuration(
     ]);
     const configuration = decodeApiV1Configuration({
         profileName: environment.profileName,
-        defaultsSource: withHostPasswordDerivationBound(defaultsSource, input.hardwareConcurrency),
+        hardwareConcurrency: input.hardwareConcurrency,
+        defaultsSource,
         profileSource,
         environmentSource: environment.environmentSource,
         appliedEnvironmentOverrideNames: environment.appliedEnvironmentOverrideNames,
@@ -96,30 +94,6 @@ export function toApiV1ConfigurationStartupSummary(
         appliedEnvironmentOverrideNames: [
             ...configuration.profile.appliedEnvironmentOverrideNames
         ]
-    };
-}
-
-/** The committed defaults name no derivation bound: it follows the host unless a profile or the environment names one. */
-export function withHostPasswordDerivationBound(
-    defaultsSource: ApiV1ConfigurationSourceValue,
-    hardwareConcurrency: number
-): ApiV1ConfigurationSourceValue {
-    if (!isApiV1ConfigurationSourceRecord(defaultsSource)) {
-        return defaultsSource;
-    }
-    const authentication = defaultsSource.authentication;
-    if (
-        !isApiV1ConfigurationSourceRecord(authentication) ||
-        authentication.maxConcurrentPasswordDerivations !== undefined
-    ) {
-        return defaultsSource;
-    }
-    return {
-        ...defaultsSource,
-        authentication: {
-            ...authentication,
-            maxConcurrentPasswordDerivations: Math.max(1, hardwareConcurrency - 1)
-        }
     };
 }
 

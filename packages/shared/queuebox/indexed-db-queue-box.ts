@@ -133,7 +133,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
-        ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
+        ResourceInboxResilience.MAX_NUM_CLEANUP_IN_WINDOW
     );
 
     constructor(options: IndexedDbQueueBoxOptions) {
@@ -901,14 +901,12 @@ function computeIndexedDbWorkAdvertisement(
 ): DequeueController.WorkAdvertisement {
     const { newCandidates, dueRetryCandidates, reservedCandidates, options, typeIds, now } = input;
     const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } = options;
-    const timeoutAdvertised = options.checkTimeout.allow();
-    const finalizationAdvertised = options.checkFinalization.allow();
     const isReservable = (stored: StoredResourceEntry, status: EntityStatus) =>
         isStoredQueueEntryReservable({ stored, typeIds, statusIds: new Set([status]), now, maxAttempts });
     const dueRetries = dueRetryCandidates.filter((stored) => isReservable(stored, EntityStatus.RETRY));
     const overdueBefore = now.subtract({ milliseconds: staleDueThresholdMs });
     return {
-        FINALIZATION: finalizationAdvertised && hasIndexedDbFinalizationWork({
+        FINALIZATION: hasIndexedDbFinalizationWork({
             entries: reservedCandidates,
             typeIds,
             now,
@@ -921,7 +919,7 @@ function computeIndexedDbWorkAdvertisement(
             stored.dequeueAudit.nextTs !== undefined &&
             Temporal.Instant.compare(Temporal.Instant.from(stored.dequeueAudit.nextTs), overdueBefore) <= 0
         ),
-        TIMEOUT: timeoutAdvertised && reservedCandidates.some((stored) =>
+        TIMEOUT: reservedCandidates.some((stored) =>
             stored.dequeueAudit.attempts < maxAttempts &&
             isStoredQueueEntryTimedOut({
                 stored,

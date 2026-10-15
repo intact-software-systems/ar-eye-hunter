@@ -16,7 +16,6 @@ import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-control
 import type { ResourceInboxWorkAdvertisementOptions } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import {
     createResourceInboxTestStorage,
@@ -83,18 +82,19 @@ describe('PSqlQueueBox work advertisement', () => {
         expect(await queue.readWorkAdvertisement(OUTBOX_TYPES, createWorkAdvertisementOptions())).toEqual(NOTHING_ADVERTISED);
     });
 
-    it('names the TIMEOUT lane for a reservation past its lease once per advertisement window', async () => {
+    it('names the TIMEOUT lane for a reservation past its lease on every probe while it stays unclaimed', async () => {
         await seed({ resourceId: 'abandoned', status: EntityStatus.RESERVED, attempts: 1, startedAgoSeconds: 61 });
         await seed({ resourceId: 'held', status: EntityStatus.RESERVED, attempts: 1, startedAgoSeconds: 59 });
         const options = createWorkAdvertisementOptions({ reservationLeaseMs: 60_000 });
 
         expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, TIMEOUT: true });
-        expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual(NOTHING_ADVERTISED);
-        expect(await queue.isAnyEntryToLock(INBOX_TYPES, options)).toBe(false);
-        expect(await queue.isAnyEntryToLock(INBOX_TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 60_000 }))).toBe(true);
+        expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, TIMEOUT: true });
+        expect(await queue.isAnyEntryToLock(INBOX_TYPES, options)).toBe(true);
+        expect(await queue.readWorkAdvertisement(INBOX_TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 120_000 })))
+            .toEqual(NOTHING_ADVERTISED);
     });
 
-    it('names the FINALIZATION lane for a stale exhausted AppInbox reservation once per window and never for other types', async () => {
+    it('names the FINALIZATION lane for a stale exhausted AppInbox reservation on every probe and never for other types', async () => {
         await seed({
             resourceId: 'exhausted',
             status: EntityStatus.RESERVED,
@@ -111,7 +111,7 @@ describe('PSqlQueueBox work advertisement', () => {
         const options = createWorkAdvertisementOptions({ reservationLeaseMs: 10 * 60_000 });
 
         expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, FINALIZATION: true });
-        expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual(NOTHING_ADVERTISED);
+        expect(await queue.readWorkAdvertisement(INBOX_TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, FINALIZATION: true });
         expect(await queue.readWorkAdvertisement(OUTBOX_TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 10 * 60_000 })))
             .toEqual(NOTHING_ADVERTISED);
     });
@@ -125,9 +125,6 @@ function createWorkAdvertisementOptions(
     overrides: Partial<Pick<ResourceInboxWorkAdvertisementOptions, 'reservationLeaseMs'>> = {}
 ): ResourceInboxWorkAdvertisementOptions {
     return {
-        checkTimeout: RateLimiter.init(60_000, 1),
-        checkFairness: RateLimiter.init(60_000, 1),
-        checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60_000,
         reservationLeaseMs: overrides.reservationLeaseMs ?? 5 * 60_000,

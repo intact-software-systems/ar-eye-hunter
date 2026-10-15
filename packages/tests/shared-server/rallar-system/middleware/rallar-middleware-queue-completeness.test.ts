@@ -249,7 +249,6 @@ function createResilience(): ResourceInboxResilience {
         maxRate: 10,
         concurrencyIncreaseStep: 1,
         concurrencyReduceStep: 1,
-        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
         retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
     });
 }

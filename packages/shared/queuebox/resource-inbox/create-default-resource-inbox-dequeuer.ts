@@ -189,9 +189,7 @@ export function createDefaultResourceInboxDequeuer<V>(
             reserveResourceInboxAttempts(dependencies, { types, maxToReserve, lane: Reservator.RETRY })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
-            input.workAdvertisement === undefined
-                ? reserveResourceInboxFairness(dependencies, types, maxToReserve)
-                : readResourceInboxFairness(dependencies, types, maxToReserve)
+            reserveResourceInboxFairness(dependencies, types, maxToReserve)
         )
         .onTimeoutEntriesReserveDo((types, maxToReserve) =>
             reserveResourceInboxTimeouts(dependencies, types, maxToReserve)
@@ -265,23 +263,8 @@ async function reserveResourceInboxTimeouts(
     return toResourceInboxAttempts(dependencies, entries, Reservator.TIMEOUT);
 }
 
-/**
- * Without a probe the selection limiter bounds how often the overdue scan runs; a probe that advertised
- * an overdue row already answered that, so the lane then claims it on this pass, ahead of RETRY.
- */
+/** An overdue row is claimed on this pass, ahead of RETRY; the probe answered whether one exists. */
 async function reserveResourceInboxFairness(
-    dependencies: ResourceInboxDequeueDependencies,
-    types: Set<string>,
-    maxToReserve: number
-): Promise<Map<Resource.Key, ResourceInboxAttempt>> {
-    return await RateLimiter.tryToExecuteOrDefault(
-        dependencies.resilience.checkFairness.lockEntryRateLimiter,
-        () => readResourceInboxFairness(dependencies, types, maxToReserve),
-        new Map<Resource.Key, ResourceInboxAttempt>()
-    );
-}
-
-async function readResourceInboxFairness(
     dependencies: ResourceInboxDequeueDependencies,
     types: Set<string>,
     maxToReserve: number

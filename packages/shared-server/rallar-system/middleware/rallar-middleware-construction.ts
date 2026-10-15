@@ -22,6 +22,7 @@ import type { WsQueueBoxServerReceiptObserver } from '@shared/services/ws-queue-
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { AppAdminInboxService } from '../admin-operations/inbox/app-admin-inbox-service.ts';
 import type { AppAuthInboxService } from '../auth/inbox/app-auth-inbox-service.ts';
 import type { AppClientInboxService } from '../client-state/inbox/app-client-inbox-service.ts';
@@ -29,6 +30,7 @@ import type { ClientStateRepository } from '../client-state/persistence/client-s
 import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
+import type { RallarTimingSink } from '../observability/timing.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -73,6 +75,13 @@ export interface RallarAppClientInboxServiceFactoryInput {
     readonly wakeQueueEngine: () => void;
 }
 
+/** The one dequeue-pass timing on the shared inbox reader: the server's line, not any one inbox service's. */
+export interface RallarMiddlewareDequeuePassTimingOptions {
+    readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
+    readonly serviceId: string;
+    readonly sink: RallarTimingSink;
+}
+
 export interface RallarMiddlewareResilience {
     readonly inbox: ResourceInboxResilience;
     readonly outbox: ResourceInboxResilience;
@@ -84,6 +93,8 @@ export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
     readonly appInboxDequeueOptions?: DequeueResourceEntryOptions;
+    /** Absent when AppInbox phase timing is off. */
+    readonly appInboxDequeuePassTiming?: RallarMiddlewareDequeuePassTimingOptions;
     readonly webSocketServer?: JsonWebSocketServer;
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;

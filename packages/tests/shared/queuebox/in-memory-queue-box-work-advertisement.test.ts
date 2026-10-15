@@ -11,7 +11,6 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 const TYPES = new Set([EnqueuedType.APP_INBOX]);
 const NOTHING_ADVERTISED: DequeueController.WorkAdvertisement = {
@@ -51,18 +50,19 @@ describe('InMemoryQueueBox work advertisement', () => {
         });
     });
 
-    it('reports a reservation past its lease on the TIMEOUT lane once per advertisement window', async () => {
+    it('reports a reservation past its lease on the TIMEOUT lane on every probe while it stays unclaimed', async () => {
         const now = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => now);
         await queue.enqueue(createEntry('abandoned', { status: EntityStatus.RESERVED, attempts: 1, startTs: now.subtract({ seconds: 61 }) }));
         const options = createWorkAdvertisementOptions({ reservationLeaseMs: 60_000 });
 
         expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, TIMEOUT: true });
-        expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual(NOTHING_ADVERTISED);
-        expect(await queue.isAnyEntryToLock(TYPES, options)).toBe(false);
+        expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, TIMEOUT: true });
+        expect(await queue.isAnyEntryToLock(TYPES, options)).toBe(true);
+        expect(await queue.readWorkAdvertisement(TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 120_000 }))).toEqual(NOTHING_ADVERTISED);
     });
 
-    it('reports a stale exhausted reservation on the FINALIZATION lane for AppInbox types once per window', async () => {
+    it('reports a stale exhausted reservation on the FINALIZATION lane for AppInbox types on every probe', async () => {
         const now = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => now);
         await queue.enqueue(createEntry('exhausted', {
@@ -73,7 +73,7 @@ describe('InMemoryQueueBox work advertisement', () => {
         const options = createWorkAdvertisementOptions({ reservationLeaseMs: 60_000 });
 
         expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, FINALIZATION: true });
-        expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual(NOTHING_ADVERTISED);
+        expect(await queue.readWorkAdvertisement(TYPES, options)).toEqual({ ...NOTHING_ADVERTISED, FINALIZATION: true });
         expect(await queue.readWorkAdvertisement(new Set([EnqueuedType.APP_OUTBOX]), createWorkAdvertisementOptions()))
             .toEqual(NOTHING_ADVERTISED);
     });
@@ -83,9 +83,6 @@ function createWorkAdvertisementOptions(
     overrides: Partial<Pick<ResourceInboxWorkAdvertisementOptions, 'reservationLeaseMs' | 'maxAttempts'>> = {}
 ): ResourceInboxWorkAdvertisementOptions {
     return {
-        checkTimeout: RateLimiter.init(60_000, 1),
-        checkFairness: RateLimiter.init(60_000, 1),
-        checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: overrides.maxAttempts ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60_000,
         reservationLeaseMs: overrides.reservationLeaseMs ?? 5 * 60_000,

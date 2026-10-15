@@ -17,7 +17,6 @@ import {
     ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     afterEach,
     describe,
@@ -331,7 +330,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
         expect(await queue.readWorkAdvertisement(new Set([typeId]), options))
             .toEqual({ ...nothingAdvertised, RETRY: true, FAIRNESS: true, TIMEOUT: true });
         expect(await queue.readWorkAdvertisement(new Set([typeId]), options))
-            .toEqual({ ...nothingAdvertised, RETRY: true, FAIRNESS: true });
+            .toEqual({ ...nothingAdvertised, RETRY: true, FAIRNESS: true, TIMEOUT: true });
         expect(await queue.isAnyEntryToLock(new Set([typeId]), options)).toBe(true);
     });
 
@@ -456,9 +455,6 @@ function firstValue<K, V>(map: Map<K, V>): V {
 
 function createWorkAdvertisementOptions() {
     return {
-        checkTimeout: RateLimiter.init(60_000, 1),
-        checkFairness: RateLimiter.init(60_000, 1),
-        checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60 * 1000,
         reservationLeaseMs: 5 * 60 * 1000,

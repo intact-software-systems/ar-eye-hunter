@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
-import { withHostPasswordDerivationBound } from '../../src/configuration/read-api-v1-configuration.ts';
 import {
     CONFIGURATION_SECRET_SENTINELS,
+    validConfigurationProfileSource,
     validDecodeApiV1ConfigurationInput,
     type MutableApiV1ConfigurationSourceObject,
     type MutableDecodeApiV1ConfigurationInput
@@ -55,7 +55,7 @@ Deno.test('configuration decoder returns the complete normalized development con
 });
 
 Deno.test('committed profiles resolve their intended database, delivery, and ICE modes', async () => {
-    const defaultsSource = withHostPasswordDerivationBound(await readJsonResource('defaults-config.json'), 4);
+    const defaultsSource = await readJsonResource('defaults-config.json');
     const cases = [
         {
             profileName: 'dev',
@@ -108,6 +108,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
 
     for (const testCase of cases) {
         const configuration = decodeApiV1Configuration({
+            hardwareConcurrency: 4,
             profileName: testCase.profileName,
             defaultsSource,
             profileSource: await readJsonResource(`${testCase.profileName}-config.json`),
@@ -273,7 +274,6 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['topology.queueResilience.maxRate', 1],
         ['topology.queueResilience.increaseRate', 1],
         ['topology.queueResilience.decreaseRate', 1],
-        ['topology.queueResilience.maxFairnessSelectionsPerWindow', 1],
         ['topology.delivery.publicationRetentionMs', 1],
         ['topology.delivery.heartbeatIntervalMs', 1],
         ['topology.delivery.leaseDurationMs', 2],
@@ -663,3 +663,58 @@ async function readJsonResource(
         )
     ) as ApiV1ConfigurationSourceValue;
 }
+
+Deno.test('configuration decoder bounds password derivations by the host cores minus one unless a source names the bound', async () => {
+    const defaultsSource = await readJsonResource('defaults-config.json');
+    const fromHost = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        defaultsSource,
+        hardwareConcurrency: 4
+    });
+    assert.equal(fromHost.authentication.maxConcurrentPasswordDerivations, 3);
+
+    const singleCore = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        defaultsSource,
+        hardwareConcurrency: 1
+    });
+    assert.equal(singleCore.authentication.maxConcurrentPasswordDerivations, 1);
+
+    const fromEnvironment = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        defaultsSource,
+        hardwareConcurrency: 4,
+        environmentSource: { authentication: { maxConcurrentPasswordDerivations: 7 } }
+    });
+    assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
+});
+
+Deno.test('configuration decoder rejects a host core count that is not a positive safe integer', async () => {
+    const defaultsSource = await readJsonResource('defaults-config.json');
+    const error = captureConfigurationError(() =>
+        decodeApiV1Configuration({ ...validDecodeApiV1ConfigurationInput(), defaultsSource, hardwareConcurrency: Number.NaN })
+    );
+    assert.equal(
+        error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations' && issue.code === 'invalid-host-concurrency'),
+        true
+    );
+});
+
+Deno.test('configuration decoder rejects a queue resilience source naming the retired fairness selection window', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.profileSource = {
+        ...validConfigurationProfileSource(),
+        topology: { queueResilience: { maxFairnessSelectionsPerWindow: 10 } }
+    };
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.equal(
+        error.issues.some((issue) =>
+            issue.source === 'profile' && issue.code === 'unknown-property' &&
+            issue.path === 'topology.queueResilience.maxFairnessSelectionsPerWindow'
+        ),
+        true,
+        JSON.stringify(error.issues)
+    );
+});

@@ -83,7 +83,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
-        ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
+        ResourceInboxResilience.MAX_NUM_CLEANUP_IN_WINDOW
     );
 
     constructor(
@@ -442,16 +442,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<DequeueController.WorkAdvertisement> {
-        const {
-            checkTimeout,
-            checkFinalization,
-            maxAttempts,
-            finalizationStaleAfterMs,
-            reservationLeaseMs,
-            staleDueThresholdMs
-        } = toResourceInboxWorkAdvertisementOptions(workInput);
-        const timeoutAdvertised = checkTimeout.allow();
-        const finalizationAdvertised = checkFinalization.allow();
+        const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } =
+            toResourceInboxWorkAdvertisementOptions(workInput);
         const now = this.now();
 
         this.cleanupAsync()
@@ -461,8 +453,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             });
 
         return {
-            FINALIZATION: finalizationAdvertised &&
-                this.hasRetryExhaustionFinalization(typeIds, maxAttempts, finalizationStaleAfterMs),
+            FINALIZATION: this.hasRetryExhaustionFinalization(typeIds, maxAttempts, finalizationStaleAfterMs),
             NEW: this.hasEntry(typeIds, maxAttempts, (entry) => isNewEntryDue(entry, now)),
             RETRY: this.hasEntry(typeIds, maxAttempts, (entry) => isRetryEntryDueBefore(entry, now)),
             FAIRNESS: this.hasEntry(
@@ -470,7 +461,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 maxAttempts,
                 (entry) => isRetryEntryDueBefore(entry, now.subtract({ milliseconds: staleDueThresholdMs }))
             ),
-            TIMEOUT: timeoutAdvertised && this.hasEntry(
+            TIMEOUT: this.hasEntry(
                 typeIds,
                 maxAttempts,
                 (entry) => isReservedEntryStartedBefore(entry, now.subtract({ milliseconds: reservationLeaseMs }))

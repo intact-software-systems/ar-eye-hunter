@@ -20,7 +20,6 @@ import {
     type Key
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     afterEach,
     describe,
@@ -359,9 +358,6 @@ describe('IndexedDbQueueBox', () => {
         await expect(queue.isAnyEntryToLock(
             new Set([EnqueuedType.APP_INBOX]),
             {
-                checkTimeout: RateLimiter.init(60_000, 1),
-                checkFairness: RateLimiter.init(60_000, 1),
-                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 20,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
                 reservationLeaseMs: 5 * 60 * 1000,
@@ -699,9 +695,6 @@ describe('IndexedDbQueueBox', () => {
         const advertised = await queue.isAnyEntryToLock(
             new Set([typeId]),
             {
-                checkTimeout: RateLimiter.init(60_000, 1),
-                checkFairness: RateLimiter.init(60_000, 1),
-                checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000,
                 reservationLeaseMs: 5 * 60 * 1000,
@@ -1134,9 +1127,6 @@ function firstValue<K, V>(map: Map<K, V>): V {
 
 function createWorkAdvertisementOptions() {
     return {
-        checkTimeout: RateLimiter.init(60_000, 1),
-        checkFairness: RateLimiter.init(60_000, 1),
-        checkFinalization: RateLimiter.init(60_000, 1),
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60 * 1000,
         reservationLeaseMs: 5 * 60 * 1000,

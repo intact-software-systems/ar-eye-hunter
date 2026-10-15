@@ -31,7 +31,6 @@ export function createApiV1QueueResilience(
         maxRate: configuration.maxRate,
         concurrencyIncreaseStep: configuration.increaseRate,
         concurrencyReduceStep: configuration.decreaseRate,
-        maxFairnessSelectionsInWindow: configuration.maxFairnessSelectionsPerWindow,
         reservationLeaseMs
     });
 }

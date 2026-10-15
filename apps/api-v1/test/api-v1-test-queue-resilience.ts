@@ -12,8 +12,7 @@ export function createApiV1TestMiddlewareResilience(): RallarMiddlewareResilienc
         initialRate: 1,
         maxRate: 10,
         increaseRate: 1,
-        decreaseRate: 1,
-        maxFairnessSelectionsPerWindow: 10
+        decreaseRate: 1
     });
 }
 

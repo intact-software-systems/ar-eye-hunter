@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     tryReadCoalescedAppOutboxWorkEnvelope
@@ -68,9 +67,6 @@ export interface ResourceInboxFinalizationReservationOptions {
 // their terminal deletion; recovery never revives an expired command.
 
 export interface ResourceInboxWorkAdvertisementOptions {
-    readonly checkTimeout: RateLimiter;
-    readonly checkFairness: RateLimiter;
-    readonly checkFinalization: RateLimiter;
     readonly maxAttempts: number;
     readonly finalizationStaleAfterMs: number;
     readonly reservationLeaseMs: number;
@@ -311,18 +307,7 @@ export function toResourceInboxWorkAdvertisementOptions(
     if (!Number.isSafeInteger(input.staleDueThresholdMs) || input.staleDueThresholdMs < 0) {
         throw new Error('staleDueThresholdMs must be a non-negative safe integer');
     }
-    if (
-        !(input.checkTimeout instanceof RateLimiter) ||
-        !(input.checkFairness instanceof RateLimiter) ||
-        !(input.checkFinalization instanceof RateLimiter)
-    ) {
-        throw new Error('work advertisement checks must be rate limiters');
-    }
-
     return {
-        checkTimeout: input.checkTimeout,
-        checkFairness: input.checkFairness,
-        checkFinalization: input.checkFinalization,
         maxAttempts: input.maxAttempts,
         finalizationStaleAfterMs: input.finalizationStaleAfterMs,
         reservationLeaseMs: input.reservationLeaseMs,

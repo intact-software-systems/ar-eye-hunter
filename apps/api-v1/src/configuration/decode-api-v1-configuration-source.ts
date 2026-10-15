@@ -15,6 +15,8 @@ export interface ApiV1ConfigurationSourceObject {
 }
 
 export interface DecodeApiV1ConfigurationInput {
+    /** The host's logical cores: the password derivation bound keeps one free for the JS thread unless a source names a bound. */
+    readonly hardwareConcurrency: number;
     readonly profileName: ApiV1ConfigurationSourceValue | undefined;
     readonly defaultsSource: ApiV1ConfigurationSourceValue | undefined;
     readonly profileSource: ApiV1ConfigurationSourceValue | undefined;
@@ -157,8 +159,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'initialRate',
         'maxRate',
         'increaseRate',
-        'decreaseRate',
-        'maxFairnessSelectionsPerWindow'
+        'decreaseRate'
     ]),
     'topology.delivery': new Set([
         'publicationRetentionMs',
