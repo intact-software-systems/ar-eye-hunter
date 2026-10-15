@@ -255,6 +255,15 @@ gate. The recipes need no further harness change for this: they pass locally at 
 running when the database closes) and the hosted worker's `session.expected_mismatch` diagnostic
 (the agent id passed as the expected session id).
 
+**Designed (PR for step 2d).** Two surveys (proposal §4) located the bound: the server builds its
+WS inbound runtime without the volatile store pair, so every best-effort RTC signal is admitted
+through the durable PGlite lane (≈20 statements on one mutex, FIFO behind every mutation and
+list read), and formation-time rebuilds plus the appointment rebuild churn most edges. Decisions
+D219–D224 (proposal §3): the server carries the volatile lane; additions-only deltas never rebuild;
+a plan with an unchanged leader keeps its adjacency and the recipes appoint the director before
+the players connect; the status refresh reads one room; the outbound breaker is verified under a
+burst; ICE coalescing is held in reserve. Each RED first, judged by the hosted 30-agent run.
+
 ## Completion and handoff
 
 Use test-driven and subagent-driven development with distinct implementation, specification and
