@@ -47,6 +47,13 @@ and V1d:
   skills and governance, and prefer an existing pattern (`Either`, `LatestRepository`, lane
   budgets, `RateLimiter`, the AppInbox doctrine) over a new one.
 - Test-driven and sub-agent-driven development with distinct implementation and review seats.
+- Added 2026-10-15 during step 2e: a generic mechanism (concurrency gate, rate limiter, backoff,
+  timer seam, repeating sweep, trailing flush, serialized or single-flight chain, bounded buffer,
+  coalescing claim) is written once as a `packages/shared` primitive with its own tests, and the
+  business case composes it under its domain name; a purpose-named copy in a feature folder is
+  duplication. The code standard now carries this rule (`repo-code-style.md`, "Reusable mechanisms
+  over business-specific one-offs"). The V1c audit of such copies and its ranked candidates are
+  listed under step 2e.
 
 ## Binding workload and acceptance
 
@@ -294,6 +301,16 @@ not taken. The first local rerun showed the handlers halved but the lane per-ite
 statements dominating the setup window, so D242 (executor statement counters in the phase timing) and
 D243 (one lane presence probe per pass, reservations only for non-empty lanes, a one-statement NEW claim)
 follow in the same step, each RED first and judged by statements per lane item and the inter-item gap.
+
+The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
+delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
+admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under
+purpose names found twelve; four small ones land in this step as shared primitives (a failure backoff
+state over the existing exponential delay, a timer and clock seam, a repeating run, a keyed
+single-flight), and the rest stay open items of this plan for a consolidation slice: a keyed rate
+limiter for the ACK relay, a trailing flush with one in-flight write (snapshot persistence, the AL
+checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
+claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
 
 ## Completion and handoff
 
