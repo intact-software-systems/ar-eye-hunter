@@ -229,6 +229,32 @@ AppInbox concurrency and the cross-server AppInbox wake (F4, F5) still need Post
 outcome-shaped. A failed run earns exact evidence review and a meaningful change before another
 workload; no unchanged acceptance retry is selected.
 
+**As applied (PR #666).** D209–D213 landed with two review-driven fix waves recorded as D214–D218
+in the proposal (§3, §6): no command echoes in the result envelopes and a frame-limited result
+that keeps its verdict; the rejection-log contract kept after the Deno gate pinned it; the
+director prunes its own legs, a stale layout falls back to the flood for its subtree, and relays
+arm no doomed repair hints; heartbeats out of the AL admission; a cohort-proportional group-request
+allowance. Measured (proposal §1.9): the local 50-agent manifest passes for the first time
+(50/50, 231/231, shot-ACK p50 33 ms against 1,290 ms on the step 2b head, the end event
+acknowledged with ≈3 s of the window left), 15 and 30 pass locally, hosted 15 passes through
+GitHub Free `hetzner-control` (231/231, shot-ACK p99 190 ms against 1,326 ms). Hosted 30 fails
+after setup: the single-lane hosted API relays one offer→answer in 7.1 s p50 (4.3 s at 15; 0.17 to
+0.93 s locally), RTC formation takes 52–59 s per agent, and the director-rooted rebuild after the
+appointment re-forms the overlay behind the same queue while 5 s status reads time out. That bound
+is the next slice.
+
+### Step 2d: hosted formation throughput, then 30 → 50 hosted
+
+Static analysis of the hosted plane's serial path first (the `prod-in-memory` AppInbox lane, the
+WS outbox worker's wake cadence, the signal relay and the audience reads: where a relay, a presence
+update and a status read wait), then one change at a time at the owner (per-key or per-lane
+concurrency for the in-memory profile, F4, or a relay path that does not queue behind mutations),
+each RED first and judged by the hosted 30-agent run; then 50 and the four-arm lane-policy benefit
+gate. The recipes need no further harness change for this: they pass locally at 50 and hosted at
+15. Also carried: the three IndexedDB abort errors at page teardown (queue engine tasks still
+running when the database closes) and the hosted worker's `session.expected_mismatch` diagnostic
+(the agent id passed as the expected session id).
+
 ## Completion and handoff
 
 Use test-driven and subagent-driven development with distinct implementation, specification and
