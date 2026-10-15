@@ -5,6 +5,15 @@ import { reviewedBrowserDispositions } from './reviewed-browser-dispositions.mjs
 import { reviewedScenarioDispositions } from './reviewed-scenario-dispositions.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Independent whole-owner integration review keeps inert-data admission and
+    // exact projection comparison together with their shared atomic rules.
+    // This module-only cap records that cohesive algorithm, not future growth.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/computed-data-validation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
     // Independent whole-owner review: JavaScript construction/Configure input
     // is untrusted until mode, legal keys and the positive safe-integer limit
     // are checked; only issue strings leave this boundary, never raw policy.

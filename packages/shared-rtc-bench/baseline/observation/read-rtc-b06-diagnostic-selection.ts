@@ -1,3 +1,11 @@
+import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
+
+import {
+    validateEventHistoryPolicy,
+    type RallarBlackBoxEventHistoryPolicy
+} from '../../../shared-test/rallar-bb-test/runtime/event-history.ts';
+
 import {
     toRallarBlackBoxRoutineBrowserDiagnostics,
     type RallarBlackBoxRoutineBrowserDiagnostics
@@ -13,6 +21,8 @@ import type {
 import type { RtcBaselineFileStore } from '../evidence/rtc-baseline-evidence-store.ts';
 
 export interface RtcB06DiagnosticSelection {
+    readonly rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode;
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
     readonly almDiagnostics: boolean;
     readonly routineBrowserDiagnostics: RallarBlackBoxRoutineBrowserDiagnostics;
 }
@@ -54,7 +64,24 @@ export function resolveRtcB06DiagnosticSelection(
             }]
         };
     }
-    return { ok: true, value: { almDiagnostics: alm[0].value, routineBrowserDiagnostics } };
+    const history = resolveRtcB06EventHistorySelection(selected);
+    if (!history.ok) {
+        return history;
+    }
+
+    const capture = resolveRtcB06CaptureMode(selected);
+    if (!capture.ok) {
+        return capture;
+    }
+    return {
+        ok: true,
+        value: {
+            rtcCaptureMode: capture.value,
+            eventHistory: history.value,
+            almDiagnostics: alm[0].value,
+            routineBrowserDiagnostics
+        }
+    };
 }
 
 export async function readRtcB06DiagnosticSelection(
@@ -81,4 +108,56 @@ export async function readRtcB06DiagnosticSelection(
         };
     }
     return resolveRtcB06DiagnosticSelection(environment.value.observation?.resolvedConfiguration ?? [], attempt);
+}
+
+function resolveRtcB06EventHistorySelection(
+    selected: readonly RtcBaselineResolvedConfigurationValueDto[]
+): RtcBaselineResult<RallarBlackBoxEventHistoryPolicy> {
+    const historyMode = selected.filter((entry) => entry.field === 'eventHistoryMode');
+    const historyBound = selected.filter((entry) => entry.field === 'eventHistoryMaxEvents');
+    const eventHistory = historyMode[0]?.value === 'full'
+        ? { mode: 'full' as const }
+        : { mode: historyMode[0]?.value, maxEvents: historyBound[0]?.value };
+    if (
+        historyMode.length !== 1 || historyBound.length !== 1 || validateEventHistoryPolicy(eventHistory).length > 0 ||
+        (historyMode[0]?.value === 'full' && historyBound[0]?.value !== 0)
+    ) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-event-history-selection',
+                message: 'RTC-B06 requires one complete initialized canonical event history policy for its exact case.'
+            }]
+        };
+    }
+    return { ok: true, value: Object.freeze(eventHistory as RallarBlackBoxEventHistoryPolicy) };
+}
+
+function resolveRtcB06CaptureMode(
+    selected: readonly RtcBaselineResolvedConfigurationValueDto[]
+): RtcBaselineResult<RtcSignalingDiagnostics.CaptureMode> {
+    const capture = selected.filter((entry) => entry.field === 'rtcCaptureMode');
+    if (capture.length !== 1) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'missing-capture-admission',
+                message: 'RTC-B06 requires one initialized RTC capture mode for its exact case.'
+            }]
+        };
+    }
+    const mode = parseRtcCaptureMode(capture[0].value).right?.mode;
+    if (mode === undefined) {
+        return {
+            ok: false,
+            issues: [{
+                path: '$.resolvedConfiguration',
+                code: 'invalid-rtc-capture-mode',
+                message: 'Initialized RTC capture mode must be off, signaling or native.'
+            }]
+        };
+    }
+    return { ok: true, value: mode };
 }

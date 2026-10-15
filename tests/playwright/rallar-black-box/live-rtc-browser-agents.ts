@@ -12,6 +12,7 @@ import type {
     FullStackRtcServedBuild
 } from '@shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import type { RallarBlackBoxEventHistoryPolicy } from '@shared-test/rallar-bb-test/runtime/event-history.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
@@ -23,7 +24,12 @@ import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { installLiveRtcWireObservation } from './live-rtc-wire-observation.ts';
 
+export interface LiveRtcBrowserAgent extends LiveRtcControlClient.Agent {
+    readonly eventHistory: RallarBlackBoxEventHistoryPolicy;
+}
+
 export interface LiveRtcBrowserAgentConfig {
+    readonly eventHistory?: RallarBlackBoxEventHistoryPolicy;
     readonly routineBrowserDiagnostics?: RallarBlackBoxRoutineBrowserDiagnostics;
     readonly productionBuild?: FullStackRtcServedBuild;
     readonly spaBaseUrl: string;
@@ -75,7 +81,7 @@ export interface LiveRtcBrowserEntryPage {
 export async function openLiveRtcBrowserAgent(
     browser: LiveRtcBrowserContextFactory,
     input: OpenLiveRtcBrowserAgentInput
-): Promise<LiveRtcControlClient.Agent> {
+): Promise<LiveRtcBrowserAgent> {
     const context = await browser.newContext();
     try {
         const page = await context.newPage();
@@ -107,6 +113,7 @@ export async function openLiveRtcBrowserAgent(
             prefix: input.prefix,
             agentId: input.agentId,
             actor: input.actor,
+            eventHistory: input.config.eventHistory ?? { mode: 'full' },
             connection: input.connection,
             refreshRoom: async (options) =>
                 await page.evaluate(refreshLiveRtcBrowserRoom, { timeoutMs: options.timeoutMs })
@@ -188,7 +195,10 @@ export async function closeLiveRtcBrowserAgentContexts(
 }
 
 export function toLiveRtcBrowserAgentQuery(input: OpenLiveRtcBrowserAgentInput): URLSearchParams {
+    const eventHistory = input.config.eventHistory ?? { mode: 'full' };
     return new URLSearchParams({
+        eventHistory: eventHistory.mode,
+        ...(eventHistory.mode === 'recent' ? { eventHistoryMaxEvents: String(eventHistory.maxEvents) } : {}),
         routineBrowserDiagnostics: input.config.routineBrowserDiagnostics ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.routineBrowserDiagnostics,
         mode: 'control',

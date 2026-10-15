@@ -37,6 +37,8 @@ type RtcBaselineCliInput =
         | { readonly command: RtcBaselineParsedCommand | RtcPerformanceObservationParsedCommand; }
     );
 
+type RtcBaselineCliDispatch = Awaited<ReturnType<typeof dispatch>>;
+
 interface RtcBaselineCliComposition {
     readonly envelope: RtcBaselineEnvelope;
     readonly observation: RtcPerformanceObservationCliDependencies;
@@ -72,8 +74,15 @@ export async function runRtcBaselineCli(input: RtcBaselineCliInput) {
         });
     }
     const dispatched = await dispatch(input.envelope, command);
+    return writeRtcBaselineDispatchOutput(dispatched, input);
+}
+
+function writeRtcBaselineDispatchOutput(
+    dispatched: RtcBaselineCliDispatch,
+    output: Pick<RtcBaselineCliDependencies, 'writeStdout' | 'writeStderr'>
+): number {
     if (!dispatched.result.ok) {
-        input.writeStderr(`${JSON.stringify(dispatched.result.issues)}\n`);
+        output.writeStderr(`${JSON.stringify(dispatched.result.issues)}\n`);
         return 1;
     }
     if (dispatched.kind === 'list-external-attempts') {
@@ -84,17 +93,17 @@ export async function runRtcBaselineCli(input: RtcBaselineCliInput) {
                 attempt.outerOrdinal,
                 attempt.environmentId
             ];
-            input.writeStdout(`${columns.join('\t')}\n`);
+            output.writeStdout(`${columns.join('\t')}\n`);
         }
     }
     else if (dispatched.kind === 'repeat-required') {
         if (dispatched.result.value.workloadIds.length === 0) {
             return 3;
         }
-        input.writeStdout(`${[...dispatched.result.value.workloadIds].sort().join(',')}\n`);
+        output.writeStdout(`${[...dispatched.result.value.workloadIds].sort().join(',')}\n`);
     }
     else if (dispatched.kind === 'compare-paired') {
-        input.writeStdout(`${JSON.stringify(dispatched.result.value)}\n`);
+        output.writeStdout(`${JSON.stringify(dispatched.result.value)}\n`);
         if (dispatched.result.value.outcome === 'inconclusive-still-noisy') {
             return 2;
         }
@@ -254,8 +263,7 @@ function createDefaultRtcBaselineCliComposition(
         runtime,
         adapters,
         envelope,
-        producerOutput: runtime,
-        rtcCaptureMode: captureAdmission?.mode
+        producerOutput: runtime
     });
     return {
         envelope,

@@ -1,20 +1,10 @@
 import type { Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { toError } from '@shared/resilience/to-error.ts';
-import {
-    lstat,
-    mkdir,
-    open,
-    readFile,
-    realpath
-} from 'node:fs/promises';
-import {
-    dirname,
-    isAbsolute,
-    relative,
-    resolve,
-    sep
-} from 'node:path';
+
+import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -39,6 +29,7 @@ import type {
     RtcBaselineSampleIdentityDto,
     RtcBaselineSampleOutcomeDto
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import { isRtcBaselineId } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-id.ts';
 
 import {
     compareLaneStates,
@@ -53,6 +44,7 @@ import {
     requiredJsonRecord
 } from './live-rtc-evidence-json.ts';
 import type { LiveRtcNackWireObservationSummary } from './live-rtc-wire-observation.ts';
+import { writeLiveRtcPerformanceEvidence } from './write-live-rtc-performance-evidence.ts';
 
 export interface LiveRtcPerformanceIdentity {
     workloadId: 'RTC-B06';
@@ -313,16 +305,16 @@ export interface BuildLiveRtcExternalAttemptInput {
     rawEvidence: LiveRtcPerformanceRawEvidence;
 }
 
+export interface WriteLiveRtcPerformanceAttemptInput {
+    readonly context: LiveRtcPerformanceAttemptContext;
+    readonly runId: string;
+    readonly producerExitStatus: number;
+    readonly rawEvidence: LiveRtcPerformanceRawEvidence;
+}
+
 export interface BuildLiveRtcRetentionCohortInput {
     identity: RtcBaselineCohortIdentityDto;
     attempts: readonly RtcBaselineExternalAttemptDto[];
-}
-
-export interface WriteLiveRtcPerformanceEvidenceInput {
-    repoRoot: string;
-    baselineId: string;
-    relativePath: string;
-    evidence: RtcBaselineExternalAttemptDto | RtcBaselineExternalCohortDto;
 }
 
 export interface LoadLiveRtcPerformanceAttemptInput {
@@ -346,8 +338,6 @@ export interface LiveRtcPerformanceAttemptLocator extends RtcBaselineAttemptLoca
 }
 
 const FIVE_MEBIBYTES = 5 * 1024 * 1024;
-const LIVE_RTC_BASELINE_ID =
-    /^(?:\d{8}-[0-9a-f]{12}-e(?:3-memory|4-pg)|\d{8}T\d{9}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-local|\d{8}T\d{6}Z-[0-9a-f]{12}-e(?:3-memory|4-pg)-gh[1-9][0-9]*-a[1-9][0-9]*)(?:-repeat-01)?$/u;
 const attemptIdentityFields = [
     'workloadId',
     'caseId',
@@ -490,7 +480,7 @@ export function buildLiveRtcExternalAttempt(
         identity: input.sampleIdentity,
         outcome: issues.length === 0 ? 'passed' : 'failed',
         evidenceClass: 'local-full-stack',
-        metrics: performanceMetrics(input.rawEvidence),
+        metrics: issues.length === 0 ? performanceMetrics(input.rawEvidence) : [],
         rawEvidence: normalizeJson(input.rawEvidence),
         rawReferences: [],
         issues,
@@ -631,6 +621,7 @@ export async function writeLiveRtcRetentionCohortIfComplete(
     );
     const cohort = buildLiveRtcRetentionCohort({ identity, attempts });
     return writeLiveRtcPerformanceEvidence({
+        runId: null,
         repoRoot: context.repoRoot,
         baselineId: context.baselineId,
         relativePath: `artifacts/staging/${identity.cohortId}.json`,
@@ -638,46 +629,38 @@ export async function writeLiveRtcRetentionCohortIfComplete(
     });
 }
 
-export async function writeLiveRtcPerformanceEvidence(
-    input: WriteLiveRtcPerformanceEvidenceInput
+export async function writeLiveRtcPerformanceAttempt(
+    input: WriteLiveRtcPerformanceAttemptInput
 ): Promise<string> {
-    assertCanonicalLiveRtcBaselineId(input.baselineId);
-    if (
-        isAbsolute(input.relativePath) ||
-        !input.relativePath.startsWith('artifacts/staging/')
-    ) {
-        throw new Error('Live RTC staged evidence must be confined beneath artifacts/staging.');
+    let servingFailure: Error | null = null;
+    const productionServing = input.context.locator.environmentId === 'E3-memory'
+        ? (await readFullStackRtcAttemptServingProof(input.context)).fold(
+            (failure) => {
+                servingFailure = new Error(failure.message);
+                return null;
+            },
+            (proof) => proof
+        )
+        : null;
+    const rawEvidence = { ...input.rawEvidence, productionServing };
+    const attempt = buildLiveRtcExternalAttempt({
+        locator: input.context.locator,
+        sampleIdentity: input.context.sampleIdentity,
+        producerExitStatus: servingFailure && input.producerExitStatus === 0 ? 1 : input.producerExitStatus,
+        runtimeObservation: input.context.runtimeObservation,
+        rawEvidence
+    });
+    const path = await writeLiveRtcPerformanceEvidence({
+        repoRoot: input.context.repoRoot,
+        baselineId: input.context.baselineId,
+        relativePath: input.context.locator.rawResultRelativePath,
+        runId: input.runId,
+        evidence: attempt
+    });
+    if (servingFailure && input.producerExitStatus === 0) {
+        throw servingFailure;
     }
-    normalizeJson(input.evidence);
-    const realRepoRoot = await realpath(input.repoRoot);
-    const baselineRoot = resolve(
-        realRepoRoot,
-        'tmp',
-        'perf',
-        'rtc-baseline',
-        input.baselineId
-    );
-    const stagingRoot = resolve(baselineRoot, 'artifacts', 'staging');
-    const outputPath = resolve(baselineRoot, input.relativePath);
-    const confinedRelativePath = relative(stagingRoot, outputPath);
-    if (
-        confinedRelativePath === '' ||
-        confinedRelativePath === '..' ||
-        confinedRelativePath.startsWith(`..${sep}`) ||
-        isAbsolute(confinedRelativePath)
-    ) {
-        throw new Error('Live RTC staged evidence path is not confined beneath artifacts/staging.');
-    }
-    await createConfinedDirectories(realRepoRoot, dirname(outputPath));
-    const file = await open(outputPath, 'wx');
-    try {
-        await file.writeFile(`${JSON.stringify(input.evidence)}\n`, 'utf8');
-        await file.sync();
-    }
-    finally {
-        await file.close();
-    }
-    return outputPath;
+    return path;
 }
 
 export async function captureLiveRtcPostGcHeap(
@@ -1151,37 +1134,6 @@ function decodeRetentionCheckpoint(
     };
 }
 
-async function createConfinedDirectories(
-    root: string,
-    targetDirectory: string
-): Promise<void> {
-    const targetRelativePath = relative(root, targetDirectory);
-    if (
-        targetRelativePath === '..' ||
-        targetRelativePath.startsWith(`..${sep}`) ||
-        isAbsolute(targetRelativePath)
-    ) {
-        throw new Error('Live RTC evidence directory is not confined to the repository root.');
-    }
-    let current = root;
-    for (const segment of targetRelativePath.split(sep).filter(Boolean)) {
-        current = resolve(current, segment);
-        try {
-            const metadata = await lstat(current);
-            if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-                throw new Error(`Live RTC evidence directory component is unsafe: ${current}`);
-            }
-        }
-        catch (cause) {
-            const error = toError(cause);
-            if (!('code' in error && error.code === 'ENOENT')) {
-                throw error;
-            }
-            await mkdir(current);
-        }
-    }
-}
-
 function assertValidBuiltEvidence(issues: readonly RtcBaselineIssueDto[]): void {
     if (issues.length > 0) {
         throw new Error(`Live RTC evidence builder produced an invalid contract: ${JSON.stringify(issues)}`);
@@ -1189,7 +1141,7 @@ function assertValidBuiltEvidence(issues: readonly RtcBaselineIssueDto[]): void 
 }
 
 function assertCanonicalLiveRtcBaselineId(baselineId: string): void {
-    if (!LIVE_RTC_BASELINE_ID.test(baselineId)) {
+    if (!isRtcBaselineId(baselineId) || (!baselineId.includes('-e3-memory') && !baselineId.includes('-e4-pg'))) {
         throw new Error('Live RTC evidence requires a canonical E3-memory or E4-pg baseline ID.');
     }
 }

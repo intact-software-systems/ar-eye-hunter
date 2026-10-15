@@ -8,7 +8,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import { validateComputedProjection } from '../../../computed-data-validation.ts';
+import { validateComputedEitherProjection } from '../../../computed-data-validation.ts';
 import { GroupTopologyValidationError } from '../../group-topology-errors.ts';
 import {
     computeTopologyMutation,
@@ -70,19 +70,15 @@ interface ComputedRtcTopologyWork {
     readonly write: AcceptedRtcTopologyWorkWrite;
 }
 
+type RtcTopologyWorkComputation = Either<
+    Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>,
+    ComputedRtcTopologyWork
+>;
+
 export interface RtcTopologyWorkValidationIssue {
     readonly path: string;
     readonly message: string;
     readonly cause: Error;
-}
-
-interface ComputeFingerprintSkipInput {
-    readonly facts: RtcTopologyWorkFacts;
-    readonly mutationRead: RtcTopologyMutationRead;
-    readonly authority: GroupTopologyPlanningAuthority;
-    readonly inputFingerprint: string;
-    readonly promotionRead: TopologyPromotionRead | null;
-    readonly storedInputFingerprint: string | null;
 }
 
 interface ComputeAcceptedTopologyMutationInput {
@@ -104,30 +100,25 @@ interface ToTopologyPublicationInput {
 
 export function computeRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
-): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, ComputedRtcTopologyWork> {
-    const decision = computeAcceptedRtcTopologyWork(input);
-    return decision.fold<Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, ComputedRtcTopologyWork>>(
-        (retry) => Either.ofLeft(retry),
-        (accepted) =>
-            Either.ofRight({
-                accepted,
-                write: computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted))
-            })
-    );
+): RtcTopologyWorkComputation {
+    const accepted = computeAcceptedRtcTopologyWork(input);
+    if (accepted.right === undefined) {
+        return Either.ofLeft(accepted.left!);
+    }
+    return Either.ofRight({
+        accepted: accepted.right,
+        write: computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted.right))
+    });
 }
 
 export function validateRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput,
-    computed: Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, ComputedRtcTopologyWork>
+    computed: RtcTopologyWorkComputation
 ): readonly RtcTopologyWorkValidationIssue[] {
     const expected = computeRtcTopologyWork(input);
     return [
-        ...validateComputedProjection(
-            { retry: expected.left, prepared: expected.right },
-            { retry: computed.left, prepared: computed.right },
-            'computed'
-        ),
-        ...expected.fold(() => [], (prepared) => validateAcceptedTopologyDecision(prepared.accepted))
+        ...validateComputedEitherProjection(expected, computed, 'computed'),
+        ...(expected.right === undefined ? [] : validateAcceptedTopologyDecision(expected.right.accepted))
     ];
 }
 
@@ -196,16 +187,9 @@ function computeAcceptedRtcTopologyWork(
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
     const { facts, read } = input;
     const work = facts.workEnvelope.data;
-    const { authority, promotion: promotionRead, storedInputFingerprint } = read;
+    const { authority, promotion: promotionRead } = read;
     const inputFingerprint = computeAuthorityTopologyInputFingerprint(authority);
-    const fingerprintSkip = computeFingerprintSkip({
-        facts,
-        mutationRead: read.mutation,
-        authority,
-        inputFingerprint,
-        promotionRead,
-        storedInputFingerprint
-    });
+    const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
     if (fingerprintSkip !== null) {
         return Either.ofRight(fingerprintSkip);
     }
@@ -253,18 +237,17 @@ function computeAcceptedRtcTopologyWork(
 }
 
 function computeFingerprintSkip(
-    input: ComputeFingerprintSkipInput
+    input: ComputeRtcTopologyWorkInput,
+    inputFingerprint: string
 ): Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null {
-    const { facts, mutationRead, authority, inputFingerprint, promotionRead, storedInputFingerprint } = input;
-    const work = facts.workEnvelope.data;
-    const snapshot = mutationRead.snapshot;
-    if (
-        !isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active' ||
-        !hasRequiredPresenceCoverage(snapshot.value, authority.group.causalRevision.presenceRevision)
-    ) {
+    const { authority, promotion: promotionRead, storedInputFingerprint } = input.read;
+    const work = input.facts.workEnvelope.data;
+    const snapshot = input.read.mutation.snapshot;
+    if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active') {
         return null;
     }
-    return storedInputFingerprint === inputFingerprint
+    return storedInputFingerprint === inputFingerprint &&
+            hasRequiredPresenceCoverage(snapshot.value, authority.group.causalRevision.presenceRevision)
         ? {
             decision: 'skipped-fingerprint',
             work,

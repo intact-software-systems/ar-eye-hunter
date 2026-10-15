@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -9,7 +13,11 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
+import {
+    createAppInboxTestResilience,
+    TestResourceInbox,
+    TestResourceInboxResults
+} from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 
 it('fails closed without consuming corrupt digest-key ticket rows', async () => {
@@ -64,8 +72,7 @@ it('fails closed without consuming corrupt digest-key ticket rows', async () => 
 it('preserves normal empty outcomes for current auth storage', preservesCurrentAuthOutcomes);
 
 async function preservesCurrentAuthOutcomes(): Promise<void> {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-01-01T00:00:00.000Z'));
     try {
         const capturedAtEpochMs = Date.now();
         const session = createCurrentSession(capturedAtEpochMs);
@@ -73,7 +80,7 @@ async function preservesCurrentAuthOutcomes(): Promise<void> {
         await expectCurrentConsumeOutcomes();
     }
     finally {
-        vi.useRealTimers();
+        clock.mockRestore();
     }
 }
 
@@ -168,8 +175,7 @@ async function runCurrentOperation<Result>(
 }
 
 it('rejects explicit predecessor rows after the current storage cutover', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-01-01T00:00:00.000Z'));
     try {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new AuthSessionRepository(runtime);
@@ -216,7 +222,7 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
         ).resolves.toBeUndefined();
     }
     finally {
-        vi.useRealTimers();
+        clock.mockRestore();
     }
 });
 

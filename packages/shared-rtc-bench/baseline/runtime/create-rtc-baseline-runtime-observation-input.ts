@@ -82,15 +82,18 @@ function resolveObservationConfiguration(
             entry.field === descriptor.field && JSON.stringify(entry.caseKey) === JSON.stringify(descriptor.caseKey)
         );
         const environmentName = descriptor.allowlistedEnvironmentVariable;
-        const resolved = (descriptor.field === 'almDiagnostics' || descriptor.field === 'routineBrowserDiagnostics') &&
+        const resolved =
+            ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents'].includes(
+                    descriptor.field
+                ) &&
                 initialized !== undefined
-            ? { ok: true as const, value: initialized }
-            : descriptor.field === 'rtcCaptureMode'
-            ? resolveCaptureDescriptor(descriptor, initialized, selectedCapture.value)
-            : resolveRtcBaselineConfiguration(descriptor, {
-                cliValue: initialized?.source === 'cli' ? initialized.value : undefined,
-                environmentValue: environmentName ? environment[environmentName] : undefined
-            });
+                ? { ok: true as const, value: initialized }
+                : descriptor.field === 'rtcCaptureMode'
+                ? resolveCaptureDescriptor(descriptor, initialized, selectedCapture.value)
+                : resolveRtcBaselineConfiguration(descriptor, {
+                    cliValue: initialized?.source === 'cli' ? initialized.value : undefined,
+                    environmentValue: environmentName ? environment[environmentName] : undefined
+                });
         if (!resolved.ok) {
             return resolved;
         }

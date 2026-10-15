@@ -43,7 +43,8 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import type WsQueueBoxClientService from '@shared/services/ws-queue-box-client-service.ts';
+import { createScriptedTransportFaultPort, type ScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -55,27 +56,41 @@ import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
-beforeEach(() => {
-    vi.stubGlobal('localStorage', new TestAuthStorage());
-    configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
-});
+interface OpenRecoveryOwnerInput {
+    readonly sessionId: string;
+    readonly principalId: string;
+    readonly faults: ScriptedTransportFaultPort;
+    readonly beforeOpenDelayMs: number;
+}
+
+interface RecoveryOwner {
+    readonly engine: InboxOutboxEngine;
+    readonly native: TestWebSocket;
+    readonly service: WsQueueBoxClientService;
+    readonly settlements: readonly ALDeliverySettlement[];
+    drain(): Promise<void>;
+}
 
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    // Advancing retry/TTL timers must advance epoch reads without replacing native Date values.
+    vi.spyOn(Date, 'now').mockImplementation(() => vi.getMockedSystemTime()!.getTime());
+    vi.stubGlobal('localStorage', new TestAuthStorage());
+    configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+
     onTestFinished(() => {
         clearSession();
         vi.clearAllTimers();
-        vi.useRealTimers();
         vi.restoreAllMocks();
+        vi.useRealTimers();
         vi.unstubAllGlobals();
         TestWebSocket.instances.length = 0;
     });
 });
 
 it('a fresh WS owner recovers the same pending IndexedDB original with a fresh fault map and no second enqueue', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
-    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const oldFaults = createScriptedTransportFaultPort();
     oldFaults.inject({
         faultId: 'until-document-ends',
@@ -84,42 +99,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         remaining: 'until-cleared',
         match: { typeId: 'reload.original', msgId: undefined, controlType: undefined }
     });
-    const oldEngine = new InboxOutboxEngine();
-    const drainOld = captureOutboundWorkRunnable(oldEngine);
-    const oldConnecting = createBrowserWebSocketQueueBox({
-        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
-        submissionReadinessFaultPort: oldFaults,
-        outboundSettlements: () => {},
-        newConnectionRequestId: undefined,
-        qboxEngine: oldEngine,
-        socket: new JsonWebSocketClient('ws://test', oldFaults),
-        clientData: { clientId: sessionId, sessionId, isOnline: true },
-        serverPeerId: 'server',
-        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
-            toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
-        ),
-        volatileBudget: createDefaultVolatileSessionBudget(),
-        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
-        connectTimeoutMs: 0
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    const oldNative = TestWebSocket.instances.at(-1);
-    if (!oldNative) {
-        throw new Error('Old connection must create a native socket');
-    }
-    oldNative.open();
-    const oldOwner = await oldConnecting;
-    onTestFinished(async () => {
-        const outcomes = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
-        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-        if (failure?.status === 'rejected') {
-            throw failure.reason;
-        }
-    });
+    const old = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: oldFaults, beforeOpenDelayMs: 0 });
     const original = {
         ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
             ttlMs: 30_000,
@@ -127,65 +107,28 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     } as const;
-    expect((await oldOwner.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
-    await drainOld();
-    expect(oldNative.sent).toEqual([]);
-    const retained = await Promise.all((await oldOwner.outbox.getAllKeys()).map((key) => oldOwner.outbox.getItem(key)));
+    expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
+    await old.drain();
+    expect(old.native.sent).toEqual([]);
+    const retained = await Promise.all((await old.service.outbox.getAllKeys()).map((key) => old.service.outbox.getItem(key)));
     expect(retained.some((entry) => entry && (entry.status === EntityStatus.NEW || entry.status === EntityStatus.RETRY))).toBe(true);
-    const retiring = await Promise.allSettled([oldOwner.close(), oldEngine.stop()]);
+    const retiring = await Promise.allSettled([old.service.close(), old.engine.stop()]);
     const retirementFailure = retiring.find((outcome) => outcome.status === 'rejected');
     if (retirementFailure?.status === 'rejected') {
         throw retirementFailure.reason;
     }
 
     // Recreate both runtime store wrappers and transport owners while keeping the same real IndexedDB namespace/session.
-    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const freshFaults = createScriptedTransportFaultPort();
-    const freshEngine = new InboxOutboxEngine();
-    const drainFresh = captureOutboundWorkRunnable(freshEngine);
-    const freshConnecting = createBrowserWebSocketQueueBox({
-        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
-        submissionReadinessFaultPort: freshFaults,
-        outboundSettlements: () => {},
-        newConnectionRequestId: undefined,
-        qboxEngine: freshEngine,
-        socket: new JsonWebSocketClient('ws://test', freshFaults),
-        clientData: { clientId: sessionId, sessionId, isOnline: true },
-        serverPeerId: 'server',
-        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
-            toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
-        ),
-        volatileBudget: createDefaultVolatileSessionBudget(),
-        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
-        connectTimeoutMs: 0
-    });
-    await vi.advanceTimersByTimeAsync(100);
-    const freshNative = TestWebSocket.instances.at(-1);
-    if (!freshNative) {
-        throw new Error('Fresh connection must create a native socket');
-    }
-    freshNative.open();
-    const freshOwner = await freshConnecting;
-    onTestFinished(async () => {
-        const outcomes = await Promise.allSettled([freshOwner.close(), freshEngine.stop()]);
-        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
-        if (failure?.status === 'rejected') {
-            throw failure.reason;
-        }
-    });
-    await drainFresh();
-    await drainFresh();
-    expect(oldNative.sent).toEqual([]);
-    expect(freshNative.sent.map((frame) => decodePersistedALMessage(frame).id.msgId)).toEqual([original.id.msgId]);
-    expect(freshNative.sent.map((frame) => decodePersistedALMessage(frame).id.senderId)).toEqual([sessionId]);
+    const fresh = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: freshFaults, beforeOpenDelayMs: 100 });
+    await fresh.drain();
+    await fresh.drain();
+    expect(old.native.sent).toEqual([]);
+    expect(fresh.native.sent.map((frame) => decodePersistedALMessage(frame).id.msgId)).toEqual([original.id.msgId]);
+    expect(fresh.native.sent.map((frame) => decodePersistedALMessage(frame).id.senderId)).toEqual([sessionId]);
 });
 
 it('retains the restored room original until actual scoped presence authorizes its sender', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
     const principalId = 'reload-sender';
@@ -227,7 +170,7 @@ it('retains the restored room original until actual scoped presence authorizes i
         remaining: 'until-cleared',
         match: { typeId: 'reload.room-original', msgId: undefined, controlType: undefined }
     });
-    const old = await openRecoveryOwner(sessionId, principalId, oldFaults);
+    const old = await openRecoveryOwner({ sessionId, principalId, faults: oldFaults, beforeOpenDelayMs: 0 });
     const original: ALMessage = {
         ...newALBroadcastMessage(sessionId, { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: 'one' }, 'room', 'reload.room-original', {
             original: true
@@ -242,7 +185,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     if (retirementFailure?.status === 'rejected') {
         throw retirementFailure.reason;
     }
-    const fresh = await openRecoveryOwner(sessionId, principalId, createScriptedTransportFaultPort());
+    const fresh = await openRecoveryOwner({ sessionId, principalId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const authorizationInput = {
         message: original,
         roomId: roomRef.groupId,
@@ -311,7 +254,6 @@ it('retains the restored room original until actual scoped presence authorizes i
 });
 
 it('keeps another scoped room and canonical bootstrap/control traffic moving while one room waits', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -319,7 +261,7 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
     const roomA = { applicationId: 'app', workspaceId: 'A', groupId: 'same-id' };
     const roomB = { ...roomA, workspaceId: 'B' };
     setGroupStateSnapshot(createGroupSnapshotFixture({ ...roomB, sessionIds: [sessionId] }));
-    const owner = await openRecoveryOwner(sessionId, sessionId, createScriptedTransportFaultPort());
+    const owner = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const held = createRoomOriginal(sessionId, roomA);
     const ready = createRoomOriginal(sessionId, roomB);
     const signaling = newALUnicastMessage(sessionId, { topicId: AppTopics.rtcSignaling, contextId: 'bootstrap', resourceId: 'signal' }, 'peer', 'signal', {});
@@ -345,7 +287,6 @@ it('keeps another scoped room and canonical bootstrap/control traffic moving whi
 });
 
 it('rechecks current room presence and auth after same-document reopen without latching old readiness', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
@@ -363,7 +304,7 @@ it('rechecks current room presence and auth after same-document reopen without l
         match: { typeId: 'reload.original', msgId: undefined, controlType: undefined }
     } as const;
     faults.inject(fault);
-    const owner = await openRecoveryOwner(sessionId, sessionId, faults);
+    const owner = await openRecoveryOwner({ sessionId, principalId: sessionId, faults, beforeOpenDelayMs: 0 });
     const original = createRoomOriginal(sessionId, ref);
     await owner.service.enqueueOutboxIfAbsent(original);
     await owner.drain();
@@ -395,13 +336,12 @@ it('rechecks current room presence and auth after same-document reopen without l
 });
 
 it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work after %s while authority is missing', async (ending) => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
     writeSession(createTestAuthSession(sessionId, sessionId));
     const ref = { applicationId: 'app', workspaceId: 'A', groupId: ending };
-    const owner = await openRecoveryOwner(sessionId, sessionId, createScriptedTransportFaultPort());
+    const owner = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const original = createRoomOriginal(sessionId, ref);
     await owner.service.enqueueOutboxIfAbsent(original);
     await owner.drain();
@@ -422,14 +362,13 @@ it.each(['expiry', 'cancel', 'dispose'] as const)('never resurrects room work af
 });
 
 it('does not invent an unsubmitted refusal after the default callback writes and a later observer removes authority', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(1_000);
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
     writeSession(createTestAuthSession(sessionId, sessionId));
     const ref = { applicationId: 'app', workspaceId: 'A', groupId: 'callbacks' };
     setGroupStateSnapshot(createGroupSnapshotFixture({ ...ref, sessionIds: [sessionId] }));
-    const owner = await openRecoveryOwner(sessionId, sessionId, createScriptedTransportFaultPort());
+    const owner = await openRecoveryOwner({ sessionId, principalId: sessionId, faults: createScriptedTransportFaultPort(), beforeOpenDelayMs: 0 });
     const observed: string[] = [];
     owner.service.onOutboxMessageDo('remove-authority', {
         onMessage: async () => {
@@ -469,11 +408,12 @@ function createRoomOriginal(sessionId: string, ref: GroupRef): ALMessage {
     };
 }
 
-async function openRecoveryOwner(
-    sessionId: string,
-    principalId: string,
-    faults: ReturnType<typeof createScriptedTransportFaultPort>
-) {
+async function openRecoveryOwner({
+    sessionId,
+    principalId,
+    faults,
+    beforeOpenDelayMs
+}: OpenRecoveryOwnerInput): Promise<RecoveryOwner> {
     configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const engine = new InboxOutboxEngine();
     const drain = captureOutboundWorkRunnable(engine);
@@ -498,7 +438,7 @@ async function openRecoveryOwner(
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(beforeOpenDelayMs);
     const native = TestWebSocket.instances.at(-1);
     if (!native) {
         throw new Error('Connection must create a native socket');

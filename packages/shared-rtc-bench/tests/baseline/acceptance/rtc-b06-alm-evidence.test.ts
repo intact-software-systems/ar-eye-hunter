@@ -5,6 +5,8 @@ import type { RtcBaselineResolvedConfigurationValueDto, RtcBaselineSampleDto } f
 
 const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-memory-retention-100' } as const;
 const configuration: readonly RtcBaselineResolvedConfigurationValueDto[] = [
+    { caseKey, field: 'eventHistoryMode', value: 'full', source: 'default' },
+    { caseKey, field: 'eventHistoryMaxEvents', value: 0, source: 'default' },
     { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'cli' },
     { caseKey, field: 'almDiagnostics', value: false, source: 'environment' },
     { caseKey, field: 'routineBrowserDiagnostics', value: 'enabled', source: 'default' }
@@ -53,7 +55,9 @@ it.each([undefined, true])('refuses absent or contradictory applied policy %s', 
     ]);
 });
 it('refuses a missing initialized ALM selection', () => {
-    expect(validateRtcB06CaptureEvidence(sample(false), configuration.slice(0, 1))).toMatchObject([{ code: 'missing-alm-selection' }]);
+    expect(validateRtcB06CaptureEvidence(sample(false), configuration.filter((entry) => entry.field === 'rtcCaptureMode'))).toMatchObject([{
+        code: 'missing-alm-selection'
+    }]);
 });
 
 function recordingCheckpoints() {
@@ -63,10 +67,26 @@ function recordingCheckpoints() {
         agents: ['a', 'b', 'c'].map((agentId) => ({
             agentId,
             details: {
+                eventHistory: eventHistory(agentId, index + 2, 'run'),
                 browserDiagnostics: receipt,
-                browserDiagnosticsAdmission: { runId: 'run', agentId, commandId: `admit-${agentId}`, receipt },
+                browserDiagnosticsAdmission: { runId: 'run', agentId, commandId: `admit-${agentId}`, receipt, eventHistory: eventHistory(agentId, 1, 'run') },
                 browserDiagnosticsHealth: { runId: 'run', agentId, commandId: `health-${agentId}-${index}` }
             }
         }))
     }));
+}
+
+function eventHistory(agentId: string, totalEvents: number, runId: string) {
+    return {
+        runtimeId: `runtime-${agentId}`,
+        generation: 0,
+        policy: { mode: 'full' },
+        totalEvents,
+        retainedEvents: totalEvents,
+        evictedEvents: 0,
+        evictedThroughEpochMs: null,
+        countsByKind: { event: totalEvents, diagnostic: 0, message: 0, stats: 0, report: 0, result: 0, state: 0 },
+        reconnects: 0,
+        capture: { status: 'continuous', identity: { runId, agentId }, start: { runtimeId: `runtime-${agentId}`, generation: 0, ordinal: 1 } }
+    };
 }

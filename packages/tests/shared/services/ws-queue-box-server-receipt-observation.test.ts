@@ -17,14 +17,17 @@ import {
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { WsQueueBoxServerAckRelay } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import type { WsServerInboundAuthorizer } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
@@ -44,6 +47,8 @@ const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 interface ObservedServerOptions {
     readonly inboundStores?: ALInboundRuntimeStores;
+    readonly outboundStores?: WsQueueBoxServerService.Input['outboundStores'];
+    readonly queueEngine?: InboxOutboxEngine;
     readonly installRoomAuthorizer?: boolean;
     readonly readAuthenticatedConnectionScope?: WsQueueBoxServerService.Input['readAuthenticatedConnectionScope'];
     readonly authorizer?: WsServerInboundAuthorizer;
@@ -69,6 +74,12 @@ interface ReceiptClock {
     value: number;
 }
 
+interface ReceiptCommitOutcome {
+    readonly phase: ALReceiptPayload['phase'];
+    readonly expectedVersion: number | undefined;
+    readonly status: 'committed' | 'conflict' | 'expired';
+}
+
 interface ReceiptSettlementEffect {
     readonly kind: string;
     readonly clock: number;
@@ -86,7 +97,7 @@ async function createObservedServer(
         await native.open();
         socket.addConnection(new ConnectionContext({ id, socket: native }));
     }
-    const engine = new InboxOutboxEngine();
+    const engine = options.queueEngine ?? new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(),
@@ -94,6 +105,7 @@ async function createObservedServer(
         name: 'server',
         queueEngine: engine,
         inboundStores: options.inboundStores,
+        outboundStores: options.outboundStores,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope ?? (() => ({ scope: SCOPE, expiresAtEpochMs })),
         targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'recipient', connectionId: 'recipient' }] },
         receiptObserver: observe
@@ -122,6 +134,7 @@ async function createObservedServer(
 function createAckAuthorizerGate(controlMsgId: string): AckAuthorizerGate {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
+    onTestFinished(() => release.resolve());
     return {
         entered: entered.promise,
         release: () => release.resolve(),
@@ -154,6 +167,33 @@ async function readCompleteReceipts(service: WsQueueBoxServerService): Promise<r
             const control = decodeALControlMessage(message).right;
             return control?.type === 'receipt' && control.payload.phase === 'complete' ? [control.payload] : [];
         });
+}
+
+function readSentReceipts(service: WsQueueBoxServerService): readonly ALMessage[] {
+    const socket = service.socket.connections.get('origin')?.socket;
+    if (!(socket instanceof SimulatedWebSocket)) {
+        throw new Error('Expected the observed origin socket');
+    }
+    return socket.sent.map(decodePersistedALMessage).filter((message) => decodeALControlMessage(message).right?.type === 'receipt');
+}
+
+async function waitForReceiptCompletion(
+    service: WsQueueBoxServerService,
+    engine: InboxOutboxEngine,
+    phases: readonly ALReceiptPayload['phase'][]
+): Promise<void> {
+    await expect.poll(async () => {
+        await engine.executeOnce();
+        return readSentReceipts(service).map((message) => {
+            const control = decodeALControlMessage(message).right;
+            return control?.type === 'receipt' ? control.payload.phase : undefined;
+        });
+    }).toEqual(phases);
+    await expect.poll(async () => {
+        const entries = await Promise.all((await service.outbox.getAllKeys()).map((key) => service.outbox.getItem(key)));
+        const work = entries.filter((entry) => entry?.typeId === EnqueuedType.WS_OUTBOX || entry?.key.topicId === 'AL_OUTBOUND');
+        return work.length > 0 && work.every((entry) => entry?.status === EntityStatus.COMPLETED);
+    }).toBe(true);
 }
 
 function createObservedInboundStores(): ALInboundRuntimeStores {
@@ -212,7 +252,8 @@ describe('private upstream receipt observation', () => {
         const events: WsQueueBoxServerReceiptObservation[] = [];
         const inboundStores = createObservedInboundStores();
         const { admissionStore } = inboundStores;
-        const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores });
+        const engine = new InboxOutboxEngine();
+        const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores, queueEngine: engine });
         const message = createRoomSubjectMessage();
         const admission = await service.acceptIncomingMessage(message, 'origin');
         expect(admission.left).toBeUndefined();
@@ -222,6 +263,8 @@ describe('private upstream receipt observation', () => {
             receipt: expect.objectContaining({ phase: 'admitted', msgId: 'subject', expectedRecipientPeerIds: ['recipient'] }),
             verdict: expect.objectContaining({ kind: 'admitted', durable: true })
         }));
+        // This case asserts uncontended admission; the admitted receipt's dequeue also writes the sender fence.
+        await waitForReceiptCompletion(service, engine, ['admitted']);
         const accepted = await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient');
         expect(accepted.left).toBeUndefined();
         expect(accepted.right?.kind).toBe('control');
@@ -277,6 +320,104 @@ describe('private upstream receipt observation', () => {
         }));
         expect(events.filter((event) => event.kind === 'business-socket-decision')).toHaveLength(1);
         expect(events.filter((event) => event.kind === 'ack-rejection')).toEqual([]);
+    });
+
+    it('retains a complete receipt after a real sender conflict and delivers its committed work exactly once', async () => {
+        const events: WsQueueBoxServerReceiptObservation[] = [];
+        const engine = new InboxOutboxEngine();
+        const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+        const inboundStores = createObservedInboundStores();
+        const service = await createObservedServer((event) => events.push(event), undefined, { inboundStores, outboundStores, queueEngine: engine });
+        const dequeueEntered = Promise.withResolvers<void>();
+        const releaseDequeue = Promise.withResolvers<void>();
+        const dequeueFinished = Promise.withResolvers<void>();
+        const commits: ReceiptCommitOutcome[] = [];
+        const commitBundle = outboundStores.admissionStore.commitBundle.bind(outboundStores.admissionStore);
+        const commitSpy = vi.spyOn(outboundStores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
+            const control = bundle.canonicalEntry && decodeALControlMessage(decodePersistedALMessage(bundle.canonicalEntry.resource)).right;
+            const phase = control?.type === 'receipt' ? control.payload.phase : undefined;
+            const admittedDequeue = phase === 'admitted' && bundle.durableEffects.some((effect) => effect.payload.kind === 'send-prepared');
+            if (admittedDequeue) {
+                dequeueEntered.resolve();
+                await releaseDequeue.promise;
+            }
+            if (phase === 'complete' && bundle.pendingAdmission === undefined && bundle.durableEffects.length === 0) {
+                releaseDequeue.resolve();
+                await dequeueFinished.promise;
+            }
+            const status = await commitBundle(bundle, observation);
+            if (phase !== undefined) {
+                commits.push({ phase, expectedVersion: bundle.expectedVersion, status });
+            }
+            if (admittedDequeue) {
+                dequeueFinished.resolve();
+            }
+            return status;
+        });
+        const closeReceiptContender = async () => {
+            releaseDequeue.resolve();
+            dequeueFinished.resolve();
+            try {
+                await service.dispose();
+            }
+            finally {
+                commitSpy.mockRestore();
+            }
+        };
+        onTestFinished(closeReceiptContender);
+        try {
+            const message = createRoomSubjectMessage();
+            expect((await service.acceptIncomingMessage(message, 'origin')).right?.kind).toBe('admitted');
+            await dequeueEntered.promise;
+            expect((await service.acceptIncomingMessage(createReceiverAcknowledgement(), 'recipient')).right?.kind).toBe('control');
+            expect(commits).toEqual(expect.arrayContaining([
+                { phase: 'admitted', expectedVersion: undefined, status: 'committed' },
+                { phase: 'admitted', expectedVersion: 1, status: 'committed' },
+                { phase: 'complete', expectedVersion: 1, status: 'conflict' }
+            ]));
+            const pending = events.find((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete');
+            expect(pending).toMatchObject({ kind: 'receipt-outbox', verdict: { kind: 'pending' }, entryCount: 1, trackedReceiptAlgo: 'none' });
+            if (pending?.kind !== 'receipt-outbox') {
+                throw new Error('Expected the actual retained receipt');
+            }
+            await waitForReceiptCompletion(service, engine, ['admitted', 'complete']);
+            const sent = readSentReceipts(service);
+            expect(sent.map((receipt) => receipt.id.msgId)).toEqual([
+                expect.any(String),
+                pending.receiptControlMsgId
+            ]);
+            expect(events).toContainEqual(expect.objectContaining({
+                kind: 'receipt-work',
+                receiptControlMsgId: pending.receiptControlMsgId,
+                effectKind: 'admit-message',
+                admissionVerdict: 'admitted',
+                admissionCommitted: true,
+                callbackOutcome: 'completed'
+            }));
+            const persisted = await outboundStores.admissionStore.readSentMessage(pending.receiptControlMsgId);
+            expect(persisted?.msg).toEqual(sent[1]);
+            expect(decodeALControlMessage(persisted!.msg).right).toMatchObject({
+                type: 'receipt',
+                payload: {
+                    msgId: 'subject',
+                    originPeerId: 'origin',
+                    phase: 'complete',
+                    expectedRecipientPeerIds: ['recipient'],
+                    confirmedRecipientPeerIds: ['recipient'],
+                    snapshotVersion: 7
+                }
+            });
+            const admitted = await inboundStores.admissionStore.readDeliverySurface({ senderId: 'origin', msgId: 'subject' }, Date.now());
+            expect(admitted?.msg).toEqual(message);
+            expect(admitted?.source).toMatchObject({ kind: 'ws-client', peerId: 'origin', authenticatedScope: SCOPE });
+            expect(await inboundStores.admissionStore.readIngressAudience('subject', 'origin')).toEqual(['recipient']);
+            await engine.executeOnce();
+            expect(readSentReceipts(service)).toEqual(sent);
+            expect(events.filter((event) => event.kind === 'receipt-outbox' && event.receipt.phase === 'complete')).toEqual([pending]);
+        }
+        finally {
+            await closeReceiptContender();
+        }
     });
 
     it('preserves the actual resolved scope when a room submission has no installed authorizer', async () => {

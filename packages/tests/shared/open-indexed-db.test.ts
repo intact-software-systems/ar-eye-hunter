@@ -354,6 +354,85 @@ describe('IndexedDB current schema', () => {
         first.close();
     });
 
+    it('retires a late open once, releases its callback and never reopens the terminal owner', async () => {
+        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        const held = Promise.withResolvers<IDBDatabase>();
+        const connection = new IndexedDbConnection(() => held.promise);
+        const opening = connection.open();
+        const closing = connection.close();
+        expect(connection.close()).toBe(closing);
+        const database = await openIndexedDbWithStores('late-open', [{ name: 'items', keyPath: 'id' }]);
+        held.resolve(database);
+        await opening;
+        await closing;
+        expect(() => database.transaction('items')).toThrow();
+        expect(database.onversionchange).toBeNull();
+        await expect(connection.open()).rejects.toThrow('closed');
+    });
+
+    it('finishes accepted work before retirement and preserves rows for another connection', async () => {
+        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        const connection = new IndexedDbConnection(() => openIndexedDbWithStores('accepted-work', [{ name: 'items', keyPath: 'id' }]));
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const operation = connection.beginOperation();
+        const work = (async () => {
+            try {
+                entered.resolve();
+                await release.promise;
+                const database = await operation.open();
+                const transaction = database.transaction('items', 'readwrite');
+                transaction.objectStore('items').put({ id: 'final', value: 42 });
+                await waitForTransaction(transaction);
+            }
+            finally {
+                operation.release();
+            }
+        })();
+        await entered.promise;
+        let closed = false;
+        const closing = connection.close().then(() => {
+            closed = true;
+        });
+        expect(() => connection.beginOperation()).toThrow('closed');
+        expect(closed).toBe(false);
+        release.resolve();
+        await work;
+        await closing;
+        const fresh = await openIndexedDbWithStores('accepted-work', [{ name: 'items', keyPath: 'id' }]);
+        expect(await readRequest(fresh.transaction('items').objectStore('items').get('final')))
+            .toEqual({ id: 'final', value: 42 });
+        fresh.close();
+    });
+
+    it('retires rejected initialization without allowing another attempt', async () => {
+        const failure = new Error('open rejected');
+        const held = Promise.withResolvers<IDBDatabase>();
+        const connection = new IndexedDbConnection(() => held.promise);
+        const opening = connection.open();
+        const rejected = expect(opening).rejects.toBe(failure);
+        const closing = connection.close();
+        held.reject(failure);
+        await rejected;
+        await expect(closing).rejects.toBe(failure);
+        await expect(connection.open()).rejects.toThrow('closed');
+    });
+
+    it('permits a live owner to reopen after versionchange', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const connection = new IndexedDbConnection(() => openIndexedDbWithStores('live-versionchange', [{ name: 'items', keyPath: 'id' }]));
+        const first = await connection.open();
+        const upgraded = await readRequest(factory.open('live-versionchange', 2));
+        expect(() => first.transaction('items')).toThrow();
+        expect(first.onversionchange).toBeNull();
+        const second = await connection.open();
+        expect(second.version).toBe(2);
+        expect(() => second.transaction('items')).not.toThrow();
+        await connection.close();
+        upgraded.close();
+    });
+
     it('observes both the request failure and the resulting transaction abort', async () => {
         const factory = new FakeIndexedDb.IDBFactory();
         vi.stubGlobal('indexedDB', factory);

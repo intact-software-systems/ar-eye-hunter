@@ -151,3 +151,29 @@ describe('live RTC routine browser recording selection', () => {
         await expect(import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts')).rejects.toThrow(/routine browser diagnostics/i);
     });
 });
+
+describe('live RTC immutable event history launch', () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.stubEnv('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE', undefined);
+        vi.stubEnv('VITE_RALLAR_EVENT_HISTORY', 'recent');
+        vi.stubEnv('VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS', '64');
+        vi.stubEnv('VITE_RALLAR_API_BASE_URL', 'http://localhost:18080');
+        onTestFinished(() => {
+            vi.unstubAllEnvs();
+            vi.resetModules();
+        });
+    });
+    it('freezes the canonical admitted policy before allocating any pages', async () => {
+        const environment = await import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts');
+        expect(environment.liveRtcAgentConfig().eventHistory).toEqual({ mode: 'recent', maxEvents: 64 });
+        expect(Object.isFrozen(environment.liveRtcAgentConfig().eventHistory)).toBe(true);
+        vi.stubEnv('VITE_RALLAR_EVENT_HISTORY', 'full');
+        vi.stubEnv('VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS', 'invalid');
+        expect(environment.liveRtcAgentConfig().eventHistory).toEqual({ mode: 'recent', maxEvents: 64 });
+    });
+    it.each(['', '0', '64.5', 'invalid'])('rejects malformed canonical history bound %j before browser allocation', async (value) => {
+        vi.stubEnv('VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS', value);
+        await expect(import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts')).rejects.toThrow(/event history/i);
+    });
+});
