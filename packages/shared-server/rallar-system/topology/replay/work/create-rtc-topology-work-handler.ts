@@ -141,11 +141,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         attemptCount: entry.dequeueAudit.attempts,
         expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
     };
-    const attempt = {
-        options,
-        facts,
-        mutationRead
-    };
+    const attempt = { options, facts, mutationRead };
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
         await writeSkippedRttRefinement({ options, entry, sourceWorkId: workId, reservationFinish, accepted });
@@ -159,16 +155,14 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     });
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
     const computation = computeRtcTopologyWork(computationInput);
-    const computed = computation.fold(
-        () => {
-            throw new RuntimeStateWriteConflictError();
-        },
-        (prepared) => prepared
-    );
     const issues = validateRtcTopologyWork(computationInput, computation);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }
+    if (computation.right === undefined) {
+        throw Object.assign(new RuntimeStateWriteConflictError(), { cause: computation.left });
+    }
+    const computed = computation.right;
     await writeAcceptedRtcTopologyWork({
         options,
         accepted: computed.accepted,

@@ -44,6 +44,7 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
+import type { ALRuntimeStorage } from './storage/al-runtime-storage.ts';
 import type { ALStorageConnectOpenings } from './storage/al-storage-connect-openings.ts';
 import { createPassThroughALStorageEventSink } from './storage/al-storage-event.ts';
 import { ALStorageHealth } from './storage/al-storage-health.ts';
@@ -64,6 +65,8 @@ import type { ALDurableWorkOwnership } from './work/al-durable-work-ownership.ts
 export type ALStoreDurability = 'volatile' | 'checkpoint' | 'durable';
 
 export interface CreateInMemoryALRuntimeStoresInput {
+    /** Present when a middleware owns the databases its store factories create. */
+    readonly runtimeStorage?: ALRuntimeStorage;
     readonly nowMs: () => number;
     readonly namespace: string;
     readonly canonicalScope?: string;
@@ -103,6 +106,7 @@ export interface CreateDefaultALOutboundRuntimeStoresInput<TPrepared> extends Cr
 }
 
 export interface CreateDefaultALRuntimeStoresInput {
+    readonly runtimeStorage?: ALRuntimeStorage;
     readonly nowMs?: () => number;
     readonly namespace?: string;
     readonly canonicalScope?: string;
@@ -130,12 +134,7 @@ export function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const backend = input.inboundBackend ??
-        new InMemoryAdmissionBackend(
-            createInMemoryALAdmissionState(
-                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
-            ),
-            input.nowMs
-        );
+        createInMemoryALAdmissionBackend(input.nowMs);
     return {
         admissionStore: createALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
@@ -146,12 +145,7 @@ export function createInMemoryALOutboundRuntimeStores<TPrepared>(
     input: CreateInMemoryALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     const backend = input.outboundBackend ??
-        new InMemoryAdmissionBackend(
-            createInMemoryALAdmissionState(
-                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
-            ),
-            input.nowMs
-        );
+        createInMemoryALAdmissionBackend(input.nowMs);
     return {
         admissionStore: createALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
@@ -209,7 +203,7 @@ function createIndexedDbAdmissionBackend(
     storeNamespace: string,
     onStorageReset: (event: ALStorageResetEvent) => void
 ): IndexedDbAdmissionBackend {
-    return new IndexedDbAdmissionBackend({
+    const backend = new IndexedDbAdmissionBackend({
         dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: input.nowMs,
@@ -221,6 +215,8 @@ function createIndexedDbAdmissionBackend(
             ? undefined
             : { openings: input.connectOpenings, storeNamespace }
     });
+    input.runtimeStorage?.ownBackend(backend);
+    return backend;
 }
 
 function toIndexedDbALInboundRuntimeStores(
@@ -293,7 +289,7 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     budget: ALVolatileSessionBudget | undefined
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
     const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
-    const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const backend = createInMemoryALAdmissionBackend(input.nowMs);
     return {
         admissionStore: createVolatileALOutboundAdmissionStore(
             toInMemoryALOutboundAdmissionStoreInput(input, backend),
@@ -322,7 +318,7 @@ export function createCheckpointALOutboundRuntimeStores<TPrepared>(
 ): ALCheckpointOutboundRuntimeStores<TPrepared> {
     const defaults = toDefaultInMemoryInput(options);
     const input = { ...defaults, canonicalScope: defaults.namespace, decodePrepared: options.decodePrepared };
-    const memory = createVolatileALAdmissionBackend(input.nowMs);
+    const memory = createInMemoryALAdmissionBackend(input.nowMs);
     const admissionStore = createVolatileALOutboundAdmissionStore(
         toInMemoryALOutboundAdmissionStoreInput(input, memory),
         'checkpoint'
@@ -332,6 +328,7 @@ export function createCheckpointALOutboundRuntimeStores<TPrepared>(
         ownership: options.ownership,
         nowMs: input.nowMs
     });
+    options.runtimeStorage?.ownCheckpoint(checkpoint);
     return {
         admissionStore,
         workQueue: memory.workQueue,
@@ -369,7 +366,7 @@ export function createVolatileALInboundRuntimeStores(
     budget: ALVolatileSessionBudget | undefined
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
-    const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const backend = createInMemoryALAdmissionBackend(input.nowMs);
     const admissionStore = createVolatileALInboundAdmissionStore(
         toInMemoryALInboundAdmissionStoreInput(input, backend)
     );
@@ -384,7 +381,7 @@ export function createVolatileALInboundRuntimeStores(
     };
 }
 
-function createVolatileALAdmissionBackend(nowMs: () => number): InMemoryAdmissionBackend {
+function createInMemoryALAdmissionBackend(nowMs: () => number): InMemoryAdmissionBackend {
     return new InMemoryAdmissionBackend(
         createInMemoryALAdmissionState(
             new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
@@ -443,6 +440,7 @@ function toDefaultInMemoryInput(
     options: CreateDefaultALRuntimeStoresInput
 ): CreateInMemoryALRuntimeStoresInput {
     return {
+        runtimeStorage: options.runtimeStorage,
         nowMs: options.nowMs ?? Date.now,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
         canonicalScope: options.canonicalScope,

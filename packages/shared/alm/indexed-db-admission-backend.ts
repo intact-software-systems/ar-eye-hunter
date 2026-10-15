@@ -3,20 +3,17 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
 import { IndexedDbConnection } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
-import { decodeStoredResourceEntry, type StoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
+import type { StoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
+import { decodeStoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
+import type { ComputedIndexedDbQueueMutation } from '../queuebox/indexed-db-queue-box-entry.ts';
 import {
     computeIndexedDbQueueGuard,
     computeIndexedDbQueuePut,
     isStoredQueueEntryExpired,
-    type ComputedIndexedDbQueueMutation,
     type ComputedIndexedDbQueuePut
 } from '../queuebox/indexed-db-queue-box-entry.ts';
 import { IndexedDbQueueBox } from '../queuebox/indexed-db-queue-box.ts';
-import {
-    toKeyAsString,
-    type Key,
-    type ResourceEntry
-} from '../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { writeComputedIndexedDbQueueMutations } from '../queuebox/write-computed-indexed-db-queue-mutations.ts';
 import type { ALAdmissionBackendEntry } from './al-admission-backend.ts';
 import type { ALAdmissionDecoder } from './al-admission-decoder.ts';
@@ -120,7 +117,13 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async ready(): Promise<void> {
-        await this.#connection.open();
+        const operation = this.#connection.beginOperation();
+        try {
+            await operation.open();
+        }
+        finally {
+            operation.release();
+        }
     }
 
     getStorageOpening(): ALStorageOpening | undefined {
@@ -128,156 +131,192 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
-        const db = await this.#connection.open();
-        const session = this.#createReadSession(db);
+        const operation = this.#connection.beginOperation();
         try {
-            const result = await read(session);
-            session.close();
-            // A chain that read past an expiry evicts what it saw, once, after it has read
-            // everything: by the time its caller is answered the row is gone, or another writer
-            // has moved it.
-            const expired = session.takeExpiredRows();
-            if (expired !== undefined) {
-                await removeExpiredIndexedDbAdmissionValues({
-                    db,
-                    storeName: this.#storeName,
-                    removals: expired.removals
-                });
+            const db = await operation.open();
+            const session = this.#createReadSession(db);
+            try {
+                const result = await read(session);
+                session.close();
+                // A chain that read past an expiry evicts what it saw, once, after it has read
+                // everything: by the time its caller is answered the row is gone, or another writer
+                // has moved it.
+                const expired = session.takeExpiredRows();
+                if (expired !== undefined) {
+                    await removeExpiredIndexedDbAdmissionValues({
+                        db,
+                        storeName: this.#storeName,
+                        removals: expired.removals
+                    });
+                }
+                return result;
             }
-            return result;
+            finally {
+                session.close();
+            }
         }
         finally {
-            session.close();
+            operation.release();
         }
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const db = await this.#connection.open();
-        const stored = (await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'key', key }))[0];
-        if (stored === undefined) {
-            return undefined;
-        }
-        const [value, expired] = decodeIndexedDbAdmissionValue({ stored, key, decode, nowMs: this.#nowMs() });
-        if (!expired) {
-            return value;
-        }
-        await removeExpiredIndexedDbAdmissionValues({
-            db,
-            storeName: this.#storeName,
-            removals: [{
-                kind: 'remove-if-write-token',
-                key,
-                expectedWriteToken: stored.writeToken
-            }]
-        });
-        return undefined;
-    }
-
-    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-        if (decision instanceof Promise) {
-            await decision;
-        }
-        const db = await this.#connection.open();
-        const rows = await readIndexedDbAdmissionSnapshot(
-            db,
-            this.#storeName,
-            { kind: 'prefixes', prefixes: [prefix] }
-        );
-        const entries: ALAdmissionBackendEntry<V>[] = [];
-        const expiredRemovals: IndexedDbAdmissionMutation[] = [];
-        const nowMs = this.#nowMs();
-        for (const row of rows) {
-            const [value, expired] = decodeIndexedDbAdmissionValue({ stored: row, key: row.key, decode, nowMs });
-            if (expired) {
-                expiredRemovals.push({
-                    kind: 'remove-if-write-token',
-                    key: row.key,
-                    expectedWriteToken: row.writeToken
-                });
-                continue;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+            if (decision instanceof Promise) {
+                await decision;
             }
-            entries.push({ key: row.key, value });
-        }
-        if (expiredRemovals.length > 0) {
+            const db = await operation.open();
+            const stored = (await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'key', key }))[0];
+            if (stored === undefined) {
+                return undefined;
+            }
+            const [value, expired] = decodeIndexedDbAdmissionValue({ stored, key, decode, nowMs: this.#nowMs() });
+            if (!expired) {
+                return value;
+            }
             await removeExpiredIndexedDbAdmissionValues({
                 db,
                 storeName: this.#storeName,
-                removals: expiredRemovals
+                removals: [{
+                    kind: 'remove-if-write-token',
+                    key,
+                    expectedWriteToken: stored.writeToken
+                }]
             });
+            return undefined;
         }
-        return entries;
+        finally {
+            operation.release();
+        }
+    }
+
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const rows = await readIndexedDbAdmissionSnapshot(
+                db,
+                this.#storeName,
+                { kind: 'prefixes', prefixes: [prefix] }
+            );
+            const entries: ALAdmissionBackendEntry<V>[] = [];
+            const expiredRemovals: IndexedDbAdmissionMutation[] = [];
+            const nowMs = this.#nowMs();
+            for (const row of rows) {
+                const [value, expired] = decodeIndexedDbAdmissionValue({ stored: row, key: row.key, decode, nowMs });
+                if (expired) {
+                    expiredRemovals.push({
+                        kind: 'remove-if-write-token',
+                        key: row.key,
+                        expectedWriteToken: row.writeToken
+                    });
+                    continue;
+                }
+                entries.push({ key: row.key, value });
+            }
+            if (expiredRemovals.length > 0) {
+                await removeExpiredIndexedDbAdmissionValues({
+                    db,
+                    storeName: this.#storeName,
+                    removals: expiredRemovals
+                });
+            }
+            return entries;
+        }
+        finally {
+            operation.release();
+        }
     }
 
     async write<T>(
         fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
-        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const fenced = await this.#readFencedWrite(db, fn);
+            const deadline = executionExpiresAtMs === null
+                ? undefined
+                : { expiresAtMs: executionExpiresAtMs, nowMs: this.#nowMs };
+            const committed = fenced.buffer.usedMetadata
+                ? await writeIndexedDbAdmissionMutations({
+                    deadline,
+                    queueMutations: fenced.buffer.queueMutations(),
+                    db,
+                    storeName: this.#storeName,
+                    fence: fenced.buffer.fence(),
+                    mutations: fenced.buffer.mutations()
+                })
+                : await writeComputedIndexedDbQueueMutations({
+                    db,
+                    storeName: AL_ADMISSION_WORK_STORE_NAME,
+                    mutations: fenced.buffer.queueMutations(),
+                    deadline
+                });
+            if (!committed) {
+                throw new ALAdmissionBackendConflictError('IndexedDB AL admission write conflicted');
+            }
+            return fenced.result;
         }
-        const db = await this.#connection.open();
-        const fenced = await this.#readFencedWrite(db, fn);
-        const deadline = executionExpiresAtMs === null
-            ? undefined
-            : { expiresAtMs: executionExpiresAtMs, nowMs: this.#nowMs };
-        const committed = fenced.buffer.usedMetadata
-            ? await writeIndexedDbAdmissionMutations({
-                deadline,
-                queueMutations: fenced.buffer.queueMutations(),
-                db,
-                storeName: this.#storeName,
-                fence: fenced.buffer.fence(),
-                mutations: fenced.buffer.mutations()
-            })
-            : await writeComputedIndexedDbQueueMutations({
-                db,
-                storeName: AL_ADMISSION_WORK_STORE_NAME,
-                mutations: fenced.buffer.queueMutations(),
-                deadline
-            });
-        if (!committed) {
-            throw new ALAdmissionBackendConflictError('IndexedDB AL admission write conflicted');
+        finally {
+            operation.release();
         }
-        return fenced.result;
     }
 
     /** One list operation, read as stored: every row with its expiry, the expired ones too. */
     async readNamespaceRows(
         selection: IndexedDbAdmissionBackend.NamespaceSelection
     ): Promise<IndexedDbAdmissionBackend.NamespaceRows> {
-        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            const rows = await readIndexedDbAdmissionSnapshot(
+                db,
+                this.#storeName,
+                { kind: 'prefixes', prefixes: [selection.keyPrefix] }
+            );
+            return { rows, workRows: await readALWorkRowsInRanges(db, selection.workRanges) };
         }
-        const db = await this.#connection.open();
-        const rows = await readIndexedDbAdmissionSnapshot(
-            db,
-            this.#storeName,
-            { kind: 'prefixes', prefixes: [selection.keyPrefix] }
-        );
-        return { rows, workRows: await readALWorkRowsInRanges(db, selection.workRanges) };
+        finally {
+            operation.release();
+        }
     }
 
     /** One write operation: a single readwrite over both stores, which lands every mutation or none. */
     async writeUnfencedMutations(input: IndexedDbAdmissionBackend.UnfencedMutations): Promise<boolean> {
-        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
-        if (decision instanceof Promise) {
-            await decision;
+        const operation = this.#connection.beginOperation();
+        try {
+            const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+            if (decision instanceof Promise) {
+                await decision;
+            }
+            const db = await operation.open();
+            return await writeIndexedDbAdmissionMutations({
+                db,
+                storeName: this.#storeName,
+                fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
+                mutations: input.mutations,
+                queueMutations: input.queueMutations
+            });
         }
-        const db = await this.#connection.open();
-        return await writeIndexedDbAdmissionMutations({
-            db,
-            storeName: this.#storeName,
-            fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
-            mutations: input.mutations,
-            queueMutations: input.queueMutations
-        });
+        finally {
+            operation.release();
+        }
     }
 
     /**
@@ -313,6 +352,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             observer: this.#observer
         });
     }
+
+    close(): Promise<void> {
+        return this.#connection.close();
+    }
 }
 
 /** What one write phase's fence snapshot produced, ready for the conditional write that follows it. */
@@ -321,6 +364,29 @@ interface IndexedDbAdmissionFencedWrite<T> {
     readonly result: T;
 }
 
+interface RemoveExpiredIndexedDbAdmissionValuesInput {
+    readonly db: IDBDatabase;
+    readonly removals: readonly IndexedDbAdmissionMutation[];
+    readonly storeName: string;
+}
+
+/**
+ * Every removal is write-token guarded, so a row another writer replaced or removed since the read
+ * belongs to that writer: the guard rolls this eviction back, and the next chain that reads a row
+ * past its expiry evicts it. The reader already answered from a snapshot in which the row was
+ * absent, so a row that moved is never the reader's conflict and never reaches its caller.
+ */
+async function removeExpiredIndexedDbAdmissionValues(
+    input: RemoveExpiredIndexedDbAdmissionValuesInput
+): Promise<void> {
+    await writeIndexedDbAdmissionMutations({
+        queueMutations: [],
+        db: input.db,
+        storeName: input.storeName,
+        fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
+        mutations: input.removals
+    });
+}
 namespace IndexedDbAdmissionWriteBuffer {
     export interface Input {
         readonly session: IndexedDbAdmissionReadSession;
@@ -328,7 +394,6 @@ namespace IndexedDbAdmissionWriteBuffer {
         readonly newWriteToken: () => string;
     }
 }
-
 class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     #usedMetadata = false;
     readonly #pending = new Map<string, IndexedDbAdmissionStoredRow | undefined>();
@@ -476,28 +541,4 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
             stored === undefined ? { kind: 'remove', key } : { kind: 'set', stored }
         );
     }
-}
-
-interface RemoveExpiredIndexedDbAdmissionValuesInput {
-    readonly db: IDBDatabase;
-    readonly removals: readonly IndexedDbAdmissionMutation[];
-    readonly storeName: string;
-}
-
-/**
- * Every removal is write-token guarded, so a row another writer replaced or removed since the read
- * belongs to that writer: the guard rolls this eviction back, and the next chain that reads a row
- * past its expiry evicts it. The reader already answered from a snapshot in which the row was
- * absent, so a row that moved is never the reader's conflict and never reaches its caller.
- */
-async function removeExpiredIndexedDbAdmissionValues(
-    input: RemoveExpiredIndexedDbAdmissionValuesInput
-): Promise<void> {
-    await writeIndexedDbAdmissionMutations({
-        queueMutations: [],
-        db: input.db,
-        storeName: input.storeName,
-        fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
-        mutations: input.removals
-    });
 }

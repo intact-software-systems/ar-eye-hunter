@@ -12,6 +12,7 @@ import { ALCheckpoint, type ALCheckpointStorage } from '@shared/alm/checkpoint/a
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { IndexedDbAdmissionMutation } from '@shared/alm/write-indexed-db-admission-mutations.ts';
@@ -119,10 +120,108 @@ describe('ALCheckpoint', () => {
         await saving.checkpoint.restore();
         await saving.writeRow('one');
 
-        saving.checkpoint.dispose();
+        await saving.checkpoint.dispose();
 
-        expect(saving.writes).toEqual([[`set ${ROW_KEY}`]]);
-        await vi.waitFor(async () => expect(await readSaved(dbName, clock)).toMatchObject({ row: 'one' }));
+        expect(await readSaved(dbName, clock)).toMatchObject({ row: 'one' });
+    });
+
+    it('keeps the saved database open until an in-flight checkpoint and its final changes finish', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: START_MS };
+        const saving = openCheckpoint({ dbName, clock, owned: true });
+        const runtimeStorage = new ALRuntimeStorage();
+        runtimeStorage.ownBackend(saving.storage.saved);
+        runtimeStorage.ownCheckpoint(saving.checkpoint);
+        await saving.checkpoint.restore();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const write = saving.storage.saved.writeUnfencedMutations.bind(saving.storage.saved);
+        vi.spyOn(saving.storage.saved, 'writeUnfencedMutations').mockImplementation(async (mutations) => {
+            entered.resolve();
+            await release.promise;
+            return await write(mutations);
+        });
+        onTestFinished(() => release.resolve());
+        await saving.writeRow('first');
+        saving.checkpoint.flush();
+        await entered.promise;
+        await saving.writeRow('final');
+        let closed = false;
+        const closing = runtimeStorage.close().then(() => {
+            closed = true;
+        });
+        await Promise.resolve();
+        expect(closed).toBe(false);
+        release.resolve();
+        await closing;
+        expect(await readSaved(dbName, clock)).toMatchObject({ row: 'final' });
+        await expect(saving.storage.saved.ready()).rejects.toThrow('closed');
+    });
+
+    it('saves owned admissions when disposal overlaps takeover restore and stays retired afterward', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: START_MS };
+        const other = openCheckpoint({ dbName, clock, owned: false });
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const scheduled = new Set<() => void>();
+        vi.spyOn(GLOBAL_CHECKPOINT_TIMERS, 'schedule').mockImplementation((run) => {
+            scheduled.add(run);
+            return () => {
+                scheduled.delete(run);
+            };
+        });
+        const observe = other.observer.observe.bind(other.observer);
+        vi.spyOn(other.observer, 'observe').mockImplementation(async (operation) => {
+            observe(operation);
+            if (operation.kind === 'list') {
+                entered.resolve();
+                await release.promise;
+            }
+        });
+        const subscription = other.checkpoint.onTakenOverDo(() => {});
+        onTestFinished(() => {
+            release.resolve();
+            subscription.unsubscribe();
+            vi.restoreAllMocks();
+        });
+        const runtimeStorage = new ALRuntimeStorage();
+        runtimeStorage.ownBackend(other.storage.saved);
+        runtimeStorage.ownCheckpoint(other.checkpoint);
+        other.ownership.take();
+        await entered.promise;
+        expect(other.checkpoint.isOwned()).toBe(true);
+        await other.writeRow('accepted-while-owned');
+        const closing = runtimeStorage.close();
+        release.resolve();
+        await closing;
+
+        expect(await readSaved(dbName, clock)).toMatchObject({ row: 'accepted-while-owned' });
+        expect(scheduled.size).toBe(0);
+        await other.writeRow('after-retirement');
+        await other.checkpoint.restore();
+        other.checkpoint.flush();
+        expect(scheduled.size).toBe(0);
+        expect(await readSaved(dbName, clock)).toMatchObject({ row: 'accepted-while-owned' });
+        await expect(other.storage.saved.ready()).rejects.toThrow('closed');
+    });
+
+    it('releases independent databases even when the final checkpoint fails', async () => {
+        const clock = { nowMs: START_MS };
+        const failure = new Error('final checkpoint failed');
+        const first = openCheckpoint({ dbName: newDbName(), clock, owned: true, expectedDisposalFailure: failure });
+        const second = openCheckpoint({ dbName: newDbName(), clock, owned: true });
+        const runtimeStorage = new ALRuntimeStorage();
+        for (const fixture of [first, second]) {
+            runtimeStorage.ownBackend(fixture.storage.saved);
+            runtimeStorage.ownCheckpoint(fixture.checkpoint);
+            await fixture.checkpoint.restore();
+        }
+        await first.writeRow('cannot-save');
+        vi.spyOn(first.storage.saved, 'writeUnfencedMutations').mockRejectedValue(failure);
+        await expect(runtimeStorage.close()).rejects.toMatchObject({ errors: [failure] });
+        await expect(first.storage.saved.ready()).rejects.toThrow('closed');
+        await expect(second.storage.saved.ready()).rejects.toThrow('closed');
     });
 
     it('loads only live rows, and counts the work rows past their expiry on its first batch', async () => {
@@ -212,7 +311,15 @@ interface OpenedCheckpoint {
     readRow(): string | undefined;
 }
 
-function openCheckpoint(input: { dbName: string; clock: { nowMs: number; }; owned: boolean; }): OpenedCheckpoint {
+interface OpenCheckpointInput {
+    readonly dbName: string;
+    readonly clock: { nowMs: number; };
+    readonly owned: boolean;
+    /** Only the explicit failed-save case expects disposal to reject again during cleanup. */
+    readonly expectedDisposalFailure?: Error;
+}
+
+function openCheckpoint(input: OpenCheckpointInput): OpenedCheckpoint {
     const observer = createCountingIndexedDbOperationObserver();
     const events: ALStorageEvent[] = [];
     const nowMs = () => input.clock.nowMs;
@@ -247,7 +354,7 @@ function openCheckpoint(input: { dbName: string; clock: { nowMs: number; }; owne
     };
     const ownership = createTakeableDurableWorkOwnership(input.owned);
     const checkpoint = new ALCheckpoint({ storage, ownership, nowMs });
-    onTestFinished(() => checkpoint.dispose());
+    onTestFinished(() => closeCheckpoint(checkpoint, saved, input.expectedDisposalFailure));
     return {
         memory,
         storage,
@@ -263,15 +370,39 @@ function openCheckpoint(input: { dbName: string; clock: { nowMs: number; }; owne
     };
 }
 
+async function closeCheckpoint(
+    checkpoint: ALCheckpoint,
+    saved: IndexedDbAdmissionBackend,
+    expectedFailure: Error | undefined
+): Promise<void> {
+    try {
+        const disposed = checkpoint.dispose();
+        if (expectedFailure === undefined) {
+            await disposed;
+        }
+        else {
+            await expect(disposed).rejects.toBe(expectedFailure);
+        }
+    }
+    finally {
+        await saved.close();
+    }
+}
+
 function toMutationKey(mutation: IndexedDbAdmissionMutation): string {
     return mutation.kind === 'set' ? mutation.stored.key : mutation.key;
+}
+
+interface SavedCheckpointRows {
+    readonly row: string | undefined;
+    readonly work: string | undefined;
 }
 
 /** What another document of the session would restore: the saved admission row and work row. */
 async function readSaved(
     dbName: string,
     clock: { nowMs: number; }
-): Promise<Readonly<{ row: string | undefined; work: string | undefined; }>> {
+): Promise<SavedCheckpointRows> {
     const reader = openCheckpoint({ dbName, clock, owned: true });
     const read = await reader.storage.saved.readNamespaceRows(reader.storage.selection);
     return {
@@ -280,8 +411,13 @@ async function readSaved(
     };
 }
 
+interface AdmissionPutAbort {
+    readonly count: number;
+    restore(): void;
+}
+
 /** Aborts the next readwrite when it puts an admission row, after its queue puts were issued. */
-function abortReadwriteAtAdmissionPut(): Readonly<{ count: number; restore(): void; }> {
+function abortReadwriteAtAdmissionPut(): AdmissionPutAbort {
     const put = IDBObjectStore.prototype.put;
     const aborted = { count: 0 };
     const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (

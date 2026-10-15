@@ -45,7 +45,7 @@ describe('Committed AppInbox completion publication', () => {
     });
 
     it('shares notification ownership through the real reader and paired runtime factories', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const queue = new TestResourceInbox();
@@ -93,7 +93,7 @@ describe('Committed AppInbox completion publication', () => {
     });
 
     it('wakes a nontransactional handler result only after actual terminal queue release', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness();
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
@@ -145,7 +145,7 @@ describe('Committed AppInbox completion publication', () => {
     it.each(['COMPLETED', 'FAILED', 'NON_RETRYABLE'] as const)(
         'wakes only after %s commit and writer finalization, independently of timing',
         async (status) => {
-            vi.useFakeTimers();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
             const harness = createAtomicHarness();
             const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
             const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
@@ -183,7 +183,7 @@ describe('Committed AppInbox completion publication', () => {
     );
 
     it.each([{ failResultWrite: true }, { loseReservation: true }])('does not wake a rolled-back terminal transaction %j', async (options) => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness(options);
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
@@ -203,7 +203,7 @@ describe('Committed AppInbox completion publication', () => {
     });
 
     it('publishes malformed-command completion after its own commit', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const dependencies = { database: harness.database.sql, nowEpochMs: () => 1000, completionNotifications };
@@ -232,7 +232,7 @@ describe('Committed AppInbox completion publication', () => {
     });
 
     it.each(['exhaustion', 'recovery'] as const)('wakes after committed %s independently of release telemetry', async (lane) => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness({ attempts: lane === 'exhaustion' ? 20 : 21 });
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const dependencies = { database: harness.database.sql, completionNotifications };

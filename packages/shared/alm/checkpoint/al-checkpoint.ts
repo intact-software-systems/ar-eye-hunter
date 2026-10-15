@@ -34,25 +34,17 @@ export interface ALCheckpointStorage {
 /**
  * What a checkpoint lane and the page lifecycle hold of a memory pair's checkpoint. `restore` and the
  * first-batch report run once; `flush` starts a checkpoint now and is never awaited, and `dispose`
- * flushes the same way before it stops the checkpoint.
+ * joins its final flush before terminal storage cleanup.
  */
 export interface ALCheckpointPort extends ALStorageRecoveryReporter {
     /** Never rejects: a store that cannot be read or decoded is stated on its health, and the lane opens from memory. */
     restore(): Promise<void>;
     flush(): void;
-    dispose(): void;
+    dispose(): void | Promise<void>;
     /** Whether this runtime saves the checkpoint, so its admissions outlive the document. */
     isOwned(): boolean;
     /** Restores when ownership turns to this runtime, then calls the listener. */
     onTakenOverDo(listener: () => void): Unsubscribe;
-}
-
-export namespace ALCheckpoint {
-    export interface Input {
-        readonly storage: ALCheckpointStorage;
-        readonly ownership: ALDurableWorkOwnership;
-        readonly nowMs: () => number;
-    }
 }
 
 /** What the restore found: the database's opening, and the work rows past their expiry it left out. */
@@ -65,6 +57,14 @@ interface ALCheckpointRestore {
 interface ALCheckpointTracking {
     readonly dirty: ALCheckpointDirtySet;
     readonly writer: ALCheckpointWriter;
+}
+
+export namespace ALCheckpoint {
+    export interface Input {
+        readonly storage: ALCheckpointStorage;
+        readonly ownership: ALDurableWorkOwnership;
+        readonly nowMs: () => number;
+    }
 }
 
 /**
@@ -82,6 +82,7 @@ export class ALCheckpoint implements ALCheckpointPort {
     private restoring: Promise<void> | undefined;
     private restored: ALCheckpointRestore | undefined;
     private disposed = false;
+    private closing: Promise<void> | undefined;
 
     constructor(input: ALCheckpoint.Input) {
         this.input = input;
@@ -101,7 +102,7 @@ export class ALCheckpoint implements ALCheckpointPort {
 
     /** Owner only, once: a runtime that does not own the work restores when it takes ownership over. */
     async restore(): Promise<void> {
-        if (!this.isOwned()) {
+        if (this.disposed || !this.isOwned()) {
             return;
         }
         this.restoring ??= this.readAndLoad().finally(() => this.trackTakenOver());
@@ -123,15 +124,25 @@ export class ALCheckpoint implements ALCheckpointPort {
         this.tracking?.writer.flush();
     }
 
-    /** A disconnect inside the interval still saves what the interval has not; the write is not awaited. */
-    dispose(): void {
+    /** A disconnect joins initialization and the final checkpoint before its database can close. */
+    dispose(): Promise<void> {
         this.disposed = true;
-        if (this.tracking === undefined) {
-            return;
+        this.closing ??= this.closeTracking();
+        return this.closing;
+    }
+
+    private async closeTracking(): Promise<void> {
+        const outcomes = await Promise.allSettled([this.restoring]);
+        try {
+            outcomes.push(...await Promise.allSettled([this.tracking?.writer.dispose()]));
         }
-        this.tracking.writer.flush();
-        this.tracking.writer.dispose();
-        this.tracking.dirty.dispose();
+        finally {
+            this.tracking?.dirty.dispose();
+        }
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     }
 
     private createTracking(): ALCheckpointTracking {
@@ -150,8 +161,9 @@ export class ALCheckpoint implements ALCheckpointPort {
         return { dirty, writer };
     }
 
+    /** An accepted restore still owes its owned snapshot when disposal is waiting for it. */
     private trackTakenOver(): void {
-        if (this.tracking !== undefined || this.disposed) {
+        if (this.tracking !== undefined) {
             return;
         }
         this.tracking = this.createTracking();

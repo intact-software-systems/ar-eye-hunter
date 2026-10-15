@@ -343,6 +343,16 @@ describe('RTC baseline evidence acceptance', () => {
                 ok: true,
                 value: [{
                     caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'eventHistoryMode',
+                    value: 'full',
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'eventHistoryMaxEvents',
+                    value: 0,
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
                     field: 'rtcCaptureMode',
                     value: 'native',
                     source: 'cli'
@@ -539,6 +549,16 @@ describe('RTC baseline evidence acceptance', () => {
                 ok: true,
                 value: [{
                     caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'eventHistoryMode',
+                    value: 'full',
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                    field: 'eventHistoryMaxEvents',
+                    value: 0,
+                    source: 'default'
+                }, {
+                    caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
                     field: 'rtcCaptureMode',
                     value: mode,
                     source: 'cli'
@@ -670,6 +690,16 @@ describe('RTC baseline evidence acceptance', () => {
                 readInitializedConfiguration: async () => ({
                     ok: true,
                     value: [{
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'eventHistoryMode',
+                        value: 'full',
+                        source: 'default'
+                    }, {
+                        caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
+                        field: 'eventHistoryMaxEvents',
+                        value: 0,
+                        source: 'default'
+                    }, {
                         caseKey: { workloadId: 'RTC-B06', caseId: 'case', inputKey: 'input' },
                         field: 'rtcCaptureMode',
                         value: 'native',
@@ -824,11 +854,33 @@ function recordingEvidence() {
             agents: ['agent-a', 'agent-b', 'agent-c'].map((agentId) => ({
                 agentId,
                 details: {
+                    eventHistory: eventHistory(agentId, 2, 'capture-run'),
                     browserDiagnostics: receipt,
-                    browserDiagnosticsAdmission: { runId: 'capture-run', agentId, commandId: `admit-${agentId}`, receipt },
+                    browserDiagnosticsAdmission: {
+                        runId: 'capture-run',
+                        agentId,
+                        commandId: `admit-${agentId}`,
+                        receipt,
+                        eventHistory: eventHistory(agentId, 1, 'capture-run')
+                    },
                     browserDiagnosticsHealth: { runId: 'capture-run', agentId, commandId: `health-${agentId}` }
                 }
             }))
         }]
+    };
+}
+
+function eventHistory(agentId: string, totalEvents: number, runId: string) {
+    return {
+        runtimeId: `runtime-${agentId}`,
+        generation: 0,
+        policy: { mode: 'full' },
+        totalEvents,
+        retainedEvents: totalEvents,
+        evictedEvents: 0,
+        evictedThroughEpochMs: null,
+        countsByKind: { event: totalEvents, diagnostic: 0, message: 0, stats: 0, report: 0, result: 0, state: 0 },
+        reconnects: 0,
+        capture: { status: 'continuous', identity: { runId, agentId }, start: { runtimeId: `runtime-${agentId}`, generation: 0, ordinal: 1 } }
     };
 }

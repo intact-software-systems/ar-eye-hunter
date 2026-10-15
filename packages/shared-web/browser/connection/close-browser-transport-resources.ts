@@ -1,4 +1,5 @@
 import type { RallarSessionHeartbeat } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -17,6 +18,7 @@ export namespace CloseBrowserTransportResources {
         readonly webRtcOverlayMulticastManager?: WebRtcOverlayMulticastManager;
         readonly qboxEngine?: InboxOutboxEngine;
         readonly webSocketQueueBox?: WsQueueBoxClientService;
+        readonly runtimeStorage?: ALRuntimeStorage;
     }
 }
 
@@ -50,6 +52,12 @@ export async function closeBrowserTransportResources(
         if (outcome.status === 'rejected') {
             failures.push(toError(outcome.reason));
         }
+    }
+    try {
+        await resources.runtimeStorage?.close();
+    }
+    catch (caught) {
+        failures.push(toError(caught));
     }
     if (failures.length > 0) {
         throw new AggregateError(failures, 'Browser transport cleanup failed');

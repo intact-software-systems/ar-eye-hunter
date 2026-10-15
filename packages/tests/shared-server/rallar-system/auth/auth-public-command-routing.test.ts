@@ -1,4 +1,8 @@
-import { expect, it, vi } from 'vitest';
+import {
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -13,7 +17,11 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
-import { createAuthInboxTestRuntime, runAuthInboxCommand, type AuthInboxTestRuntime } from './auth-app-inbox-test-runtime.ts';
+import {
+    createAuthInboxTestRuntime,
+    runAuthInboxCommand,
+    type AuthInboxTestRuntime
+} from './auth-app-inbox-test-runtime.ts';
 
 interface ConsumeExpiredTicketsInput {
     readonly auth: AuthInboxTestRuntime;
@@ -43,7 +51,7 @@ it('waits for delayed auth intent materialization before dequeuing', async () =>
     });
     const materialization = Promise.withResolvers<void>();
     auth.queue.delayNextMaterializationUntil(materialization.promise);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
         let settled = false;
         const registration = registerRoutedUser(auth);
@@ -75,7 +83,7 @@ it('cleans up a timed-out queue wait before later command processing', async () 
         serviceId: 'timed-out-wait-auth-test-service',
         credentialSecret: 'timed-out-wait-auth-secret-0123456789abcdef'
     });
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
         const timedOut = auth.queue.waitForEntryCount(1, 10);
         const timeoutExpectation = expect(timedOut).rejects.toThrow(

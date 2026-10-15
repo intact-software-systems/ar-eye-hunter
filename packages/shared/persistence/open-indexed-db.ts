@@ -67,18 +67,90 @@ class IndexedDbSchemaMismatchError extends Error {
 /** One open per uncached connection attempt; failure or versionchange permits a fresh caller-owned attempt. */
 export type IndexedDbOpening = () => Promise<IDBDatabase>;
 
+/** Accepted work can open during retirement; its owner releases this scope in a finally after all I/O. */
+export interface IndexedDbOperation {
+    open(): Promise<IDBDatabase>;
+    release(): void;
+}
+
 export class IndexedDbConnection {
     private opening?: Promise<IDBDatabase>;
     private readonly openDatabase: IndexedDbOpening;
+    private closing: Promise<void> | undefined;
+    private retired = false;
+    private readonly operations = new Set<Promise<void>>();
 
     constructor(openDatabase: IndexedDbOpening) {
         this.openDatabase = openDatabase;
     }
 
+    get isClosed(): boolean {
+        return this.retired;
+    }
+
     async open(): Promise<IDBDatabase> {
+        if (this.retired) {
+            throw new Error('IndexedDB connection is closed');
+        }
+        return await this.readDatabase();
+    }
+
+    /** Reserve before the first await so shutdown includes work held before its database opens. */
+    beginOperation(): IndexedDbOperation {
+        if (this.retired) {
+            throw new Error('IndexedDB connection is closed');
+        }
+        let finish: (() => void) | undefined;
+        const completion = new Promise<void>((resolve) => {
+            finish = resolve;
+        });
+        if (finish === undefined) {
+            throw new Error('IndexedDB operation completion was not initialized');
+        }
+        const settle = finish;
+        this.operations.add(completion);
+        let released = false;
+        return {
+            open: async () => {
+                if (released) {
+                    throw new Error('IndexedDB operation is released');
+                }
+                return await this.readDatabase();
+            },
+            release: () => {
+                released = true;
+                this.operations.delete(completion);
+                settle();
+            }
+        };
+    }
+
+    /** Rejects new work immediately, joins accepted work and pending opens, then releases the native handle. */
+    close(): Promise<void> {
+        this.retired = true;
+        this.closing ??= this.closeAfterOperations();
+        return this.closing;
+    }
+
+    private async closeAfterOperations(): Promise<void> {
+        await Promise.allSettled([...this.operations]);
+        try {
+            const db = await this.opening;
+            if (db !== undefined) {
+                db.onversionchange = null;
+                db.close();
+            }
+        }
+        finally {
+            this.opening = undefined;
+        }
+    }
+
+    private async readDatabase(): Promise<IDBDatabase> {
         if (!this.opening) {
             this.opening = this.openDatabase().then((db) => {
                 db.onversionchange = () => {
+                    db.onversionchange = null;
                     db.close();
                     this.opening = undefined;
                 };

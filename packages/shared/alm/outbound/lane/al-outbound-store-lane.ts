@@ -157,16 +157,20 @@ export class ALOutboundStoreLane<TPrepared> {
         return await this.readiness.ready();
     }
 
-    dispose(): Promise<void> {
+    async dispose(): Promise<void> {
         this.disposed = true;
         const workDisposed = this.work.dispose();
         this.dispatchAdmission.dispose();
         this.removeStorageResetListener?.();
         this.removeForeignCommitListener?.();
         this.takeOverSubscription?.unsubscribe();
-        this.input.checkpoint?.dispose();
         this.input.canonicalHandoff?.clear();
-        return workDisposed;
+        const outcomes = await Promise.allSettled([workDisposed, this.readiness.dispose()]);
+        outcomes.push(...await Promise.allSettled([this.input.checkpoint?.dispose()]));
+        const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+        if (failure?.status === 'rejected') {
+            throw failure.reason;
+        }
     }
 
     flushCheckpoint(): void {
@@ -192,7 +196,7 @@ export class ALOutboundStoreLane<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundComputedDto<TPrepared>> {
-        const result = await this.dispatchAdmission.commit(dispatch);
+        const result = await this.readiness.runStoreOperation(() => this.dispatchAdmission.commit(dispatch));
         this.setCanonicalHandoff(result);
         this.recordStorageHealth(result);
 
@@ -207,11 +211,14 @@ export class ALOutboundStoreLane<TPrepared> {
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {
-        const results = await this.dispatchAdmission.commitAll(dispatches).catch((error) => {
-            // A group rethrows only after every member ran, so members before the throw may have landed.
-            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
-            throw error;
-        });
+        const results = await this.readiness.runStoreOperation(() => this.dispatchAdmission.commitAll(dispatches))
+            .catch(
+                (error) => {
+                    // A group rethrows only after every member ran, so members before the throw may have landed.
+                    this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+                    throw error;
+                }
+            );
         results.forEach((result) => {
             this.setCanonicalHandoff(result);
             this.recordStorageHealth(result);

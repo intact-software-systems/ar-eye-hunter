@@ -56,6 +56,9 @@ export class ALCheckpointWriter {
     /** Past the bound the lag is stated once; a completed write ends it. */
     private lagStated = false;
     private disposed = false;
+    private completion: Promise<void> | undefined;
+    private finalWriteFailure: Error | undefined;
+    private closing: Promise<void> | undefined;
 
     constructor(input: ALCheckpointWriter.Input) {
         this.input = input;
@@ -74,10 +77,23 @@ export class ALCheckpointWriter {
         this.startWrite();
     }
 
-    dispose(): void {
+    /** Stop scheduling, join the current write, then save changes that arrived during it. */
+    dispose(): Promise<void> {
         this.disposed = true;
         this.disarm();
         this.subscription.unsubscribe();
+        this.flushRequested = false;
+        this.closing ??= this.saveFinalChanges();
+        return this.closing;
+    }
+
+    private async saveFinalChanges(): Promise<void> {
+        await this.completion;
+        this.startWrite();
+        await this.completion;
+        if (this.finalWriteFailure !== undefined) {
+            throw this.finalWriteFailure;
+        }
     }
 
     private arm(): void {
@@ -139,7 +155,7 @@ export class ALCheckpointWriter {
         });
         this.inFlight = snapshot;
         this.disarm();
-        void this.input.write(mutations).then(
+        this.completion = this.input.write(mutations).then(
             () => this.completeWrite(snapshot),
             (error) => this.failWrite(toError(error))
         );
@@ -150,6 +166,7 @@ export class ALCheckpointWriter {
         this.input.dirty.clearSaved(snapshot);
         this.retryNotBeforeMs = Number.NEGATIVE_INFINITY;
         this.lastWriteFailure = undefined;
+        this.finalWriteFailure = undefined;
         this.lagStated = false;
         this.input.health.recordRecoveryPoint(this.input.nowMs());
         this.continueAfterWrite();
@@ -157,13 +174,14 @@ export class ALCheckpointWriter {
 
     /** The saved rows stand as the aborted transaction left them; every captured key stays unsaved. */
     private failWrite(error: Error): void {
+        this.finalWriteFailure = error;
         this.inFlight = undefined;
         this.retryNotBeforeMs = this.input.nowMs() + this.input.settings.intervalMs;
         this.lastWriteFailure = toALStorageFailure(error);
         this.continueAfterWrite();
     }
 
-    /** A flush asked for during the write still runs after a dispose: it is the disposing page's last save. */
+    /** A live explicit flush runs next; disposal saves the final dirty snapshot through its joined completion. */
     private continueAfterWrite(): void {
         this.disarm();
         if (this.flushRequested) {

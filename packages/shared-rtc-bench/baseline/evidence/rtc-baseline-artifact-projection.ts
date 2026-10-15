@@ -43,14 +43,6 @@ export interface RtcBaselineArtifactProjector {
     getProjection(): RtcBaselineArtifactProjection;
 }
 
-interface CreateRtcBaselineArtifactProjectorInput {
-    readonly environmentId: RtcBaselineEnvironmentId;
-    readonly environmentObservation: RtcBaselineRuntimeObservationDto | null;
-    readonly conflictingSampleCode: string;
-    readonly conflictingSampleMessage: (sampleId: string) => string;
-    readonly sha256: (bytes: Uint8Array) => Promise<string>;
-}
-
 const encoder = new TextEncoder();
 
 function successful(): RtcBaselineResult<void> {
@@ -75,59 +67,91 @@ function toSampleOutcome(sample: RtcBaselineSampleDto): RtcBaselineSampleOutcome
     return { identity: sample.identity, outcome: sample.outcome, issues: sample.issues };
 }
 
-export function createRtcBaselineArtifactProjector(
-    projectorInput: CreateRtcBaselineArtifactProjectorInput
-): RtcBaselineArtifactProjector {
-    const sampleDigestById = new Map<string, string>();
-    const sampleOutcomes: RtcBaselineSampleOutcomeDto[] = [];
-    const cohortOutcomes: RtcBaselineCohortOutcomeRecord[] = [];
-    const failures: RtcBaselineFailureOutcomeRecord[] = [];
-    const metricObservations: RtcBaselineMetricObservation[] = [];
-    const rawReferences: RtcBaselineRawReferenceDto[] = [];
-    const artifactIssues: RtcBaselineIssueDto[] = [];
+function isMatchingFailedSample(
+    sample: RtcBaselineSampleOutcomeDto,
+    failure: RtcBaselineFailureOutcomeRecord
+): boolean {
+    return sample.outcome === 'failed' && failure.outcome === 'failed' &&
+        Object.entries(sample.identity).every(([key, value]) => Reflect.get(failure.identity, key) === value) &&
+        JSON.stringify(sample.issues) === JSON.stringify(failure.issues);
+}
 
-    async function appendSample(sample: RtcBaselineSampleDto): Promise<RtcBaselineResult<void>> {
+export function createRtcBaselineArtifactProjector(
+    projectorInput: RtcBaselineArtifactProjectionState.Input
+): RtcBaselineArtifactProjector {
+    return new RtcBaselineArtifactProjectionState(projectorInput);
+}
+
+namespace RtcBaselineArtifactProjectionState {
+    export interface Input {
+        readonly environmentId: RtcBaselineEnvironmentId;
+        readonly environmentObservation: RtcBaselineRuntimeObservationDto | null;
+        readonly conflictingSampleCode: string;
+        readonly conflictingSampleMessage: (sampleId: string) => string;
+        readonly sha256: (bytes: Uint8Array) => Promise<string>;
+    }
+}
+
+class RtcBaselineArtifactProjectionState implements RtcBaselineArtifactProjector {
+    private readonly sampleDigestById = new Map<string, string>();
+    private readonly sampleOutcomes: RtcBaselineSampleOutcomeDto[] = [];
+    private readonly cohortOutcomes: RtcBaselineCohortOutcomeRecord[] = [];
+    private readonly failures: RtcBaselineFailureOutcomeRecord[] = [];
+    private readonly metricObservations: RtcBaselineMetricObservation[] = [];
+    private readonly rawReferences: RtcBaselineRawReferenceDto[] = [];
+    private readonly artifactIssues: RtcBaselineIssueDto[] = [];
+    private readonly projectorInput: RtcBaselineArtifactProjectionState.Input;
+
+    constructor(projectorInput: RtcBaselineArtifactProjectionState.Input) {
+        this.projectorInput = projectorInput;
+    }
+
+    private async appendSample(sample: RtcBaselineSampleDto): Promise<RtcBaselineResult<void>> {
         let digest: string;
         try {
-            digest = await projectorInput.sha256(encoder.encode(JSON.stringify(sample)));
+            digest = await this.projectorInput.sha256(encoder.encode(JSON.stringify(sample)));
         }
         catch (error) {
             return failed('hash-failed', error instanceof Error ? error.message : String(error));
         }
-        const existingDigest = sampleDigestById.get(sample.identity.sampleId);
+        const existingDigest = this.sampleDigestById.get(sample.identity.sampleId);
         if (existingDigest !== undefined) {
             return existingDigest === digest
                 ? successful()
                 : failed(
-                    projectorInput.conflictingSampleCode,
-                    projectorInput.conflictingSampleMessage(sample.identity.sampleId)
+                    this.projectorInput.conflictingSampleCode,
+                    this.projectorInput.conflictingSampleMessage(sample.identity.sampleId)
                 );
         }
-
-        const sampleIndex = sampleDigestById.size;
-        sampleDigestById.set(sample.identity.sampleId, digest);
-        artifactIssues.push(
+        const receipt = this.failures.find((failure) =>
+            'sampleId' in failure.identity && failure.identity.sampleId === sample.identity.sampleId
+        );
+        const outcome = toSampleOutcome(sample);
+        if (receipt && !isMatchingFailedSample(outcome, receipt)) {
+            return failed('conflicting-failure-sample', 'Failed sample and causal receipt contradict each other.');
+        }
+        const sampleIndex = this.sampleDigestById.size;
+        this.sampleDigestById.set(sample.identity.sampleId, digest);
+        this.artifactIssues.push(
             ...validateRtcBaselineStoredArtifact(sample),
             ...toIndexedSampleIssues(
-                validateRtcBaselineRetainedSampleObservations(projectorInput.environmentObservation, [
-                    sample
-                ]),
+                validateRtcBaselineRetainedSampleObservations(this.projectorInput.environmentObservation, [sample]),
                 sampleIndex
             )
         );
-        sampleOutcomes.push(toSampleOutcome(sample));
-        metricObservations.push(
-            ...computeRtcBaselineMetricObservations([sample], projectorInput.environmentId)
+        if (!receipt) {
+            this.sampleOutcomes.push(outcome);
+        }
+        this.metricObservations.push(
+            ...computeRtcBaselineMetricObservations([sample], this.projectorInput.environmentId)
         );
-        rawReferences.push(...sample.rawReferences);
+        this.rawReferences.push(...sample.rawReferences);
         return successful();
     }
 
-    async function appendSamples(
-        samples: readonly RtcBaselineSampleDto[]
-    ): Promise<RtcBaselineResult<void>> {
+    private async appendSamples(samples: readonly RtcBaselineSampleDto[]): Promise<RtcBaselineResult<void>> {
         for (const sample of samples) {
-            const appended = await appendSample(sample);
+            const appended = await this.appendSample(sample);
             if (!appended.ok) {
                 return appended;
             }
@@ -135,65 +159,65 @@ export function createRtcBaselineArtifactProjector(
         return successful();
     }
 
-    async function appendStoredArtifact(
-        artifact: RtcBaselineStoredArtifact
-    ): Promise<RtcBaselineResult<void>> {
+    async appendStoredArtifact(artifact: RtcBaselineStoredArtifact): Promise<RtcBaselineResult<void>> {
         if (artifact.schema === 'rallar.rtc-baseline.sample.v1') {
-            return appendSample(artifact);
+            return this.appendSample(artifact);
         }
-        artifactIssues.push(...validateRtcBaselineStoredArtifact(artifact));
+        this.artifactIssues.push(...validateRtcBaselineStoredArtifact(artifact));
         if (artifact.schema === 'rallar.rtc-baseline.external-attempt.v1') {
-            return appendSamples(artifact.samples);
+            return this.appendSamples(artifact.samples);
         }
         if (artifact.schema === 'rallar.rtc-baseline.external-cohort.v1') {
-            cohortOutcomes.push({
+            this.cohortOutcomes.push({
                 identity: artifact.identity,
                 outcome: artifact.outcome,
                 issues: artifact.issues
             });
-            return appendSamples(artifact.samples);
+            return this.appendSamples(artifact.samples);
         }
         return successful();
     }
 
-    async function appendFailureOutcome(
-        failure: RtcBaselineFailureOutcomeRecord
-    ): Promise<RtcBaselineResult<void>> {
-        const projected = {
-            identity: failure.identity,
-            outcome: failure.outcome,
-            issues: failure.issues
-        };
-        failures.push(projected);
+    async appendFailureOutcome(failure: RtcBaselineFailureOutcomeRecord): Promise<RtcBaselineResult<void>> {
+        const projected = { identity: failure.identity, outcome: failure.outcome, issues: failure.issues };
         if ('sampleId' in failure.identity) {
-            sampleOutcomes.push({
-                identity: failure.identity,
-                outcome: failure.outcome,
-                issues: failure.issues
-            });
+            const sampleId = failure.identity.sampleId;
+            if (
+                this.failures.some((receipt) =>
+                    'sampleId' in receipt.identity && receipt.identity.sampleId === sampleId
+                )
+            ) {
+                return failed('duplicate-failure-outcome', 'A sample cannot have multiple causal failure receipts.');
+            }
+            const sample = this.sampleOutcomes.find((outcome) => outcome.identity.sampleId === sampleId);
+            if (sample && (!this.sampleDigestById.has(sampleId) || !isMatchingFailedSample(sample, failure))) {
+                return failed('conflicting-failure-sample', 'Failed sample and causal receipt contradict each other.');
+            }
+            if (!sample) {
+                this.sampleOutcomes.push({
+                    identity: failure.identity,
+                    outcome: failure.outcome,
+                    issues: failure.issues
+                });
+            }
         }
         else {
-            cohortOutcomes.push({
-                identity: failure.identity,
-                outcome: 'failed',
-                issues: failure.issues
-            });
+            this.cohortOutcomes.push({ identity: failure.identity, outcome: 'failed', issues: failure.issues });
         }
+        this.failures.push(projected);
         return successful();
     }
 
-    function getProjection(): RtcBaselineArtifactProjection {
+    getProjection(): RtcBaselineArtifactProjection {
         return {
-            sampleOutcomes,
-            cohortOutcomes,
-            failures,
-            metricObservations,
-            rawReferences,
-            artifactIssues
+            sampleOutcomes: this.sampleOutcomes,
+            cohortOutcomes: this.cohortOutcomes,
+            failures: this.failures,
+            metricObservations: this.metricObservations,
+            rawReferences: this.rawReferences,
+            artifactIssues: this.artifactIssues
         };
     }
-
-    return { appendFailureOutcome, appendStoredArtifact, getProjection };
 }
 
 export function projectRtcBaselineArtifactOutcomes(input: {

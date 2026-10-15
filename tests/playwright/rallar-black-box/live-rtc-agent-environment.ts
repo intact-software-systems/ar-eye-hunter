@@ -1,3 +1,5 @@
+import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+
 import {
     toRallarBlackBoxRoutineBrowserDiagnostics,
     type RallarBlackBoxRoutineBrowserDiagnostics
@@ -46,6 +48,15 @@ export const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
 export const routineBrowserDiagnostics = readLiveRtcRoutineBrowserDiagnostics(
     process.env.RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS
 );
+const historyBootstrap = resolveRallarBlackBoxBootstrapConfig('', {
+    VITE_RALLAR_EVENT_HISTORY: process.env.VITE_RALLAR_EVENT_HISTORY,
+    VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS: process.env.VITE_RALLAR_EVENT_HISTORY_MAX_EVENTS
+}, '');
+if (historyBootstrap.issues.length > 0) {
+    throw new Error(historyBootstrap.issues.map((issue) => issue.message).join(' '));
+}
+export const eventHistory = Object.freeze({ ...historyBootstrap.eventHistory });
+
 export const almDiagnostics = toAlmDiagnostics(process.env.RALLAR_BLACK_BOX_ALM_DIAGNOSTICS);
 
 export const rtcCaptureMode: RtcSignalingDiagnostics.CaptureMode | undefined = parseRtcCaptureMode(
@@ -205,6 +216,7 @@ export function actorFor(prefix: AgentPrefix, suffix: string): string {
 
 export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
     return {
+        eventHistory,
         routineBrowserDiagnostics,
         productionBuild,
         spaBaseUrl: SPA_BASE_URL,

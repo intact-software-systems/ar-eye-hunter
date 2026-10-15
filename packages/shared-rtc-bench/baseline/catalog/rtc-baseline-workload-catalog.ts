@@ -378,6 +378,10 @@ const fullStackSourcePaths = [
     'tests/playwright/rallar-black-box/live-rtc-control-client.ts',
     'tests/playwright/rallar-black-box/live-rtc-browser-agents.ts',
     'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts',
+    'tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts',
+    'tests/playwright/rallar-black-box/write-live-rtc-journal-evidence.ts',
+    'tests/playwright/rallar-black-box/read-live-rtc-durable-journal.ts',
+    'tests/playwright/rallar-black-box/read-governed-live-rtc-control-server.ts',
     'tests/playwright/rallar-black-box/live-rtc-evidence-json.ts',
     'tests/playwright/rallar-black-box/to-live-rtc-native-acquisition.ts',
     'packages/shared/webrtc/rtc-capture-configuration.ts',
@@ -425,6 +429,11 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
     'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/to-rtc-b06-event-history.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/rtc-b06-journal.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/to-rtc-b06-journal-runtime-row.ts',
+    'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-journal-evidence.ts',
+    'packages/shared-test/rallar-bb-test/runtime/event-history.ts',
     'tests/playwright/rallar-black-box/live-rtc-browser-recording.ts',
     'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-capture-evidence.ts'
@@ -559,59 +568,38 @@ function toRtcBaselineFullStackWorkloadConfiguration(
 ): RtcBaselineConfigurationFieldDescriptorDto[] {
     const { caseId, inputKey, allScenarios, retention } = input;
     const caseKey = { workloadId: 'RTC-B06' as const, caseId, inputKey };
-    return [
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'routineBrowserDiagnostics',
-            flag: '--routine-browser-diagnostics',
-            scalarKind: 'string',
-            defaultValue: 'enabled',
-            environment: retention ? 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS' : null
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'almDiagnostics',
-            flag: '--rtc-alm-diagnostics',
-            scalarKind: 'boolean',
-            defaultValue: true,
-            environment: retention ? 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS' : null
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'rtcCaptureMode',
-            flag: '--rtc-capture-mode',
-            scalarKind: 'string',
-            defaultValue: 'signaling',
-            environment: 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE'
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'allScenarios',
-            flag: '--rtc-all-scenarios',
-            scalarKind: 'boolean',
-            defaultValue: allScenarios,
-            environment: allScenarios ? 'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS' : null,
-            unset: allScenarios ? 'reject' : null
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'retentionSoak',
-            flag: '--rtc-retention-soak',
-            scalarKind: 'boolean',
-            defaultValue: retention,
-            environment: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK' : null,
-            unset: retention ? 'reject' : null
-        }),
-        toRtcBaselineConfigurationDescriptor({
-            caseKey,
-            field: 'retentionCycles',
-            flag: '--rtc-retention-cycles',
-            scalarKind: 'nonnegative-integer',
-            defaultValue: retention ? 100 : 0,
-            environment: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES' : null,
-            unset: retention ? 'reject' : null
-        })
+    const recentHistory = retention && input.database === 'memory';
+    const fields: readonly RtcBaselineSyntheticField[] = [
+        ['eventHistoryMode', '--rtc-event-history', 'string', recentHistory ? 'recent' : 'full'],
+        ['eventHistoryMaxEvents', '--rtc-event-history-max-events', 'nonnegative-integer', recentHistory ? 64 : 0],
+        ['routineBrowserDiagnostics', '--routine-browser-diagnostics', 'string', 'enabled'],
+        ['almDiagnostics', '--rtc-alm-diagnostics', 'boolean', true],
+        ['rtcCaptureMode', '--rtc-capture-mode', 'string', 'signaling'],
+        ['allScenarios', '--rtc-all-scenarios', 'boolean', allScenarios],
+        ['retentionSoak', '--rtc-retention-soak', 'boolean', retention],
+        ['retentionCycles', '--rtc-retention-cycles', 'nonnegative-integer', retention ? 100 : 0]
     ];
+    const environmentByField: Readonly<Record<string, string | null>> = {
+        routineBrowserDiagnostics: retention ? 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS' : null,
+        almDiagnostics: retention ? 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS' : null,
+        rtcCaptureMode: 'RALLAR_BLACK_BOX_RTC_CAPTURE_MODE',
+        allScenarios: allScenarios ? 'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS' : null,
+        retentionSoak: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK' : null,
+        retentionCycles: retention ? 'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES' : null
+    };
+    return fields.map(([field, flag, scalarKind, defaultValue]) =>
+        toRtcBaselineConfigurationDescriptor({
+            caseKey,
+            field,
+            flag,
+            scalarKind,
+            defaultValue,
+            environment: environmentByField[field] ?? null,
+            unset: environmentByField[field] && ['allScenarios', 'retentionSoak', 'retentionCycles'].includes(field)
+                ? 'reject'
+                : null
+        })
+    );
 }
 
 const b06Cases = [

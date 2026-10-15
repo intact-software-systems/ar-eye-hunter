@@ -1,5 +1,6 @@
 import { decodeFullStackRtcProductionProof } from '../../../shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts';
 import type { RtcBaselineIssueDto, RtcBaselineSampleDto } from '../contracts/rtc-baseline-contracts.ts';
+
 export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDto): readonly RtcBaselineIssueDto[] {
     const observation = sample.runtimeObservation;
     const mode = observation?.resolvedConfiguration.find((entry) =>
@@ -11,6 +12,9 @@ export function validateRtcB06ProductionServingProof(sample: RtcBaselineSampleDt
     }
     const raw = sample.rawEvidence;
     const proof = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.productionServing : undefined;
+    if (proof === null && sample.outcome === 'failed' && sample.issues.length > 0 && sample.metrics.length === 0) {
+        return [];
+    }
     const baselineId = observation.controllerInputs.find((entry) => entry.name === 'baselineId')?.value;
     const decoded = decodeFullStackRtcProductionProof(proof, {
         baselineId: typeof baselineId === 'string' ? baselineId : '',

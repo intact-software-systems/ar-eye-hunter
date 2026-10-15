@@ -67,6 +67,7 @@ interface ReceiptLoopPeer {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly settlements: readonly ALDeliverySettlement[];
+    readonly firstSubmission: Promise<void>;
 }
 
 interface ReceiptLoopReceiver extends ReceiptLoopPeer {
@@ -98,6 +99,7 @@ const LEADER_EXPECTATION: ReceiptLoopExpectation = {
 };
 
 interface ReceiptLoopServer {
+    readonly engine: InboxOutboxEngine;
     readonly sockets: Readonly<Record<'a' | 'b' | 'c', SimulatedWebSocket>>;
     readonly receiptObservations: readonly WsQueueBoxServerReceiptObservation[];
 }
@@ -113,6 +115,7 @@ interface ReceiptLoopOrigin {
 }
 
 interface ReceiptLoop {
+    readonly clock: ReceiptLoopClock;
     readonly expectation: ReceiptLoopExpectation;
     readonly server: ReceiptLoopServer;
     readonly origin: ReceiptLoopOrigin;
@@ -121,6 +124,37 @@ interface ReceiptLoop {
         holdFinalAck: boolean;
         readonly heldFinalAcks: ALMessage[];
     };
+}
+
+class ReceiptLoopClock {
+    private advance: Promise<void> | undefined;
+    private closed = false;
+
+    async advanceBy(milliseconds: number): Promise<void> {
+        if (this.closed || this.advance !== undefined) {
+            throw new Error('Receipt loop clock cannot advance concurrently or after closing');
+        }
+        const advance = vi.advanceTimersByTimeAsync(milliseconds).then(() => undefined);
+        this.advance = advance;
+        try {
+            await advance;
+            if (this.closed) {
+                throw new Error('Receipt loop clock closed during its advance');
+            }
+        }
+        finally {
+            this.advance = undefined;
+        }
+    }
+
+    cancel(): void {
+        this.closed = true;
+    }
+
+    async close(): Promise<void> {
+        this.cancel();
+        await this.advance;
+    }
 }
 
 describe('cross-carrier receipts', () => {
@@ -152,7 +186,7 @@ describe('cross-carrier receipts', () => {
             if (expectation.mode === 'receiver') {
                 const firstAck = readSubmittedAck(loop.receivers.b, 'b');
                 await returnAckToServer(loop, 'b', firstAck);
-                await vi.advanceTimersByTimeAsync(100);
+                await loop.clock.advanceBy(100);
             }
             const finalAck = readSubmittedAck(loop.receivers.c, 'c');
             expect(decodeALAckPayload(JSON.parse(finalAck.payload.resource)).ackedMsgId).toBe(loop.origin.handle.msgId);
@@ -195,7 +229,7 @@ describe('cross-carrier receipts', () => {
             });
 
             await returnAckToServer(loop, 'c', finalAck);
-            await vi.advanceTimersByTimeAsync(100);
+            await loop.clock.advanceBy(100);
             expect(loop.server.receiptObservations).toContainEqual(expect.objectContaining({
                 kind: 'ack-count',
                 controlMsgId: finalAck.id.msgId,
@@ -252,12 +286,12 @@ describe('cross-carrier receipts', () => {
         const firstAck = readSubmittedAck(loop.receivers.b, 'b');
         readSubmittedAck(loop.receivers.c, 'c');
         await returnAckToServer(loop, 'b', firstAck);
-        await vi.advanceTimersByTimeAsync(100);
+        await loop.clock.advanceBy(100);
 
         expect(readServerReceipts(loop.server).map((receipt) => receipt.phase)).toEqual(['admitted']);
         expect(loop.origin.handle.lifecycle().state).toBe('transport-accepted');
-        await vi.advanceTimersByTimeAsync(loop.origin.delivery.message.constraints!.expiresAtMs! - Date.now());
-        await vi.advanceTimersByTimeAsync(100);
+        await loop.clock.advanceBy(loop.origin.delivery.message.constraints!.expiresAtMs! - Date.now());
+        await loop.clock.advanceBy(100);
 
         expect(readServerReceipts(loop.server)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['b', 'c'], confirmedRecipientPeerIds: [] }),
@@ -278,7 +312,7 @@ describe('cross-carrier receipts', () => {
         await deliverRtcThenWs(loop);
         const firstAck = readSubmittedAck(loop.receivers.b, 'b');
         await returnAckToServer(loop, 'b', firstAck);
-        await vi.advanceTimersByTimeAsync(100);
+        await loop.clock.advanceBy(100);
 
         const held = loop.submission.heldFinalAcks[0]!;
         expect(held).toBeDefined();
@@ -304,11 +338,11 @@ describe('cross-carrier receipts', () => {
         expect(loop.origin.handle.lifecycle().state).toBe('transport-accepted');
 
         loop.submission.holdFinalAck = false;
-        await vi.advanceTimersByTimeAsync(100);
+        await loop.clock.advanceBy(100);
         const released = readSubmittedAck(loop.receivers.c, 'c');
         expect(released.id.msgId).toBe(held.id.msgId);
         await returnAckToServer(loop, 'c', released);
-        await vi.advanceTimersByTimeAsync(100);
+        await loop.clock.advanceBy(100);
         await returnReceiptToOrigin(loop, 'complete');
 
         expect(await completed).toMatchObject({ status: 'settled', lifecycle: { state: 'acknowledged' } });
@@ -318,6 +352,8 @@ describe('cross-carrier receipts', () => {
 
 async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<ReceiptLoop> {
     vi.useFakeTimers();
+    const clock = new ReceiptLoopClock();
+    registerReceiptLoopCleanup([() => clock.close()]);
     vi.stubGlobal('WebSocket', SimulatedWebSocket);
     vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(Date.now()));
     const submission: ReceiptLoop['submission'] = { holdFinalAck: false, heldFinalAcks: [] };
@@ -341,7 +377,8 @@ async function createReceiptLoop(expectation: ReceiptLoopExpectation): Promise<R
         submission.heldFinalAcks.push(message);
         return 'Final ACK submission held';
     });
-    return { expectation, server, origin, receivers: { b, c }, submission };
+    onTestFinished(() => clock.cancel());
+    return { clock, expectation, server, origin, receivers: { b, c }, submission };
 }
 
 async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<ReceiptLoopServer> {
@@ -386,7 +423,7 @@ async function createReceiptLoopServer(snapshot: GroupSnapshot): Promise<Receipt
         nowEpochMs: Date.now
     }).install();
     engine.start();
-    return { sockets, receiptObservations };
+    return { engine, sockets, receiptObservations };
 }
 
 async function createReceiptLoopPeer(
@@ -406,6 +443,7 @@ async function createReceiptLoopPeer(
         decodePrepared: decodeALOutboundTransportMessage
     });
     const settlements: ALDeliverySettlement[] = [];
+    const firstSubmission = Promise.withResolvers<void>();
     const ws = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(),
         socket,
@@ -418,12 +456,15 @@ async function createReceiptLoopPeer(
         outboundSettlements: (settlement) => {
             settlements.push(settlement);
             settle(settlement);
+            if (settlement.kind === 'attempt-settled' && settlement.outcome === 'sent') {
+                firstSubmission.resolve();
+            }
         }
     });
     registerReceiptLoopCleanup([() => ws.close()]);
     ws.enableDefaultCallbacks();
     engine.start();
-    return { ws, socket: native, engine, inboundStores, outboundStores, settlements };
+    return { ws, socket: native, engine, inboundStores, outboundStores, settlements, firstSubmission: firstSubmission.promise };
 }
 
 async function createReceiptLoopReceiver(
@@ -504,6 +545,21 @@ function createReceiptLoopOrigin(
     sessionDeliveries.beginSession(middleware.session);
     feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: owners.registry, sessionDeliveries, nowMs: Date.now });
+    const message = createReceiptLoopMessage(expectation);
+    const delivery: BrowserRallarMessageDispatch.Delivery = {
+        requestedConfiguration: undefined,
+        rtcCapture: { status: 'unavailable', reason: 'absent' },
+        context: middleware,
+        carrier: 'rtc',
+        message,
+        canFallback: true,
+        payloadIssues: [],
+        onStorageUnavailable: 'refuse'
+    };
+    return { ...owners, dispatch, delivery, handle: owners.registry.open(delivery.message, 'rtc'), rtcAdmissions };
+}
+
+function createReceiptLoopMessage(expectation: ReceiptLoopExpectation): ALMessage {
     const message = newALMulticastMessage(
         'a',
         { topicId: 'room.ar-eye-hunter.director', resourceId: 'start', contextId: 'room' },
@@ -518,17 +574,7 @@ function createReceiptLoopOrigin(
         }
     );
     expect(message.constraints?.expiresAtMs).toBe(Date.now() + 30_000);
-    const delivery: BrowserRallarMessageDispatch.Delivery = {
-        requestedConfiguration: undefined,
-        rtcCapture: { status: 'unavailable', reason: 'absent' },
-        context: middleware,
-        carrier: 'rtc',
-        message,
-        canFallback: true,
-        payloadIssues: [],
-        onStorageUnavailable: 'refuse'
-    };
-    return { ...owners, dispatch, delivery, handle: owners.registry.open(delivery.message, 'rtc'), rtcAdmissions };
+    return message;
 }
 
 function createReceiptLoopInboundStores(peerId: string): ALInboundRuntimeStores {
@@ -555,7 +601,7 @@ async function deliverRtcThenWs(loop: ReceiptLoop): Promise<void> {
 
 async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
     loop.origin.dispatch.send(loop.origin.delivery);
-    await vi.advanceTimersByTimeAsync(100);
+    await loop.clock.advanceBy(100);
     for (const peerId of ['b', 'c'] as const) {
         const message = loop.origin.rtc.channels[peerId]!.sent[0]!;
         expect(message).toBeDefined();
@@ -567,7 +613,7 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
         });
         expect((await loop.receivers[peerId].rtc.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'a' })).right?.kind).toBe('admitted');
     }
-    await vi.advanceTimersByTimeAsync(100);
+    await loop.clock.advanceBy(100);
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
     if (loop.expectation.mode === 'receiver') {
@@ -585,8 +631,33 @@ async function deliverOriginalRtcMessage(loop: ReceiptLoop): Promise<void> {
     });
 }
 
+async function exhaustRtcReceipt(loop: ReceiptLoop): Promise<void> {
+    const { admissionStore, queueEngine } = loop.origin.rtc.resources;
+    const receiptRef = { originPeerId: 'a', msgId: loop.origin.handle.msgId };
+    await queueEngine.stop();
+    let pending = await admissionStore.readPendingAck(receiptRef);
+    while (pending !== undefined) {
+        expect(pending.deadlineAtMs).toBeGreaterThan(Date.now());
+        await loop.clock.advanceBy(pending.deadlineAtMs - Date.now());
+        let created: boolean;
+        do {
+            created = await queueEngine.executeOnce();
+            // The pass schedules work; stopping its automatic scheduler joins the actual tasks it started.
+            await queueEngine.stop();
+        }
+        while (created);
+        pending = await admissionStore.readPendingAck(receiptRef);
+    }
+}
+
 async function exhaustRtcAndAdmitWsFallback(loop: ReceiptLoop): Promise<void> {
-    await vi.advanceTimersByTimeAsync(8_000);
+    const pollingEngines = [loop.server.engine, loop.origin.ws.engine, loop.receivers.b.engine, loop.receivers.c.engine];
+    await Promise.all(pollingEngines.map((engine) => engine.stop()));
+    await exhaustRtcReceipt(loop);
+    await loop.origin.ws.firstSubmission;
+    for (const engine of pollingEngines) {
+        engine.start();
+    }
     expect(loop.origin.rtc.settlements).toContainEqual(expect.objectContaining({
         kind: 'receipt-exhausted',
         msgId: loop.origin.handle.msgId
@@ -600,7 +671,7 @@ async function exhaustRtcAndAdmitWsFallback(loop: ReceiptLoop): Promise<void> {
     expect(submitted.constraints?.expiresAtMs).toBe(loop.origin.delivery.message.constraints?.expiresAtMs);
     expect(await loop.origin.rtc.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: submitted.id.msgId })).toBeUndefined();
     await loop.server.sockets.a.receive(submittedFrame);
-    await vi.advanceTimersByTimeAsync(100);
+    await loop.clock.advanceBy(100);
     expect(
         loop.server.sockets.a.sent.map(decodePersistedALMessage)
             .filter((message) => message.id.msgId === submitted.id.msgId)
@@ -631,7 +702,7 @@ async function deliverWsDuplicates(loop: ReceiptLoop): Promise<void> {
         expect(accepted.left).toBeUndefined();
         expect(accepted.right?.kind).toBe('duplicate');
     }
-    await vi.advanceTimersByTimeAsync(100);
+    await loop.clock.advanceBy(100);
     expect(loop.receivers.b.delivered).toEqual(loop.expectation.delivered.b);
     expect(loop.receivers.c.delivered).toEqual(loop.expectation.delivered.c);
 }

@@ -7,8 +7,12 @@ import {
     vi
 } from 'vitest';
 
-import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
-import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import { toBrowserWsClientALCheckpointRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-checkpoint-store-ids.ts';
+import {
+    createBrowserALCheckpointOutboundRuntimeStores,
+    resolveBrowserALCheckpointStores
+} from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
+import { toBrowserALRuntimeDbName, toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
     createBrowserALVolatileInboundRuntimeStores,
@@ -20,6 +24,7 @@ import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/cr
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import { createPassThroughALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
@@ -34,6 +39,8 @@ import * as wsClientFactory from '@shared/services/ws-queue-box-client-service.t
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
+
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
@@ -45,19 +52,29 @@ const clientData: ClientInfo = {
     isOnline: true
 };
 
-describe('createBrowserWebSocketQueueBox', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.stubGlobal('WebSocket', TestWebSocket);
-        onTestFinished(() => {
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    vi.stubGlobal('WebSocket', TestWebSocket);
+    const runtimeStorage = new ALRuntimeStorage();
+    onTestFinished(async () => {
+        try {
+            await runtimeStorage.close();
+        }
+        finally {
             vi.clearAllTimers();
             vi.useRealTimers();
             vi.unstubAllGlobals();
             TestWebSocket.instances.length = 0;
-        });
-        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
+        }
     });
+    configureBrowserALRuntimeStores(clientData.sessionId, {
+        runtimeStorage,
+        scope: defaultStateScope(),
+        diagnosticsPorts
+    });
+});
 
+describe('createBrowserWebSocketQueueBox', () => {
     it.each(['records', 'throws'])('disposes its acquired real service when initial connection rejects and cleanup reporting %s', async (reporting) => {
         const failure = new Error('initial socket connection failed');
         const reported = vi.spyOn(console, 'error').mockImplementation(() => {
@@ -81,7 +98,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         });
         onTestFinished(async () => {
             if (acquired) {
-                await acquired.close().catch(() => {});
+                await expect(acquired.close()).rejects.toMatchObject({ errors: [cleanupFailure] });
             }
             await engine.stop();
             factory.mockRestore();
@@ -326,18 +343,6 @@ describe('createBrowserWebSocketQueueBox', () => {
 });
 
 describe('the session volatile bound on the WS client (C3)', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.stubGlobal('WebSocket', TestWebSocket);
-        onTestFinished(() => {
-            vi.clearAllTimers();
-            vi.useRealTimers();
-            vi.unstubAllGlobals();
-            TestWebSocket.instances.length = 0;
-        });
-        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
-    });
-
     it('counts a received and a sent volatile message against the one budget both of its memory pairs carry', async () => {
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const service = await openWsClient({ budget, checkpointStores: resolveWsClientCheckpointStores() });
@@ -379,18 +384,6 @@ describe('the session volatile bound on the WS client (C3)', () => {
 });
 
 describe('the checkpoint lane on the WS client', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.stubGlobal('WebSocket', TestWebSocket);
-        onTestFinished(() => {
-            vi.clearAllTimers();
-            vi.useRealTimers();
-            vi.unstubAllGlobals();
-            TestWebSocket.instances.length = 0;
-        });
-        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
-    });
-
     it('admits a local-checkpoint send to the checkpoint pair it is handed, outside the volatile budget', async () => {
         const budget = createDefaultVolatileSessionBudget();
         const checkpointStores = resolveWsClientCheckpointStores();
@@ -408,6 +401,24 @@ describe('the checkpoint lane on the WS client', () => {
         expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(await checkpointStores.admissionStore.hasSentMessageAdmission(sent.message.id.msgId)).toBe(true);
         expect(budget.readReport(Date.now()).usage.admissions).toBe(0);
+
+        await service.close(1000, 'verify-final-checkpoint');
+        const reopenedStorage = new ALRuntimeStorage();
+        const reopened = createBrowserALCheckpointOutboundRuntimeStores(
+            toBrowserWsClientALCheckpointRuntimeStoreId(clientData.sessionId),
+            {
+                options: { dbName: toBrowserALRuntimeDbName(defaultStateScope()), runtimeStorage: reopenedStorage },
+                settings: { intervalMs: 1_000, lagBoundMs: 10_000 },
+                ownership: ALWAYS_OWNED_AL_DURABLE_WORK
+            }
+        );
+        try {
+            await reopened.checkpoint.restore();
+            expect(await reopened.admissionStore.hasSentMessageAdmission(sent.message.id.msgId)).toBe(true);
+        }
+        finally {
+            await reopenedStorage.close();
+        }
     });
 });
 

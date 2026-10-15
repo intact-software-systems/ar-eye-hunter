@@ -22,6 +22,7 @@ import {
     InMemoryQueueBox,
     newALAckControlMessage,
     newALNackControlMessage,
+    newALReceiptControlMessage,
     type ResourceEntry
 } from '@shared/mod.ts';
 
@@ -628,6 +629,108 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(handled).toEqual({ kind: 'not-handled' });
         expect(sent).toEqual([]);
         expect(await readRetainedWorkKinds(stores)).toEqual(['send-prepared']);
+    });
+
+    it.each(['control', 'receipt', 'retransmission', 'handover'] as const)(
+        'returns a terminal %s result without waiting for an accepted opening',
+        async (entry) => {
+            const stores = createDefaultOutboundTestStores();
+            const opening = Promise.withResolvers<void>();
+            const opened: string[] = [];
+            vi.spyOn(stores.admissionStore, 'ready').mockImplementation(async () => {
+                opened.push('open');
+                await opening.promise;
+            });
+            const sent: string[] = [];
+            const runtime = createDefaultOutboundTestRuntime({
+                stores,
+                sendPreparedMessage: async (prepared) => {
+                    sent.push(String(prepared.msgId));
+                    return { status: 'sent', submissionAttempted: true };
+                },
+                planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+            });
+            const closing = runtime.dispose();
+            onTestFinished(async () => {
+                opening.resolve();
+                await closing;
+            });
+            const message = createOutboundMessage('late-terminal-entry');
+            if (entry === 'control') {
+                expect(await runtime.acceptControlMessage(message, 'peer')).toEqual({ kind: 'not-handled' });
+            }
+            else if (entry === 'receipt') {
+                expect(
+                    await runtime.acceptReceipt(newALReceiptControlMessage(
+                        { v: 3, msgId: 'late-receipt', ts: 1, senderId: 'server' },
+                        {
+                            msgId: message.id.msgId,
+                            originPeerId: 'self',
+                            expectedRecipientPeerIds: ['peer'],
+                            confirmedRecipientPeerIds: ['peer'],
+                            snapshotVersion: 1,
+                            phase: 'complete',
+                            observedAtEpochMs: 1
+                        }
+                    ))
+                ).toEqual({ kind: 'not-handled' });
+            }
+            else if (entry === 'retransmission') {
+                expect(
+                    (await runtime.retransmitAdmittedMessage({
+                        msg: message,
+                        plan: { msg: message, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] },
+                        attemptIdentity: 'late-repair'
+                    })).verdict
+                ).toMatchObject({ kind: 'skipped', reason: 'disposed' });
+            }
+            else {
+                await expect(runtime.handOver(message.id.msgId)).resolves.toBeUndefined();
+            }
+            expect(opened).toEqual(['open']);
+            expect(sent).toEqual([]);
+            expect(await readRetainedWorkKinds(stores)).toEqual([]);
+            opening.resolve();
+            await closing;
+        }
+    );
+
+    it.each(['control', 'receipt'] as const)('refuses %s admission when disposal overlaps its opening', async (entry) => {
+        const stores = createDefaultOutboundTestStores();
+        const opening = Promise.withResolvers<void>();
+        vi.spyOn(stores.admissionStore, 'ready').mockReturnValue(opening.promise);
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.msgId));
+                return { status: 'sent', submissionAttempted: true };
+            },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
+        });
+        const message = newALReceiptControlMessage(
+            { v: 3, msgId: 'overlapping-receipt', ts: 1, senderId: 'server' },
+            {
+                msgId: 'pending-message',
+                originPeerId: 'self',
+                expectedRecipientPeerIds: ['peer'],
+                confirmedRecipientPeerIds: ['peer'],
+                snapshotVersion: 1,
+                phase: 'complete',
+                observedAtEpochMs: 1
+            }
+        );
+        const admission = entry === 'receipt' ? runtime.acceptReceipt(message) : runtime.acceptControlMessage(message, 'trusted-server');
+        const closing = runtime.dispose();
+        onTestFinished(async () => {
+            opening.resolve();
+            await Promise.all([admission, closing]);
+        });
+        opening.resolve();
+        expect(await admission).toEqual({ kind: 'not-handled' });
+        await closing;
+        expect(sent).toEqual([]);
+        expect(await readRetainedWorkKinds(stores)).toEqual([]);
     });
 
     it('retains a control admission conflict as replayable work without an inner retry', async () => {

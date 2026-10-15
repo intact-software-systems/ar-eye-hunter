@@ -212,22 +212,54 @@ describe('ALCheckpointWriter', () => {
         await fixture.change('b', 'two');
         fixture.writer.flush();
 
-        fixture.writer.dispose();
+        const closing = fixture.writer.dispose();
         fixture.writes[0]!.resolve();
         await vi.advanceTimersByTimeAsync(0);
 
         expect(fixture.writes.map(toWrittenValues)).toEqual([{ a: 'one' }, { b: 'two' }]);
+        fixture.writes[1].resolve();
+        await closing;
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('cancels its armed checkpoint when disposed', async () => {
+    it('joins the in-flight write and its final dirty rows before terminal close completes', async () => {
+        const fixture = createWriterFixture();
+        await fixture.change('a', 'first');
+        fixture.writer.flush();
+        await fixture.change('a', 'final');
+        let closed = false;
+        const closing = fixture.writer.dispose().then(() => {
+            closed = true;
+        });
+        fixture.writes[0].resolve();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fixture.writes.map(toWrittenValues)).toEqual([{ a: 'first' }, { a: 'final' }]);
+        expect(closed).toBe(false);
+        fixture.writes[1].resolve();
+        await closing;
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reports the original final write failure to the terminal owner', async () => {
+        const fixture = createWriterFixture();
+        await fixture.change('a', 'unsaved');
+        const closing = fixture.writer.dispose();
+        await vi.advanceTimersByTimeAsync(0);
+        fixture.writes[0].reject(QUOTA);
+        await expect(closing).rejects.toBe(QUOTA);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('replaces its armed checkpoint with a joined final save when disposed', async () => {
         const fixture = createWriterFixture();
         await fixture.change('a', 'one');
 
-        fixture.writer.dispose();
+        const closing = fixture.writer.dispose();
         await vi.advanceTimersByTimeAsync(5_000);
 
-        expect(fixture.writes).toHaveLength(0);
+        expect(fixture.writes.map(toWrittenValues)).toEqual([{ a: 'one' }]);
+        fixture.writes[0].resolve();
+        await closing;
         expect(vi.getTimerCount()).toBe(0);
     });
 });
@@ -238,14 +270,16 @@ interface HeldWrite {
     reject(error: Error): void;
 }
 
-/** `timerLateMs` fires every armed checkpoint that much after its delay, as a busy or throttled page does. */
-function createWriterFixture(timerLateMs = 0): Readonly<{
-    writer: ALCheckpointWriter;
-    writes: readonly HeldWrite[];
-    events: readonly ALStorageEvent[];
+interface WriterFixture {
+    readonly writer: ALCheckpointWriter;
+    readonly writes: readonly HeldWrite[];
+    readonly events: readonly ALStorageEvent[];
     change(key: string, value: string | undefined): Promise<void>;
-}> {
-    const nowMs = () => Date.now();
+}
+
+/** `timerLateMs` fires every armed checkpoint that much after its delay, as a busy or throttled page does. */
+function createWriterFixture(timerLateMs = 0): WriterFixture {
+    const nowMs = Date.now;
     const timers: ALCheckpointWriter.Timers = {
         schedule: (run, delayMs) => {
             const handle = setTimeout(run, delayMs + timerLateMs);

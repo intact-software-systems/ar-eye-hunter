@@ -13,8 +13,7 @@ import {
 } from '@shared-web/browser/al-runtime/browser-al-checkpoint-store-ids.ts';
 import {
     resolveBrowserALCheckpointSettings,
-    resolveBrowserALCheckpointStores,
-    type BrowserALCheckpointStores
+    resolveBrowserALCheckpointStores
 } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -23,6 +22,7 @@ import {
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import {
@@ -53,10 +53,13 @@ describe('the browser checkpoint settings', () => {
 describe('the checkpoint stores of a browser connect', () => {
     it('gives each outbound carrier its own memory pair under its checkpoint store id', () => {
         const sessionId = `checkpoint-pairs-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, {
+            runtimeStorage: createCheckpointStorage(),
+            scope: SCOPE,
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+        });
 
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
-        onTestFinished(() => disposeCheckpoints(stores));
 
         expect(stores.wsClient.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(stores.rtcOverlay.workQueue).toBeInstanceOf(InMemoryQueueBox);
@@ -73,6 +76,7 @@ describe('the checkpoint stores of a browser connect', () => {
         const events: ALStorageEvent[] = [];
         const sessionId = `checkpoint-health-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, {
+            runtimeStorage: createCheckpointStorage(QUOTA),
             scope: SCOPE,
             diagnosticsPorts: toRallarDiagnosticsPorts({
                 storage: (event) => events.push(event),
@@ -81,7 +85,6 @@ describe('the checkpoint stores of a browser connect', () => {
             ...FAST_CHECKPOINTS
         });
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
-        onTestFinished(() => disposeCheckpoints(stores));
 
         await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox', Temporal.Now.instant()));
 
@@ -107,6 +110,7 @@ describe('the checkpoint stores of a browser connect', () => {
         const writes = { refusing: false };
         const sessionId = `checkpoint-lag-${crypto.randomUUID()}`;
         const storage = configureBrowserALRuntimeStores(sessionId, {
+            runtimeStorage: createCheckpointStorage(),
             scope: SCOPE,
             diagnosticsPorts: toRallarDiagnosticsPorts({
                 storage: (event) => events.push(event),
@@ -115,7 +119,6 @@ describe('the checkpoint stores of a browser connect', () => {
             ...FAST_CHECKPOINTS
         });
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
-        onTestFinished(() => disposeCheckpoints(stores));
 
         resolveBrowserWsClientALOutboundRuntimeStores(sessionId).storageHealth?.recordFailure({
             cause: 'quota',
@@ -141,12 +144,12 @@ describe('the checkpoint stores of a browser connect', () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sessionId = `checkpoint-interval-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, {
+            runtimeStorage: createCheckpointStorage(),
             scope: SCOPE,
             diagnosticsPorts: toRallarDiagnosticsPorts({ indexedDbOperationObserver: observer }),
             checkpointIntervalMs: 250
         });
         const stores = resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK);
-        onTestFinished(() => disposeCheckpoints(stores));
 
         await stores.wsClient.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(createMessage(), 'outbox', Temporal.Now.instant()));
         vi.advanceTimersByTime(249);
@@ -167,9 +170,28 @@ function refuseWritesWhile(writes: { readonly refusing: boolean; }): IndexedDbOp
     };
 }
 
-function disposeCheckpoints(stores: BrowserALCheckpointStores): void {
-    stores.wsClient.checkpoint.dispose();
-    stores.rtcOverlay.checkpoint.dispose();
+/** The production owner joins both checkpoints and closes their independent backends even on failure. */
+function createCheckpointStorage(expectedFailure?: Error): ALRuntimeStorage {
+    const runtimeStorage = new ALRuntimeStorage();
+    onTestFinished(async () => {
+        if (expectedFailure === undefined) {
+            await runtimeStorage.close();
+            return;
+        }
+        try {
+            await runtimeStorage.close();
+        }
+        catch (error) {
+            if (!(error instanceof AggregateError)) {
+                throw error;
+            }
+            expect(error.errors).toHaveLength(1);
+            expect(error.errors[0]).toBe(expectedFailure);
+            return;
+        }
+        throw new Error('The permanently refused checkpoint must fail at final save');
+    });
+    return runtimeStorage;
 }
 
 function createMessage() {

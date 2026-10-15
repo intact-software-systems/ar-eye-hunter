@@ -22,12 +22,13 @@ import {
     buildLiveRtcRetentionCohort,
     liveRtcRetentionStateReturned,
     loadLiveRtcPerformanceAttempt,
-    writeLiveRtcPerformanceEvidence,
     writeLiveRtcRetentionCohortIfComplete,
     type LiveRtcPerformanceAttemptContext,
     type LiveRtcPerformanceRawEvidence,
     type LiveRtcRetentionCheckpoint
 } from '../../../tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
+
+import { writeLiveRtcPerformanceEvidence } from '../../../tests/playwright/rallar-black-box/write-live-rtc-performance-evidence.ts';
 
 const temporaryDirectories: string[] = [];
 const baselineId = '20260829T081500417Z-0123456789ab-e3-memory-local';
@@ -1145,6 +1146,7 @@ describe('live RTC retention cohort evidence', () => {
         });
         for (const attempt of attempts.slice(0, 2)) {
             await writeLiveRtcPerformanceEvidence({
+                runId: null,
                 repoRoot,
                 baselineId,
                 relativePath: attempt.locator.rawResultRelativePath,
@@ -1154,6 +1156,7 @@ describe('live RTC retention cohort evidence', () => {
 
         await expect(writeLiveRtcRetentionCohortIfComplete(context(1))).resolves.toBeNull();
         await writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: attempts[2]!.locator.rawResultRelativePath,
@@ -1197,6 +1200,7 @@ describe('live RTC staged evidence writer', () => {
         });
 
         const absolutePath = await writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: e3DefaultLocator.rawResultRelativePath,
@@ -1205,18 +1209,21 @@ describe('live RTC staged evidence writer', () => {
 
         expect(normalizeJson(JSON.parse(await readFile(absolutePath, 'utf8')))).toEqual(attempt);
         await expect(writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: e3DefaultLocator.rawResultRelativePath,
             evidence: attempt
         })).rejects.toMatchObject({ code: 'EEXIST' });
         await expect(writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: '../escaped.json',
             evidence: attempt
         })).rejects.toThrow(/confined/i);
         await expect(writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: 'artifacts/staging/../escaped.json',
@@ -1241,6 +1248,7 @@ describe('live RTC staged evidence writer', () => {
         });
 
         await expect(writeLiveRtcPerformanceEvidence({
+            runId: null,
             repoRoot,
             baselineId,
             relativePath: e3DefaultLocator.rawResultRelativePath,
