@@ -214,9 +214,13 @@ change at a time with RED → GREEN at the owner, judged by the local 50-agent r
 window. Harness: barrier resolution takes 0.75–1.65 s at 50 (0.004–0.23 s at 30) because parent
 result frames re-embed their children's results (≈58 MB of 159 MB); measure the control server's
 receive and resolution times, then stop re-embedding. Topology: the accepted layout landed 0.95 s
-before traffic; the `traffic-ready` barrier should follow a stable layout. Then the hosted cohorts
-through `Run Hetzner Distributed Recipe` and `Run GitHub Free Distributed Recipe` in `hetzner-control`
-mode, 15 before 30 before 50, and the four-arm lane-policy benefit gate bound above. Configurable
+before traffic; the `traffic-ready` barrier should follow a stable layout. Harness fault tolerance: on a control-socket outage the control server redispatches unfinished
+commands and an agent whose run is in flight starts a second run of the same command id; the agent
+must join the in-flight run (one run per command id) and the barriers must keep arrivals made during
+the outage. Hosted: the single Hetzner VM stalls its API and control server once 15 co-located
+browsers set up their RTC edges (signalling ≈11 s per hop, a 30 s control outage), so the hosted
+cohorts run through `Run GitHub Free Distributed Recipe` in `hetzner-control` mode (browsers on
+GitHub runners, the VM left to the servers), 15 before 30 before 50, and the four-arm lane-policy benefit gate bound above. Configurable
 AppInbox concurrency and the cross-server AppInbox wake (F4, F5) still need Postgres evidence and stay
 outcome-shaped. A failed run earns exact evidence review and a meaningful change before another
 workload; no unchanged acceptance retry is selected.

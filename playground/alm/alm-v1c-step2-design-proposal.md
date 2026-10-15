@@ -128,10 +128,19 @@ diagnostic before it can be ruled in or out.
 | `bf29cf846` (engine + handler cost)               | failed at setup             | no more 503s; 8 player connects hit the recipe command timeout in the room-join phase and the director timed out on RTC readiness; every agent signed in as the one shared operator user, so each WebSocket connect fanned out 1+N snapshot pages for that principal (§1.2 W6)                                    |
 | `cbe594790` (one user per agent, `controller-NN`) | failed at the first command | the fan-out is gone; the 15 registrations (`register: 'if-needed'`, PBKDF2-SHA256 at 120,000 iterations) serialize on the AppInbox at ≈350 ms each inside the first HTTP command's 5 s allowance, so the agents at the back of the queue are cancelled (one registered in 4.9 s and passed, the next was cut off) |
 
+| `69d75baef` (sign-in step, materializer) | failed at RTC readiness | every agent signs in (3.9–4.7 s, almost all registration) and passes its group requests under 5 s; WebSocket connect still takes 13–24 s and room-join 14–21 s on the serial AppInbox, so the readiness waits start 45–69 s in; the topology is planned on time and v15 is accepted by all 15 within 5.7 s of the last join; then, as 15 Chromium agents set up 22 RTC edges on the one VM that also runs the API, the control server and Caddy, the WebSocket signalling relays at ≈11 s per hop, every control socket drops for ≈30 s (502s on the operator's polls) and the readiness deadlines pass before the first answers land (three pairs did open, ICE in under 1 s); on reconnect the control server redispatches unfinished commands and four agents started a second recipe run ("a barrier id is single-use") — a harness fault-tolerance defect for step 2c |
+
 The sign-in therefore becomes an explicit first recipe step under the 45 s setup allowance (an
 `http.request` to an authenticated read; the group requests keep their 5 s allowance), which is
 the design's phase-budget rule applied to authentication. The registration cost itself is the
 password derivation's security parameter and stays; a cohort of 50 then signs in within ≈18 s.
+
+The hosted 15-agent limit is now the co-located VM: planning and ICE are fine, the shared host
+stalls both server processes once the browsers start. The GitHub Free workflow's `hetzner-control`
+mode (§2) places the browsers on GitHub runners and leaves the VM to the API and the control
+server; it is the hosted path for 15/30/50 until the VM is sized for co-located agents. The
+deciding telemetry for the stall (host CPU and steal, the api-v1 and control-server unit logs,
+Caddy upstream errors between 00:33:48 and 00:34:20Z on run 38660427046) is not in the artifacts.
 
 ### 1.8 Measured on the step 2b head (local, this Mac)
 
