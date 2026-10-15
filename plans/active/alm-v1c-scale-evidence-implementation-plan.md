@@ -302,6 +302,15 @@ statements dominating the setup window, so D242 (executor statement counters in 
 D243 (one lane presence probe per pass, reservations only for non-empty lanes, a one-statement NEW claim)
 follow in the same step, each RED first and judged by statements per lane item and the inter-item gap.
 
+**As applied (PR #668).** D233–D238, D242–D249 and the shared primitives landed with four review-driven
+fix waves (proposal §3, §6). Measured (proposal §1.11): local 50 join wait 6.5 → 3.9 s and a lane item at 3
+statements in one transaction; hosted 30 connect p50 35.0 → 28.3 s; hosted 50 passes with sign-in 12.5 → 9.6 s,
+connect 64.9 → 54.9 s, director-status 4.3 s and 15 timeouts → 2 ms and none, setup-complete 8.9 s → 0.27 s,
+traffic-ready 82 s against 113 s. Open after this step: the six medium consolidation candidates of the audit
+(keyed rate limiter, trailing flush, serialized chain, queuebox sibling claim, JSON streaming, abort scope), the
+four-arm lane-policy gate (D239, now with executor counters), the join still waiting ≈9 s behind the hosted lane
+(the lane's remaining fixed cost and the per-player item count), and the RTT submission per round (D238).
+
 The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
 delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
 admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under

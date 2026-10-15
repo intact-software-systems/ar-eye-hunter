@@ -1714,4 +1714,6 @@ status prose to this document.
   row names step 2d; hosted 15, 30 and 50 pass through GitHub Free.
 - 2026-10-15 (V1c step 2d merged as `e623aa7`, 2e designed): decisions D233–D241 from the lane survey and the phase-timing
   capture (six lane items per player, the repeated authorization capture, the presence follow-on, no-op heartbeats, PBKDF2,
+- 2026-10-15 (V1c step 2e delivered on PR #668): decisions D242–D249 from the two local reruns, the review waves
+  and the hosted 50 triage; the reuse rule (D246) in the code standard; hosted 30 and 50 pass through GitHub Free.
   RTT submissions; the benefit gate recorded as an open item).
