@@ -1,11 +1,23 @@
-import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
-import { createTestGroup } from '../../../../create-test-group.ts';
 
-// Phase 4 (M6) incremental-evolution contract, exercised through the planning
-// kernel exactly as the durable group-revision work path drives it: seeded
+import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
+import { computeRtcTopologyPlan, type ComputedRtcTopologyPlan } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+
+import { createTestGroup } from '../../../../create-test-group.ts';
+import {
+    computeRtcTopologyHopEccentricity,
+    createCentralRtcTopologyRttMeasurements,
+    createRtcTopologyGroupSnapshot,
+    createRtcTopologyMemberIds,
+    toRtcTopologyGroupWithDirector
+} from '../rtc-topology-test-fixtures.ts';
+
+// The incremental-evolution contract, exercised through the planning kernel
+// exactly as the durable group-revision work path drives it: seeded
 // membership-delta plans preserve the previous structure (edge churn bounded
 // by O(degree) per change), stay deterministic given an equal previous, and
 // pass the same invariant validator as a full rebuild.
@@ -167,6 +179,122 @@ describe('evolve planned topology through the kernel', () => {
         expect(exited.snapshot.topology).toBe('tree');
     });
 });
+
+describe('evolve a tree through formation and director appointment', () => {
+    it('attaches a burst of joins larger than the delta budget without replacing an existing edge', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(30);
+        const formed = planTree({
+            group: createRtcTopologyGroupSnapshot('evolve-join-burst', memberSessionIds.slice(0, 22)),
+            previous: undefined
+        });
+        const joinedGroup = createRtcTopologyGroupSnapshot('evolve-join-burst', memberSessionIds);
+
+        const joined = planTree({ group: joinedGroup, previous: formed.snapshot });
+        const replanned = planTree({ group: joinedGroup, previous: joined.snapshot });
+
+        const formedEdges = edgeSet(formed);
+        const joinedEdges = edgeSet(joined);
+        expect(formedEdges.size).toBe(21);
+        expect([...formedEdges].filter((edge) => !joinedEdges.has(edge))).toEqual([]);
+        expect(joinedEdges.size).toBe(29);
+        expect(joined.planningObservation).toMatchObject({ incrementalPlanCount: 1, incrementalFallbackReasons: [] });
+        expectValidPlan(joined);
+        expect(replanned.changed).toBe(false);
+        expect(replanned.snapshot.nextHopsBySessionId).toEqual(joined.snapshot.nextHopsBySessionId);
+    });
+
+    it('rebuilds a tree when more members leave at once than the delta budget allows', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(22);
+        const formed = planTree({
+            group: createRtcTopologyGroupSnapshot('evolve-leave-burst', memberSessionIds),
+            previous: undefined
+        });
+
+        const left = planTree({
+            group: createRtcTopologyGroupSnapshot('evolve-leave-burst', memberSessionIds.slice(0, 14)),
+            previous: formed.snapshot
+        });
+
+        expect(left.planningObservation).toMatchObject({
+            incrementalPlanCount: 0,
+            incrementalFallbackReasons: ['delta-too-large']
+        });
+        expectValidPlan(left);
+    });
+
+    it('keeps the adjacency of a director-rooted tree when a plan changes no member and no leader', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(30);
+        const group = toRtcTopologyGroupWithDirector(
+            createRtcTopologyGroupSnapshot('evolve-same-leader', memberSessionIds),
+            'peer-15'
+        );
+        const rooted = planTree({ group, previous: undefined });
+
+        const replanned = planTree({
+            group,
+            previous: rooted.snapshot,
+            rttMeasurements: createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-3')
+        });
+
+        expect(replanned.planningObservation).toMatchObject({ incrementalPlanCount: 1, incrementalFallbackReasons: [] });
+        expect(replanned.changed).toBe(false);
+        expect(replanned.snapshot.nextHopsBySessionId).toEqual(rooted.snapshot.nextHopsBySessionId);
+    });
+
+    it('re-roots an accepted tree in place at a director appointed no deeper than the tree rooted at it', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(15);
+        const leaderless = createRtcTopologyGroupSnapshot('evolve-appointment', memberSessionIds);
+        const appointed = toRtcTopologyGroupWithDirector(leaderless, 'peer-12');
+        const accepted = planTree({ group: leaderless, previous: undefined });
+        const rootedAtDirector = planTree({ group: appointed, previous: undefined });
+
+        const replanned = planTree({ group: appointed, previous: accepted.snapshot });
+
+        expect(computeRtcTopologyHopEccentricity(accepted.snapshot.nextHopsBySessionId, 'peer-12')).toBeLessThanOrEqual(
+            computeRtcTopologyHopEccentricity(rootedAtDirector.snapshot.nextHopsBySessionId, 'peer-12')
+        );
+        expect(replanned.planningObservation).toMatchObject({ incrementalPlanCount: 1, incrementalFallbackReasons: [] });
+        expect(replanned.snapshot.nextHopsBySessionId).toEqual(accepted.snapshot.nextHopsBySessionId);
+    });
+
+    it('rebuilds an accepted tree around a director appointed deeper than the tree rooted at it', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(15);
+        const leaderless = createRtcTopologyGroupSnapshot('evolve-appointment', memberSessionIds);
+        const appointed = toRtcTopologyGroupWithDirector(leaderless, 'peer-1');
+        const accepted = planTree({ group: leaderless, previous: undefined });
+        const rootedAtDirector = planTree({ group: appointed, previous: undefined });
+
+        const replanned = planTree({ group: appointed, previous: accepted.snapshot });
+
+        expect(computeRtcTopologyHopEccentricity(accepted.snapshot.nextHopsBySessionId, 'peer-1')).toBeGreaterThan(
+            computeRtcTopologyHopEccentricity(rootedAtDirector.snapshot.nextHopsBySessionId, 'peer-1')
+        );
+        expect(replanned.planningObservation).toMatchObject({
+            incrementalPlanCount: 0,
+            incrementalFallbackReasons: ['leader-rooting']
+        });
+        expect(replanned.snapshot.nextHopsBySessionId).toEqual(rootedAtDirector.snapshot.nextHopsBySessionId);
+    });
+});
+
+interface PlanTreeInput {
+    readonly group: GroupSnapshot;
+    readonly previous: RallarOverlayTopologySnapshot | undefined;
+    readonly rttMeasurements?: readonly RttMeasurementInfo[];
+}
+
+function planTree(input: PlanTreeInput): ComputedRtcTopologyPlan {
+    return computeRtcTopologyPlan(
+        { topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 5 },
+        {
+            group: input.group,
+            rttMeasurements: input.rttMeasurements ?? [],
+            previous: input.previous,
+            updateOptions: { planningIntent: 'membership-delta' },
+            nowEpochMs: 100
+        }
+    );
+}
 
 function edgeChurn(
     left: RallarRtcTopologyUpdateResult,
