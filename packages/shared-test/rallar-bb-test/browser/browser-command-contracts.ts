@@ -62,7 +62,7 @@ export interface RallarBlackBoxBrowserRallarDirectorRuntime {
 
 export interface RallarBlackBoxBrowserRoomRefreshOptions {
     /** `when-absent`: a room snapshot already in the store is kept current by state sync, so nothing is read. */
-    readonly refresh?: 'when-absent';
+    readonly refresh: 'always' | 'when-absent';
     readonly signal?: AbortSignal;
     readonly timeoutMs: number;
 }

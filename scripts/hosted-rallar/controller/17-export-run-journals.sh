@@ -5,7 +5,8 @@ set -Eeuo pipefail
 # AppInbox phase timing on, the API writes about 9 000 journal lines per 50-agent run.
 JOURNAL_LINE_CAP=50000
 # The agents disconnect after the recipe reports its terminal state; the API journal is complete for
-# the run once every WS connect it logged since the run start has its disconnect.
+# the run once every WS connect it logged since the run start has its disconnect. A retried or
+# rejected item logs one handler line per attempt, so connections count by distinct request id.
 DEFAULT_TEARDOWN_TIMEOUT_SECONDS=120
 DEFAULT_TEARDOWN_POLL_SECONDS=5
 WS_CONNECT_HANDLER='"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT"'
@@ -105,10 +106,14 @@ export_journal() {
 		--since "${since}" >"${output_file}"
 }
 
-count_journal_lines() {
+count_journal_request_ids() {
 	local pattern="$1"
 	local journal_file="$2"
-	grep -c -F "${pattern}" "${journal_file}" || true
+	{ grep -F "${pattern}" "${journal_file}" || true; } |
+		{ grep -o -E '"requestId":"[^"]*"' || true; } |
+		sort -u |
+		wc -l |
+		tr -d ' '
 }
 
 # Re-exports the API journal until its WS connects balance its disconnects or the timeout passes.
@@ -117,14 +122,14 @@ export_api_journal_after_teardown() {
 	local waited_seconds=0
 	local connects disconnects
 	export_journal api "${api_journal}"
-	connects="$(count_journal_lines "${WS_CONNECT_HANDLER}" "${api_journal}")"
-	disconnects="$(count_journal_lines "${WS_DISCONNECT_HANDLER}" "${api_journal}")"
+	connects="$(count_journal_request_ids "${WS_CONNECT_HANDLER}" "${api_journal}")"
+	disconnects="$(count_journal_request_ids "${WS_DISCONNECT_HANDLER}" "${api_journal}")"
 	while ((connects > disconnects && waited_seconds < teardown_timeout_seconds)); do
 		sleep "${teardown_poll_seconds}"
 		waited_seconds=$((waited_seconds + teardown_poll_seconds))
 		export_journal api "${api_journal}"
-		connects="$(count_journal_lines "${WS_CONNECT_HANDLER}" "${api_journal}")"
-		disconnects="$(count_journal_lines "${WS_DISCONNECT_HANDLER}" "${api_journal}")"
+		connects="$(count_journal_request_ids "${WS_CONNECT_HANDLER}" "${api_journal}")"
+		disconnects="$(count_journal_request_ids "${WS_DISCONNECT_HANDLER}" "${api_journal}")"
 	done
 	if ((connects > disconnects)); then
 		echo "WS teardown incomplete: ${disconnects} of ${connects} connections disconnected after ${waited_seconds} s; exporting anyway."

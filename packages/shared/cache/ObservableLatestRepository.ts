@@ -94,6 +94,10 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
         return this.entries.get(key)?.peek();
     }
 
+    public readExpiresAtEpochMs(key: K): number | undefined {
+        return this.entries.get(key)?.readExpiresAtEpochMs();
+    }
+
     public get(key: K): V {
         const entry = this.entries.get(key);
         if (!entry) {

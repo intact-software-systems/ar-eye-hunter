@@ -13,6 +13,7 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 import { Either } from '@shared/resilience/Either.ts';
 import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
@@ -82,7 +83,10 @@ export class ControlSnapshotPersistence {
         if (!this.input.storageDir) {
             return;
         }
-        void this.flush.mark(this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle);
+        const snapshotPath = toSnapshotPath(this.input.storageDir);
+        this.flush.mark(this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle).catch((
+            error
+        ) => console.warn(`Could not persist control snapshot to ${snapshotPath}: ${toError(error).message}`));
     }
 
     /** Writes an unsaved change at once; shutdown awaits it. */

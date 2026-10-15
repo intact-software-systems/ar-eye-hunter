@@ -146,7 +146,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 typeId: 'room.manual.message'
             });
             await expect(
-                runtime.refreshRoom({ timeoutMs: 100 })
+                runtime.refreshRoom({ refresh: 'always', timeoutMs: 100 })
             ).resolves.toBeUndefined();
             expect(facade.records.roomStateRefreshes).toContainEqual([
                 {
@@ -724,6 +724,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
         expect(result.ok).toBe(true);
         expect(refreshRoom).toHaveBeenCalledWith({
+            refresh: 'always',
             signal: expect.any(AbortSignal),
             timeoutMs: expect.any(Number)
         });

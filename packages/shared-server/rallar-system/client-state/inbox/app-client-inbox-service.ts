@@ -143,9 +143,9 @@ export class AppClientInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
-        const ingressIssues = validateIssuedClientMutationIngress(authority, ingress, Date.now());
-        if (ingressIssues.length > 0) {
-            return Either.ofLeft(toIssuedClientMutationIngressFailure(ingressIssues));
+        const [firstIssue, ...otherIssues] = validateIssuedClientMutationIngress(authority, ingress, Date.now());
+        if (firstIssue !== undefined) {
+            return Either.ofLeft(toIssuedClientMutationIngressFailure([firstIssue, ...otherIssues]));
         }
         const result = await this.commandClient.enqueueAndWaitForResult(
             {

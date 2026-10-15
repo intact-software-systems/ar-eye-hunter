@@ -1,5 +1,3 @@
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
 export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
@@ -14,7 +12,6 @@ export const APP_INBOX_WAIT_SAFETY_TICK_MSECS = 1_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;
-    readonly laneBudgetPolicy?: InboxQueueReader.LaneBudgetPolicy;
     readonly waitMaxElapsedMsecs?: number;
     readonly waitRetryIntervalMsecs?: number;
     readonly waitMaxRetryIntervalMsecs?: number;
@@ -47,10 +44,6 @@ export function normalizeAppInboxOptions(options: AppInboxOptions): NormalizedAp
         ),
         waitJitterRatio: toRatio(options.waitJitterRatio, DEFAULT_APP_INBOX_WAIT_JITTER_RATIO)
     };
-}
-
-export function toAppInboxLaneBudgetPolicy(options: AppInboxOptions): InboxQueueReader.LaneBudgetPolicy {
-    return options.laneBudgetPolicy ?? InboxQueueReader.DEFAULT_LANE_BUDGET_POLICY;
 }
 
 function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {

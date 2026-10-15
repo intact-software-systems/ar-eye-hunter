@@ -8,7 +8,6 @@ import {
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
-    toAppInboxLaneBudgetPolicy,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
@@ -92,6 +91,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly adminClientIds: readonly string[];
@@ -446,7 +446,7 @@ function createAppInboxDequeueOptions(
         timing: input.timing
     });
     return {
-        laneBudgetPolicy: toAppInboxLaneBudgetPolicy(input.appInboxOptions),
+        laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,

@@ -67,7 +67,9 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     const sessions = new AuthSessionRepository(runtime);
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
-    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+    const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two'
+    });
     const mutationRejections: Error[] = [];
     const mutationService = createAuthMutationService({ runtimeRepository: runtime, serviceId: 'ticket-binding' });
     const appAuth = new AppAuthInboxService({

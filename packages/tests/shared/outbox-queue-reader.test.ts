@@ -44,7 +44,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_INBOX work', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];
@@ -78,7 +78,7 @@ describe('OutboxQueueReader', () => {
 
     it('does not reserve APP_OUTBOX work from the inbox reader', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const inboxMessages: ALMessage[] = [];
         const outboxMessages: ALMessage[] = [];

@@ -23,7 +23,10 @@ export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 /** A renewal lands this long before the lease or the cache it keeps alive would lapse: one retry and its request. */
 export const SESSION_HEARTBEAT_RENEWAL_MARGIN_MS = 2 * SESSION_HEARTBEAT_RETRY_MS;
 
-/** The own session lease as the store last saw it: who stamped it last and when it lapses. */
+/**
+ * The own client-session lease as the store last saw it: when a client-session connect or renewal last stamped it,
+ * and when it lapses.
+ */
 interface SessionLease {
     readonly stampedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
@@ -31,8 +34,12 @@ interface SessionLease {
 
 interface FirstHeartbeatRenewalInput {
     readonly nowEpochMs: number;
-    /** Undefined until a server snapshot or the issued session names the lease; the cache TTL alone bounds it then. */
+    /** Undefined until a client snapshot names the own client-session lease. */
     readonly leaseExpiresAtEpochMs: number | undefined;
+    /** The issued access token's expiry: the browser's only bound until the client snapshot names the lease. */
+    readonly accessTokenExpiresAtEpochMs: number | undefined;
+    /** The earliest lapse among the cached snapshots of the groups this session joined, when any is cached. */
+    readonly joinedGroupSnapshotsExpireAtEpochMs: number | undefined;
     readonly cacheTtlMs: number;
     readonly marginMs: number;
 }
@@ -46,19 +53,28 @@ interface HeartbeatRenewalInput {
 
 type HeartbeatRenewalDecision = 'renew' | 'skip';
 
-/** The renewal keeps the session lease and the browser cache alive, so the first one runs before either lapses. */
+/**
+ * The renewal keeps the session lease and the browser cache alive, so the first one runs before the lease, a joined
+ * group's cached snapshot or a snapshot written now would lapse.
+ */
 function computeFirstHeartbeatRenewalDelayMs(input: FirstHeartbeatRenewalInput): number {
-    const leaseRemainingMs = input.leaseExpiresAtEpochMs === undefined
-        ? input.cacheTtlMs
-        : input.leaseExpiresAtEpochMs - input.nowEpochMs;
-    return Math.max(0, Math.min(leaseRemainingMs, input.cacheTtlMs) - input.marginMs);
+    const renewByEpochMs = Math.min(
+        input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.joinedGroupSnapshotsExpireAtEpochMs ?? Number.POSITIVE_INFINITY,
+        input.nowEpochMs + input.cacheTtlMs
+    );
+    return Math.max(0, renewByEpochMs - input.nowEpochMs - input.marginMs);
 }
 
-/** A lease another item stamped inside the interval needs no renewal, unless the next interval would come too late. */
+/**
+ * A lease a client-session connect stamped inside the interval needs no renewal, unless the next interval would come
+ * too late. The stamp is on the server's clock: one ahead of the browser's proves nothing about the interval.
+ */
 function resolveHeartbeatRenewal(input: HeartbeatRenewalInput): HeartbeatRenewalDecision {
     if (
         input.lease === undefined ||
-        input.lease.expiresAtEpochMs - input.nowEpochMs <= input.intervalMs + input.marginMs
+        input.lease.expiresAtEpochMs - input.nowEpochMs <= input.intervalMs + input.marginMs ||
+        input.lease.stampedAtEpochMs > input.nowEpochMs
     ) {
         return 'renew';
     }
@@ -96,8 +112,13 @@ class BrowserStateHeartbeatRuntime {
     public start(): void {
         const firstRenewalDelayMs = computeFirstHeartbeatRenewalDelayMs({
             nowEpochMs: this.#timers.nowMs(),
-            leaseExpiresAtEpochMs: this.readOwnSessionLease()?.expiresAtEpochMs ??
-                this.#options.authSession?.expiresAtEpochMs,
+            leaseExpiresAtEpochMs: this.readOwnSessionLease()?.expiresAtEpochMs,
+            accessTokenExpiresAtEpochMs: this.#options.authSession?.expiresAtEpochMs,
+            joinedGroupSnapshotsExpireAtEpochMs: readEarliestExpiry(
+                this.readJoinedGroups().map((snapshot) =>
+                    groupStateSnapshotsRepository.findGroupStateSnapshotExpiresAtByRef(snapshot.group)
+                )
+            ),
             cacheTtlMs: BROWSER_STATE_CACHE_TTL_MS,
             marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS
         });
@@ -156,12 +177,7 @@ class BrowserStateHeartbeatRuntime {
     }
 
     private async refreshHeartbeat(): Promise<void> {
-        const joinedGroups = groupStateSnapshotsRepository
-            .getAllGroupStateSnapshots()
-            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
-            .filter((snapshot) =>
-                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
-            );
+        const joinedGroups = this.readJoinedGroups();
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
@@ -178,6 +194,15 @@ class BrowserStateHeartbeatRuntime {
         await writeHeartbeatResult(this.#clientData, joinedGroups, refreshed);
     }
 
+    private readJoinedGroups(): GroupSnapshot[] {
+        return groupStateSnapshotsRepository
+            .getAllGroupStateSnapshots()
+            .filter((snapshot) => isGroupSnapshotInScope(snapshot, this.#options.scope))
+            .filter((snapshot) =>
+                snapshot.activeSessions.some((session) => session.sessionId === this.#clientData.sessionId)
+            );
+    }
+
     private isCurrent(): boolean {
         return !this.#stopped && activeHeartbeat === this.handle;
     }
@@ -190,6 +215,11 @@ class BrowserStateHeartbeatRuntime {
             ? undefined
             : { stampedAtEpochMs: ownSession.lastHeartbeatAtEpochMs, expiresAtEpochMs: ownSession.expiresAtEpochMs };
     }
+}
+
+function readEarliestExpiry(expiries: readonly (number | undefined)[]): number | undefined {
+    const known = expiries.filter((expiry): expiry is number => expiry !== undefined);
+    return known.length === 0 ? undefined : Math.min(...known);
 }
 
 export async function initHeartbeat(

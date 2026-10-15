@@ -566,7 +566,7 @@ export function createAtomicHarness(
     });
 
     const queue = new RegisteredHandlerInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new RegisteredHandlerResults();
     const service = new AtomicAppInboxService(
         {

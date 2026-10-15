@@ -98,6 +98,43 @@ describe('Hetzner run journal export script', () => {
         expect(outcome.stdout).toContain('WS teardown complete: 2 of 2 connections disconnected after 1 s.');
     });
 
+    it('counts a retried connect once, by its request id, so its single disconnect completes the teardown', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-retried-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journalPath = path.join(directory, 'journalctl');
+        await writeFile(
+            journalPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'if [[ "$*" == *rallar-black-box-control.service* ]]; then echo "control line"; exit 0; fi',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT","requestId":"a"}\'',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT","requestId":"a"}\'',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_DISCONNECT","requestId":"a"}\''
+            ].join('\n')
+        );
+        await chmod(journalPath, 0o755);
+        const outputDirectory = path.join(directory, 'operation');
+
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                exportScriptPath,
+                '--since',
+                '@1700000000',
+                '--output-dir',
+                outputDirectory,
+                '--teardown-poll-seconds',
+                '1',
+                '--teardown-timeout-seconds',
+                '2'
+            ],
+            options: { env: { PATH: `${directory}${path.delimiter}${process.env.PATH}`, LANG: 'C', LC_ALL: 'C' } }
+        });
+
+        expect(outcome.stdout).toContain('WS teardown complete: 1 of 1 connections disconnected after 0 s.');
+    });
+
     it('stops waiting for the teardown at the timeout and still exports both journals', async (context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-timeout-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));

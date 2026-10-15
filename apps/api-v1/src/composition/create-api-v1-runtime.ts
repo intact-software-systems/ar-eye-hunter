@@ -102,6 +102,7 @@ export interface CreateApiV1RuntimeInput {
     readonly timing: RallarTimingSink;
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
+    readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
@@ -268,6 +269,7 @@ function toMutationRuntimeInput(
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
+        appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         adminClientIds: input.adminClientIds,

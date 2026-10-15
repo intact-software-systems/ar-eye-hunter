@@ -296,7 +296,7 @@ describe('GroupStateInboxService authenticated authority', () => {
         await authSessions.putSession(attacker);
 
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const eventStore = new InMemoryGroupStateEventStore();
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });

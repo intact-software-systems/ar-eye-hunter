@@ -9,7 +9,7 @@ import { createQueueResilience } from '../../../../shared/app-inbox/fair-service
 
 describe('createAppInboxHandlerRuntime', () => {
     it('leaves the dequeue-pass observer to the reader owner when several services compose on one reader with phase timing', async () => {
-        const reader = new InboxQueueReader(new InMemoryQueueBox());
+        const reader = new InboxQueueReader(new InMemoryQueueBox(), { laneBudgetPolicy: 'fixed-retry-two' });
         const probes: string[] = [];
         reader.onDequeuePassDo({
             onProbeStarted: () => void probes.push('started'),

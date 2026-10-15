@@ -40,7 +40,7 @@ describe('InboxQueueReader', () => {
 
     it('dispatches app inbox messages to the registered payload type callback', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const dispatched: ALMessage[] = [];
         const onMessage: OnMessageCallback['onMessage'] = async (dispatchedMessage) => {
             dispatched.push(dispatchedMessage);
@@ -57,7 +57,7 @@ describe('InboxQueueReader', () => {
 
     it.each(['invalid-version', 'invalid-json'])('fails a persisted %s message without retrying or delivering it', async (corruption) => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const delivered: ALMessage[] = [];
         reader.onInboxMessageDo('group-state.create.v1', {
             onMessage: async (message) => {
@@ -89,7 +89,7 @@ describe('InboxQueueReader', () => {
 
     it('keeps the queue entry retryable when no payload type callback is registered', async () => {
         const queue = new InMemoryQueueBox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         const enqueued = await reader.enqueueIfAbsent(createAppInboxMessage('group-state.create.v1'));

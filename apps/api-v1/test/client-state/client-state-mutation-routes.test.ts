@@ -218,12 +218,13 @@ Deno.test('a session heartbeat whose issued session expired before enqueue answe
         session: expired,
         clientService: {},
         processClientAppInbox: (enqueue, authority) => {
-            const issues = validateIssuedClientMutationIngress(
+            const [firstIssue, ...otherIssues] = validateIssuedClientMutationIngress(
                 authority,
                 readAuthenticatedClientMutationIngress(enqueue),
                 Date.now()
             );
-            return Promise.resolve(Either.ofLeft(toIssuedClientMutationIngressFailure(issues)));
+            assert.ok(firstIssue, 'the expired session yields an ingress issue');
+            return Promise.resolve(Either.ofLeft(toIssuedClientMutationIngressFailure([firstIssue, ...otherIssues])));
         }
     });
     const response = await createClientRouteApp(deps).request(

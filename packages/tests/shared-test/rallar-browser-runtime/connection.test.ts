@@ -45,6 +45,7 @@ it('refreshes connected room state with the caller deadline and signal', async (
     });
 
     await runtime.refreshRoom({
+        refresh: 'always',
         signal: controller.signal,
         timeoutMs: 321
     });
@@ -107,7 +108,7 @@ it('rejects room refresh when the connected config has no exact room reference',
             password: 'secret'
         }
     });
-    await expect(runtime.refreshRoom({ timeoutMs: 321 })).rejects.toMatchObject({
+    await expect(runtime.refreshRoom({ refresh: 'always', timeoutMs: 321 })).rejects.toMatchObject({
         name: 'RallarValidationError',
         issues: [
             {

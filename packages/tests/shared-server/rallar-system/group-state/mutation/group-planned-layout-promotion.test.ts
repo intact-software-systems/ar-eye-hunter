@@ -425,7 +425,8 @@ describe('applyPlannedLayout through the inbox lane', () => {
     /** Stores `planned` as the lane group's planned slot and runs one dequeue pass over the queued promotion. */
     async function promoteThroughLane(
         planned: RallarOverlayTopologySnapshot,
-        expectedLayout: GroupLayoutIdentity
+        expectedLayout: GroupLayoutIdentity,
+        failAcceptedWrite = false
     ): Promise<LanePromotion> {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const plannedSnapshot = { ...planned, groupRef: LANE_GROUP_REF, overlayId: toScopedOverlayId(LANE_GROUP_REF) };
@@ -453,6 +454,15 @@ describe('applyPlannedLayout through the inbox lane', () => {
             harness.nowEpochMs
         );
         timing.length = 0;
+        if (failAcceptedWrite) {
+            const failWrite = (namespace: string) => {
+                if (namespace === RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE) {
+                    throw new Error('accepted layout write failed inside the transaction');
+                }
+            };
+            runtimeRepository.beforeUpsert = failWrite;
+            runtimeRepository.beforeConditionalWrite = (_operation, namespace) => failWrite(namespace);
+        }
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         return {
             lines: timing.filter((event) => event.component === 'group-topology-publication'),
@@ -476,6 +486,13 @@ describe('applyPlannedLayout through the inbox lane', () => {
                 }
             })
         ]);
+    });
+
+    it('reports a promotion only after its transaction commits', async () => {
+        const promotion = await promoteThroughLane(NEWER_PLANNED.snapshot, IDENTITY, true);
+
+        expect(promotion.acceptedSnapshotStored).toBe(false);
+        expect(promotion.lines).toEqual([]);
     });
 
     it('reports a fence the stored plan cannot satisfy as a rejected outcome, not an error', async () => {

@@ -90,7 +90,7 @@ Deno.test(
             const runtime = new PSqlRuntimeStateRepository(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
             const authSessions = new AuthSessionRepository(runtime);
             const authority: IssuedAuthSession = {
                 clientId: 'owner',

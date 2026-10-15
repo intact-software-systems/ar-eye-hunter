@@ -1,3 +1,4 @@
+import { toError } from '../resilience/to-error.ts';
 import { LatestValue, type LatestValueOptions, type ValueSink } from './LatestValue.ts';
 import type { ReadableValue } from './ReadableValue.ts';
 import {
@@ -77,6 +78,10 @@ export class ObservableLatestValue<T> implements ReadableValue<T>, ValueSink<T>,
 
     public peek(): T | undefined {
         return this.latest.peek();
+    }
+
+    public readExpiresAtEpochMs(): number | undefined {
+        return this.latest.readExpiresAtEpochMs();
     }
 
     public get(): T {
@@ -300,12 +305,12 @@ export class ObservableLatestValue<T> implements ReadableValue<T>, ValueSink<T>,
             await listener(event);
         }
         catch (error) {
-            await this.handleObserverError(error, event);
+            await this.handleObserverError(toError(error), event);
         }
     }
 
     private async handleObserverError(
-        error: unknown,
+        error: Error,
         event: ObservableValueEvent<T>
     ): Promise<void> {
         if (this.onObserverError) {

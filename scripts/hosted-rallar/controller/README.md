@@ -827,7 +827,8 @@ its start and exports both through `17-export-run-journals.sh` when it exits,
 whatever the recipe's outcome. The agents disconnect after the recipe reports
 its terminal state, so the export re-reads the API journal every 5 s until every
 WS connect it logged since the run start has its disconnect, for at most 120 s,
-and reports the balance it exported with. The API deploys with `RALLAR_TIMING_LOGS=1` and
+and reports the balance it exported with. Connects and disconnects count by
+distinct request id, since a retried or rejected item logs once per attempt. The API deploys with `RALLAR_TIMING_LOGS=1` and
 `RALLAR_APP_INBOX_PHASE_TIMING=true`, so a hosted failure can be attributed on
 the server side; with both on, a 50-agent run writes about 9 000 API journal
 lines.

@@ -101,6 +101,8 @@ interface CommitGroupStateMutationInput {
     readonly durableResult: GroupStateInboxDurableResult;
     readonly completion: AppInboxCompletionComputed<GroupStateInboxDurableResult>;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
+    /** A layout promotion's timing line, recorded once its transaction committed. */
+    readonly promotion?: PlannedLayoutPromotionAttempt;
 }
 
 interface CapturedGroupMutationIngress {
@@ -155,16 +157,14 @@ export class GroupStateInboxHandler {
         const startedAtMs = nowMs();
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
-        if (command.command.operation === 'applyPlannedLayout') {
-            this.recordPlannedLayoutPromotion({
-                command: command.command,
-                read: resultRead.mutationRead,
-                computed,
-                startedAtMs
-            });
-        }
+        const promotion = command.command.operation === 'applyPlannedLayout'
+            ? { command: command.command, read: resultRead.mutationRead, computed, startedAtMs }
+            : undefined;
         if (!isCommittableMutation(computed)) {
             this.validateMutation(command, resultRead.mutationRead, computed);
+            if (promotion !== undefined) {
+                this.recordPlannedLayoutPromotion(promotion);
+            }
             throwNonCommittableMutation(command, computed);
         }
         const resultInput = {
@@ -187,7 +187,7 @@ export class GroupStateInboxHandler {
         this.validateMutation(command, resultRead.mutationRead, computed);
         this.validateInboxResult(resultInput, result);
         this.validateCompletion(completionInput, completion);
-        return await this.commitMutation({ context, command, computed, durableResult, completion });
+        return await this.commitMutation({ context, command, computed, durableResult, completion, promotion });
     }
 
     private async processPresenceConnect(
@@ -323,6 +323,9 @@ export class GroupStateInboxHandler {
                 }
             );
         this.dependencies.wakeQueue?.();
+        if (input.promotion !== undefined) {
+            this.recordPlannedLayoutPromotion(input.promotion);
+        }
         this.recordGroupMutation(
             input.command,
             input.computed.outcome === 'write'

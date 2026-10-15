@@ -22,7 +22,7 @@ describe('AppInbox completion clock ownership', () => {
         Date.now = () => 1_784_721_600_123;
         try {
             const runtime = createAppInboxHandlerRuntime({
-                inboxQueueReader: new InboxQueueReader(queue),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
                 resultRepository: results,
                 database: harness.database.sql,
                 serviceId: 'server-1'

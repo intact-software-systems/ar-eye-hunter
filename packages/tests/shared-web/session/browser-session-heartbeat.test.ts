@@ -165,6 +165,64 @@ describe('Browser session heartbeat', () => {
         expect(fetchCalls).toHaveLength(2);
     });
 
+    it('renews when a client-session connect stamp lies in the browser clock\'s future', async () => {
+        vi.useFakeTimers();
+        stubFetch(({ url, method }) =>
+            method === 'POST' && url.includes('/clients/principal-1/')
+                ? jsonResponse(clientSnapshot('principal-1', { expiresAtEpochMs: Date.now() + 3_600_000 }))
+                : textResponse('unexpected', 500)
+        );
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(FIRST_RENEWAL_MS);
+        expect(fetchCalls).toHaveLength(1);
+        clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', {
+            ...clientSnapshot('principal-1', {
+                lastHeartbeatAtEpochMs: Date.now() + SESSION_HEARTBEAT_INTERVAL_MS + 120_000,
+                expiresAtEpochMs: Date.now() + 3_600_000
+            }),
+            stateRevision: 2
+        });
+
+        await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
+        handle.stop();
+        expect(fetchCalls).toHaveLength(2);
+    });
+
+    it('runs the first renewal before a joined group snapshot written before the start lapses from the cache', async () => {
+        vi.useFakeTimers();
+        const joined = groupSnapshot({
+            groupId: 'joined-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshots([joined]);
+        await vi.advanceTimersByTimeAsync(15_000);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+            if (method === 'POST' && url.includes('/groups/joined-room/')) {
+                return jsonResponse(joined);
+            }
+            return textResponse('unexpected', 500);
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(BROWSER_STATE_CACHE_TTL_MS - 15_000 - SESSION_HEARTBEAT_RENEWAL_MARGIN_MS);
+        handle.stop();
+
+        expect(fetchCalls.filter((call) => call.url.includes('/groups/joined-room/'))).toHaveLength(1);
+    });
+
     it('retries a failed heartbeat after the retry interval and then resumes the interval', async () => {
         vi.useFakeTimers();
         vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -73,34 +73,26 @@ for (const owner of ['handler', 'retry-finalizer'] as const) {
             };
             let transactions = 0;
             let serializedKeys = 0;
-            // The writer opens a counter scope per transaction; its transactions are observed like the root handle's.
-            const instrumentBegin = (handle: PSqlSql): PSqlSql => {
-                const begin = handle.begin.bind(handle);
-                handle.begin = async <Result>(write: (transaction: PSqlSql) => Promise<Result>): Promise<Result> => {
-                    transactions += 1;
-                    return await begin(async (transaction) => {
-                        const stringify = JSON.stringify;
-                        JSON.stringify = (value: Parameters<typeof JSON.stringify>[0]) => {
-                            if (value === entry.key) {
-                                serializedKeys += 1;
-                                throw new Error('Caller key serialized inside strict transaction');
-                            }
-                            return stringify(value);
-                        };
-                        try {
-                            return await write(transaction);
+            const begin = sql.begin.bind(sql);
+            sql.begin = async <Result>(write: (transaction: PSqlSql) => Promise<Result>): Promise<Result> => {
+                transactions += 1;
+                return await begin(async (transaction) => {
+                    const stringify = JSON.stringify;
+                    JSON.stringify = (value: Parameters<typeof JSON.stringify>[0]) => {
+                        if (value === entry.key) {
+                            serializedKeys += 1;
+                            throw new Error('Caller key serialized inside strict transaction');
                         }
-                        finally {
-                            JSON.stringify = stringify;
-                        }
-                    });
-                };
-                return handle;
+                        return stringify(value);
+                    };
+                    try {
+                        return await write(transaction);
+                    }
+                    finally {
+                        JSON.stringify = stringify;
+                    }
+                });
             };
-            instrumentBegin(sql);
-            const openCounterScope = sql.openCounterScope?.bind(sql);
-            assert.ok(openCounterScope, 'the PGlite port opens counter scopes');
-            sql.openCounterScope = () => instrumentBegin(openCounterScope());
             const operation = owner === 'handler'
                 ? () =>
                     new AppInboxTransactionWriter({ database: sql, nowEpochMs: Date.now }, { serviceId: 'conflict-test' })

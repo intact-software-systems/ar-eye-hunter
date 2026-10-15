@@ -15,6 +15,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         adminClientIds: ['admin-1'],

@@ -20,7 +20,7 @@ const SERVICE_ID = 'server-12345678';
 
 it('rejects authorised websocket disconnect after durable auth revocation', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -67,7 +67,7 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
 
 it('processes authorised websocket connects in the requested state scope', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -117,7 +117,7 @@ it('processes authorised websocket connects in the requested state scope', async
 
 it('processes authorised websocket connects independently per state scope', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -167,7 +167,7 @@ it(
     ].join(' '),
     async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();

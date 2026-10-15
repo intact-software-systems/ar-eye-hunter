@@ -85,7 +85,7 @@ describe('AppInbox expired row replacement', () => {
         const runtime = new FakeRuntimeStateRepository();
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const credentialIssuer = createHmacAuthCredentialIssuer('expired-auth-secret-0123456789abcdef');
         let rollbackCount = 0;
         let rollbackPreservedExpiredIndexes = false;
@@ -205,7 +205,7 @@ describe('AppInbox expired row replacement', () => {
             const runtime = new FakeRuntimeStateRepository();
             const queue = new TestResourceInbox();
             const results = new TestResourceInboxResults();
-            const reader = new InboxQueueReader(queue);
+            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
             const sessions = new AuthSessionRepository(runtime);
             const owner = {
                 clientId: 'owner',

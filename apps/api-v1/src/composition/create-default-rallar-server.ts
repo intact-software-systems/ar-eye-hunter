@@ -194,6 +194,7 @@ function createConfiguredApiV1Runtime(
             publisherId: myPublisherId
         }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
+        appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

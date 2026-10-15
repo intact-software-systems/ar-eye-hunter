@@ -12,7 +12,7 @@ import { createQueueMessage, createQueueResilience, seedRetry } from './fair-ser
 describe('AppInbox fair service', () => {
     it('keeps unrelated type sets and outboxes on their existing drain defaults', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const delivered: string[] = [];
         const callback = {

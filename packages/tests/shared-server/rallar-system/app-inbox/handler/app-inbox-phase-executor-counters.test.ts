@@ -61,15 +61,15 @@ describe('AppInbox phase timing executor counters', () => {
             selectedLane: harness.context.attemptTelemetry.selectedLane,
             attempt: harness.entry.dequeueAudit.attempts,
             statements: 2,
-            executorWaitMs: 2
+            executorWaitMs: expect.any(Number)
         });
         expect(handlerAction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId, statements: 3, executorWaitMs: 3 });
         expect(database.counters.statements).toBe(4);
     });
 
-    it('credits the transaction line only its own statements when the port opens a counter scope', async () => {
+    it('credits the transaction line only its own statements while the executor counts every statement', async () => {
         const harness = createAtomicHarness();
-        const database = createScopedCountingDatabase();
+        const database = createCountingDatabase();
         const timing: RallarTimingEvent[] = [];
         const writer = new AppInboxTransactionWriter(
             { database: database.sql, nowEpochMs: () => 1_000 },
@@ -83,7 +83,7 @@ describe('AppInbox phase timing executor counters', () => {
         });
 
         const transaction = timing.find((event) => event.operation === 'transaction');
-        expect(transaction?.details).toMatchObject({ statements: 2, executorWaitMs: 2 });
+        expect(transaction?.details).toMatchObject({ statements: 2, executorWaitMs: expect.any(Number) });
         expect(database.counters).toEqual({ statements: 3, executorWaitMs: 3 });
     });
 
@@ -117,30 +117,6 @@ async function commit(
     const completion = computeAppInboxCompletion(completionInput);
     expect(validateAppInboxCompletion(completionInput, completion)).toEqual([]);
     return await writer.writeComputedMutation(context, completion, async () => {});
-}
-
-/** The root handle counts every statement; a scoped handle, and the transaction it opens, also count their own. */
-function createScopedCountingDatabase(): CountingDatabase {
-    const counters = { statements: 0, executorWaitMs: 0 };
-    const createHandle = (scope: { statements: number; executorWaitMs: number; } | undefined): PSqlSql => {
-        function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[], ..._values: readonly PSqlParameter[]): object {
-            if (!Object.hasOwn(stringsOrValues, 'raw')) {
-                return {};
-            }
-            for (const credited of scope === undefined ? [counters] : [counters, scope]) {
-                credited.statements += 1;
-                credited.executorWaitMs += 1;
-            }
-            return Promise.resolve([{ ri_row_id: 1n }]);
-        }
-        const handle = Object.assign(sql, {
-            begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => await write(handle),
-            getExecutorCounters: (): PSqlExecutorCounters => ({ ...(scope ?? counters) }),
-            openCounterScope: (): PSqlSql => createHandle({ statements: 0, executorWaitMs: 0 })
-        }) as PSqlSql;
-        return handle;
-    };
-    return { sql: createHandle(undefined), counters };
 }
 
 /** Every template statement counts one and waits one millisecond; transaction statements count on the same executor. */

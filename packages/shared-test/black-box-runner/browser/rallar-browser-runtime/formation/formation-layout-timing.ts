@@ -33,13 +33,13 @@ export class FormationLayoutTiming {
     }
 
     observe(event: RallarRoomLayoutEvent, atEpochMs: number): void {
-        const timing = this.toTimingDiagnostic(event, atEpochMs);
+        const timing = this.#toTimingDiagnostic(event, atEpochMs);
         if (timing !== undefined) {
             this.#emit(timing);
         }
     }
 
-    private toTimingDiagnostic(
+    #toTimingDiagnostic(
         event: RallarRoomLayoutEvent,
         atEpochMs: number
     ): BlackBoxRallarLayoutTimingDiagnostic | undefined {

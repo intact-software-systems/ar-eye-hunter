@@ -222,12 +222,9 @@ function toIngressValidationIssue(
 
 /** The first issue names the failure; every issue travels with it so a client can see all of them at once. */
 export function toIssuedClientMutationIngressFailure(
-    issues: readonly IssuedClientMutationIngressValidationIssue[]
+    issues: readonly [IssuedClientMutationIngressValidationIssue, ...IssuedClientMutationIngressValidationIssue[]]
 ): AppInboxFailure {
     const [first] = issues;
-    if (first === undefined) {
-        throw new TypeError('Client mutation ingress failure requires at least one issue');
-    }
     return toTerminalAppInboxFailure({
         code: first.code,
         status: INGRESS_ISSUE_STATUS[first.code],

@@ -117,7 +117,7 @@
   },
   "appInbox": {
     "phaseTiming": false,
-    "laneBudgetPolicy": "adaptive-retry",
+    "laneBudgetPolicy": "fixed-retry-two",
     "completionWait": {
       "maxElapsedMs": 30000,
       "retryIntervalMs": 250,

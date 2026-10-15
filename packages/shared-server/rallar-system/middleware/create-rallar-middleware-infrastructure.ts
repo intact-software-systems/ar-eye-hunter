@@ -99,7 +99,6 @@ function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions
     const inboxQueueReader = new InboxQueueReader(
         options.inbox,
         {
-            laneBudgetPolicy: InboxQueueReader.DEFAULT_LANE_BUDGET_POLICY,
             ...options.appInboxDequeueOptions,
             isRetryableConflict: isAppInboxRetryableConflict
         }

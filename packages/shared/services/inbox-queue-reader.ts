@@ -55,7 +55,6 @@ export class InboxQueueReader {
         'adaptive-retry',
         'fixed-retry-two'
     ];
-    public static readonly DEFAULT_LANE_BUDGET_POLICY: InboxQueueReader.LaneBudgetPolicy = 'adaptive-retry';
 
     private readonly reader: QueueMessageReader;
     private readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
@@ -76,7 +75,7 @@ export class InboxQueueReader {
 
     constructor(
         inbox: QueueBoxResourceEntryRepository,
-        dequeueOptions: InboxQueueReader.Options = { laneBudgetPolicy: InboxQueueReader.DEFAULT_LANE_BUDGET_POLICY },
+        dequeueOptions: InboxQueueReader.Options,
         creationNow: QueueBoxUtilities.CreationClock = Temporal.Now.instant
     ) {
         this.completionNotifications = dequeueOptions.completionNotifications;

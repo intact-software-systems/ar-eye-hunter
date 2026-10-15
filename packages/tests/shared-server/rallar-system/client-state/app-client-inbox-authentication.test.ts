@@ -146,7 +146,7 @@ describe('AppClientInbox authentication', () => {
 
     it('returns the exact terminal left for a malformed completed client result', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const database = createAppInboxTestDatabase(queue, results);
         const service = new AppClientInboxService(
@@ -218,7 +218,7 @@ describe('AppClientInbox authentication', () => {
         const expired = { ...live, expiresAtEpochMs: Date.now() - 1 };
         const service = new AppClientInboxService(
             {
-                inboxQueueReader: new InboxQueueReader(queue),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
@@ -284,7 +284,7 @@ describe('AppClientInbox authentication', () => {
         const authority = issuedSession('alice', 'alice-session');
         const service = new AppClientInboxService(
             {
-                inboxQueueReader: new InboxQueueReader(queue),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
@@ -358,7 +358,7 @@ describe('AppClientInbox authentication', () => {
 
     it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const database = createAppInboxTestDatabase(queue, results, {
@@ -457,7 +457,7 @@ interface RevokedAuthorityRetryHarness {
 
 async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Promise<RevokedAuthorityRetryHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);

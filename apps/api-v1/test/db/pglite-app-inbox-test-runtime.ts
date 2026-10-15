@@ -45,7 +45,9 @@ export async function readPGliteAppInboxFailure(
     const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const results = new ResourceInboxResultsRepository(sql);
     const service = createAppInboxClientRuntime({
-        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox, Temporal.Now.instant)),
+        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'fixed-retry-two'
+        }),
         resourceInboxRepository: inbox.entries,
         resourceInboxResultsRepository: results,
         serviceId: 'pglite-failure-reader',

@@ -49,7 +49,7 @@ interface RollbackDatabaseInput {
 
 export async function createRollbackHarness(): Promise<RollbackHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const eventStore = new TestClientStateEventStore();

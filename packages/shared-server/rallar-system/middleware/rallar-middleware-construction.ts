@@ -91,7 +91,7 @@ export interface RallarMiddlewareResilience {
 export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
-    readonly appInboxDequeueOptions?: InboxQueueReader.Options;
+    readonly appInboxDequeueOptions: InboxQueueReader.Options;
     /** Absent when AppInbox phase timing is off. */
     readonly appInboxDequeuePassTiming?: RallarMiddlewareDequeuePassTimingOptions;
     readonly webSocketServer?: JsonWebSocketServer;

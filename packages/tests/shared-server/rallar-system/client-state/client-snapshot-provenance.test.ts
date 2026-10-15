@@ -488,7 +488,7 @@ function toStoredEntry(entry: ResourceEntry): ResourceEntry {
 function createProducer(options: { readonly collideOnRequestId?: string; readonly nowMs?: () => number; } = {}): SnapshotProducerFixture {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const repository = new FakeRuntimeStateRepository();
     const state = {
         inTransaction: false,

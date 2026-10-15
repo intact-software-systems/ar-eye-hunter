@@ -124,6 +124,7 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
             waitJitterRatio: completion.jitterRatio,
             nowEpochMs: Date.now
         },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
         adminClientIds: [],

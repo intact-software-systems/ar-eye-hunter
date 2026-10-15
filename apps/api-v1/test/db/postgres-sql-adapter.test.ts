@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import {
@@ -51,6 +52,37 @@ Deno.test('Postgres SQL client counts every statement of its root and transactio
     await sql.listen('channel', () => undefined);
     await sql.end();
     assert.deepEqual(fake.events, ['notify:channel:payload', 'listen:channel', 'end']);
+});
+
+Deno.test('a counter scope over the Postgres client credits only its own statements, inside its transaction and savepoint, and carries none of the client lifecycle', async () => {
+    const fake = createFakePostgresClient();
+    const sql = createPostgresSqlClient(fake.client);
+    const scoped = createPSqlCounterScope(sql);
+    const other = createPSqlCounterScope(sql);
+
+    await scoped`select ${1} as one`;
+    await other`select ${2} as two`;
+    await sql`select ${3} as three`;
+    await scoped.begin(async (transaction) => {
+        await transaction`update rows set value = ${4}`;
+        assert.ok('savepoint' in transaction && typeof transaction.savepoint === 'function');
+        const savepointSql = transaction as PSqlSql & { savepoint<T>(write: (sql: PSqlSql) => Promise<T>): Promise<T>; };
+        await savepointSql.savepoint(async (nested) => {
+            await nested`insert into rows values (${5})`;
+        });
+    });
+
+    assert.equal(scoped.getExecutorCounters?.()?.statements, 3);
+    assert.equal(other.getExecutorCounters?.()?.statements, 1);
+    assert.equal(sql.getExecutorCounters().statements, 5);
+    assert.deepEqual(fake.calls.map((call) => [call.handle, call.text, call.values]), [
+        ['root', 'select ? as one', [1]],
+        ['root', 'select ? as two', [2]],
+        ['root', 'select ? as three', [3]],
+        ['transaction', 'update rows set value = ?', [4]],
+        ['savepoint', 'insert into rows values (?)', [5]]
+    ]);
+    assert.deepEqual(['end', 'notify', 'listen', 'close'].filter((name) => name in scoped), []);
 });
 
 function createFakePostgresClient(): FakePostgresClient {

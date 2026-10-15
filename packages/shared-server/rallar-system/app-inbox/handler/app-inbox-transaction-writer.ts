@@ -2,6 +2,7 @@ import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resou
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -168,9 +169,12 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         );
     }
 
-    /** One scope per transaction, so its line counts this transaction's statements alone when the port scopes. */
+    /**
+     * One scope per transaction when the port counts, so its line counts this transaction's statements alone;
+     * the scope opens the transaction through this writer's own handle.
+     */
     private openTransactionScope(): PSqlSql {
-        return this.database.openCounterScope?.() ?? this.database;
+        return this.database.getExecutorCounters ? createPSqlCounterScope(this.database) : this.database;
     }
 
     private toTimingDetails(context: AppInboxExecutionMetadata): RallarTimingDetails {
