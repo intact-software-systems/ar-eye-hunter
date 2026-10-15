@@ -1538,14 +1538,7 @@
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
-                "joinMode": "open",
-                "lifecyclePolicy": {
-                  "topology": {
-                    "replanning": "debounced",
-                    "debounceWindowMs": 500,
-                    "maxReplanWaitMs": 2000
-                  }
-                }
+                "joinMode": "open"
               }
             },
             "response": {
@@ -1637,7 +1630,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-director-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 45000
+            "timeoutMs": 48900
           },
           {
             "kind": "loop",
@@ -4649,10 +4642,10 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "messages.rtc",
-            "timeoutMs": 50000,
+            "timeoutMs": 48900,
             "readiness": {
               "minReadyPeers": 1,
-              "timeoutMs": 45000,
+              "timeoutMs": 43900,
               "intervalMs": 100
             },
             "rallar": {
@@ -4676,7 +4669,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-player-connected",
             "barrierId": "alm-scale-connected",
-            "timeoutMs": 45000
+            "timeoutMs": 48900
           },
           {
             "kind": "loop",

@@ -1,5 +1,3 @@
-import type { GroupLifecyclePolicyInput } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 export const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
@@ -119,8 +117,6 @@ interface EnsureGroupInput {
     readonly groupRequestId?: string;
     readonly memberRequestId?: string;
     readonly timeoutMs: number;
-    /** Absent creates the group under the server's default lifecycle preset. */
-    readonly lifecyclePolicy?: GroupLifecyclePolicyInput;
 }
 
 interface EnsureGroupCommandInput {
@@ -147,8 +143,7 @@ function toEnsureGroupCommand(context: EnsureGroupCommandInput): RallarBlackBoxT
                 groupId: input.group.groupId,
                 displayName: input.group.groupId,
                 kind: 'room',
-                joinMode: 'open',
-                ...(input.lifecyclePolicy === undefined ? {} : { lifecyclePolicy: input.lifecyclePolicy })
+                joinMode: 'open'
             }
         },
         response: {

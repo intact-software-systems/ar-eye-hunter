@@ -231,7 +231,7 @@ const NORMAL_POLICY: CohortPolicy = {
     joinSpacingMs: 0
 };
 
-/** The planner's `auto` replanning slides this debounce on every change, with no cap. */
+/** The scale group's default `auto` replanning slides this debounce on every change, with no cap. */
 const AUTO_REPLAN_DEBOUNCE_MS = 500;
 
 interface ScaleLayoutPlan {
@@ -239,11 +239,6 @@ interface ScaleLayoutPlan {
     readonly groupRevision: number;
     readonly rootSessionId: string | undefined;
     readonly sessionIds: readonly string[];
-}
-
-interface ScaleReplanWindow {
-    readonly debounceWindowMs: number;
-    readonly maxReplanWaitMs: number;
 }
 
 class ScaleActor {
@@ -477,8 +472,6 @@ class ScaleCohort {
     readonly joinedAtMs: number[] = [];
     appointmentRevision: number | undefined;
     private readonly seenArrivals = new Set<string>();
-    private replanWindow: ScaleReplanWindow | undefined;
-    private replanBurstStartedAtMs: number | undefined;
     private replanTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly joinedSessionIds: string[] = [];
     private leaderSessionId: string | undefined;
@@ -550,18 +543,10 @@ class ScaleCohort {
         this.scheduleReplan();
     }
 
-    /** `debounced` replans no later than its cap after a burst's first change; `auto` keeps sliding its debounce. */
+    /** One plan follows the join stream: every presence change pushes the due time out again. */
     private scheduleReplan(): void {
-        const nowMs = Date.now();
-        this.replanBurstStartedAtMs ??= nowMs;
-        const dueAtMs = this.replanWindow === undefined
-            ? nowMs + AUTO_REPLAN_DEBOUNCE_MS
-            : Math.min(nowMs + this.replanWindow.debounceWindowMs, this.replanBurstStartedAtMs + this.replanWindow.maxReplanWaitMs);
         clearTimeout(this.replanTimer);
-        this.replanTimer = setTimeout(() => {
-            this.replanBurstStartedAtMs = undefined;
-            this.planLayout();
-        }, dueAtMs - nowMs);
+        this.replanTimer = setTimeout(() => this.planLayout(), AUTO_REPLAN_DEBOUNCE_MS);
     }
 
     /** Re-rooting a layout with peers at a newly appointed leader is a full rebuild; a lone peer has no edge to move. */
@@ -615,15 +600,12 @@ class ScaleCohort {
         };
     }
 
-    /** A group write advances the group revision, and the group's creation carries its replanning window. */
+    /** A group write advances the group revision; the room read reports the joined sessions. */
     serveHttp(actor: ScaleActor, url: RequestInfo | URL, init: RequestInit | undefined): Response {
         if (init?.method === 'POST' || init?.method === 'PUT') {
             this.groupWriterAgentIds.push(actor.agentId);
             this.memberSessionIds.add(actor.session.sessionId);
             this.groupRevision += 1;
-        }
-        if (init?.method === 'POST') {
-            this.replanWindow = toScaleReplanWindow(decodeJsonValue(JSON.parse(String(init.body))));
         }
         const room = new URL(String(url)).pathname.endsWith(`/groups/${GROUP.groupId}`);
         const body = room ? { activeSessions: this.joinedSessionIds.map((sessionId) => ({ sessionId })) } : {};
@@ -783,17 +765,6 @@ class ScaleCohort {
     }
 }
 
-function toScaleReplanWindow(body: RallarBlackBoxTestJsonValue | undefined): ScaleReplanWindow | undefined {
-    const policy = isJsonRecordValue(body) && isJsonRecordValue(body.lifecyclePolicy) ? body.lifecyclePolicy.topology : undefined;
-    if (!isJsonRecordValue(policy) || policy.replanning !== 'debounced') {
-        return undefined;
-    }
-    if (typeof policy.debounceWindowMs !== 'number' || typeof policy.maxReplanWaitMs !== 'number') {
-        throw new TypeError('A debounced replanning policy names its window and cap');
-    }
-    return { debounceWindowMs: policy.debounceWindowMs, maxReplanWaitMs: policy.maxReplanWaitMs };
-}
-
 function toScaleWirePayload(value: RallarBlackBoxTestJsonValue | undefined): ScaleWirePayload {
     if (!isJsonRecordValue(value) || typeof value.typeId !== 'string' || !('payload' in value)) {
         throw new TypeError('Typed send did not carry a message payload');
@@ -855,15 +826,13 @@ it('admits every player through its own room join while only the director writes
     expect(cohort.memberSessionIds.size).toBe(15);
 });
 
-it('plans the cohort within 2 s of the first player join while the join stream continues', async () => {
+it('plans the cohort once, 0.5 s after the last join of the stream', async () => {
     const cohort = await runCohortSetup({ ...NORMAL_POLICY, joinSpacingMs: 300 });
-    const firstPlayerJoinAtMs = cohort.joinedAtMs[1];
     const lastJoinAtMs = cohort.joinedAtMs.at(-1)!;
-    const plansWithPeers = cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1).map((plan) => plan.plannedAtMs);
+    const plansWithPeers = cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1);
 
-    expect(lastJoinAtMs - firstPlayerJoinAtMs).toBe(3_900);
-    expect(plansWithPeers[0] - firstPlayerJoinAtMs).toBeLessThanOrEqual(2_000);
-    expect(plansWithPeers[0]).toBeLessThan(lastJoinAtMs);
+    expect(lastJoinAtMs - cohort.joinedAtMs[1]).toBe(3_900);
+    expect(plansWithPeers.map((plan) => [plan.plannedAtMs - lastJoinAtMs, plan.sessionIds.length])).toEqual([[500, 15]]);
 });
 
 it.each([

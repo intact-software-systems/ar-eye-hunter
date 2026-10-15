@@ -173,7 +173,8 @@ it.each<AlmScalePhaseCase>([
     { role: 'director', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
     { role: 'player', delayMs: 45_001, readinessDelayMs: 0, outcome: 'connect-timeout' },
     { role: 'player', delayMs: 40_000, readinessDelayMs: 20_000, outcome: 'connected' },
-    { role: 'player', delayMs: 0, readinessDelayMs: 45_001, outcome: 'readiness-timeout' }
+    // A player's readiness waits 650 ms per participant beyond the setup allowance, less the connect's completion margin.
+    { role: 'player', delayMs: 0, readinessDelayMs: 49_751, outcome: 'readiness-timeout' }
 ])('bounds separate $role phases: $delayMs ms socket, $readinessDelayMs ms RTC readiness ($outcome)', async (phaseCase) => {
     const browser = await bootstrapWorkerBrowser(phaseCase.role);
     vi.useFakeTimers();
@@ -213,7 +214,7 @@ it.each<AlmScalePhaseCase>([
     }
     else {
         expect(connected.error).toMatchObject({ code: 'RALLAR_BB_RTC_READY_TIMEOUT' });
-        expect(connected.durationMs).toBe(45_000);
+        expect(connected.durationMs).toBe(49_750);
     }
     expect(facade.records.loginAttempts).toHaveLength(1);
     expect(facade.records.registrationAttempts).toHaveLength(0);

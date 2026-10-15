@@ -1,5 +1,3 @@
-import type { GroupLifecyclePolicyInput } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -17,10 +15,15 @@ const LAYOUT_QUIET_WINDOW_MS = 3_500;
  */
 const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
-/** A join stream gets a plan at least every 2 s instead of one plan after its last join. */
-const SCALE_GROUP_LIFECYCLE_POLICY: GroupLifecyclePolicyInput = {
-    topology: { replanning: 'debounced', debounceWindowMs: 500, maxReplanWaitMs: 2_000 }
-};
+/** The hosted lane serves about 1.5 joining players per second at 50 members, so the cohort's connects wait in line. */
+const PLAYER_CONNECT_TIMEOUT_PER_PARTICIPANT_MS = 650;
+/** The connect's own deadline outlasts its readiness wait, so the wait reports its own outcome. */
+const CONNECT_COMPLETION_MARGIN_MS = 5_000;
+
+interface ConnectDeadline {
+    readonly timeoutMs: number;
+    readonly readiness: RallarBlackBoxTestRtcConnectReadiness | undefined;
+}
 
 export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
@@ -33,12 +36,15 @@ export function createAlmScaleSetupCommands(
         ...(role === 'director'
             ? [
                 ...createDirectorEnsureGroupCommands(input, prefix),
-                createConnectCommand(input, prefix, undefined),
+                createConnectCommand(input, prefix, {
+                    timeoutMs: input.readyTimeoutMs + CONNECT_COMPLETION_MARGIN_MS,
+                    readiness: undefined
+                }),
                 createAppointCommand(input, prefix),
                 created
             ]
-            : [created, createConnectCommand(input, prefix, createPlayerReadiness(input))]),
-        createSetupBarrier(input, prefix, 'connected'),
+            : [created, createPlayerConnectCommand(input, prefix)]),
+        { ...createSetupBarrier(input, prefix, 'connected'), timeoutMs: computePlayerConnectTimeoutMs(input) },
         createAudienceWait(input, prefix),
         createSetupBarrier(input, prefix, 'appointed'),
         createDirectorWait(input, prefix),
@@ -66,8 +72,7 @@ function createDirectorEnsureGroupCommands(
         requestPrefix: prefix,
         group: input.group,
         actor: '{auth.clientId}',
-        timeoutMs: computeGroupRequestTimeoutMs(input),
-        lifecyclePolicy: SCALE_GROUP_LIFECYCLE_POLICY
+        timeoutMs: computeGroupRequestTimeoutMs(input)
     });
 }
 
@@ -116,14 +121,23 @@ function createAppointCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
 }
 
 /** Only a player connects after a peer exists: the director's readiness would wait on players the barrier still holds. */
-function createPlayerReadiness(input: AlmScaleRecipeInput): RallarBlackBoxTestRtcConnectReadiness {
-    return { minReadyPeers: 1, timeoutMs: input.readyTimeoutMs, intervalMs: 100 };
+function createPlayerConnectCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    const timeoutMs = computePlayerConnectTimeoutMs(input);
+    return createConnectCommand(input, prefix, {
+        timeoutMs,
+        readiness: { minReadyPeers: 1, timeoutMs: timeoutMs - CONNECT_COMPLETION_MARGIN_MS, intervalMs: 100 }
+    });
+}
+
+/** The connected barrier waits for every player's connect, so it shares the players' connect allowance. */
+function computePlayerConnectTimeoutMs(input: AlmScaleRecipeInput): number {
+    return input.readyTimeoutMs + PLAYER_CONNECT_TIMEOUT_PER_PARTICIPANT_MS * input.participantCount;
 }
 
 function createConnectCommand(
     input: AlmScaleRecipeInput,
     prefix: string,
-    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
+    deadline: ConnectDeadline
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'rtc.connect',
@@ -135,8 +149,8 @@ function createConnectCommand(
         workspaceId: input.group.workspaceId,
         roomRef: { ...input.group },
         transport: 'messages.rtc',
-        timeoutMs: input.readyTimeoutMs + 5_000,
-        ...(readiness === undefined ? {} : { readiness }),
+        timeoutMs: deadline.timeoutMs,
+        ...(deadline.readiness === undefined ? {} : { readiness: deadline.readiness }),
         rallar: {
             ...RESTORED_SESSION_RALLAR,
             almDiagnostics: input.almDiagnostics,

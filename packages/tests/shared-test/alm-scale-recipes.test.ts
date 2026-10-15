@@ -224,21 +224,36 @@ describe('ALM scale recipes', () => {
         );
     });
 
-    it('creates the scale group with a debounced replanning window, so a join stream gets a plan at least every 2 s', () => {
+    it('creates the scale group under the default replanning, one plan after the join stream, because hosted acceptances of capped-debounce plans queued behind the joins', () => {
         const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
 
         expect(ensureGroup).toMatchObject({
-            request: {
-                method: 'POST',
-                body: {
-                    groupId: 'scale-room',
-                    joinMode: 'open',
-                    lifecyclePolicy: { topology: { replanning: 'debounced', debounceWindowMs: 500, maxReplanWaitMs: 2_000 } }
-                }
-            }
+            request: { method: 'POST', body: { groupId: 'scale-room', displayName: 'scale-room', kind: 'room', joinMode: 'open' } }
         });
+        expect(ensureGroup?.kind === 'http.request' ? ensureGroup.request.body : undefined).not.toHaveProperty('lifecyclePolicy');
     });
+
+    it.each([[15, 54_750], [30, 64_500], [50, 77_500]] as const)(
+        'allows the %i-member cohort\'s player connect and connected barrier %i ms, 650 ms per participant beyond the setup allowance, because the hosted lane serves about 1.5 joining players per second at 50 members',
+        (participantCount, allowanceMs) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const [director, player] = scale.recipes.map((recipe) => flattenCommands(recipe.commands));
+            const byId = (commands: readonly RallarBlackBoxTestCommand[], commandId: string) => commands.find((command) => command.commandId === commandId);
+
+            expect(byId(player, 'alm-scale-player-connect')).toMatchObject({
+                timeoutMs: allowanceMs,
+                readiness: { minReadyPeers: 1, timeoutMs: allowanceMs - 5_000 },
+                rallar: { timeoutMs: 45_000 }
+            });
+            expect(byId(director, 'alm-scale-director-connect')).toMatchObject({ timeoutMs: 50_000, rallar: { timeoutMs: 45_000 } });
+            expect([byId(director, 'alm-scale-director-connected'), byId(player, 'alm-scale-player-connected')]).toEqual([
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs }),
+                expect.objectContaining({ barrierId: 'alm-scale-connected', timeoutMs: allowanceMs })
+            ]);
+            expect(byId(player, 'alm-scale-player-group-created')).toMatchObject({ timeoutMs: 45_000 });
+        }
+    );
 
     it('appoints the director on its own connection before the group-created barrier releases the players, who join the room inside their connect', () => {
         const scale = createAlmScaleRecipes({ participantCount: 30, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
@@ -259,7 +274,7 @@ describe('ALM scale recipes', () => {
             'alm-scale-player-group-created',
             'alm-scale-player-connect'
         ]);
-        expect(player.commands[2]).toMatchObject({ roomId: 'scale-room', readiness: { minReadyPeers: 1, timeoutMs: 45_000 } });
+        expect(player.commands[2]).toMatchObject({ roomId: 'scale-room', readiness: { minReadyPeers: 1 } });
     });
 
     it.each([15, 30, 50] as const)(
