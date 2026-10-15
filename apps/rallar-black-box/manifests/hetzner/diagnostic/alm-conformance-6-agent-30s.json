@@ -1538,7 +1538,14 @@
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
-                "joinMode": "open"
+                "joinMode": "open",
+                "lifecyclePolicy": {
+                  "topology": {
+                    "replanning": "debounced",
+                    "debounceWindowMs": 500,
+                    "maxReplanWaitMs": 2000
+                  }
+                }
               }
             },
             "response": {
@@ -4627,66 +4634,6 @@
             "commandId": "alm-scale-player-group-created",
             "barrierId": "alm-scale-group-created",
             "timeoutMs": 45000
-          },
-          {
-            "kind": "http.request",
-            "commandId": "alm-scale-player-ensure-group",
-            "timeoutMs": 6500,
-            "metadata": {
-              "purpose": "Ensure the backend group exists before RTC room join.",
-              "idempotent": true,
-              "group": {
-                "applicationId": "rallar-server",
-                "workspaceId": "default",
-                "groupId": "hetzner-headless-room"
-              }
-            },
-            "request": {
-              "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-scale-player-ensure-group-{runtimeIdentity}",
-              "body": {
-                "groupId": "hetzner-headless-room",
-                "displayName": "hetzner-headless-room",
-                "kind": "room",
-                "joinMode": "open"
-              }
-            },
-            "response": {
-              "body": "json",
-              "acceptedStatusCodes": [
-                200,
-                201,
-                409
-              ]
-            }
-          },
-          {
-            "kind": "http.request",
-            "commandId": "alm-scale-player-ensure-member",
-            "timeoutMs": 6500,
-            "metadata": {
-              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
-              "idempotent": true,
-              "group": {
-                "applicationId": "rallar-server",
-                "workspaceId": "default",
-                "groupId": "hetzner-headless-room"
-              }
-            },
-            "request": {
-              "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-scale-player-ensure-member-{runtimeIdentity}",
-              "body": {
-                "status": "active"
-              }
-            },
-            "response": {
-              "body": "json",
-              "acceptedStatusCodes": [
-                200,
-                201
-              ]
-            }
           },
           {
             "kind": "rtc.connect",

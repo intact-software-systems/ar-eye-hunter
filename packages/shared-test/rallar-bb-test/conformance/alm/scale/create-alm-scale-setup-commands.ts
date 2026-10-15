@@ -1,3 +1,5 @@
+import type { GroupLifecyclePolicyInput } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -9,28 +11,33 @@ import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
 /** Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan. */
 const LAYOUT_QUIET_WINDOW_MS = 3_500;
-/** The API serves a cohort's group joins one at a time, so their allowance grows with the cohort. */
+/**
+ * The API serves a cohort's group joins one at a time, so the director's group requests get an allowance that grows
+ * with the cohort; a player's join runs inside its connect, under the whole setup allowance.
+ */
 const GROUP_REQUEST_BASE_TIMEOUT_MS = 5_000;
 const GROUP_REQUEST_TIMEOUT_PER_PARTICIPANT_MS = 250;
+/** A join stream gets a plan at least every 2 s instead of one plan after its last join. */
+const SCALE_GROUP_LIFECYCLE_POLICY: GroupLifecyclePolicyInput = {
+    topology: { replanning: 'debounced', debounceWindowMs: 500, maxReplanWaitMs: 2_000 }
+};
 
 export function createAlmScaleSetupCommands(
     input: AlmScaleRecipeInput,
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = `alm-scale-${role}`;
-    const ensure = createRallarBlackBoxEnsureGroupCommands({
-        commandPrefix: prefix,
-        requestPrefix: prefix,
-        group: input.group,
-        actor: '{auth.clientId}',
-        timeoutMs: computeGroupRequestTimeoutMs(input)
-    });
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
         createSignInCommand(input, prefix),
         ...(role === 'director'
-            ? [...ensure, createConnectCommand(input, prefix, undefined), createAppointCommand(input, prefix), created]
-            : [created, ...ensure, createConnectCommand(input, prefix, createPlayerReadiness(input))]),
+            ? [
+                ...createDirectorEnsureGroupCommands(input, prefix),
+                createConnectCommand(input, prefix, undefined),
+                createAppointCommand(input, prefix),
+                created
+            ]
+            : [created, createConnectCommand(input, prefix, createPlayerReadiness(input))]),
         createSetupBarrier(input, prefix, 'connected'),
         createAudienceWait(input, prefix),
         createSetupBarrier(input, prefix, 'appointed'),
@@ -47,6 +54,21 @@ export function createAlmScaleSetupCommands(
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
         createSetupBarrier(input, prefix, 'traffic-ready')
     ];
+}
+
+/** Only the director writes the group: a player's room join admits it to the open group. */
+function createDirectorEnsureGroupCommands(
+    input: AlmScaleRecipeInput,
+    prefix: string
+): readonly RallarBlackBoxTestCommand[] {
+    return createRallarBlackBoxEnsureGroupCommands({
+        commandPrefix: prefix,
+        requestPrefix: prefix,
+        group: input.group,
+        actor: '{auth.clientId}',
+        timeoutMs: computeGroupRequestTimeoutMs(input),
+        lifecyclePolicy: SCALE_GROUP_LIFECYCLE_POLICY
+    });
 }
 
 function computeGroupRequestTimeoutMs(input: AlmScaleRecipeInput): number {

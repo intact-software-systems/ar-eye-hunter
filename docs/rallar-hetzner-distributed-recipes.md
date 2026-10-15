@@ -157,12 +157,17 @@ their diagnostic checkpoints) sign in as their first step, a read of
 `stats/me/realtime` under the 45-second setup allowance, because a cohort's
 registrations serialize on the API and must not consume the group requests'
 allowance (5 seconds plus 250 ms per participant, capped by the setup allowance).
-The director then connects without an RTC readiness wait and appoints itself
-before the `group-created` barrier releases the players, so the first layout with
-peers is already rooted at it and no rebuild follows the appointment; its stable-layout
-wait gates its traffic instead. A `director.status` with `refresh: true` refreshes
-the one room (its cached group read and, for a joined member, the topology
-read-through) instead of listing every client and group of the workspace.
+Only the director writes the group: it creates it with a debounced replanning
+policy (500 ms window, 2-second cap), so a stream of joins gets a plan at least
+every 2 seconds instead of one plan after the last join, joins it, connects
+without an RTC readiness wait, and appoints itself before the `group-created`
+barrier releases the players. The first layout with peers is therefore already
+rooted at the director and no rebuild follows the appointment; its stable-layout
+wait gates its traffic instead. Each player joins the open group inside its
+`rtc.connect` room join, under the whole setup allowance. A `director.status`
+with `refresh: true` refreshes the one room under one deadline (its cached group
+read and the topology read-through) instead of listing every client and group of
+the workspace.
 
 Headless agents on the controller VM register and log in from one IP. The API
 default of 20 registrations and 30 logins per IP per minute refuses cohorts

@@ -113,7 +113,9 @@ async function bootstrapWorkerBrowser(role: 'director' | 'player'): Promise<Rall
 }
 
 // Registrations serialize on the API (≈350 ms each), so the back of a cohort waits seconds for its session.
-it.each(['director', 'player'] as const)('signs a queued %s in under the setup allowance so its group requests keep 5 s', async (role) => {
+// Only the director writes the group; a player joins inside its connect, under the whole setup allowance.
+it('signs a queued director in under the setup allowance so its group requests keep their own allowance', async () => {
+    const role = 'director';
     const browser = await configureWorkerBrowser('if-needed');
     vi.useFakeTimers();
     facade.behavior.registerAndLogin.mockImplementation(async () => {

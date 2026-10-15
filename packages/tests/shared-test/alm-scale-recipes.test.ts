@@ -217,15 +217,30 @@ describe('ALM scale recipes', () => {
             timeoutMs: 45_000
         });
         const groupRequests = flattenCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
-        expect(groupRequests.map((command) => command.commandId)).toEqual([
-            `alm-scale-${role}-ensure-group`,
-            `alm-scale-${role}-ensure-member`,
-            `alm-scale-${role}-audience`
-        ]);
-        expect(groupRequests.map((command) => command.timeoutMs)).toEqual([8_750, 8_750, 5_000]);
+        expect(groupRequests.map((command) => [command.commandId, command.timeoutMs])).toEqual(
+            role === 'director'
+                ? [['alm-scale-director-ensure-group', 8_750], ['alm-scale-director-ensure-member', 8_750], ['alm-scale-director-audience', 5_000]]
+                : [['alm-scale-player-audience', 5_000]]
+        );
     });
 
-    it('appoints the director on its own connection before the group-created barrier releases the players', () => {
+    it('creates the scale group with a debounced replanning window, so a join stream gets a plan at least every 2 s', () => {
+        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
+
+        expect(ensureGroup).toMatchObject({
+            request: {
+                method: 'POST',
+                body: {
+                    groupId: 'scale-room',
+                    joinMode: 'open',
+                    lifecyclePolicy: { topology: { replanning: 'debounced', debounceWindowMs: 500, maxReplanWaitMs: 2_000 } }
+                }
+            }
+        });
+    });
+
+    it('appoints the director on its own connection before the group-created barrier releases the players, who join the room inside their connect', () => {
         const scale = createAlmScaleRecipes({ participantCount: 30, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const [director, player] = scale.recipes;
 
@@ -239,18 +254,16 @@ describe('ALM scale recipes', () => {
         ]);
         expect(director.commands[3]).not.toHaveProperty('readiness');
         expect(flattenCommands(director.commands).filter((command) => command.kind === 'director.appoint')).toHaveLength(1);
-        expect(player.commands.slice(0, 5).map((command) => command.commandId)).toEqual([
+        expect(player.commands.slice(0, 3).map((command) => command.commandId)).toEqual([
             'alm-scale-player-sign-in',
             'alm-scale-player-group-created',
-            'alm-scale-player-ensure-group',
-            'alm-scale-player-ensure-member',
             'alm-scale-player-connect'
         ]);
-        expect(player.commands[4]).toMatchObject({ readiness: { minReadyPeers: 1, timeoutMs: 45_000 } });
+        expect(player.commands[2]).toMatchObject({ roomId: 'scale-room', readiness: { minReadyPeers: 1, timeoutMs: 45_000 } });
     });
 
     it.each([15, 30, 50] as const)(
-        'allows the %i-member cohort more than its serial joins cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
+        'allows the %i-member cohort\'s joins, the director\'s group requests and each player\'s room join inside its connect, more than their serial cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
         (participantCount) => {
             const hostedJoinsPerSecond = 4;
             const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
@@ -259,7 +272,11 @@ describe('ALM scale recipes', () => {
                 .filter((command) => command.kind === 'http.request');
             const timeoutOf = (suffix: string) => requests.filter((command) => command.commandId?.endsWith(suffix)).map((command) => command.timeoutMs);
 
-            for (const allowance of [...timeoutOf('-ensure-group'), ...timeoutOf('-ensure-member')]) {
+            const roomJoins = flattenCommands(scale.recipes[1].commands)
+                .filter((command) => command.kind === 'rtc.connect')
+                .map((command) => command.rallar?.timeoutMs);
+            expect(roomJoins).toHaveLength(1);
+            for (const allowance of [...timeoutOf('-ensure-group'), ...timeoutOf('-ensure-member'), ...roomJoins]) {
                 expect(allowance).toBeGreaterThan(serialJoinCostMs);
                 expect(allowance).toBeGreaterThanOrEqual(5_000);
                 expect(allowance).toBeLessThanOrEqual(45_000);

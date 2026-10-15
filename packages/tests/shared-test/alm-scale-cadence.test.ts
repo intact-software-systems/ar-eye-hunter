@@ -218,18 +218,37 @@ interface CohortPolicy {
     readonly wrongLeader: boolean;
     readonly partialLeader: boolean;
     readonly cancelAtMs: number | undefined;
+    /** Player `index` joins the room `index` times this after the barrier releases it, a serial join stream. */
+    readonly joinSpacingMs: number;
 }
 
-const NORMAL_POLICY: CohortPolicy = { shotAckMs: 2_000, admissionMs: 0, wrongLeader: false, partialLeader: false, cancelAtMs: undefined };
+const NORMAL_POLICY: CohortPolicy = {
+    shotAckMs: 2_000,
+    admissionMs: 0,
+    wrongLeader: false,
+    partialLeader: false,
+    cancelAtMs: undefined,
+    joinSpacingMs: 0
+};
+
+/** The planner's `auto` replanning slides this debounce on every change, with no cap. */
+const AUTO_REPLAN_DEBOUNCE_MS = 500;
 
 interface ScaleLayoutPlan {
+    readonly plannedAtMs: number;
     readonly groupRevision: number;
     readonly rootSessionId: string | undefined;
     readonly sessionIds: readonly string[];
 }
 
+interface ScaleReplanWindow {
+    readonly debounceWindowMs: number;
+    readonly maxReplanWaitMs: number;
+}
+
 class ScaleActor {
     readonly agentId: string;
+    readonly index: number;
     readonly role: 'director' | 'player';
     readonly session: AuthSession;
     readonly registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1_000, cancel: () => undefined });
@@ -246,6 +265,7 @@ class ScaleActor {
     constructor(cohort: ScaleCohort, index: number) {
         this.cohort = cohort;
         this.agentId = `actor-${index}`;
+        this.index = index;
         this.role = index === 0 ? 'director' : 'player';
         this.session = { ...facade.session, sessionId: index === 0 ? 'director-session' : `player-${index}`, username: `Player ${index}` };
         this.recipe = replaceCommandPlaceholders(createAlmScaleRecipes(INPUT).recipes[index === 0 ? 0 : 1], {
@@ -315,7 +335,7 @@ class ScaleActor {
         return createDefaultRallarBlackBoxBrowserTestRuntime({
             now: Date.now,
             readSession: () => this.session,
-            fetch: async (url: RequestInfo | URL, init?: RequestInit) => this.cohort.serveHttp(url, init),
+            fetch: async (url: RequestInfo | URL, init?: RequestInit) => this.cohort.serveHttp(this, url, init),
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => this.joinRoom(),
@@ -375,6 +395,9 @@ class ScaleActor {
     }
 
     private async joinRoom(): Promise<BlackBoxRallarConnectDiagnostics> {
+        if (this.cohort.policy.joinSpacingMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, this.cohort.policy.joinSpacingMs * this.index));
+        }
         const connected = await this.native.connect({
             connection: `alm-scale-${this.role}`,
             roomRef: GROUP,
@@ -449,8 +472,14 @@ class ScaleCohort {
     readonly lifecycle: ScaleWirePayload[] = [];
     readonly releasedAtMs = new Map<string, number>();
     readonly layoutPlans: ScaleLayoutPlan[] = [];
+    readonly groupWriterAgentIds: string[] = [];
+    readonly memberSessionIds = new Set<string>();
+    readonly joinedAtMs: number[] = [];
     appointmentRevision: number | undefined;
     private readonly seenArrivals = new Set<string>();
+    private replanWindow: ScaleReplanWindow | undefined;
+    private replanBurstStartedAtMs: number | undefined;
+    private replanTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly joinedSessionIds: string[] = [];
     private leaderSessionId: string | undefined;
     private acceptedLayoutIdentity: GroupLayoutIdentity | undefined;
@@ -495,7 +524,12 @@ class ScaleCohort {
             version: ++this.layoutVersion,
             state: 'active'
         };
-        this.layoutPlans.push({ groupRevision: this.groupRevision, rootSessionId: this.leaderSessionId, sessionIds: [...this.joinedSessionIds] });
+        this.layoutPlans.push({
+            plannedAtMs: Date.now(),
+            groupRevision: this.groupRevision,
+            rootSessionId: this.leaderSessionId,
+            sessionIds: [...this.joinedSessionIds]
+        });
         this.publishLayout({ kind: 'layoutPlanned', role: 'planned', identity });
         setTimeout(() => {
             this.groupRevision += 1;
@@ -504,10 +538,30 @@ class ScaleCohort {
         }, 500);
     }
 
+    /** The room join admits a non-member of the open group, a group write, then connects its presence. */
     join(actor: ScaleActor): void {
+        if (!this.memberSessionIds.has(actor.session.sessionId)) {
+            this.memberSessionIds.add(actor.session.sessionId);
+            this.groupRevision += 1;
+        }
         this.joinedSessionIds.push(actor.session.sessionId);
+        this.joinedAtMs.push(Date.now());
         this.presenceRevision += 1;
-        this.planLayout();
+        this.scheduleReplan();
+    }
+
+    /** `debounced` replans no later than its cap after a burst's first change; `auto` keeps sliding its debounce. */
+    private scheduleReplan(): void {
+        const nowMs = Date.now();
+        this.replanBurstStartedAtMs ??= nowMs;
+        const dueAtMs = this.replanWindow === undefined
+            ? nowMs + AUTO_REPLAN_DEBOUNCE_MS
+            : Math.min(nowMs + this.replanWindow.debounceWindowMs, this.replanBurstStartedAtMs + this.replanWindow.maxReplanWaitMs);
+        clearTimeout(this.replanTimer);
+        this.replanTimer = setTimeout(() => {
+            this.replanBurstStartedAtMs = undefined;
+            this.planLayout();
+        }, dueAtMs - nowMs);
     }
 
     /** Re-rooting a layout with peers at a newly appointed leader is a full rebuild; a lone peer has no edge to move. */
@@ -561,10 +615,15 @@ class ScaleCohort {
         };
     }
 
-    /** A membership write advances the group revision; the room read reports the joined sessions. */
-    serveHttp(url: RequestInfo | URL, init: RequestInit | undefined): Response {
-        if (init?.method === 'PUT') {
+    /** A group write advances the group revision, and the group's creation carries its replanning window. */
+    serveHttp(actor: ScaleActor, url: RequestInfo | URL, init: RequestInit | undefined): Response {
+        if (init?.method === 'POST' || init?.method === 'PUT') {
+            this.groupWriterAgentIds.push(actor.agentId);
+            this.memberSessionIds.add(actor.session.sessionId);
             this.groupRevision += 1;
+        }
+        if (init?.method === 'POST') {
+            this.replanWindow = toScaleReplanWindow(decodeJsonValue(JSON.parse(String(init.body))));
         }
         const room = new URL(String(url)).pathname.endsWith(`/groups/${GROUP.groupId}`);
         const body = room ? { activeSessions: this.joinedSessionIds.map((sessionId) => ({ sessionId })) } : {};
@@ -724,6 +783,17 @@ class ScaleCohort {
     }
 }
 
+function toScaleReplanWindow(body: RallarBlackBoxTestJsonValue | undefined): ScaleReplanWindow | undefined {
+    const policy = isJsonRecordValue(body) && isJsonRecordValue(body.lifecyclePolicy) ? body.lifecyclePolicy.topology : undefined;
+    if (!isJsonRecordValue(policy) || policy.replanning !== 'debounced') {
+        return undefined;
+    }
+    if (typeof policy.debounceWindowMs !== 'number' || typeof policy.maxReplanWaitMs !== 'number') {
+        throw new TypeError('A debounced replanning policy names its window and cap');
+    }
+    return { debounceWindowMs: policy.debounceWindowMs, maxReplanWaitMs: policy.maxReplanWaitMs };
+}
+
 function toScaleWirePayload(value: RallarBlackBoxTestJsonValue | undefined): ScaleWirePayload {
     if (!isJsonRecordValue(value) || typeof value.typeId !== 'string' || !('payload' in value)) {
         throw new TypeError('Typed send did not carry a message payload');
@@ -760,16 +830,40 @@ it('holds setup-complete until the layout re-planned after readiness stays unrep
     expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(6_000);
 });
 
-it('roots the first layout with peers at the director, so its appointment plans no rebuild', async () => {
-    const cohort = new ScaleCohort(NORMAL_POLICY);
+async function runCohortSetup(policy: CohortPolicy): Promise<ScaleCohort> {
+    const cohort = new ScaleCohort(policy);
     const execution = Promise.all(cohort.actors.map((actor) => actor.runSetup()));
     await vi.runAllTimersAsync();
     const results = await execution;
-
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
-    expect(cohort.layoutPlans.filter((plan) => plan.groupRevision === cohort.appointmentRevision)).toEqual([]);
-    expect(cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1).map((plan) => plan.rootSessionId))
-        .toEqual(Array.from({ length: 14 }, () => 'director-session'));
+    return cohort;
+}
+
+it('appoints the director before any peer joins, so every layout with peers is rooted at it and none is rebuilt', async () => {
+    const cohort = await runCohortSetup(NORMAL_POLICY);
+    const withPeers = cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1);
+
+    expect(withPeers.filter((plan) => plan.groupRevision === cohort.appointmentRevision)).toEqual([]);
+    expect(withPeers.map((plan) => plan.rootSessionId)).toEqual(withPeers.map(() => 'director-session'));
+    expect(withPeers.at(-1)?.sessionIds).toHaveLength(15);
+});
+
+it('admits every player through its own room join while only the director writes the group', async () => {
+    const cohort = await runCohortSetup(NORMAL_POLICY);
+
+    expect(cohort.groupWriterAgentIds).toEqual(['actor-0', 'actor-0']);
+    expect(cohort.memberSessionIds.size).toBe(15);
+});
+
+it('plans the cohort within 2 s of the first player join while the join stream continues', async () => {
+    const cohort = await runCohortSetup({ ...NORMAL_POLICY, joinSpacingMs: 300 });
+    const firstPlayerJoinAtMs = cohort.joinedAtMs[1];
+    const lastJoinAtMs = cohort.joinedAtMs.at(-1)!;
+    const plansWithPeers = cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1).map((plan) => plan.plannedAtMs);
+
+    expect(lastJoinAtMs - firstPlayerJoinAtMs).toBe(3_900);
+    expect(plansWithPeers[0] - firstPlayerJoinAtMs).toBeLessThanOrEqual(2_000);
+    expect(plansWithPeers[0]).toBeLessThan(lastJoinAtMs);
 });
 
 it.each([
