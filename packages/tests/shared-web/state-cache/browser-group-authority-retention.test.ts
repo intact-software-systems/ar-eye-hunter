@@ -3,11 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     initHeartbeat,
-    SESSION_HEARTBEAT_INTERVAL_MS,
+    SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
     stopHeartbeat
 } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
-import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
+import {
+    BROWSER_STATE_CACHE_TTL_MS,
+    initialiseBrowserCacheRepositories
+} from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
 import {
     newALEventRoute,
     newALMulticastMessage
@@ -539,7 +542,8 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
     );
 
     const heartbeatAtEpochMs = Date.now();
-    vi.setSystemTime(heartbeatAtEpochMs - SESSION_HEARTBEAT_INTERVAL_MS);
+    const firstRenewalMs = BROWSER_STATE_CACHE_TTL_MS - SESSION_HEARTBEAT_RENEWAL_MARGIN_MS;
+    vi.setSystemTime(heartbeatAtEpochMs - firstRenewalMs);
     const heartbeat = await initHeartbeat(clientData, {
         authSession,
         scope: {
@@ -548,7 +552,7 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         },
         policies: { command: { maxAttempts: 1 } }
     });
-    await vi.advanceTimersByTimeAsync(SESSION_HEARTBEAT_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(firstRenewalMs);
     expect(
         clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
             clientData.clientId

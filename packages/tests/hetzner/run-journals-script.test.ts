@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -41,6 +41,98 @@ describe('Hetzner run journal export script', () => {
             expect(journal).toContain('color=0\n');
             expect(journal).toContain('follow=0\n');
         }
+    });
+
+    it('exports the API journal again until every WS connect since the run start has its disconnect, then the control journal', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-teardown-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journalPath = path.join(directory, 'journalctl');
+        const callsPath = path.join(directory, 'journalctl-calls.txt');
+        await writeFile(
+            journalPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'printf "%s\\n" "$*" >> "${OWNED_JOURNAL_CALLS}"',
+                'calls="$(wc -l < "${OWNED_JOURNAL_CALLS}" | tr -d " ")"',
+                'if [[ "$*" == *rallar-black-box-control.service* ]]; then echo "control line"; exit 0; fi',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT","requestId":"a"}\'',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT","requestId":"b"}\'',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_DISCONNECT","requestId":"a"}\'',
+                'if [[ "${calls}" -ge 2 ]]; then echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_DISCONNECT","requestId":"b"}\'; fi'
+            ].join('\n')
+        );
+        await chmod(journalPath, 0o755);
+        const outputDirectory = path.join(directory, 'operation');
+
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                exportScriptPath,
+                '--since',
+                '@1700000000',
+                '--output-dir',
+                outputDirectory,
+                '--teardown-poll-seconds',
+                '1',
+                '--teardown-timeout-seconds',
+                '30'
+            ],
+            options: {
+                env: {
+                    PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+                    LANG: 'C',
+                    LC_ALL: 'C',
+                    OWNED_JOURNAL_CALLS: callsPath
+                }
+            }
+        });
+
+        const apiJournal = await readFile(path.join(outputDirectory, 'api-journal.log'), 'utf8');
+        const controlJournal = await readFile(path.join(outputDirectory, 'control-journal.log'), 'utf8');
+        const calls = (await readFile(callsPath, 'utf8')).trim().split('\n');
+        expect(apiJournal.match(/CLIENT_AUTHORISED_WS_DISCONNECT/g)).toHaveLength(2);
+        expect(controlJournal).toBe('control line\n');
+        expect(calls.filter((call) => call.includes('rallar-api-v1.service'))).toHaveLength(2);
+        expect(calls.at(-1)).toContain('rallar-black-box-control.service');
+        expect(outcome.stdout).toContain('WS teardown complete: 2 of 2 connections disconnected after 1 s.');
+    });
+
+    it('stops waiting for the teardown at the timeout and still exports both journals', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-timeout-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journalPath = path.join(directory, 'journalctl');
+        await writeFile(
+            journalPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'if [[ "$*" == *rallar-black-box-control.service* ]]; then echo "control line"; exit 0; fi',
+                'echo \'{"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT","requestId":"a"}\''
+            ].join('\n')
+        );
+        await chmod(journalPath, 0o755);
+        const outputDirectory = path.join(directory, 'operation');
+
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                exportScriptPath,
+                '--since',
+                '@1700000000',
+                '--output-dir',
+                outputDirectory,
+                '--teardown-poll-seconds',
+                '1',
+                '--teardown-timeout-seconds',
+                '1'
+            ],
+            options: { env: { PATH: `${directory}${path.delimiter}${process.env.PATH}`, LANG: 'C', LC_ALL: 'C' } }
+        });
+
+        expect(await readFile(path.join(outputDirectory, 'api-journal.log'), 'utf8')).toContain('CLIENT_AUTHORISED_WS_CONNECT');
+        expect(await readFile(path.join(outputDirectory, 'control-journal.log'), 'utf8')).toBe('control line\n');
+        expect(outcome.stdout).toContain('WS teardown incomplete: 0 of 1 connections disconnected after 1 s; exporting anyway.');
     });
 
     it.for([

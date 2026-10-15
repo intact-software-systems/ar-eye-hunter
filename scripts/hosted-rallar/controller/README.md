@@ -824,7 +824,10 @@ and `control-journal.log`: the redacted raw journals of `rallar-api-v1.service`
 and `rallar-black-box-control.service` since the run phase began on the
 controller, each capped at its last 50 000 lines. The remote run phase records
 its start and exports both through `17-export-run-journals.sh` when it exits,
-whatever the recipe's outcome. The API deploys with `RALLAR_TIMING_LOGS=1` and
+whatever the recipe's outcome. The agents disconnect after the recipe reports
+its terminal state, so the export re-reads the API journal every 5 s until every
+WS connect it logged since the run start has its disconnect, for at most 120 s,
+and reports the balance it exported with. The API deploys with `RALLAR_TIMING_LOGS=1` and
 `RALLAR_APP_INBOX_PHASE_TIMING=true`, so a hosted failure can be attributed on
 the server side; with both on, a 50-agent run writes about 9 000 API journal
 lines.

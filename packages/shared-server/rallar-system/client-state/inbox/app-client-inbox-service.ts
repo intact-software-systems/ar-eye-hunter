@@ -1,5 +1,5 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
@@ -41,6 +41,7 @@ import {
 } from './app-client-inbox-contracts.ts';
 import {
     readAuthenticatedClientMutationIngress,
+    toIssuedClientMutationIngressFailure,
     validateIssuedClientMutationIngress
 } from './authenticated-client-mutation-ingress.ts';
 import {
@@ -142,9 +143,9 @@ export class AppClientInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
-        const ingressIssue = validateIssuedClientMutationIngress(authority, ingress, Date.now())[0];
-        if (ingressIssue !== undefined) {
-            throw ingressIssue.cause;
+        const ingressIssues = validateIssuedClientMutationIngress(authority, ingress, Date.now());
+        if (ingressIssues.length > 0) {
+            return Either.ofLeft(toIssuedClientMutationIngressFailure(ingressIssues));
         }
         const result = await this.commandClient.enqueueAndWaitForResult(
             {

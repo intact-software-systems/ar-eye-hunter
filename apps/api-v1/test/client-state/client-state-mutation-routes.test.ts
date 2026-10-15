@@ -2,6 +2,11 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    readAuthenticatedClientMutationIngress,
+    toIssuedClientMutationIngressFailure,
+    validateIssuedClientMutationIngress
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import type { StateSyncCacheHydrationInput } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -204,6 +209,59 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
         retry: null
     });
     assert.equal(processCount, 1);
+});
+
+Deno.test('a session heartbeat whose issued session expired before enqueue answers its typed 401, not 500', async () => {
+    const session = createAuthSession('alice');
+    const expired = { ...session, expiresAtEpochMs: session.issuedAtEpochMs + 1 };
+    const deps = createClientRouteDeps({
+        session: expired,
+        clientService: {},
+        processClientAppInbox: (enqueue, authority) => {
+            const issues = validateIssuedClientMutationIngress(
+                authority,
+                readAuthenticatedClientMutationIngress(enqueue),
+                Date.now()
+            );
+            return Promise.resolve(Either.ofLeft(toIssuedClientMutationIngressFailure(issues)));
+        }
+    });
+    const response = await createClientRouteApp(deps).request(
+        `/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/browser/sessions/alice-session/heartbeat/requests/${REQUEST_ID}`,
+        {
+            method: 'POST',
+            headers: {
+                authorization: 'Bearer token',
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                generationId: 'generation-heartbeat',
+                lastHeartbeatAtEpochMs: 1,
+                expiresAtEpochMs: 2
+            })
+        }
+    );
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+        type: 'api-mutation-failure',
+        version: 'canonical.v2',
+        code: 'client-mutation-session-expired',
+        status: 401,
+        message: 'Authenticated client mutation session is expired.',
+        issues: [{
+            code: 'client-mutation-session-expired',
+            path: ['authority', 'expiresAtEpochMs'],
+            message: 'Authenticated client mutation session is expired.',
+            details: null
+        }],
+        denial: {
+            code: 'client-mutation-session-expired',
+            message: 'Authenticated client mutation session is expired.',
+            details: null
+        },
+        retry: null
+    });
 });
 
 Deno.test('client mutation routes hydrate the receiving node cache from remotely processed results', async () => {

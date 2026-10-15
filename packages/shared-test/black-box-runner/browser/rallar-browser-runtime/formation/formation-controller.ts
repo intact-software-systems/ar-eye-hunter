@@ -21,10 +21,12 @@ import type {
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarFormationSummary
 } from '../black-box-rallar-operation-contracts.ts';
+import { FormationLayoutTiming } from './formation-layout-timing.ts';
 
 export const BLACK_BOX_RALLAR_FORMATION_TOPICS = {
     changed: 'rallar.browser.formation.changed',
     layout: 'rallar.browser.formation.layout',
+    layoutTiming: 'rallar.browser.formation.layout-timing',
     roomStatus: 'rallar.browser.formation.room-status',
     ready: 'rallar.browser.formation.ready'
 } as const;
@@ -136,6 +138,9 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
 
     installDiagnostics = (roomRef: GroupRef): RallarUnsubscribe => {
         const handle = this.#dependencies.formation(roomRef);
+        const layoutTiming = new FormationLayoutTiming((timing) =>
+            this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.layoutTiming, roomRef, timing)
+        );
         const subscriptions = [
             handle.onChange((status) =>
                 this.#emit(
@@ -144,14 +149,15 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
                     toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc)
                 )
             ),
-            handle.onLayout((event) =>
+            handle.onLayout((event) => {
                 this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.layout, roomRef, {
                     kind: event.kind,
                     ...(event.kind === 'layoutRemoved'
                         ? { role: event.role, identity: event.previous.identity }
                         : { role: event.layout.role, identity: event.layout.identity })
-                })
-            ),
+                });
+                layoutTiming.observe(event, this.#dependencies.now());
+            }),
             this.#dependencies.rtc.onStatus(() => this.#emitRoomStatus(roomRef))
         ];
         return () => {

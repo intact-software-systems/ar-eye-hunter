@@ -63,6 +63,37 @@ it('refreshes connected room state with the caller deadline and signal', async (
     }]);
 });
 
+it('reads no room state at connect when the store already holds the room snapshot, and refreshes when it does not', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            applicationId: 'app-a',
+            workspaceId: 'workspace-a',
+            timeoutMs: 1_234
+        }
+    });
+    facade.behavior.hasRoomSnapshot.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    await runtime.refreshRoom({ refresh: 'when-absent', timeoutMs: 321 });
+    expect(facade.records.roomStateRefreshes).toHaveLength(0);
+
+    await runtime.refreshRoom({ refresh: 'when-absent', timeoutMs: 321 });
+    expect(facade.records.roomStateRefreshes).toEqual([[{
+        applicationId: 'app-a',
+        workspaceId: 'workspace-a',
+        groupId: 'room-1'
+    }, {
+        scope: { applicationId: 'app-a', workspaceId: 'workspace-a' },
+        timeoutMs: 321
+    }]]);
+});
+
 it('rejects room refresh when the connected config has no exact room reference', async () => {
     const runtime = await loadRuntime();
 
