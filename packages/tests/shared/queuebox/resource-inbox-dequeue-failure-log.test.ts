@@ -1,15 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import {
-    createDefaultResourceInboxDequeuer,
-    ResourceInboxHandlerEntryError
-} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import * as Resource from '@shared/queuebox/ResourceEntry.ts';
-import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import {
     afterEach,
@@ -24,31 +20,6 @@ type ReleasedFailures = Map<Resource.Key, DequeueController.Failure<Resource.Key
 describe('ResourceInbox dequeue failure log', () => {
     afterEach(() => {
         vi.restoreAllMocks();
-    });
-
-    it('releases a committed command rejection as a terminal failure without logging it', async () => {
-        const queue = new InMemoryQueueBox();
-        const enqueued = toResourceEntry('command-rejection', { value: 1 });
-        await queue.enqueue(enqueued);
-        const rejection = new ResourceInboxCommandRejectedError('group-already-exists', new Error('Group already exists'));
-        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-        const failures = await dequeueOnce(queue, 'command-rejection', async (attempt) => {
-            const released = await queue.releaseEntries([
-                { entry: attempt.entry, disposition: { status: EntityStatus.FAILED, delayMs: null } }
-            ]);
-            throw new ResourceInboxHandlerEntryError([...released.values()][0]!, rejection);
-        });
-
-        expect(errorLog).not.toHaveBeenCalled();
-        expect([...failures.values()]).toEqual([
-            expect.objectContaining({
-                key: enqueued.key,
-                exception: rejection,
-                value: expect.objectContaining({ entry: expect.objectContaining({ status: EntityStatus.FAILED }) })
-            })
-        ]);
-        expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.FAILED);
     });
 
     it('logs an unexpected handler failure once with the key identity', async () => {

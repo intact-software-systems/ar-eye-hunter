@@ -126,12 +126,6 @@ export class WebRtcRxStreamerService {
     };
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
-    private readonly rejectedAdmissionCounts: Record<ALMessageRejection['code'], number> = {
-        malformed: 0,
-        oversized: 0,
-        unauthorized: 0,
-        unsupported: 0
-    };
     private readonly peersByPeerId = new Map<PeerId, WebRtcConnectionService.Peer>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private disposed = false;
@@ -213,7 +207,7 @@ export class WebRtcRxStreamerService {
         }
         const decoded = decodeALMessageValue(value);
         if (decoded.left) {
-            this.rejectedAdmissionCounts[decoded.left.code] += 1;
+            this.recordUndecodedRejection(peer.peerId, decoded.left);
             return;
         }
         const message = decoded.right!;
@@ -246,10 +240,19 @@ export class WebRtcRxStreamerService {
             throw caught;
         }
         admission.observation?.admissionResult({ pass: admission.pass, admitted });
-        if (admitted.left) {
-            this.rejectedAdmissionCounts[admitted.left.code] += 1;
-        }
         return admitted;
+    }
+
+    private recordUndecodedRejection(peerId: PeerId, rejection: ALMessageRejection): void {
+        try {
+            this.dependencies.inboundDiagnostics?.({
+                kind: 'undecoded-rejection',
+                carrier: 'rtc',
+                fromPeerId: peerId,
+                rejection: rejection.code
+            });
+        }
+        catch { /* Optional diagnostics cannot change mandatory work. */ }
     }
 
     private registerPeerMedia(peer: WebRtcConnectionService.Peer): void {
@@ -339,10 +342,6 @@ export class WebRtcRxStreamerService {
         if (failure) {
             throw failure;
         }
-    }
-
-    getRejectedAdmissionCounts(): Readonly<Record<ALMessageRejection['code'], number>> {
-        return { ...this.rejectedAdmissionCounts };
     }
 
     setRttReportingPeerIds(peerIds: readonly PeerId[]): void {

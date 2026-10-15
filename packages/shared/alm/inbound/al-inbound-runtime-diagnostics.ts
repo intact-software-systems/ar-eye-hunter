@@ -106,6 +106,13 @@ export type ALInboundRuntimeDiagnosticsEvent =
         reason: string;
     }>
     | Readonly<{
+        /** A value that never decoded as an AL envelope, so it has no message identity, only its source. */
+        kind: 'undecoded-rejection';
+        carrier: ALDeliveryCarrier;
+        fromPeerId: string;
+        rejection: ALMessageRejection['code'];
+    }>
+    | Readonly<{
         kind: 'effect-drain';
         /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
         lane: ALStoreDurability;

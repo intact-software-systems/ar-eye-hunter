@@ -48,7 +48,6 @@ export class DequeueController<K, V, T> {
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
     private typesToDequeue: () => Set<string> = () => new Set<string>();
     private checkIsTypesToDequeue: (types: Set<string>) => boolean = () => true;
-    private isExpectedFailure: (exception: Error) => boolean = () => false;
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
@@ -96,11 +95,6 @@ export class DequeueController<K, V, T> {
 
     withInboxTypesToDequeue(typesToDequeue: () => Set<string>): this {
         this.typesToDequeue = requireNonNull(typesToDequeue);
-        return this;
-    }
-
-    withExpectedFailure(isExpectedFailure: (exception: Error) => boolean): this {
-        this.isExpectedFailure = requireNonNull(isExpectedFailure);
         return this;
     }
 
@@ -238,7 +232,6 @@ export class DequeueController<K, V, T> {
             entries: reserved,
             computer: this.finalizationComputer,
             log: this.log,
-            isExpectedFailure: this.isExpectedFailure,
             purpose: 'finalization-recovery'
         });
         return this.returnDequeuedEntries ? finalized : new Map();
@@ -279,13 +272,7 @@ export class DequeueController<K, V, T> {
         retained: Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>
     ): Promise<number> {
         const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
-        const computed = await computeDequeueBatch({
-            entries,
-            computer,
-            log: this.log,
-            isExpectedFailure: this.isExpectedFailure,
-            purpose: 'processing'
-        });
+        const computed = await computeDequeueBatch({ entries, computer, log: this.log, purpose: 'processing' });
         await releaseDequeueBatch(computed, {
             successReleaser: requireNonNull(this.successReleaser),
             failureReleaser: requireNonNull(this.failureReleaser),
