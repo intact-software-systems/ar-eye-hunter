@@ -736,6 +736,7 @@ function createMessageContext(
     roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>
 ): RallarServerWsMessageContext {
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         name: 'authority-test',
         socket: new JsonWebSocketServer(),

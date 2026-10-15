@@ -136,6 +136,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
     const inboxQueueReader = new InboxQueueReader(mutation.queueBox, mutation.appInboxDequeueOptions);
     const outboxQueueReader = new OutboxQueueReader(mutation.queueBox);
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         inboundStores: createDefaultPSqlALInboundRuntimeStores({ repository: mutation.runtimeStateRepository }),
         outboundStores: createDefaultPSqlALOutboundRuntimeStores({
             repository: mutation.runtimeStateRepository,

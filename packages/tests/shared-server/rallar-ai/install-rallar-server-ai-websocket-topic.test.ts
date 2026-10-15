@@ -124,6 +124,7 @@ describe('Rallar server AI WebSocket topic', () => {
             sockets.set(sessionId, native);
         }
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket,
             name: 'rallar-ai-server',

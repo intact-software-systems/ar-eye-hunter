@@ -18,6 +18,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -92,6 +93,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         );
         const durableRows = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -171,6 +173,7 @@ describe('real websocket close lifecycle retry ownership', () => {
         const newSocket = new CloseSocket();
         const closed: string[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,

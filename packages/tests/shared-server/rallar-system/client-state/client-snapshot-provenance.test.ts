@@ -687,6 +687,7 @@ function createForeignReceiver(repository: FakeRuntimeStateRepository, sessionId
     const engine = new InboxOutboxEngine();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'foreign-server',
         socket,
         outbox: stores.workQueue,

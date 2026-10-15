@@ -91,7 +91,7 @@ describe('the WS server relay lane', () => {
                     publisherId: 'server-a'
                 }
             })
-        ).toThrow(TypeError);
+        ).toThrow(/relaying acknowledgements to other instances/);
     });
 });
 

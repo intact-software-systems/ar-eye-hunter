@@ -181,6 +181,7 @@ describe('Rallar server WS fanout carriers', () => {
             }
         });
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
@@ -315,6 +316,7 @@ function createCarrierService(
     outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>
 ): WsQueueBoxServerService {
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: outboundStores.workQueue,
         outboundStores,
         socket: socketServer,

@@ -60,6 +60,7 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
         server.addConnection(new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -107,6 +108,7 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
 
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -156,6 +158,7 @@ describe('RTC topology websocket publication', () => {
         }
 
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -259,6 +262,7 @@ describe('RTC topology websocket publication', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -309,6 +313,7 @@ describe('RTC topology websocket publication', () => {
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createOutboundRuntimeWithWorkTask(() =>
             createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 readAuthenticatedConnectionScope: () => undefined,
                 outbox: wsOutbox,
                 socket: server,

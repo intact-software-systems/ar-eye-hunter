@@ -127,8 +127,8 @@ export namespace WsQueueBoxServerService {
         readonly targetResolver?: WsServerTargetResolver;
         readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
         readonly inboundStores?: ALInboundRuntimeStores;
-        /** The memory pair a volatile message is admitted and delivered from; absent, every message takes `inboundStores`. */
-        readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
+        /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
+        readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;

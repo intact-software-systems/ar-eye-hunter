@@ -549,6 +549,7 @@ function createRouter(options?: ConstructorParameters<typeof RallarServerWsRoute
     socket.addConnection(new ConnectionContext({ id: 'conn-1', socket: native }));
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: outbox,
         socket: socket,
         name: 'server-1',

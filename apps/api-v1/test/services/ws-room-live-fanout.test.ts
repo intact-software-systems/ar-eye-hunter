@@ -317,6 +317,7 @@ Deno.test('a live-only receiver room multicast answers its origin with the admit
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime(Date.now());
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'custom-policy-test',
         outbox: new InMemoryQueueBox(),
         socket: runtime.socket,

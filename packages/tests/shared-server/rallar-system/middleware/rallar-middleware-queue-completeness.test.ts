@@ -216,6 +216,7 @@ function createQueueTaskInput(
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         readAuthenticatedConnectionScope: () => undefined,
         outbox: queue,
         socket: new JsonWebSocketServer(),

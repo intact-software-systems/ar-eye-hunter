@@ -42,6 +42,7 @@ describe('public WS unicast scope', () => {
     ])('refuses unscoped generic unicast through $entry with lease $expiresAtEpochMs', ({ entry, expiresAtEpochMs }) => {
         const { socket, native, live } = createLiveDelivery(expiresAtEpochMs);
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             name: 'server',
             socket,
             outbox: new InMemoryQueueBox(),
@@ -87,6 +88,7 @@ describe('public WS unicast scope', () => {
     it('refuses an admitted world row that captured no scope, as it refuses an unscoped unicast row', async () => {
         const { socket, native } = createLiveDelivery(Number.MAX_SAFE_INTEGER);
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             name: 'server',
             socket,
             outbox: new InMemoryQueueBox(),
@@ -135,6 +137,7 @@ describe('public WS unicast scope', () => {
 
     it('fails closed unproven auth logout until the direct producer carries explicit provenance', async () => {
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),
@@ -240,6 +243,7 @@ describe('public WS unicast scope', () => {
             socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
             const settled: string[] = [];
             const service = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 name: 'server',
                 socket,
                 outbox: new InMemoryQueueBox(),
@@ -281,6 +285,7 @@ describe('public WS unicast scope', () => {
         socket.addConnection(connection);
         let proof = { scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 };
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             name: 'server',
             socket,
             outbox: new InMemoryQueueBox(),

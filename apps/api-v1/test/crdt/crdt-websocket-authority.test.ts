@@ -240,6 +240,7 @@ async function createCrdtWebSocketAuthorityFixture(
     const socketServer = new JsonWebSocketServer();
     const sockets = new Map<string, PGliteTestSocket>();
     const wsService = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: queue,
         socket: socketServer,
         readAuthenticatedConnectionScope: (connection) =>

@@ -962,6 +962,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number, receiptObserver?: 
     const outbox = new InMemoryQueueBox();
     const connectionScopes = new Map<string, StateScope>();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>

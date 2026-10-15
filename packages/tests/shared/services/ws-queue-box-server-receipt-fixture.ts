@@ -85,6 +85,7 @@ export async function createClusterInstance(input: CreateClusterInstanceInput): 
             connectionId: connection.id
         }));
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: input.outboundStores.workQueue,
         outboundStores: input.outboundStores,
         socket: server,

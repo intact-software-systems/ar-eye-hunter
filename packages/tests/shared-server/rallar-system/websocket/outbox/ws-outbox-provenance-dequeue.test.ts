@@ -259,6 +259,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const settled: string[] = [];
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         name: 'server',
         socket,
         outbox: stores.workQueue,

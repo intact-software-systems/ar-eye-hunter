@@ -41,6 +41,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         });
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             name: 'server-1',
             socket,
             outbox: new shared.InMemoryQueueBox(),
@@ -85,6 +86,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -129,6 +131,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outboundStores = createObservedOutboundStores(outbox);
         let providerEvaluationCount = 0;
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
@@ -187,6 +190,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
@@ -231,6 +235,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 failingConnectionIds: ['conn-2']
             });
             const service = shared.createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 readAuthenticatedConnectionScope: () => undefined,
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket,
@@ -280,6 +285,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
@@ -320,6 +326,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
@@ -362,6 +369,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
@@ -431,6 +439,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
@@ -465,6 +474,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const engine = new shared.InboxOutboxEngine();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
@@ -512,6 +522,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             socket: socket,
             name: 'server-1',
@@ -567,6 +578,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('forwards inbound client unicast messages to the targeted peer', async () => {
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
@@ -610,6 +622,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('forwards inbound room broadcasts to resolved group recipients', async () => {
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
@@ -651,6 +664,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('does not forward room application data when the production relay disowns room fanout', async () => {
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
@@ -680,6 +694,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('suppresses duplicate inbound delivery on the server wrapper', async () => {
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
@@ -720,6 +735,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
         const socket = createRecordingWsServer();
         const service = shared.createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',

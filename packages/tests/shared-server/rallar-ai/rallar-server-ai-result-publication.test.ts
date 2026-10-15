@@ -154,6 +154,7 @@ function createScopedRouterFixture(): ScopedRouterFixture {
         sockets.set(sessionId, native);
     }
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'ai-server',

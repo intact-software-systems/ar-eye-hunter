@@ -87,6 +87,7 @@ async function createHarness(options: InstallRtcRttSystemTopicOptions): Promise<
     await socket.open();
     server.addConnection(new ConnectionContext({ id: 'session-a', socket }));
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>

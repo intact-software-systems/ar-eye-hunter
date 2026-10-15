@@ -560,6 +560,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
     });
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>
@@ -622,6 +623,7 @@ async function createRemoteOriginInstance(
     const engine = new InboxOutboxEngine();
     engine.start();
     const remote = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>

@@ -172,8 +172,11 @@ The WebSocket inbox carries two admission lanes, chosen by the envelope's
 durability (`resolve-al-inbound-store-durability.ts`). A `local-inbox` message is
 admitted to the shared PostgreSQL inbound store. Every other message, including
 each best-effort RTC offer, answer and ICE candidate, is admitted and delivered in
-memory and issues no SQL statement. The memory pair exists on an instance that
-relays no acknowledgements to other instances. On a PostgreSQL pub/sub cluster
+memory and issues no SQL statement. Its memory holds about the arrival rate times
+each message's retention (its deadline plus the receipt grace and dedup window), plus
+up to one 60 s sweep interval (`AL_VOLATILE_STORE_EVICTION_INTERVAL_MS`), and each
+sweep scans every key. The memory pair exists on an instance that relays no
+acknowledgements to other instances. On a PostgreSQL pub/sub cluster
 every message keeps the shared store, because another instance proves a relayed
 acknowledgement and reads an oversized live notice's message from that store.
 `create-rallar-middleware-infrastructure.ts` refuses the memory pair beside a

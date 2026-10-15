@@ -77,6 +77,7 @@ describe('durable WS outbox owner misses', () => {
         const nonOwnerSocket = createSocket();
         const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
@@ -89,6 +90,7 @@ describe('durable WS outbox owner misses', () => {
         onTestFinished(() => nonOwner.dispose());
         const ownerEngine = new InboxOutboxEngine();
         const owner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             outboundStores,
             socket: ownerSocket.socket,
@@ -131,6 +133,7 @@ describe('durable WS outbox owner misses', () => {
         const socket = createSocket();
         const engine = new InboxOutboxEngine();
         const service = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             outboundStores: createSharedOutboundStores(outbox),
             socket: socket.socket,
@@ -193,6 +196,7 @@ describe('durable WS outbox owner misses', () => {
         engine.start();
         onTestFinished(() => engine.stop());
         const owner = createDefaultWsQueueBoxServerService({
+            inboundVolatileStores: undefined,
             outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -571,6 +575,7 @@ function expectNativeUnicast(socket: WsOutboxTestSocket, msgId: string, resource
 function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixture {
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        inboundVolatileStores: undefined,
         outbox: input.outbox,
         outboundStores: input.outboundStores,
         socket: input.socket.socket,

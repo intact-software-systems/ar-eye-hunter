@@ -96,6 +96,7 @@ describe('RTC topology producer provenance', () => {
             }
             const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
             const service = createDefaultWsQueueBoxServerService({
+                inboundVolatileStores: undefined,
                 name: 'foreign-server',
                 socket,
                 outbox: stores.workQueue,
