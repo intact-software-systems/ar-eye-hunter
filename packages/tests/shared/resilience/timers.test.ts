@@ -16,7 +16,9 @@ describe('default timers', () => {
         const ran: number[] = [];
 
         expect(timers.nowMs()).toBe(10_000);
-        timers.schedule(() => ran.push(timers.nowMs()), 250);
+        timers.schedule(() => {
+            ran.push(timers.nowMs());
+        }, 250);
         await vi.advanceTimersByTimeAsync(249);
         expect(ran).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
@@ -59,10 +61,18 @@ describe('manual timers', () => {
     it('runs due timers earliest first, then in scheduling order, with the clock at each due time', async () => {
         const timers = createManualTimers(1_000);
         const ran: string[] = [];
-        timers.schedule(() => ran.push(`b@${timers.nowMs()}`), 200);
-        timers.schedule(() => ran.push(`a@${timers.nowMs()}`), 100);
-        timers.schedule(() => ran.push(`c@${timers.nowMs()}`), 200);
-        timers.schedule(() => ran.push(`d@${timers.nowMs()}`), 500);
+        timers.schedule(() => {
+            ran.push(`b@${timers.nowMs()}`);
+        }, 200);
+        timers.schedule(() => {
+            ran.push(`a@${timers.nowMs()}`);
+        }, 100);
+        timers.schedule(() => {
+            ran.push(`c@${timers.nowMs()}`);
+        }, 200);
+        timers.schedule(() => {
+            ran.push(`d@${timers.nowMs()}`);
+        }, 500);
 
         await timers.advanceTo(1_250);
 
@@ -80,7 +90,9 @@ describe('manual timers', () => {
         timers.schedule(async () => {
             await Promise.resolve();
             ran.push('first');
-            timers.schedule(() => ran.push('chained'), 10);
+            timers.schedule(() => {
+                ran.push('chained');
+            }, 10);
         }, 10);
 
         await timers.advanceTo(20);

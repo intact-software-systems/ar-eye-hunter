@@ -59,7 +59,11 @@ export async function routeRunReadRequest(
 
     const [runId] = toPathParameters(url.pathname, RUN_PATH) ?? [];
     if (runId !== undefined) {
-        return await readRunRoute(runId, toRunSnapshotBounds(url), dependencies, (run) => responses.json(run, 200));
+        return await readRunRoute(
+            { runId: runId, bounds: toRunSnapshotBounds(url) },
+            dependencies,
+            (run) => responses.json(run, 200)
+        );
     }
 
     const [fileRunId, fileName] = toPathParameters(url.pathname, RUN_ARTIFACT_FILE_PATH) ?? [];
@@ -77,8 +81,7 @@ async function routeRunArtifactReadRequest(
     const [bundleRunId] = toPathParameters(url.pathname, RUN_ARTIFACTS_PATH) ?? [];
     if (bundleRunId !== undefined) {
         return await readRunRoute(
-            bundleRunId,
-            ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS,
+            { runId: bundleRunId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
             dependencies,
             (run) => responses.artifactBundle(createControlRunArtifactBundle(run), 200)
         );
@@ -97,8 +100,7 @@ async function routeRunArtifactReadRequest(
     const [failureRunId] = toPathParameters(url.pathname, RUN_FAILURE_BUNDLE_PATH) ?? [];
     if (failureRunId !== undefined) {
         return await readRunRoute(
-            failureRunId,
-            ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS,
+            { runId: failureRunId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
             dependencies,
             (run) => responses.json(controlRunFailureBundle(run), 200)
         );
@@ -118,12 +120,16 @@ async function readRunArtifactFileRoute(
         const kind = artifactFileName === 'events.jsonl' ? 'events' : 'results';
         return await readRunJsonlRoute({ runId, kind }, dependencies);
     }
-    return await readRunRoute(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS, dependencies, (run) =>
-        dependencies.responses.text(
-            createControlRunArtifactFile(run, artifactFileName, Date.now()),
-            200,
-            controlRunArtifactContentType(artifactFileName)
-        ));
+    return await readRunRoute(
+        { runId: runId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+        dependencies,
+        (run) =>
+            dependencies.responses.text(
+                createControlRunArtifactFile(run, artifactFileName, Date.now()),
+                200,
+                controlRunArtifactContentType(artifactFileName)
+            )
+    );
 }
 
 async function readRunJsonlRoute(
@@ -131,13 +137,20 @@ async function readRunJsonlRoute(
     dependencies: RunReadRouteDependencies
 ): Promise<Response> {
     const { artifactRecorder, responses } = dependencies;
-    return await readRunRoute(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS, dependencies, (run) =>
-        artifactRecorder.response({ runId, kind, fallbackRun: run, corsOrigins: responses.corsOrigins }));
+    return await readRunRoute(
+        { runId: runId, bounds: ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS },
+        dependencies,
+        (run) => artifactRecorder.response({ runId, kind, fallbackRun: run, corsOrigins: responses.corsOrigins })
+    );
+}
+
+interface RunReadTarget {
+    readonly runId: string;
+    readonly bounds: ControlRunSnapshotBounds;
 }
 
 async function readRunRoute(
-    runId: string,
-    bounds: ControlRunSnapshotBounds,
+    { runId, bounds }: RunReadTarget,
     { completedRuns, responses }: RunReadRouteDependencies,
     respond: (run: ControlRunSnapshot) => Response | Promise<Response>
 ): Promise<Response> {

@@ -91,15 +91,17 @@ describe('InboxQueueReader work advertisement', () => {
 
     it('finalizes every stale exhausted reservation within as many passes as there are reservations, then idles', async () => {
         const finalized: string[] = [];
+        const queueHolder: { queue?: ObservedReader['queue']; } = {};
         const observed = createObservedReader({
             onRetryExhaustionRecovery: async (recovery) => {
                 finalized.push(recovery.entry.key.resourceId);
-                const [failed] = (await observed.queue.releaseEntries([
+                const [failed] = (await queueHolder.queue!.releaseEntries([
                     { entry: recovery.entry, disposition: { status: EntityStatus.FAILED, delayMs: null } }
                 ])).values();
                 return failed;
             }
         });
+        queueHolder.queue = observed.queue;
         const resilience = createQueueResilience(1);
         await seedReservations(observed, 5);
         observed.advanceNow(ResourceInboxResilience.FINALIZATION_STALE_AFTER_MS + 1);

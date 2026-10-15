@@ -484,7 +484,7 @@ Deno.test('the run and distributed-run read routes serve a completed run from it
         const failureBundle = await routeRunReadRequest(toUrl('/runs/done-1/failure-bundle'), runDependencies);
         const listing = await routeRunReadRequest(toUrl('/runs'), runDependencies);
         const { value: missing } = await withSilencedConsole(() => routeRunReadRequest(toUrl('/runs/done-2'), runDependencies));
-        const unknown = await routeRunReadRequest(toUrl('/runs/nope'), runDependencies);
+        const absent = await routeRunReadRequest(toUrl('/runs/nope'), runDependencies);
         const distributedBundle = routeDistributedRunReadRequest(toUrl('/distributed-runs/dist-done-1/artifacts'), distributedDependencies);
 
         const served = JSON.parse(await run!.text()) as ControlRunSnapshot;
@@ -505,7 +505,7 @@ Deno.test('the run and distributed-run read routes serve a completed run from it
         ]);
         assertEquals(missing?.status, 410);
         assert((await missing!.text()).includes('done-2'));
-        assertEquals(unknown?.status, 404);
+        assertEquals(absent?.status, 404);
         const distributed = JSON.parse(await (await distributedBundle)!.text()) as { files: Record<string, string>; };
         assertEquals((JSON.parse(distributed.files['control-run.json']) as ControlRunSnapshot).events.length, EVENTS_PER_RUN);
         assertEquals(JSON.parse(distributed.files['report.json']).summary.total, 4);

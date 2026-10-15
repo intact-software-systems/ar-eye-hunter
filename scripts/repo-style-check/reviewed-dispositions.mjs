@@ -2147,6 +2147,13 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'jsonResponse',
         maximumMagnitude: 1
     }),
+    // The swagger module's JSON record alias names the raw schema document shape the two owners above walk.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/routes/swagger-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
     // Recipe failure details and outputs are recipe-authored JSON the control server carries verbatim into the
     // artifact bundle; the consumer decodes them against the recipe's own contract. Three contract fields, no
     // owner function; a fourth use needs its own review.

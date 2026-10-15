@@ -51,6 +51,8 @@ import type {
 import { snapshotExecutableCommand } from '@shared-test/rallar-bb-test/recipe/snapshot-executable-recipe.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { markControlAgentHeartbeat, markControlAgentRegistered } from './control-agent-presence.ts';
+import { toDuplicateAgentSocketDiagnostic } from './control-agent-sockets.ts';
 import {
     computeControlCommandQueueWrite,
     computeDispatchableControlCommands,
@@ -66,8 +68,6 @@ import {
     toSettledAssessmentCommandIds,
     toStoredControlResultEnvelope
 } from './control-evidence-compaction.ts';
-import { markControlAgentHeartbeat, markControlAgentRegistered } from './control-agent-presence.ts';
-import { toDuplicateAgentSocketDiagnostic } from './control-agent-sockets.ts';
 import {
     completeControlRun,
     listCompletedControlRunIds,
@@ -171,10 +171,12 @@ import {
     hasControlReloadCleanup,
     isAdmissibleControlReloadCleanupResult,
     toControlReloadCleanup,
-    toControlReloadCleanupSuccessor,
+    toControlReloadCleanupSuccessor
+} from './recipe-reload/control-reload-cleanup.ts';
+import {
     toReloadCleanupFailureResult,
     toReloadCompletionResult
-} from './recipe-reload/control-reload-cleanup.ts';
+} from './recipe-reload/control-reload-completion-result.ts';
 
 export interface RallarBlackBoxControlServiceDependencies {
     readonly now: () => number;
@@ -348,7 +350,12 @@ export class RallarBlackBoxControlService {
     }
 
     validateRunToken(runId: string, agentId: string, token: string | undefined): boolean {
-        return isValidControlRunToken({ run: this.runs.get(runId), agentId, token, nowEpochMs: this.dependencies.now() });
+        return isValidControlRunToken({
+            run: this.runs.get(runId),
+            agentId,
+            token,
+            nowEpochMs: this.dependencies.now()
+        });
     }
 
     createDistributedRun(
