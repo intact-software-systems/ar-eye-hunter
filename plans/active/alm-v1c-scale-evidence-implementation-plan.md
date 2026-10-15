@@ -290,7 +290,10 @@ three PBKDF2 derivations per agent and per-measurement RTT submissions. Decision
 `rtc.connect` and sign-in medians; D239 records that the four-arm lane-policy benefit gate needs an
 arm selector, backend-operation counters and a retry-inducing workload before it can be evaluated,
 and stays an open item of this plan; D240–D241 record the join contract and a typed second lane as
-not taken.
+not taken. The first local rerun showed the handlers halved but the lane per-item fixed
+statements dominating the setup window, so D242 (executor statement counters in the phase timing) and
+D243 (one lane presence probe per pass, reservations only for non-empty lanes, a one-statement NEW claim)
+follow in the same step, each RED first and judged by statements per lane item and the inter-item gap.
 
 ## Completion and handoff
 
