@@ -9688,6 +9688,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The clock absence assertion observes Temporal.Now.instant while the real release computation decides a row at three captured times; a clock read the idempotent-release check converted into a refusal would still produce the expected lost reservations, so zero calls is the direct purity proof.",
       "semanticCoverage": "packages/tests/shared/indexeddb-queuebox-computed-write.test.ts#uses the captured release time for a handler-finalized WS_OUTBOX row"
+    },
+    {
+      "id": "test-structure-coupling-da3c2bb474011a24",
+      "path": "packages/tests/hetzner/distributed-manifest-materialization.test.ts",
+      "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar operations maintainers",
+      "rationale": "Reads the materializer's repeated output and record files to prove that a second materialization of the same source is byte-identical, the operator's reproducibility contract; the isolated group scope is asserted independently from the manifest content.",
+      "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     }
   ]
 }
