@@ -357,7 +357,10 @@ receiver owns the run's group, so its own page may appoint itself the room's dir
 with `director.appoint`, and it ends an appointment of its own with `director.resign`.
 The RTC origin resolves the leader from the room snapshot its own page holds, so before
 it sends the sender polls `director.status` with `refresh: true` until
-`directorStatus.active` reads what the cell needs.
+`directorStatus.active` reads what the cell needs. The scale recipes' readiness loops ask
+`refresh: 'when-absent'` instead: the page re-reads the room over REST only while it holds
+no snapshot of the room, because the state sync keeps a held snapshot current and a cohort
+polling the API for it is harness load, not evidence.
 
 - `leader-confirms` (`ws`, `rtc`, `rtc-with-ws-fallback`): the receiver appoints itself;
   once the sender reads the director active, its room send asks for the leader. The

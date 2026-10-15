@@ -102,6 +102,22 @@ it('appoints a director and exposes its refreshed room status', async () => {
     });
 });
 
+it('refreshes over REST only while the page holds no snapshot of the room when the status asks when-absent', async () => {
+    configureDirectorRelayScenario();
+    const runtime = await loadConnectedDirectorRuntime();
+    facade.behavior.hasRoomSnapshot.mockReturnValueOnce(false).mockReturnValue(true);
+
+    const absent = await runtime.director.status({ roomRef, refresh: 'when-absent', timeoutMs: 2_000 });
+    const present = await runtime.director.status({ roomRef, refresh: 'when-absent', timeoutMs: 2_000 });
+    const unrefreshed = await runtime.director.status({ roomRef });
+
+    expect(facade.records.roomStateRefreshes).toEqual([[roomRef, {
+        scope: { applicationId: 'app-1', workspaceId: 'workspace-a' },
+        timeoutMs: 2_000
+    }]]);
+    expect([absent, present, unrefreshed].map((status) => status.state)).toEqual(['fresh', 'fresh', 'fresh']);
+});
+
 it('initializes snapshot observations before handing callbacks to the relay owner', async () => {
     const scenario = configureDirectorRelayScenario();
     const runtime = await loadConnectedDirectorRuntime();

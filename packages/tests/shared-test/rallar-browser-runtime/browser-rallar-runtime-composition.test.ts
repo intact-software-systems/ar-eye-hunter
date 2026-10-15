@@ -150,6 +150,41 @@ describe('black-box browser room-state refresh composition', () => {
         expect(status).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
     });
 
+    it('reads a when-absent director status over REST only until the page holds the room snapshot', async () => {
+        const appointed = createAppointedGroupSnapshot(createGroupSnapshot(), 'session-b');
+        const fetch = vi.fn(async (url: RequestInfo | URL) =>
+            new Response(JSON.stringify(toDirectorStatusReadBody(String(url), appointed)), {
+                headers: {
+                    'cache-control': 'no-store',
+                    'content-type': 'application/json',
+                    'rallar-state-source': 'cache',
+                    'rallar-group-revision': String(appointed.causalRevision.groupRevision),
+                    'rallar-presence-revision': String(appointed.causalRevision.presenceRevision)
+                }
+            })
+        );
+        vi.stubGlobal('fetch', fetch);
+        const runtime = await createOwnedRuntime();
+        onTestFinished(() => runtime.disconnect());
+        await runtime.connect();
+        const cache = await import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
+        vi.mocked(cache.browserStateCacheLifecycle.hydrate).mockRestore();
+        const roomRef = groupRefOf(appointed);
+        const director = createDirectorController(runtime, roomRef);
+        const roomPath = `/api/state/apps/${scope.applicationId}/workspaces/${scope.workspaceId}/groups/room-a`;
+        const roomReads = () => fetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === roomPath).length;
+
+        expect(runtime.hasRoomSnapshot(roomRef)).toBe(false);
+        const absent = await director.status({ roomRef, refresh: 'when-absent', timeoutMs: 1_000 });
+        expect(roomReads()).toBe(1);
+        expect(runtime.hasRoomSnapshot(roomRef)).toBe(true);
+        const present = await director.status({ roomRef, refresh: 'when-absent', timeoutMs: 1_000 });
+
+        expect(roomReads()).toBe(1);
+        expect(absent).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
+        expect(present).toMatchObject({ appointment: { sessionId: 'session-b' }, directorStatus: { active: true } });
+    });
+
     it('enforces one caller deadline across a stalled topology hydration', async () => {
         const group = createGroupSnapshot();
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);

@@ -153,7 +153,7 @@ describe('ALM scale recipes', () => {
                 }),
                 expect.objectContaining({ kind: 'parallel', maxConcurrency: 2 }),
                 expect.objectContaining({ kind: 'barrier', barrierId: 'alm-scale-shots-complete' }),
-                expect.objectContaining({ kind: 'director.status', refresh: true }),
+                expect.objectContaining({ kind: 'director.status', refresh: 'when-absent' }),
                 expect.objectContaining({ kind: 'assert', source: expect.stringContaining('body.activeSessions.length'), expected: participantCount })
             ]));
             for (const send of commands.filter((command) => command.kind === 'messages.send')) {
@@ -309,13 +309,15 @@ describe('ALM scale recipes', () => {
                 const commands = flattenCommands(recipe.commands);
                 expect(commands.find((command) => command.commandId === `alm-scale-${role}-ready-status`)).toMatchObject({
                     kind: 'director.status',
-                    refresh: true,
+                    refresh: 'when-absent',
                     timeoutMs: allowanceMs
                 });
                 expect(commands.find((command) => command.commandId === `alm-scale-${role}-director-status`)).toMatchObject({
                     kind: 'director.status',
+                    refresh: 'when-absent',
                     timeoutMs: 5_000
                 });
+                expect(commands.filter((command) => command.kind === 'director.status' && command.refresh === true)).toEqual([]);
             }
         }
     );

@@ -743,7 +743,10 @@ const COMMAND_CAPABILITIES_WITHOUT_FIELDS: readonly CommandCapabilityWithoutFiel
             'Reads local director appointment, freshness, and role state, optionally refreshing room metadata first.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['connected browser Rallar session; Rallar API when refresh is true'],
+        liveServiceRequirements: [
+            'connected browser Rallar session; Rallar API when refresh is true, ' +
+            'or when-absent while the page holds no snapshot of the room'
+        ],
         artifactExpectations: ['director role, freshness, appointment epoch, and session id'],
         example: {
             kind: 'director.status',

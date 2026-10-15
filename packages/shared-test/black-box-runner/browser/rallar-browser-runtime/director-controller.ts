@@ -145,6 +145,7 @@ interface DirectorStaticSnapshot {
 interface DirectorFacade {
     readonly director: BlackBoxBrowserDirectorDependency;
     readonly refreshRoomState: BlackBoxBrowserRallarRuntimeDependency['refreshRoomState'];
+    readonly hasRoomSnapshot: BlackBoxBrowserRallarRuntimeDependency['hasRoomSnapshot'];
 }
 
 function decodeDirectorCommandRecord(value: unknown): BlackBoxRallarCommandRecord {
@@ -179,9 +180,13 @@ function decodeDirectorStatusInput(input: unknown): BlackBoxRallarDirectorStatus
     const record = decodeDirectorCommandRecord(input);
     return {
         ...decodeDirectorRoomInput(record),
-        refresh: typeof record.refresh === 'boolean' ? record.refresh : undefined,
+        refresh: decodeDirectorStatusRefresh(record.refresh),
         now: decodeBlackBoxCommandNumber(record.now)
     };
+}
+
+function decodeDirectorStatusRefresh(value: unknown): BlackBoxRallarDirectorStatusInput['refresh'] {
+    return typeof value === 'boolean' || value === 'when-absent' ? value : undefined;
 }
 
 function decodeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirectorRelayStartInput {
@@ -387,7 +392,7 @@ export class BlackBoxRallarDirectorController {
         const lease = this.#resources.lease();
         this.assertCurrent(lease);
         const decoded = decodeDirectorStatusInput(input);
-        if (decoded.refresh) {
+        if (this.resolveRoomRefresh(decoded, config)) {
             await this.refreshRoom(decoded, config);
         }
         this.assertCurrent(lease);
@@ -408,6 +413,17 @@ export class BlackBoxRallarDirectorController {
         });
         return diagnostics;
     };
+    /** The state sync keeps a held room snapshot current, so `when-absent` re-reads over REST only before the first one. */
+    private resolveRoomRefresh(
+        decoded: BlackBoxRallarDirectorStatusInput,
+        config: BlackBoxRallarConnectionConfig
+    ): boolean {
+        if (decoded.refresh !== 'when-absent') {
+            return decoded.refresh === true;
+        }
+        const roomRef = this.#options.roomRefOf(config, decoded);
+        return roomRef === undefined || !this.#options.facade.hasRoomSnapshot(roomRef);
+    }
     private async refreshRoom(
         decoded: BlackBoxRallarDirectorStatusInput,
         config: BlackBoxRallarConnectionConfig

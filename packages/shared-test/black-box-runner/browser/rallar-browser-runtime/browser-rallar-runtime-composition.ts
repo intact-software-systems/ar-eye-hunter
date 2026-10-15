@@ -119,6 +119,8 @@ export interface BlackBoxBrowserRallarRuntimeDependency
         roomRef: GroupRef,
         options: BlackBoxRoomStateRefreshOptions
     ): Promise<void>;
+    /** Whether the page's room-state store holds a snapshot of the room, which the state sync then keeps current. */
+    hasRoomSnapshot(roomRef: GroupRef): boolean;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
@@ -387,6 +389,7 @@ function toBlackBoxBrowserRuntimeDependency(
                 rooms: rooms.rooms,
                 session: session.session
             }),
+        hasRoomSnapshot: (roomRef) => rooms.rooms.session(roomRef).snapshot() !== undefined,
         auth: session.auth,
         rooms: {
             join: async (room, options) => {

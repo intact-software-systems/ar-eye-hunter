@@ -52,7 +52,7 @@ export function createAlmScaleSetupCommands(
             kind: 'director.status',
             commandId: `${prefix}-ready-status`,
             roomRef: { ...input.group },
-            refresh: true,
+            refresh: 'when-absent',
             timeoutMs: computeGroupRequestTimeoutMs(input)
         },
         createStableLayoutWait(input, prefix),
@@ -207,7 +207,7 @@ function createDirectorWait(input: AlmScaleRecipeInput, prefix: string): RallarB
                 kind: 'director.status',
                 commandId: `${prefix}-director-status`,
                 roomRef: { ...input.group },
-                refresh: true,
+                refresh: 'when-absent',
                 timeoutMs: 5_000
             },
             {
