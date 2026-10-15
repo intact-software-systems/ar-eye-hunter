@@ -7,6 +7,7 @@ import {
     toControlArtifactOverflowRow,
     type ControlArtifactOverflowCounts
 } from '@shared-test/rallar-bb-test/control/control-artifact-overflow.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import {
     controlEventArtifactJsonl,
@@ -15,7 +16,6 @@ import {
     toControlResultArtifactLines
 } from './control-artifacts.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
-import type { ControlTimers } from './control-timers.ts';
 import { createControlResponseHeaders } from './cors.ts';
 
 export type ControlArtifactJsonlKind = 'events' | 'results';
@@ -40,7 +40,7 @@ export interface ControlArtifactRecorderConfig {
 export interface ControlArtifactRecorderDependencies {
     readonly storageDir: string | undefined;
     readonly commandSnapshots: Pick<RallarBlackBoxControlService, 'snapshotCommand'>;
-    readonly timers: ControlTimers;
+    readonly timers: Timers;
     readonly config: ControlArtifactRecorderConfig;
 }
 
@@ -182,7 +182,7 @@ export class ControlArtifactRecorder {
         const storageDir = this.dependencies.storageDir;
         const batch = toArtifactWriteBatch(this.pendingByRun, {
             maxPendingBytes: this.dependencies.config.maxPendingBytes,
-            atEpochMs: this.dependencies.timers.nowEpochMs()
+            atEpochMs: this.dependencies.timers.nowMs()
         });
         this.pendingByRun = new Map();
         this.pendingBytes = 0;

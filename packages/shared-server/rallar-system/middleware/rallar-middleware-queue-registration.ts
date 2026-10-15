@@ -1,5 +1,6 @@
 import { hasAdvertisedDequeueWork, type DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -20,6 +21,9 @@ export interface RegisterApplicationQueueReaderTasksInput {
     readonly appInboxResilience: ResourceInboxResilience;
     readonly appOutboxResilience: ResourceInboxResilience;
 }
+
+/** Consecutive failed probes or batches wait 1, 2, 4, 8 and then 16 seconds before the task advertises work again. */
+const QUEUE_READER_FAILURE_BACKOFF: FailureBackoff.Config = { baseMs: 1_000, maxMs: 16_000 };
 
 interface QueueReaderTask {
     readonly taskId: string;
@@ -144,7 +148,7 @@ function includeQueueReaderTask(
     input: RegisterApplicationQueueReaderTasksInput,
     task: QueueReaderTask
 ): void {
-    const failureBackoff = new QueueReaderFailureBackoff();
+    const failureBackoff = new FailureBackoff(QUEUE_READER_FAILURE_BACKOFF);
     let advertisedLanes: DequeueController.WorkAdvertisement | undefined;
     input.engine.includeTask(task.taskId, {
         name: task.taskId,
@@ -183,32 +187,4 @@ function includeQueueReaderTask(
         },
         ongoingTasks: []
     });
-}
-
-/** Consecutive failed probes or batches wait 1, 2, 4, 8 and then 16 seconds before the task advertises work again. */
-class QueueReaderFailureBackoff {
-    static readonly BASE_DELAY_MS = 1_000;
-    static readonly MAX_DELAY_MS = 16_000;
-
-    #consecutiveFailures = 0;
-    #retryAtMs: number | undefined;
-
-    getRetryAtMs(nowMs: number): number | undefined {
-        return this.#retryAtMs !== undefined && this.#retryAtMs > nowMs ? this.#retryAtMs : undefined;
-    }
-
-    recordFailure(nowMs: number): number {
-        this.#consecutiveFailures += 1;
-        const delayMs = Math.min(
-            QueueReaderFailureBackoff.BASE_DELAY_MS * 2 ** (this.#consecutiveFailures - 1),
-            QueueReaderFailureBackoff.MAX_DELAY_MS
-        );
-        this.#retryAtMs = nowMs + delayMs;
-        return this.#retryAtMs;
-    }
-
-    recordSuccess(): void {
-        this.#consecutiveFailures = 0;
-        this.#retryAtMs = undefined;
-    }
 }

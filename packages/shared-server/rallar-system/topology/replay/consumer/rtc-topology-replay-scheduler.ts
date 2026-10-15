@@ -1,3 +1,6 @@
+import { startRepeating } from '@shared/resilience/repeating-run.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
+
 export interface RtcTopologyReplayServiceScheduler {
     repeat(task: () => void, intervalMs: number): () => void;
     yield(): Promise<void>;
@@ -13,12 +16,9 @@ export function rotateRtcTopologyReplayPublishers<T>(
     return [...values.slice(offset), ...values.slice(0, offset)];
 }
 
+const timers = createDefaultTimers();
+
 export const defaultRtcTopologyReplayScheduler: RtcTopologyReplayServiceScheduler = {
-    repeat: (task, intervalMs) => {
-        const timer = setInterval(task, intervalMs);
-        return () => clearInterval(timer);
-    },
-    yield: async () => {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
+    repeat: (task, intervalMs) => startRepeating({ timers, intervalMs, firstRun: 'after-interval', run: task }),
+    yield: () => new Promise<void>((resolve) => timers.schedule(resolve, 0))
 };

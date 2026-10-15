@@ -1,3 +1,4 @@
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { assert, assertEquals } from '@std/assert';
 
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -5,13 +6,12 @@ import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import {
     ControlArtifactRecorder,
     DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
-import { createDefaultControlTimers } from '../src/control-timers.ts';
-import { createManualControlTimers } from './support/manual-control-timers.ts';
 
 const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
 
@@ -68,7 +68,7 @@ Deno.test('artifact recorder keeps "%" and "_25" run ids on separate disk paths'
         const recorder = new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         });
         recorder.record(eventEnvelope('%', 'percent-event', 'percent-marker'));
@@ -93,7 +93,7 @@ Deno.test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths'
         const recorder = new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         });
         recorder.record(eventEnvelope('/', 'slash-event', 'slash-marker'));
@@ -118,7 +118,7 @@ Deno.test('deleting one colliding run id leaves the other run\'s stored marker i
         const recorder = new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         });
         recorder.record(eventEnvelope('%', 'percent-event', 'percent-marker'));
@@ -145,7 +145,7 @@ Deno.test('recording and deleting "." and ".." run ids stays inside their own ru
         const recorder = new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
-            timers: createDefaultControlTimers(),
+            timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         });
 
@@ -259,7 +259,7 @@ async function countFileWrites<T>(run: (counts: FileWriteCounts) => Promise<T>):
 // Before batching, each result was serialized twice and cost two appends and a directory creation of its own.
 Deno.test('1,000 recorded results are serialized once each and appended in one write per run file', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-batch-' });
-    const timers = createManualControlTimers(0);
+    const timers = createManualTimers(0);
     let serializations = 0;
     try {
         const recorder = new ControlArtifactRecorder({
@@ -329,7 +329,7 @@ async function withStalledWrites<T>(run: (release: () => void, writesStarted: ()
 // Before rows stayed pending during a write, every tick queued its rows behind the stalled write and nothing was dropped.
 Deno.test('while a write stalls, rows stay pending under the cap and the oldest of the recording run are dropped', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-stall-' });
-    const timers = createManualControlTimers(0);
+    const timers = createManualTimers(0);
     const maxPendingBytes = 4_000;
     const warn = console.warn;
     console.warn = () => undefined;
@@ -393,7 +393,7 @@ Deno.test('while a write stalls, rows stay pending under the cap and the oldest 
 
 Deno.test('a run over the cap drops only its own rows; a quiet run keeps all of its rows', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-cap-' });
-    const timers = createManualControlTimers(0);
+    const timers = createManualTimers(0);
     const warnings: string[] = [];
     const warn = console.warn;
     console.warn = (message: string) => warnings.push(message);

@@ -1,8 +1,8 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { ControlSnapshotPersistence } from '../../src/control-snapshot-persistence.ts';
-import { createDefaultControlTimers } from '../../src/control-timers.ts';
 
 interface AtomicSnapshotFileEvidence {
     readonly priorText: string;
@@ -47,7 +47,7 @@ export async function runControlSnapshotAtomicReplacementFixture(directory: stri
             }
         },
         deleteRuns: () => undefined,
-        timers: createDefaultControlTimers(),
+        timers: createDefaultTimers(),
         timingSink: undefined
     });
     const log = console.log;

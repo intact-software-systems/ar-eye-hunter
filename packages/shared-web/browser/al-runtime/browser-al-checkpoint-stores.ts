@@ -4,13 +4,13 @@ import {
 } from '@shared/alm/al-runtime-stores.ts';
 import { resolveALCheckpointRuntimeStores } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
-import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import {
     toBrowserRtcOverlayALRuntimeStoreId,
@@ -41,13 +41,6 @@ export interface CreateBrowserALCheckpointStoresInput {
     readonly ownership: ALDurableWorkOwnership;
 }
 
-const BROWSER_AL_CHECKPOINT_TIMERS: ALCheckpointWriter.Timers = {
-    schedule: (run, delayMs) => {
-        const handle = globalThis.setTimeout(run, delayMs);
-        return () => globalThis.clearTimeout(handle);
-    }
-};
-
 export function resolveBrowserALCheckpointSettings(
     input: BrowserALCheckpointSettingsInput
 ): BrowserALCheckpointSettings {
@@ -69,7 +62,7 @@ export function createBrowserALCheckpointOutboundRuntimeStores(
         ownership: input.ownership,
         intervalMs: input.settings.intervalMs,
         lagBoundMs: input.settings.lagBoundMs,
-        timers: BROWSER_AL_CHECKPOINT_TIMERS
+        timers: createDefaultTimers()
     });
 }
 

@@ -60,11 +60,12 @@ describe('Local ResourceInbox completion notification ownership', () => {
         vi.useFakeTimers();
         let notifyAtRegistration = () => {};
         const notifications = new ResourceInboxCompletionNotifications({
+            nowMs: Date.now,
             schedule: (settle, delay) => {
                 notifyAtRegistration();
-                return setTimeout(settle, delay);
-            },
-            cancel: clearTimeout
+                const timer = setTimeout(settle, delay);
+                return () => clearTimeout(timer);
+            }
         });
         notifyAtRegistration = () => notifications.publish(identity);
         const subscription = notifications.subscribe(identity);
@@ -84,14 +85,14 @@ describe('Local ResourceInbox completion notification ownership', () => {
         const cancelled: ReturnType<typeof setTimeout>[] = [];
         const scheduled: ReturnType<typeof setTimeout>[] = [];
         const notifications = new ResourceInboxCompletionNotifications({
+            nowMs: Date.now,
             schedule: (settle, delay) => {
                 const timer = setTimeout(settle, delay);
                 scheduled.push(timer);
-                return timer;
-            },
-            cancel: (timer) => {
-                cancelled.push(timer);
-                clearTimeout(timer);
+                return () => {
+                    cancelled.push(timer);
+                    clearTimeout(timer);
+                };
             }
         });
         const subscription = notifications.subscribe(identity);
@@ -112,10 +113,13 @@ describe('Local ResourceInbox completion notification ownership', () => {
     it('keeps advisory publication nonthrowing when cancellation throws after clearing its timer', async () => {
         vi.useFakeTimers();
         const notifications = new ResourceInboxCompletionNotifications({
-            schedule: setTimeout,
-            cancel: (timer) => {
-                clearTimeout(timer);
-                throw new Error('cancel failed');
+            nowMs: Date.now,
+            schedule: (settle, delay) => {
+                const timer = setTimeout(settle, delay);
+                return () => {
+                    clearTimeout(timer);
+                    throw new Error('cancel failed');
+                };
             }
         });
         const subscription = notifications.subscribe(identity);

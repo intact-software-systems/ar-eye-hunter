@@ -6,10 +6,10 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
-import type { ControlTimers } from './control-timers.ts';
 
 export interface ControlSnapshotPersistenceInput {
     readonly storageDir: string | undefined;
@@ -26,7 +26,7 @@ export interface ControlSnapshotPersistenceInput {
         | 'snapshotRevision'
     >;
     readonly deleteRuns: (runIds: readonly string[]) => void;
-    readonly timers: ControlTimers;
+    readonly timers: Timers;
     /** Absent when flushes are not timed. */
     readonly timingSink: RallarTimingSink | undefined;
 }
@@ -106,7 +106,7 @@ export class ControlSnapshotPersistence {
     }
 
     private scheduleFlush(): void {
-        const nowEpochMs = this.input.timers.nowEpochMs();
+        const nowEpochMs = this.input.timers.nowMs();
         const lifecycleChanged = this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle;
         const dueEpochMs = lifecycleChanged
             ? nowEpochMs
@@ -134,7 +134,7 @@ export class ControlSnapshotPersistence {
     private async writeChangedSnapshot(): Promise<void> {
         const { storageDir, controlService, snapshotBounds, timers } = this.input;
         this.dirty = false;
-        this.lastFlushEpochMs = timers.nowEpochMs();
+        this.lastFlushEpochMs = timers.nowMs();
         const revision = controlService.snapshotRevision();
         this.flushedLifecycle = revision.lifecycle;
         if (!storageDir || revision.content === this.written?.content) {

@@ -1,3 +1,4 @@
+import type { Timers } from '@shared/resilience/timers.ts';
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -10,7 +11,6 @@ import {
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -766,7 +766,7 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
 }
 
 /** Holds the checkpoint writer's interval timers, so the test fires the one it armed instead of waiting a second. */
-function createManualCheckpointTimers(): ALCheckpointWriter.Timers & { armed(): number; fire(): void; } {
+function createManualCheckpointTimers(): Pick<Timers, 'schedule'> & { armed(): number; fire(): void; } {
     const pending = new Set<() => void>();
     return {
         schedule: (run) => {

@@ -23,6 +23,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import { computeDispatchableControlCommands, toControlDispatchScan } from '../src/control-command-queue-policy.ts';
@@ -51,7 +52,6 @@ import {
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
-import { createManualControlTimers } from './support/manual-control-timers.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 const AGENTS = ['controller-01', 'controller-02'] as const;
@@ -332,7 +332,7 @@ Deno.test('a heartbeat neither scans dispatch nor evaluates the rollup; the dead
     assertRight(service.createDistributedRun(toDistributedManifest({
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-01', 'agent-02'] }
     })));
-    const timers = createManualControlTimers(1_000);
+    const timers = createManualTimers(1_000);
     let persisted = 0;
     const stopSweep = startControlDeadlineSweep({ agentSockets: sockets, persistence: { persist: () => persisted += 1 }, timers, intervalMs: 1_000 });
 

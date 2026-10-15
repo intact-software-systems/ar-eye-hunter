@@ -1,3 +1,5 @@
+import { SingleFlight } from '@shared/resilience/single-flight.ts';
+
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
 export namespace BlackBoxRallarCrdtResourceController {
@@ -9,7 +11,7 @@ export namespace BlackBoxRallarCrdtResourceController {
 export class BlackBoxRallarCrdtResourceController<TDocument> {
     readonly #generation: BlackBoxRallarGenerationPort;
     readonly #documents = new Map<string, TDocument>();
-    readonly #pendingOpens = new Map<string, Promise<void>>();
+    readonly #opens = new SingleFlight<string, TDocument>();
     readonly #operationTails = new Map<string, Promise<void>>();
     readonly #pendingEffects = new Set<Promise<void>>();
 
@@ -28,20 +30,14 @@ export class BlackBoxRallarCrdtResourceController<TDocument> {
     }
 
     public open(handle: string, effect: () => Promise<TDocument>): Promise<TDocument> {
-        if (this.#documents.has(handle) || this.#pendingOpens.has(handle)) {
+        if (this.#documents.has(handle) || this.#opens.isInFlight(handle)) {
             return Promise.reject(new Error('CRDT document handle is already open: ' + handle));
         }
-        const opening = (async () => {
+        return this.#opens.run(handle, async () => {
             const document = await effect();
             this.#documents.set(handle, document);
             return document;
-        })();
-        const completion = opening.finally(() => {
-            this.#pendingOpens.delete(handle);
-        }).then(() => undefined);
-        this.#pendingOpens.set(handle, completion);
-        void completion.catch(() => undefined);
-        return opening;
+        });
     }
 
     public require(handle: string): TDocument {
@@ -93,6 +89,6 @@ export class BlackBoxRallarCrdtResourceController<TDocument> {
     }
 
     public pending(): readonly Promise<void>[] {
-        return [...this.#pendingOpens.values(), ...this.#operationTails.values(), ...this.#pendingEffects];
+        return [...this.#opens.completions(), ...this.#operationTails.values(), ...this.#pendingEffects];
     }
 }

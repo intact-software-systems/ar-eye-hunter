@@ -368,10 +368,7 @@ export class InboxOutboxEngine {
         this.successiveIdleExecutions += 1;
         const baseDelayMs = InboxOutboxEngine.FIXED_DELAY_SCHEDULED_ENGINE.total({ unit: 'milliseconds' });
         const maxDelayMs = InboxOutboxEngine.MAX_IDLE_SCHEDULED_ENGINE.total({ unit: 'milliseconds' });
-        const delayMs = Math.min(
-            baseDelayMs * Math.pow(2, this.successiveIdleExecutions - 1),
-            maxDelayMs
-        );
+        const delayMs = ComputeAsyncTask.toExponentialBackoffMs(this.successiveIdleExecutions, maxDelayMs, baseDelayMs);
 
         return this.withJitter(delayMs);
     }
