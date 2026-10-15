@@ -270,11 +270,13 @@ single-instance profiles, typed retries off the outbox breaker, breadth-first jo
 leader within the depth bound, the eccentricity rule for an unchanged leader, the director
 appointed before the players connect, the players joining through the room connect, one-room
 status refresh, cohort-proportional connect and status allowances, a refinement that keeps the
-tree unless clearly faster, and compact streamed artifact bundles. Measured (proposal §1.10):
+tree unless clearly faster, compact streamed artifact bundles, and a control server that survives
+50 agents. Measured (proposal §1.10):
 local 50 setup-complete 36.2 s against 41.8 s on main with one offer per edge and no peer churn;
 hosted 30 passes (offer→answer 0.81 s against 7.1 s, formation 32.9 s against 52–59 s); hosted 50
-failed three times, each one phase further, and the run on the final head is the handoff's open
-item. Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
+failed four times, each one phase further, and passes on the control-server head (D232: the
+control server had died ≈70 s into every 50-agent run; it now persists on a bounded cadence, scans
+per agent and records under a cap). Next slice (2e): the hosted lane's per-player membership and presence cost (≈0.65 s per
 player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
 derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
 
