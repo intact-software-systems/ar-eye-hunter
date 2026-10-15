@@ -1,5 +1,8 @@
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -90,6 +93,12 @@ export interface CreateRallarMiddlewareOptions {
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
     readonly inboundStores?: ALInboundRuntimeStores;
+    /**
+     * The instance-local memory pair a volatile message is admitted and delivered from. `undefined` keeps every
+     * message in `inboundStores`, which an instance relaying acknowledgements to other instances must do: their
+     * readers resolve a message's canonical copy from the shared store.
+     */
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
     readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;

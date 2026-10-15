@@ -107,6 +107,7 @@ export class ALOutboundMessageEffects<TPrepared> {
     /**
      * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
      * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
+     * A typed `retry` (no current route for the row) is an expected outcome and charges nothing.
      */
     async admitDequeuedMessage(
         effect: ALOutboundEffectSnapshot<TPrepared>,
@@ -129,7 +130,9 @@ export class ALOutboundMessageEffects<TPrepared> {
         }
         try {
             const outcome = await this.readDequeuedAdmissionOutcome(effect, evidence);
-            outcome.status === 'retry' ? resilience.failure() : resilience.success();
+            if (outcome.status !== 'retry') {
+                resilience.success();
+            }
             return outcome;
         }
         catch (error) {

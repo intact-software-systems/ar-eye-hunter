@@ -42,6 +42,7 @@ export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
 ): RallarMiddlewareInfrastructure {
+    assertSharedInboundStoreAcrossInstances(options);
     initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
@@ -106,6 +107,7 @@ function createMiddlewareWsQueueBoxServer(
         readProducerProvenance: options.readWsOutboxProducerProvenance,
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
+        inboundVolatileStores: options.inboundVolatileStores,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
@@ -119,6 +121,18 @@ function createMiddlewareWsQueueBoxServer(
             : undefined,
         forwardsRoomScopedMessages: false
     });
+}
+
+/**
+ * Another instance proves a relayed acknowledgement's sender against the message's admission, and reads an oversized
+ * live notice's message, from the shared inbound store: a memory pair would hide both from it.
+ */
+function assertSharedInboundStoreAcrossInstances(options: CreateRallarMiddlewareOptions): void {
+    if (options.inboundVolatileStores !== undefined && options.relayedAckNotices !== undefined) {
+        throw new TypeError(
+            'A WS server relaying acknowledgements to other instances admits every message to its shared inbound store.'
+        );
+    }
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(

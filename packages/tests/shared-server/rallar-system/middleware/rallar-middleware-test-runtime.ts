@@ -97,6 +97,7 @@ export function createRallarMiddlewareTestRuntime(
         readAuthenticatedConnectionScope: () => undefined,
         inbox,
         outbox,
+        inboundVolatileStores: undefined,
         wsRuntimeName: input.wsRuntimeName,
         resilience: input.resilience,
         clientsRepository,

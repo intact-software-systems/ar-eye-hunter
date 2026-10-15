@@ -20,7 +20,11 @@ import {
 } from '../../al-contracts/al-policy.ts';
 import { isALWorldBroadcast } from '../../al-contracts/is-al-world-broadcast.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
-import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
+} from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
@@ -123,6 +127,8 @@ export namespace WsQueueBoxServerService {
         readonly targetResolver?: WsServerTargetResolver;
         readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
         readonly inboundStores?: ALInboundRuntimeStores;
+        /** The memory pair a volatile message is admitted and delivered from; absent, every message takes `inboundStores`. */
+        readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
@@ -850,6 +856,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         readProducerProvenance: input.readProducerProvenance,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.name,
             toInboxEntry: (message) =>
