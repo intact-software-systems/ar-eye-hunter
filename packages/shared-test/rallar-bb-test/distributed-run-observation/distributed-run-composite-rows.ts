@@ -34,18 +34,24 @@ type CompositeRowPosition = Pick<
     | 'originalCommandId'
 >;
 
+/** A recorded root result and the command it ran; the command is absent when the observation does not carry it. */
+export interface DistributedRunCompositeRoot {
+    readonly result: RallarBlackBoxTestResult;
+    readonly authored: RallarBlackBoxTestCommand | undefined;
+}
+
 const SOURCE_RECIPE_PATH_STEP = /^(?:\.groups\[(\d+)\])?\.commands\[(\d+)\]/u;
 
 export function toDistributedRunCompositeRows(
-    roots: readonly RallarBlackBoxTestResult[],
-    authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[]
+    roots: readonly DistributedRunCompositeRoot[]
 ): readonly DistributedRunCompositeRow[] {
-    const entries = toRallarBlackBoxCompositeResultFlatEntries(roots);
+    const results = roots.map((root) => root.result);
+    const entries = toRallarBlackBoxCompositeResultFlatEntries(results);
     const displayByPath = new Map(
-        toRallarBlackBoxCompositeDisplayResults(roots, {})
+        toRallarBlackBoxCompositeDisplayResults(results, {})
             .map((row) => [row.path, row])
     );
-    const authoredByPath = toAuthoredCompositeCommandsByPath(entries, authoredRoots);
+    const authoredByPath = toAuthoredCompositeCommandsByPath(entries, roots);
 
     return entries.map((entry) => {
         const display = displayByPath.get(entry.path);
@@ -171,7 +177,7 @@ function toCompositeGroupStatus(
  */
 function toAuthoredCompositeCommandsByPath(
     entries: readonly RallarBlackBoxCompositeResultFlatEntry[],
-    authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[]
+    roots: readonly DistributedRunCompositeRoot[]
 ): ReadonlyMap<string, RallarBlackBoxTestCommand> {
     const authoredByPath = new Map<string, RallarBlackBoxTestCommand>();
     let rootIndex = -1;
@@ -183,7 +189,7 @@ function toAuthoredCompositeCommandsByPath(
         }
         const authored = entry.sourceRecipePath.startsWith(rootSourceRecipePath)
             ? resolveAuthoredCommand(
-                authoredRoots[rootIndex],
+                roots[rootIndex]?.authored,
                 entry.sourceRecipePath.slice(rootSourceRecipePath.length)
             )
             : undefined;

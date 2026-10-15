@@ -270,7 +270,8 @@ function toRealtimeRecipe(context: RealtimeRecipeContext): RallarBlackBoxTestRec
                 commandPrefix: 'rtc-realtime',
                 requestPrefix: 'rtc-realtime',
                 group,
-                actor: '{auth.clientId}'
+                actor: '{auth.clientId}',
+                timeoutMs: 5_000
             }),
             toRealtimeConnectCommand(context),
             executionMode === 'stream'

@@ -38,7 +38,8 @@ export function createRallarBlackBoxRtcSmokeRecipe(
                 commandPrefix: 'rtc-smoke',
                 requestPrefix: 'rtc-smoke',
                 group,
-                actor
+                actor,
+                timeoutMs: 5_000
             }),
             toSmokeConnectCommand({ options, group, roomRef, actor, connection }),
             toSmokeSendCommand({ options, group, roomRef, actor, connection }),
@@ -81,7 +82,8 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                 commandPrefix: 'parity',
                 requestPrefix: 'provider-parity',
                 group,
-                actor
+                actor,
+                timeoutMs: 5_000
             }),
             ...scopedCommands
         ]

@@ -285,7 +285,8 @@ export function createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
         commandPrefix: 'rtc-messages-principal',
         requestPrefix: 'rtc-messages-principal',
         group,
-        actor: '{auth.clientId}'
+        actor: '{auth.clientId}',
+        timeoutMs: 5_000
     });
     const context = { options, group, connection, baseSetupCommands };
     return [
@@ -328,7 +329,8 @@ export function createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(
             commandPrefix: 'rtc-messages-all-peer',
             requestPrefix: 'rtc-messages-all-peer',
             group,
-            actor: '{auth.clientId}'
+            actor: '{auth.clientId}',
+            timeoutMs: 5_000
         })
     }, settleMetadata);
 }

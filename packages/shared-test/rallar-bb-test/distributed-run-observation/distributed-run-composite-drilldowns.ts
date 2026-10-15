@@ -11,7 +11,8 @@ import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
     toDistributedRunCompositeChildDecodeIssues,
     toDistributedRunCompositeGroupSummaries,
-    toDistributedRunCompositeRows
+    toDistributedRunCompositeRows,
+    type DistributedRunCompositeRoot
 } from './distributed-run-composite-rows.ts';
 import type {
     DistributedRunCompositeChildDecodeIssueRow,
@@ -25,14 +26,12 @@ type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
 interface DistributedRunCompositeRoots {
-    readonly roots: readonly RallarBlackBoxTestResult[];
-    /** Aligned with `roots`; an entry is absent when the observation does not carry that root's authored command. */
-    readonly authoredRoots: readonly (RallarBlackBoxTestCommand | undefined)[];
+    readonly roots: readonly DistributedRunCompositeRoot[];
     readonly rootDecodeIssues: readonly DistributedRunCompositeChildDecodeIssueRow[];
 }
 
 const COMPOSITE_CHILD_UNDECODABLE_CODE = 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE';
-const NO_COMPOSITE_ROOTS: DistributedRunCompositeRoots = { roots: [], authoredRoots: [], rootDecodeIssues: [] };
+const NO_COMPOSITE_ROOTS: DistributedRunCompositeRoots = { roots: [], rootDecodeIssues: [] };
 
 export function toDistributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
@@ -41,11 +40,9 @@ export function toDistributedRunCompositeDrilldowns(
 ): readonly DistributedRunCompositeDrilldown[] {
     return results.flatMap((result) => {
         const command = commands.get(result.commandId);
-        const { roots, authoredRoots, rootDecodeIssues } = toDistributedRunCompositeRoots(
-            result.result,
-            command?.envelope.command
-        );
-        const rows = toDistributedRunCompositeRows(roots, authoredRoots);
+        const { roots, rootDecodeIssues } = toDistributedRunCompositeRoots(result.result, command?.envelope.command);
+        const rows = toDistributedRunCompositeRows(roots);
+        const rootResults = roots.map((root) => root.result);
         if (rows.length === 0 && rootDecodeIssues.length === 0) {
             return [];
         }
@@ -60,10 +57,10 @@ export function toDistributedRunCompositeDrilldowns(
             phase: link?.phase,
             commandKind: command?.envelope.command.kind ?? result.result?.kind,
             artifactRef: `control-run.json#results[commandId=${result.commandId}]`,
-            summary: toDrilldownSummary(computeRallarBlackBoxCompositeResultSummary(roots, {})),
+            summary: toDrilldownSummary(computeRallarBlackBoxCompositeResultSummary(rootResults, {})),
             firstFailure: resolveFirstFailedRow(rows),
-            groupSummaries: toDistributedRunCompositeGroupSummaries(roots),
-            childDecodeIssues: [...rootDecodeIssues, ...toDistributedRunCompositeChildDecodeIssues(roots)],
+            groupSummaries: toDistributedRunCompositeGroupSummaries(rootResults),
+            childDecodeIssues: [...rootDecodeIssues, ...toDistributedRunCompositeChildDecodeIssues(rootResults)],
             rows
         }];
     });
@@ -136,16 +133,14 @@ function toDistributedRunCompositeRoots(
 
     const recipeRun = toRecipeRunChildResults(result, toAuthoredRecipeChildCommands(result, authored));
     if (recipeRun.roots.length > 0 || recipeRun.rootDecodeIssues.length > 0) {
-        const relevant = recipeRun.roots.some(isCompositeMonitorRelevantResult);
         return {
-            roots: relevant ? recipeRun.roots : [],
-            authoredRoots: relevant ? recipeRun.authoredRoots : [],
+            roots: recipeRun.roots.some((root) => isCompositeMonitorRelevantResult(root.result)) ? recipeRun.roots : [],
             rootDecodeIssues: recipeRun.rootDecodeIssues
         };
     }
 
     return isCompositeMonitorRelevantResult(result)
-        ? { roots: [result], authoredRoots: [authored], rootDecodeIssues: [] }
+        ? { roots: [{ result, authored }], rootDecodeIssues: [] }
         : NO_COMPOSITE_ROOTS;
 }
 
@@ -176,7 +171,7 @@ function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boo
     ) {
         return true;
     }
-    return toRecipeRunChildResults(result, []).roots.some(isCompositeMonitorRelevantResult);
+    return toRecipeRunChildResults(result, []).roots.some((root) => isCompositeMonitorRelevantResult(root.result));
 }
 
 function toRecipeRunChildResults(
@@ -189,8 +184,9 @@ function toRecipeRunChildResults(
     }
     const decoded = recorded.map((item) => decodeRallarBlackBoxTestResult(item));
     return {
-        roots: decoded.flatMap((root) => root.right === undefined ? [] : [root.right]),
-        authoredRoots: decoded.flatMap((root, index) => root.right === undefined ? [] : [authoredChildren[index]]),
+        roots: decoded.flatMap((root, index) =>
+            root.right === undefined ? [] : [{ result: root.right, authored: authoredChildren[index] }]
+        ),
         rootDecodeIssues: decoded.flatMap((root, index) =>
             root.left === undefined ? [] : [{
                 parentPath: RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,

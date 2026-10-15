@@ -14,7 +14,7 @@ import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conforma
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { toGroupLayoutIdentity } from '../../shared/api/group-lifecycle/group-layout-identity.ts';
+import { toOverlayLayoutIdentity } from '../../shared/repository/overlays-repository.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
@@ -226,15 +226,11 @@ describe('ALM scale recipes', () => {
         expect(groupRequests.map((command) => command.timeoutMs)).toEqual([8_750, 8_750, 5_000]);
     });
 
-    it.each(
-        [
-            [15, 3_684],
-            [30, 7_500],
-            [50, 12_500]
-        ] as const
-    )(
-        'allows the %i-member cohort more than its serial join cost of %i ms (4 joins per second hosted) and keeps reads at 5 s',
-        (participantCount, serialJoinCostMs) => {
+    it.each([15, 30, 50] as const)(
+        'allows the %i-member cohort more than its serial joins cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
+        (participantCount) => {
+            const hostedJoinsPerSecond = 4;
+            const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
             const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
             const requests = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
                 .filter((command) => command.kind === 'http.request');
@@ -281,14 +277,25 @@ describe('ALM scale recipes', () => {
         });
     });
 
-    it('matches a re-plan from exactly the ready revision because a layout identity serializes its group revision first', () => {
-        const identity = toGroupLayoutIdentity({
+    it('matches a re-plan from exactly the ready revision because the layout event serializes its group revision first', () => {
+        const identity = toOverlayLayoutIdentity({
             sourceGroupStateCausalRevision: { groupRevision: 56, presenceRevision: 7 },
-            version: 5,
-            state: 'active'
+            provenance: 'server',
+            state: 'active',
+            overlayId: 'overlay-1',
+            groupRef: GROUP,
+            topology: 'tree',
+            name: 'scale-room',
+            createdByClientId: 'director',
+            createdAtEpochMs: 1_000,
+            nextHopSessionIds: [],
+            degreeLimit: 4,
+            overlayVersion: 5,
+            updatedAtEpochMs: 1_000,
+            nextHopsBySessionId: {}
         });
 
-        expect(JSON.stringify(identity)).toBe('{"groupRevision":56,"presenceRevision":7,"version":5,"state":"active"}');
+        expect(JSON.stringify(identity)).toMatch(/^\{"groupRevision":56,"presenceRevision"/);
     });
 
     it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {

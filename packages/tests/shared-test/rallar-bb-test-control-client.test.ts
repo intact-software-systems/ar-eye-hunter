@@ -1073,15 +1073,11 @@ describe('shared rallar black-box control client', () => {
             connectToRunOne(client);
             sockets[0].open();
             sockets[0].publishMessage(held('run-1'));
-            await vi.waitFor(() => {
-                expect(releases).toHaveLength(1);
-            });
+            await vi.waitFor(() => expect(releases).toHaveLength(1));
             client.connect({ url: 'ws://control.example.test', runId: 'run-2', agentId: 'agent-1', completedCommandIds: [] });
             sockets[1].open();
             sockets[1].publishMessage(held('run-2'));
-            await vi.waitFor(() => {
-                expect(releases).toHaveLength(2);
-            });
+            await vi.waitFor(() => expect(releases).toHaveLength(2));
             releases[0]('previous');
             await new Promise((resolve) => setTimeout(resolve, 0));
             sockets[1].publishMessage(held('run-2'));
@@ -1098,7 +1094,7 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
-    it('replaces an oversize result frame with a bounded failed result that keeps the verdict, a reconnect replays and the report counts', async () => {
+    it('replaces an oversize result frame with a bounded failed result that keeps the verdict and a failure\'s code and message, a reconnect replays and the report counts', async () => {
         vi.useFakeTimers();
         const maxFrameBytes = 4_000;
         const sockets: FakeControlSocket[] = [];
@@ -1125,18 +1121,13 @@ describe('shared rallar black-box control client', () => {
                 kind: 'configure',
                 config: { runId: 'run-1', agentId: 'agent-1', actor: 'alice', defaults: { note: 'x'.repeat(maxFrameBytes) } }
             })));
-            await vi.waitFor(() => {
-                expect(toResultEnvelopes(sockets[0], 'configure-big')).toHaveLength(1);
-            });
+            await vi.waitFor(() => expect(toResultEnvelopes(sockets[0], 'configure-big')).toHaveLength(1));
             const executed = runtime.state().resultCache['configure-big'];
             const [sent] = toResultEnvelopes(sockets[0], 'configure-big');
             expect(sent).toMatchObject({
                 ok: false,
                 replayed: false,
-                error: {
-                    code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE',
-                    details: { maxFrameBytes }
-                },
+                error: { code: 'RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE' },
                 result: {
                     commandId: 'configure-big',
                     kind: 'configure',
@@ -1177,6 +1168,16 @@ describe('shared rallar black-box control client', () => {
             expect(sockets.flatMap((socket) => socket.sent).every((frame) => frame.length <= maxFrameBytes)).toBe(true);
             expect(client.getSnapshot().sentCount).toBe(sockets[0].sent.length + sockets[1].sent.length);
             expect(runtime.state().eventHistory.capture).toMatchObject({ status: 'gap', reason: 'control-frame-too-large' });
+
+            const assertBig = { kind: 'assert', source: 'config.defaults.note', operator: 'equals', expected: 'short' } as const;
+            sockets[1].publishMessage(JSON.stringify(toCommandEnvelope('assert-big', assertBig)));
+            await vi.waitFor(() => expect(toResultEnvelopes(sockets[1], 'assert-big')).toHaveLength(1));
+            const [failed] = toResultEnvelopes(sockets[1], 'assert-big');
+            expect(isJsonRecordValue(failed.error?.details) && failed.error.details.oversizeResult).toEqual({
+                status: 'failed',
+                ok: false,
+                error: { code: 'RALLAR_BLACK_BOX_ASSERT_FAILED', message: 'Assert failed for config.defaults.note.' }
+            });
         }
         finally {
             client.dispose();

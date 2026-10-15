@@ -15,13 +15,13 @@ export function createAlmScaleSetupCommands(
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = `alm-scale-${role}`;
-    const groupRequestTimeoutMs = computeGroupRequestTimeoutMs(input);
     const ensure = createRallarBlackBoxEnsureGroupCommands({
         commandPrefix: prefix,
         requestPrefix: prefix,
         group: input.group,
-        actor: '{auth.clientId}'
-    }).map((command) => ({ ...command, timeoutMs: groupRequestTimeoutMs }));
+        actor: '{auth.clientId}',
+        timeoutMs: computeGroupRequestTimeoutMs(input)
+    });
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
         createSignInCommand(input, prefix),
