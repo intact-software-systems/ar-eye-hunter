@@ -109,7 +109,32 @@ describe('RTC topology weighted room graph planning', () => {
         ]);
     });
 
-    it('keeps connected measured edges and fills unmeasured pairs with canonical weights', () => {
+    it('weights every unmeasured pair above the worst measured edge', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(6);
+        const result = createRtcRoomGraph({
+            group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
+            preferredSourceSessionId: undefined,
+            activeSessionIds: memberSessionIds,
+            rttMeasurements: memberSessionIds.slice(1).map((sessionIdTo, index) =>
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-1', sessionIdTo, rttMs: 50, version: index + 1 })
+            ),
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5,
+            seedTopology: 'tree',
+            meshParamK: 2
+        });
+
+        const graph = expectReadyRoomGraph(result);
+        const unmeasuredWeights = graph.edges()
+            .filter((edge) => !graph.extremities(edge).includes('peer-1'))
+            .map((edge) => graph.getEdgeAttribute(edge, 'weight'));
+        expect(unmeasuredWeights.length).toBeGreaterThan(0);
+        for (const weight of unmeasuredWeights) {
+            expect(weight).toBeGreaterThan(50);
+        }
+    });
+
+    it('keeps connected measured edges and fills unmeasured pairs above the worst measured edge', () => {
         const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
         const result = createRtcRoomGraph({
             group,
@@ -139,7 +164,7 @@ describe('RTC topology weighted room graph planning', () => {
         expect(graph.edges().map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')])).toEqual([
             [['peer-1', 'peer-2'], 5],
             [['peer-2', 'peer-3'], 7],
-            [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')]
+            [['peer-1', 'peer-3'], 7 + computeCanonicalTopologyPairWeight('peer-1', 'peer-3')]
         ]);
     });
 

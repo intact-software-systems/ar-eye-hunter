@@ -92,6 +92,35 @@ describe('RTC topology planning options and revisions', () => {
     });
 
     it.each([15, 30, 50])(
+        'keeps every director of %i members at most as deep after an RTT rebuild over tree-edge reports as the no-RTT tree rooted at it',
+        (memberCount) => {
+            const memberSessionIds = createRtcTopologyMemberIds(memberCount);
+            const deeperDirectors = memberSessionIds.filter((directorSessionId) => {
+                const planner = new RtcTopologyPlanner({ topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 5 }, {
+                    metrics: new RtcTopologyMetrics(),
+                    durationNowMs: () => 0
+                });
+                const group = toRtcTopologyGroupWithDirector(
+                    createRtcTopologyGroupSnapshot('planner-reported-tree', memberSessionIds),
+                    directorSessionId
+                );
+                const rooted = planner.plan({ group, rttMeasurements: [], previous: undefined, updateOptions: {}, nowEpochMs: 100 });
+                const weighted = planner.plan({
+                    group,
+                    rttMeasurements: createTreeEdgeRttMeasurements(rooted.snapshot.nextHopsBySessionId),
+                    previous: rooted.snapshot,
+                    updateOptions: {},
+                    nowEpochMs: 200
+                });
+                return computeRtcTopologyHopEccentricity(weighted.snapshot.nextHopsBySessionId, directorSessionId) >
+                    computeRtcTopologyHopEccentricity(rooted.snapshot.nextHopsBySessionId, directorSessionId);
+            });
+
+            expect(deeperDirectors).toEqual([]);
+        }
+    );
+
+    it.each([15, 30, 50])(
         'roots the seed of a sparse reported graph of %i members at the director, so the weighted plan keeps it as shallow as the no-RTT tree',
         (memberCount) => {
             const planner = new RtcTopologyPlanner({ topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 5 }, {
@@ -587,6 +616,20 @@ function createSaturatedCliqueRttMeasurements(
                 const version = measurements.length + 1;
                 measurements.push(createRtcTopologyRttMeasurement({ sessionIdFrom: from, sessionIdTo: to, rttMs: 50, version }));
             }
+        }
+    }
+    return measurements;
+}
+
+/** One near-uniform report per tree edge: what members of a reporting-degree-limited tree measure. */
+function createTreeEdgeRttMeasurements(
+    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>
+): readonly RttMeasurementInfo[] {
+    const measurements: RttMeasurementInfo[] = [];
+    for (const [from, nextHops] of Object.entries(nextHopsBySessionId).sort(([left], [right]) => left.localeCompare(right))) {
+        for (const to of nextHops.filter((neighbour) => from < neighbour)) {
+            const version = measurements.length + 1;
+            measurements.push(createRtcTopologyRttMeasurement({ sessionIdFrom: from, sessionIdTo: to, rttMs: 50 + (version % 5), version }));
         }
     }
     return measurements;

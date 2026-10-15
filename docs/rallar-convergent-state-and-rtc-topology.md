@@ -307,9 +307,9 @@ weighted room graph. The director's session id is part of the topology input fin
 appointment after the first plan produces work. A tree with a leader plans a full rebuild rather
 than an incremental one when the membership did not change or when the leader is one of the joined
 sessions. A group without a leader omits the key, so its fingerprint and plan are as before.
-Rooting does not bound the director's depth in a weighted plan: unmeasured pairs carry synthetic
-weights that can undercut measured RTT, so a weighted tree may place the director deeper than the
-no-RTT tree rooted at it.
+In a weighted room graph an unmeasured pair weighs the worst measured RTT plus its hashed canonical
+spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
+the no-RTT tree rooted at it.
 
 Every work item reads the current durable group snapshot and selects its
 planning input causally. `group-revision` work keeps its embedded snapshot

@@ -171,11 +171,18 @@ function addCompleteFallbackRoomEdges(
     }
 }
 
+/**
+ * Measured edges first, then the seed and filler pairs nobody measured. An unmeasured pair carries the worst
+ * measured RTT plus its hashed canonical spread, so it is never cheaper than a link someone measured and the
+ * weighted plan does not trade measured edges for guessed ones.
+ */
 function populateSparseRoomGraph(
     input: PopulateSparseRoomGraphInput
 ): Readonly<{ connected: boolean; }> {
     const maxEdges = Math.floor((input.activeSessionIds.length * input.degreeLimit) / 2);
-    for (const edge of createSortedRttEdges(input.rttMeasurements, input.activeSessionIds)) {
+    const measuredEdges = createSortedRttEdges(input.rttMeasurements, input.activeSessionIds);
+    const unmeasuredWeightOffset = measuredEdges.at(-1)?.weight ?? 0;
+    for (const edge of measuredEdges) {
         addBoundedRoomEdge({
             graph: input.graph,
             from: edge.from,
@@ -191,7 +198,7 @@ function populateSparseRoomGraph(
                 graph: input.graph,
                 from,
                 to,
-                weight: computeCanonicalTopologyPairWeight(from, to),
+                weight: unmeasuredWeightOffset + computeCanonicalTopologyPairWeight(from, to),
                 degreeLimit: input.degreeLimit,
                 maxEdges
             });
@@ -211,7 +218,7 @@ function populateSparseRoomGraph(
                 graph: input.graph,
                 from,
                 to,
-                weight: computeCanonicalTopologyPairWeight(from, to),
+                weight: unmeasuredWeightOffset + computeCanonicalTopologyPairWeight(from, to),
                 degreeLimit: input.degreeLimit,
                 maxEdges
             });
