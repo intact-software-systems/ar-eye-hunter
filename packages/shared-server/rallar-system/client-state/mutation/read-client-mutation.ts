@@ -1,10 +1,13 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
 import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
 import type { ClientMutationCommand, ClientMutationRead } from './client-mutation-contracts.ts';
+import { resolveClientMutationAudienceReadScope } from './resolve-client-mutation-audience-read-scope.ts';
 
 interface ClientMutationTargetRefs {
     readonly instanceRef: {
@@ -22,6 +25,11 @@ interface ClientMutationTargetRefs {
     } | null;
 }
 
+interface ClientMutationAudienceRead {
+    readonly audienceGroupSnapshots: readonly GroupSnapshot[];
+    readonly audienceClientSnapshots: readonly ClientSnapshot[];
+}
+
 export interface ReadClientMutationInput {
     readonly repository: ClientStateRepository;
     readonly groupRepository: GroupStateRepositoryReads;
@@ -29,6 +37,11 @@ export interface ReadClientMutationInput {
     readonly command: ClientMutationCommand;
     readonly audienceObservedAtEpochMs: number;
 }
+
+const EMPTY_AUDIENCE_READ: ClientMutationAudienceRead = {
+    audienceGroupSnapshots: [],
+    audienceClientSnapshots: []
+};
 
 export async function readClientMutation(
     input: ReadClientMutationInput
@@ -48,13 +61,41 @@ export async function readClientMutation(
 
     assertPrincipalSnapshotRevision(principalSnapshot);
     const receiptEvent = await readReceiptEvent(repository, command, idempotency);
+    const session = sessionRead.value ?? null;
+    const audienceScope = resolveClientMutationAudienceReadScope(command, {
+        idempotency: idempotency ?? null,
+        session
+    });
+    const audience = audienceScope === 'principal-audience'
+        ? await readPrincipalAudience({ repository, groupRepository, command, audienceObservedAtEpochMs })
+        : EMPTY_AUDIENCE_READ;
+
+    return {
+        authoritySession: authoritySession ?? null,
+        idempotency: idempotency ?? null,
+        principal: principalSnapshot?.principal ?? null,
+        instance: instance ?? null,
+        session,
+        expiredSessionEntry: sessionRead.expiredEntry ?? null,
+        snapshot: principalSnapshot?.snapshot ?? null,
+        receiptEvent,
+        audienceObservedAtEpochMs,
+        ...audience
+    };
+}
+
+async function readPrincipalAudience(
+    input: Omit<ReadClientMutationInput, 'authSessionRepository'>
+): Promise<ClientMutationAudienceRead> {
+    const { repository, groupRepository, command, audienceObservedAtEpochMs } = input;
     const scope = {
         applicationId: command.aggregateRef.applicationId,
         workspaceId: command.aggregateRef.workspaceId
     };
-    const audienceGroupSnapshots = idempotency
-        ? []
-        : await groupRepository.listSnapshotsForPrincipal(scope, command.aggregateRef.principalId);
+    const audienceGroupSnapshots = await groupRepository.listSnapshotsForPrincipal(
+        scope,
+        command.aggregateRef.principalId
+    );
     const coGroupPrincipalIds = new Set<string>();
     for (const snapshot of audienceGroupSnapshots) {
         if (
@@ -82,20 +123,7 @@ export async function readClientMutation(
     const audienceClientSnapshots = await repository.readSnapshotsForPrincipals(
         [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
     );
-
-    return {
-        authoritySession: authoritySession ?? null,
-        idempotency: idempotency ?? null,
-        principal: principalSnapshot?.principal ?? null,
-        instance: instance ?? null,
-        session: sessionRead.value ?? null,
-        expiredSessionEntry: sessionRead.expiredEntry ?? null,
-        snapshot: principalSnapshot?.snapshot ?? null,
-        receiptEvent,
-        audienceObservedAtEpochMs,
-        audienceGroupSnapshots,
-        audienceClientSnapshots
-    };
+    return { audienceGroupSnapshots, audienceClientSnapshots };
 }
 
 function toClientMutationTargetRefs(command: ClientMutationCommand): ClientMutationTargetRefs {

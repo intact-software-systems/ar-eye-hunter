@@ -1,4 +1,11 @@
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { readClientMutation } from '@shared-server/rallar-system/client-state/mutation/read-client-mutation.ts';
+import { assertClientMutationRead } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-read.ts';
+import { assertClientMutationInvariants } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
@@ -20,6 +27,18 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { principalCommand, TEST_SCOPE } from './client-mutation-compute-test-fixtures.ts';
 
 const AUDIENCE_EPOCH_MS = 2_000_000_000_000;
+const HEARTBEAT_EPOCH_MS = 2;
+
+class RecordingReadRepository extends FakeRuntimeStateRepository {
+    readonly batchSelectors: RuntimeStateReadBatchSelector[] = [];
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.batchSelectors.push(...selectors);
+        return await super.readRuntimeStateBatch(selectors);
+    }
+}
 
 class AudienceReadRepository extends FakeRuntimeStateRepository {
     afterActorMemberRead?: () => Promise<void>;
@@ -230,6 +249,92 @@ describe('client mutation principal audience read', () => {
         })).toEqual(['alice-session', 'bob-session']);
     });
 
+    it('issues no audience reads for a heartbeat whose generation the session no longer carries', async () => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        runtime.batchSelectors.length = 0;
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: heartbeatCommandFor('superseded-generation'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+
+        expect(read.session?.value.generationId).toBe('alice-session-generation');
+        expect(audienceSelectors(runtime.batchSelectors)).toEqual([]);
+        expect(read.audienceGroupSnapshots).toEqual([]);
+        expect(read.audienceClientSnapshots).toEqual([]);
+    });
+
+    it('reads the principal audience for a heartbeat that carries the session generation', async () => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        runtime.batchSelectors.length = 0;
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: heartbeatCommandFor('alice-session-generation'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+
+        expect(audienceSelectors(runtime.batchSelectors).length).toBeGreaterThan(0);
+        expect(read.audienceGroupSnapshots.map((snapshot) => snapshot.group.groupId)).toEqual(['room-one']);
+        expect(read.audienceClientSnapshots.map((snapshot) => snapshot.principal.principalId)).toEqual(['bob']);
+    });
+
+    it('rejects a stale-generation heartbeat read that still carries the principal audience', async () => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: heartbeatCommandFor('alice-session-generation'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        expect(read.audienceClientSnapshots).toHaveLength(1);
+
+        expect(() => assertClientMutationRead(heartbeatCommandFor('superseded-generation'), read)).toThrow(
+            'Client mutation audience read is out of scope'
+        );
+    });
+
+    it('rejects a heartbeat write computed outside the principal audience read scope', async () => {
+        const runtime = new RecordingReadRepository();
+        const { groups, clients } = await seedHeartbeatAudience(runtime);
+        const command = heartbeatCommandFor('alice-session-generation');
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command,
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        const computed = computeClientMutation({ command, read });
+        expect(computed.outcome).toBe('write');
+        const session = read.session;
+        if (!session) {
+            throw new Error('Expected Alice session read');
+        }
+
+        expect(() =>
+            assertClientMutationInvariants({
+                command,
+                read: {
+                    ...read,
+                    session: { ...session, value: { ...session.value, generationId: 'superseded-generation' } },
+                    audienceGroupSnapshots: [],
+                    audienceClientSnapshots: []
+                },
+                computed
+            })
+        ).toThrow('Client mutation write requires the principal audience read');
+    });
+
     it('rejects a selected actor member stored in the wrong canonical slot', async () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
@@ -311,6 +416,76 @@ describe('client mutation principal audience read', () => {
         });
     });
 });
+
+interface HeartbeatAudienceRepositories {
+    readonly groups: ReturnType<typeof createTestGroupStateRepository>;
+    readonly clients: ReturnType<typeof createTestClientStateRepository>;
+}
+
+async function seedHeartbeatAudience(runtime: FakeRuntimeStateRepository): Promise<HeartbeatAudienceRepositories> {
+    const groups = createTestGroupStateRepository(runtime);
+    const clients = createTestClientStateRepository(runtime);
+    await seedGroup({
+        repository: groups,
+        groupId: 'room-one',
+        ownerPrincipalId: 'alice',
+        activePrincipalIds: ['bob'],
+        leftPrincipalIds: []
+    });
+    for (const principalId of ['alice', 'bob']) {
+        await seedClient(clients, principalId);
+    }
+    return { groups, clients };
+}
+
+function heartbeatCommandFor(generationId: string): ClientMutationCommand {
+    const requestId = `heartbeat:${generationId}`;
+    const input = toHeartbeatClientSessionMutationInput({
+        scope: TEST_SCOPE,
+        principalId: 'alice',
+        clientInstanceId: 'alice-instance',
+        sessionId: 'alice-session',
+        request: {
+            generationId,
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            lastHeartbeatAtEpochMs: HEARTBEAT_EPOCH_MS,
+            requestId
+        },
+        defaultCommandId: requestId
+    });
+    return toClientMutationCommand(
+        input,
+        {
+            nowEpochMs: HEARTBEAT_EPOCH_MS,
+            serviceId: 'client-service',
+            eventId: `event:${requestId}`,
+            attemptCount: 1,
+            expireAtEpochMs: 20_000
+        },
+        toClientMutationIssuedSessionAuthority(
+            {
+                clientId: 'alice',
+                username: 'alice',
+                sessionId: 'alice-session',
+                accessTokenDigest: 'sha256:test-token',
+                issuedAtEpochMs: 0,
+                expiresAtEpochMs: 10_000
+            },
+            TEST_SCOPE,
+            'heartbeatSession'
+        )
+    );
+}
+
+function audienceSelectors(
+    selectors: readonly RuntimeStateReadBatchSelector[]
+): readonly RuntimeStateReadBatchSelector[] {
+    return selectors.filter((selector) =>
+        selector.namespace.startsWith('group-state:') ||
+        (selector.namespace.startsWith('client-state:') && JSON.stringify(selector).includes('principal=bob'))
+    );
+}
 
 interface SeedGroupInput {
     readonly repository: ReturnType<typeof createTestGroupStateRepository>;

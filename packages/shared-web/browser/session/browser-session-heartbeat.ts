@@ -44,7 +44,7 @@ class BrowserStateHeartbeatRuntime {
     }
 
     public start(): void {
-        void this.runHeartbeat();
+        this.schedule(intervalMsecs);
     }
 
     private stop(): void {
@@ -100,6 +100,9 @@ class BrowserStateHeartbeatRuntime {
             );
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
+            clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+                this.#clientData.clientId
+            ),
             authSession: this.#options.authSession,
             scope: this.#options.scope,
             policies: this.#options.policies

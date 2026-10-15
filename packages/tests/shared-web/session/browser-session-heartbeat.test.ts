@@ -32,6 +32,9 @@ interface FetchCall {
     readonly body: JsonWireValue | undefined;
 }
 
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const HEARTBEAT_RETRY_MS = 5_000;
+
 describe('Browser session heartbeat', () => {
     const fetchCalls: FetchCall[] = [];
     const authSession: AuthSession = {
@@ -81,7 +84,60 @@ describe('Browser session heartbeat', () => {
         );
     });
 
+    it('sends the first client heartbeat after the interval, not at start', async () => {
+        vi.useFakeTimers();
+        stubFetch(({ url, method }) =>
+            method === 'POST' && url.includes('/clients/principal-1/')
+                ? jsonResponse(clientSnapshot('principal-1'))
+                : textResponse('unexpected', 500)
+        );
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS - 1);
+        expect(fetchCalls).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1);
+        handle.stop();
+
+        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls[0]?.url).toContain('/sessions/session-1/heartbeat/requests/');
+    });
+
+    it('retries a failed heartbeat after the retry interval and then resumes the interval', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        let remainingFailures = 1;
+        stubFetch(() => {
+            if (remainingFailures > 0) {
+                remainingFailures -= 1;
+                return textResponse('unavailable', 503);
+            }
+            return jsonResponse(clientSnapshot('principal-1'));
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        expect(fetchCalls).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_RETRY_MS - 1);
+        expect(fetchCalls).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(fetchCalls).toHaveLength(2);
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS - 1);
+        expect(fetchCalls).toHaveLength(2);
+        await vi.advanceTimersByTimeAsync(1);
+        handle.stop();
+
+        expect(fetchCalls).toHaveLength(3);
+    });
+
     it('uses the active scope and prunes a cached group after an authoritative heartbeat 404', async () => {
+        vi.useFakeTimers();
         const staleGroup = groupSnapshot({
             groupId: 'stale-room',
             applicationId: 'ar-eye-hunter',
@@ -118,13 +174,11 @@ describe('Browser session heartbeat', () => {
             },
             policies: { command: { maxAttempts: 3 } }
         });
-
-        await vi.waitFor(() => {
-            expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
-        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
+        expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
         const clientHeartbeatRequestPath = [
             '/api/state/apps/ar-eye-hunter/workspaces/default',
             '/clients/principal-1/instances/principal-1',
@@ -149,6 +203,7 @@ describe('Browser session heartbeat', () => {
     });
 
     it('preserves a newer group publication that races an authoritative heartbeat 404', async () => {
+        vi.useFakeTimers();
         const observed = groupSnapshot({
             groupId: 'stale-room',
             applicationId: 'ar-eye-hunter',
@@ -180,17 +235,16 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.waitFor(() => {
-            expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
-        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
+        expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBe(newer);
     });
 
     it('keeps the joined room after the memory TTL when a heartbeat only advances session leases', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.useFakeTimers();
         onTestFinished(() => {
             vi.useRealTimers();
         });
@@ -211,7 +265,7 @@ describe('Browser session heartbeat', () => {
                 expiresAtEpochMs: 1_160_000
             }))
         };
-        vi.setSystemTime(1_040_000);
+        vi.setSystemTime(1_040_000 - HEARTBEAT_INTERVAL_MS);
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.includes('/clients/principal-1/')) {
                 return jsonResponse(clientSnapshot('principal-1'));
@@ -226,13 +280,12 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
-        await vi.waitFor(() => {
-            expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
-        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         handle.stop();
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
         vi.setSystemTime(1_090_000);
 
+        expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(joined.group)?.activeSessions)
             .toEqual(renewed.activeSessions);
     });
@@ -272,6 +325,7 @@ describe('Browser session heartbeat', () => {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         await groupRequestStarted.promise;
         handle.stop();
         groupResponse.resolve(jsonResponse(advanced));
@@ -306,12 +360,14 @@ describe('Browser session heartbeat', () => {
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
             onAuthInvalid: firstAuthInvalid
         });
-        await vi.waitFor(() => expect(fetchCalls).toHaveLength(1));
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        expect(fetchCalls).toHaveLength(1);
 
         const replacement = await initHeartbeat(clientData, {
             authSession,
             scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
         });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         await replacementRequestStarted.promise;
         firstResponse.resolve(textResponse('Unauthorized', 401));
         await vi.advanceTimersByTimeAsync(0);
@@ -321,6 +377,7 @@ describe('Browser session heartbeat', () => {
     });
 
     it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
+        vi.useFakeTimers();
         let authInvalidated = false;
         stubFetch(({ url, method }) => {
             if (
@@ -345,18 +402,40 @@ describe('Browser session heartbeat', () => {
                 authInvalidated = true;
             }
         });
-
-        await vi.waitFor(() => {
-            expect(authInvalidated).toBe(true);
-        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         handle.stop();
 
+        expect(authInvalidated).toBe(true);
         expect(fetchCalls.map((call) => call.url)).toEqual([
             expect.stringContaining('/heartbeat')
         ]);
     });
 
+    it('carries the generation the server issued for the session once the client snapshot holds it', async () => {
+        vi.useFakeTimers();
+        const own = clientSnapshot('principal-1');
+        clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId('principal-1', own);
+        stubFetch(({ url, method }) =>
+            method === 'POST' && url.includes('/clients/principal-1/')
+                ? jsonResponse(own)
+                : textResponse('unexpected', 500)
+        );
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        handle.stop();
+
+        expect(own.activeSessions[0]?.generationId).toBe('generation-session-1');
+        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls[0]?.body).toMatchObject({ generationId: 'generation-session-1' });
+        expect(handle.generationId).not.toBe('generation-session-1');
+    });
+
     it('uses one generation for an active heartbeat and allocates a new one after restart', async () => {
+        vi.useFakeTimers();
         stubFetch(({ url, method }) => {
             if (
                 method === 'POST' &&
@@ -370,14 +449,16 @@ describe('Browser session heartbeat', () => {
         });
 
         const first = await initHeartbeat(clientData, { authSession });
-        await vi.waitFor(() => expect(fetchCalls).toHaveLength(1));
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+        expect(fetchCalls).toHaveLength(1);
         expect(fetchCalls[0]?.body).toMatchObject({
             generationId: first.generationId
         });
 
         const second = await initHeartbeat(clientData, { authSession });
-        await vi.waitFor(() => expect(fetchCalls).toHaveLength(2));
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
         second.stop();
+        expect(fetchCalls).toHaveLength(2);
 
         expect(second.generationId).not.toBe(first.generationId);
         expect(fetchCalls[1]?.body).toMatchObject({

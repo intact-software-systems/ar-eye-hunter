@@ -28,7 +28,10 @@ export const DEFAULT_STATE_HEARTBEAT_TTL_MSECS = 120000;
 export type StateHeartbeatWorkflowValue = ClientSnapshot | GroupSnapshot | undefined;
 
 export interface RefreshStateHeartbeatOptions {
+    /** The browser's own generation; the group heartbeats fall back to it when a group snapshot lacks the session. */
     readonly generationId: string;
+    /** The browser's cached snapshot of its principal; absent until the server's connect snapshot has arrived. */
+    readonly clientSnapshot: ClientSnapshot | undefined;
     readonly scope?: StateScope;
     readonly authSession?: AuthSession;
     readonly heartbeatAtEpochMs?: number;
@@ -97,7 +100,7 @@ export async function refreshStateHeartbeat(
                         clientData,
                         request: clientHeartbeatRequest({
                             clientData,
-                            generationId: options.generationId,
+                            generationId: resolveClientSessionGenerationId(clientData, options),
                             heartbeatAtEpochMs,
                             expiresAtEpochMs
                         }),
@@ -214,6 +217,15 @@ async function heartbeatClientWithPresenceRepair(
         options: { requestId: input.repairRequestId, signal: input.signal, authSession: input.authSession },
         scope: input.scope
     });
+}
+
+function resolveClientSessionGenerationId(
+    clientData: ClientInfo,
+    options: Pick<RefreshStateHeartbeatOptions, 'generationId' | 'clientSnapshot'>
+): string {
+    return options.clientSnapshot?.activeSessions.find(
+        (session) => session.sessionId === clientData.sessionId
+    )?.generationId ?? options.generationId;
 }
 
 function clientHeartbeatRequest(

@@ -54,6 +54,7 @@ const roomRef = {
     groupId: 'room-1'
 };
 const overlayId = toScopedOverlayId(roomRef);
+const HEARTBEAT_INTERVAL_MS = 20_000;
 const clientData: ClientInfo = {
     clientId: 'receiver',
     sessionId: 'receiver',
@@ -537,6 +538,8 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         })
     );
 
+    const heartbeatAtEpochMs = Date.now();
+    vi.setSystemTime(heartbeatAtEpochMs - HEARTBEAT_INTERVAL_MS);
     const heartbeat = await initHeartbeat(clientData, {
         authSession,
         scope: {
@@ -545,13 +548,12 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
         },
         policies: { command: { maxAttempts: 1 } }
     });
-    await vi.waitFor(() => {
-        expect(
-            clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
-                clientData.clientId
-            )
-        ).toBeDefined();
-    });
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+    expect(
+        clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
+            clientData.clientId
+        )
+    ).toBeDefined();
     heartbeat.stop();
     await waitForGroupStateSnapshotChangesIdle();
     return fetchUrls;
