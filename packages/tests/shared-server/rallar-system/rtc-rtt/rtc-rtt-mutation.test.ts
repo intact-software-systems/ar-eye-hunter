@@ -319,12 +319,8 @@ describe('RTC RTT mutation phases', () => {
         if (computed.outcome !== 'write') {
             throw new Error('Expected RTT write');
         }
-        const malformed = structuredClone(computed) as typeof computed;
-        delete (
-            malformed.affectedGroups[0] as unknown as {
-                causalRevision?: unknown;
-            }
-        ).causalRevision;
+        const malformed = structuredClone(computed);
+        Reflect.deleteProperty(malformed.affectedGroups[0], 'causalRevision');
         expect(() => validateRtcRttMutation({ ...input, computed: malformed })).toThrow(
             'RTC RTT mutation differs from canonical computation'
         );

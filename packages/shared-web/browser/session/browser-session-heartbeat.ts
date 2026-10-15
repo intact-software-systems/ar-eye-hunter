@@ -21,7 +21,7 @@ export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
     scope?: StateScope;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
-    onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    onAuthInvalid?: (error: Error) => void | Promise<void>;
 }>;
 
 let activeHeartbeat: RallarSessionHeartbeat | undefined;
@@ -183,6 +183,6 @@ function isGroupSnapshotInScope(
         (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
 }
 
-function isUnauthorizedApiError(error: unknown): boolean {
+function isUnauthorizedApiError(error: unknown): error is ApiHttpError {
     return error instanceof ApiHttpError && error.status === 401;
 }
