@@ -1,11 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    createDefaultResourceInboxDequeuer,
+    ResourceInboxHandlerFinalizedRejection
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type {
+    ResourceInboxAttempt,
+    ResourceInboxAttemptReleaseTelemetry
+} from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import * as Resource from '@shared/queuebox/ResourceEntry.ts';
-import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import {
     afterEach,
@@ -15,7 +21,21 @@ import {
     vi
 } from 'vitest';
 
-type ReleasedFailures = Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>;
+interface DequeuedOnce {
+    readonly failures: Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>;
+    readonly releases: ResourceInboxAttemptReleaseTelemetry[];
+}
+
+class GroupAlreadyExistsError extends Error {
+    readonly code = 'group-already-exists';
+    readonly groupId: string;
+
+    constructor(groupId: string) {
+        super(`Group ${groupId} already exists`);
+        this.name = 'GroupAlreadyExistsError';
+        this.groupId = groupId;
+    }
+}
 
 describe('ResourceInbox dequeue failure log', () => {
     afterEach(() => {
@@ -30,7 +50,7 @@ describe('ResourceInbox dequeue failure log', () => {
         const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
         let attempts = 0;
 
-        const failures = await dequeueOnce(queue, 'storage-failure', async () => {
+        const { failures } = await dequeueOnce(queue, 'storage-failure', async () => {
             attempts += 1;
             if (attempts === 1) {
                 throw failure;
@@ -47,16 +67,52 @@ describe('ResourceInbox dequeue failure log', () => {
         expect(logged).toBe(failure);
         expect([...failures.values()].map(({ exception }) => exception)).toEqual([failure]);
     });
+
+    it('logs a handler-finalized typed rejection once as a value with its cause chain and no stack frames', async () => {
+        const queue = new InMemoryQueueBox();
+        const enqueued = toResourceEntry('command-rejection', { value: 1 });
+        await queue.enqueue(enqueued);
+        const cause = new GroupAlreadyExistsError('group-1');
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const { failures, releases } = await dequeueOnce(queue, 'command-rejection', async (attempt) => {
+            const [finalized] = (await queue.releaseEntries([
+                { entry: attempt.entry, disposition: { status: EntityStatus.FAILED, delayMs: null } }
+            ])).values();
+            return new ResourceInboxHandlerFinalizedRejection(finalized!, 'group-already-exists', cause);
+        });
+
+        expect(errorLog).toHaveBeenCalledTimes(1);
+        const [message, logged] = errorLog.mock.calls[0]!;
+        expect(message).toContain(enqueued.key.resourceId);
+        expect(message).toContain('group-already-exists');
+        expect(logged).toEqual({
+            name: 'GroupAlreadyExistsError',
+            message: 'Group group-1 already exists',
+            properties: { code: 'group-already-exists', groupId: 'group-1' },
+            cause: null
+        });
+        expect(JSON.stringify(errorLog.mock.calls[0])).not.toMatch(/\n\s+at /u);
+        expect(failures.size).toBe(0);
+        expect(releases).toEqual([expect.objectContaining({
+            key: enqueued.key,
+            classification: 'non-retryable',
+            status: EntityStatus.FAILED,
+            failure: { kind: 'non-retryable', code: 'group-already-exists', name: 'GroupAlreadyExistsError' }
+        })]);
+        expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.FAILED);
+    });
 });
 
 async function dequeueOnce(
     queue: InMemoryQueueBox,
     typeId: string,
-    computer: (attempt: ResourceInboxAttempt) => Promise<undefined>
-): Promise<ReleasedFailures> {
+    computer: (attempt: ResourceInboxAttempt) => Promise<ResourceInboxHandlerFinalizedRejection | undefined>
+): Promise<DequeuedOnce> {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    const failures: ReleasedFailures = new Map();
-    await createDefaultResourceInboxDequeuer<undefined>({
+    const failures = new Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>();
+    const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
+    await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedRejection | undefined>({
         repository: queue,
         typesToDequeue: () => new Set([typeId]),
         maxToReserve: () => 1,
@@ -68,7 +124,7 @@ async function dequeueOnce(
             concurrencyIncreaseStep: 1,
             concurrencyReduceStep: 1
         }),
-        options: { jitterUnit: () => 0.5 }
+        options: { jitterUnit: () => 0.5, onAttemptReleaseTelemetry: (event) => releases.push(event) }
     })
         .onFailedEntries((released) => {
             for (const [key, failure] of released) {
@@ -76,5 +132,5 @@ async function dequeueOnce(
             }
         })
         .dequeueForCompute(async (_key, attempt) => await computer(attempt));
-    return failures;
+    return { failures, releases };
 }

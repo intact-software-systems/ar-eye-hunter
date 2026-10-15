@@ -7,7 +7,10 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
+import {
+    toAppInboxLaneBudgetPolicy,
+    type AppInboxOptions
+} from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
@@ -63,9 +66,9 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
@@ -112,7 +115,7 @@ export interface ApiV1MutationRuntime {
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly groupStateService: CachedGroupStateService;
-    readonly appInboxDequeueOptions: DequeueResourceEntryOptions;
+    readonly appInboxDequeueOptions: InboxQueueReader.Options;
     readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
     readonly createAppAuthInboxService: RallarAuthInboxServiceFactory;
@@ -436,13 +439,14 @@ function createAppAuthInboxServiceFactory(
 function createAppInboxDequeueOptions(
     input: CreateApiV1MutationRuntimeInput,
     completionNotifications: ResourceInboxCompletionNotifications
-): DequeueResourceEntryOptions {
+): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
         completionNotifications,
         database: input.database,
         timing: input.timing
     });
     return {
+        laneBudgetPolicy: toAppInboxLaneBudgetPolicy(input.appInboxOptions),
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,

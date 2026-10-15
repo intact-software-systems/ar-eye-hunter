@@ -7,7 +7,6 @@ import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inb
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -75,7 +74,7 @@ export interface RallarAppClientInboxServiceFactoryInput {
     readonly wakeQueueEngine: () => void;
 }
 
-/** The one dequeue-pass timing on the shared inbox reader: the server's line, not any one inbox service's. */
+/** The dequeue-pass timing on the shared inbox and outbox readers: the server's lines, not any one service's. */
 export interface RallarMiddlewareDequeuePassTimingOptions {
     readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     readonly serviceId: string;
@@ -92,7 +91,7 @@ export interface RallarMiddlewareResilience {
 export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
-    readonly appInboxDequeueOptions?: DequeueResourceEntryOptions;
+    readonly appInboxDequeueOptions?: InboxQueueReader.Options;
     /** Absent when AppInbox phase timing is off. */
     readonly appInboxDequeuePassTiming?: RallarMiddlewareDequeuePassTimingOptions;
     readonly webSocketServer?: JsonWebSocketServer;

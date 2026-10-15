@@ -22,7 +22,7 @@ describe('InboxQueueReader', () => {
     it('captures precise enqueue time separately from admission time and retains it on replay', async () => {
         const queue = new InMemoryQueueBox();
         let createdAt = Temporal.Instant.from('2026-10-14T01:59:59.123456789+02:00');
-        const reader = new InboxQueueReader(queue, { nowEpochMs: () => 123 }, () => createdAt);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => 123 }, () => createdAt);
         const message = createAppInboxMessage('group-state.create.v1');
         const first = await reader.enqueueIfAbsent(message);
 

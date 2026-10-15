@@ -1,13 +1,14 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     ResourceInboxHandlerEntryError,
-    ResourceInboxHandlerFinalizedSuccess
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerFinalizedSuccess,
+    type ResourceInboxHandlerFinalized
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxCommandRejectedError } from '@shared/queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
@@ -103,13 +104,13 @@ export class AppInboxHandlerExecutor {
     }
 
     /**
-     * Resolves with the committed entry when the handler's own transaction finalized it, so the queue releases nothing.
-     * A handler that outlives its reservation lease is reported, not stopped: the claim may already be reclaimed, and a
-     * reclaimed attempt's late finish fails its attempt guard.
+     * Resolves with the committed entry when the handler's own transaction finalized it, as a success or as a typed
+     * rejection, so the queue releases nothing. A handler that outlives its reservation lease is reported, not
+     * stopped: the claim may already be reclaimed, and a reclaimed attempt's late finish fails its attempt guard.
      */
     async execute<Command, Result>(
         input: AppInboxHandlerExecutor.Input<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
+    ): Promise<ResourceInboxHandlerFinalized | undefined> {
         const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
@@ -163,7 +164,7 @@ export class AppInboxHandlerExecutor {
 
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
+    ): Promise<ResourceInboxHandlerFinalized | undefined> {
         let context: AppInboxMessageContext<Result> | undefined;
         let finalizedEntry: ResourceEntry;
         try {
@@ -246,9 +247,10 @@ export class AppInboxHandlerExecutor {
         });
     }
 
+    /** A retryable failure rethrows for redelivery; a typed rejection commits its terminal entry and is a value. */
     private async finishFailedExecution<Command, Result>(
         input: FailedAppInboxExecution<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalizedSuccess> {
+    ): Promise<ResourceInboxHandlerFinalized> {
         if (input.context) {
             const finalization = this.transactionWriter.read(input.context);
             if (
@@ -284,12 +286,14 @@ export class AppInboxHandlerExecutor {
             throw issues[0].cause;
         }
         await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
-        throw new ResourceInboxHandlerEntryError(
-            computed.finalizedEntry,
-            input.classification.queueFailure === 'command-rejected'
-                ? new ResourceInboxCommandRejectedError(input.classification.code, input.error)
-                : input.error
-        );
+        if (input.classification.queueFailure === 'command-rejected') {
+            return new ResourceInboxHandlerFinalizedRejection(
+                computed.finalizedEntry,
+                input.classification.code,
+                input.error
+            );
+        }
+        throw new ResourceInboxHandlerEntryError(computed.finalizedEntry, input.error);
     }
 
     private recordQueueRetryTiming<Command, Result>(

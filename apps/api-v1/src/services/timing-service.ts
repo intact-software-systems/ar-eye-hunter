@@ -24,6 +24,7 @@ export function toApiAppInboxServiceOptions(
 ): AppInboxOptions {
     return {
         phaseTiming: configuration.phaseTiming,
+        laneBudgetPolicy: configuration.laneBudgetPolicy,
         waitMaxElapsedMsecs: configuration.completionWait.maxElapsedMs,
         waitRetryIntervalMsecs: configuration.completionWait.retryIntervalMs,
         waitMaxRetryIntervalMsecs: configuration.completionWait.maxRetryIntervalMs,

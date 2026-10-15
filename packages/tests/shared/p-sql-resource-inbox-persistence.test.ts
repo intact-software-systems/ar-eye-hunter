@@ -41,7 +41,8 @@ describe('PostgreSQL resource inbox persistence', () => {
         await repo.reservations.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
-            reservationInput: 7
+            reservationInput: 7,
+            claimOrder: 'queue'
         });
 
         expect(capture.queries).toHaveLength(1);
@@ -84,7 +85,8 @@ describe('PostgreSQL resource inbox persistence', () => {
         await repo.reservations.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY]),
-            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            claimOrder: 'queue'
         });
 
         expect(capture.queries).toHaveLength(1);

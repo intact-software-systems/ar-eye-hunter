@@ -31,10 +31,14 @@ export interface ResourceInboxAttemptReleaseTelemetry {
         | ResourceInboxAttemptFailure;
 }
 
-export interface ResourceInboxAttemptFailure {
-    readonly kind: 'retryable' | 'non-retryable';
+/** The failure's code, or its name when it carries none, and the name of the error that caused it. */
+export interface ResourceInboxAttemptFailureCause {
     readonly code: string;
     readonly name: string;
+}
+
+export interface ResourceInboxAttemptFailure extends ResourceInboxAttemptFailureCause {
+    readonly kind: 'retryable' | 'non-retryable';
 }
 
 export interface ResourceInboxAttempt {
@@ -54,7 +58,7 @@ interface ResourceInboxAttemptReleaseInput {
     readonly attempt: ResourceInboxAttempt;
     readonly released: ResourceEntry;
     readonly classification: ResourceInboxAttemptReleaseTelemetry['classification'];
-    readonly exception: Error | undefined;
+    readonly failure: ResourceInboxAttemptFailureCause | undefined;
 }
 
 export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): ResourceInboxAttempt {
@@ -77,6 +81,11 @@ export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): R
     };
 }
 
+export function toResourceInboxAttemptFailureCause(exception: Error): ResourceInboxAttemptFailureCause {
+    const code = 'code' in exception && typeof exception.code === 'string' ? exception.code : exception.name;
+    return { code, name: exception.name };
+}
+
 export function recordResourceInboxAttemptRelease(
     sink: ((event: ResourceInboxAttemptReleaseTelemetry) => void) | undefined,
     input: ResourceInboxAttemptReleaseInput
@@ -90,7 +99,7 @@ export function recordResourceInboxAttemptRelease(
 function computeResourceInboxAttemptRelease(
     input: ResourceInboxAttemptReleaseInput
 ): ResourceInboxAttemptReleaseTelemetry {
-    const { attempt, released, classification, exception } = input;
+    const { attempt, released, classification, failure } = input;
     const { entry: reserved, telemetry: selection } = attempt;
     const endMs = released.dequeueAudit.endTs
         ? Number(released.dequeueAudit.endTs.epochMilliseconds)
@@ -115,17 +124,16 @@ function computeResourceInboxAttemptRelease(
         retryDelayMs,
         failure: classification === 'accepted' || classification === 'not-ready'
             ? { kind: 'none' }
-            : toReleaseFailure(classification, exception)
+            : toReleaseFailure(classification, failure)
     };
 }
 
 function toReleaseFailure(
     classification: Exclude<ResourceInboxAttemptReleaseTelemetry['classification'], 'accepted' | 'not-ready'>,
-    exception: Error | undefined
+    failure: ResourceInboxAttemptFailureCause | undefined
 ): ResourceInboxAttemptFailure {
-    if (exception === undefined) {
-        throw new Error('Resource inbox failed release telemetry is missing its exception');
+    if (failure === undefined) {
+        throw new Error('Resource inbox failed release telemetry is missing its failure');
     }
-    const code = 'code' in exception && typeof exception.code === 'string' ? exception.code : exception.name;
-    return { kind: classification, code, name: exception.name };
+    return { kind: classification, ...failure };
 }

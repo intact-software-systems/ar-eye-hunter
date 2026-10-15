@@ -8,14 +8,13 @@ import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-type
 import {
     createDefaultResourceInboxDequeuer,
     type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalizedSuccess
+    type ResourceInboxHandlerFinalized
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxCommandRejectedError } from '../queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -39,7 +38,7 @@ export namespace QueueBoxUtilities {
         readonly onDequeuedDo: (
             entry: ResourceEntry,
             attemptTelemetry: ResourceInboxAttemptTelemetry
-        ) => Promise<void | ResourceInboxHandlerFinalizedSuccess>;
+        ) => Promise<void | ResourceInboxHandlerFinalized>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
         /** The probe that preceded this pass; without one every lane is offered a reservation. */
@@ -75,7 +74,7 @@ export class QueueBoxUtilities {
         }
 
         let claimedCount = 0;
-        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess | undefined>({
+        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalized | undefined>({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
@@ -144,9 +143,7 @@ export class QueueBoxUtilities {
     }
 }
 
-/** A handler failure the queue cannot explain as not-ready, a rejected command or an expected conflict. */
+/** A handler failure the queue cannot explain as not-ready or an expected conflict; a typed rejection is a value. */
 function isOperationalDequeueFailure(exception: Error, options: DequeueResourceEntryOptions): boolean {
-    return !isNotReadyException(exception) &&
-        !(exception instanceof ResourceInboxCommandRejectedError) &&
-        !(options.isRetryableConflict?.(exception) ?? false);
+    return !isNotReadyException(exception) && !(options.isRetryableConflict?.(exception) ?? false);
 }

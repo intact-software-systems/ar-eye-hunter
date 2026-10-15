@@ -264,7 +264,10 @@ export function createRegisteredHandlerHarness(
     const now = options.now ?? Temporal.Now.instant;
     const queue = new RegisteredHandlerInbox(new Map(), now);
     const results = new RegisteredHandlerResults(options.failResultWriteAfter);
-    const reader = new InboxQueueReader(queue, { nowEpochMs: () => Number(now().epochMilliseconds) });
+    const reader = new InboxQueueReader(queue, {
+        laneBudgetPolicy: 'adaptive-retry',
+        nowEpochMs: () => Number(now().epochMilliseconds)
+    });
     const service = new AtomicAppInboxService(
         {
             inboxQueueReader: reader,

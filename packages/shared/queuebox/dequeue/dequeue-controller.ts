@@ -257,7 +257,11 @@ export class DequeueController<K, V, T> {
         return this.returnDequeuedEntries ? finalized : new Map();
     }
 
-    /** A reservation or release error leaves the lane at once: the caller owns its backoff, never this slot. */
+    /**
+     * A round that claimed fewer than it asked for found every row it could claim, so the lane ends for this pass;
+     * rows that arrive meanwhile wait for the next pass. A reservation or release error leaves the lane at once:
+     * the caller owns its backoff, never this slot.
+     */
     private async dequeueLane(
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => Promise<T>,
@@ -279,7 +283,8 @@ export class DequeueController<K, V, T> {
             }
             const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
             claimedCount += reserved.size;
-            if (await this.computeAndReleaseReserved(reserved, computer, allComputed) === 0) {
+            const computedCount = await this.computeAndReleaseReserved(reserved, computer, allComputed);
+            if (computedCount === 0 || reserved.size < numToReserve) {
                 return allComputed;
             }
         }

@@ -1,10 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { RateLimiter } from '../../resilience/Resilience.ts';
+import { toErrorSummary } from '../../resilience/to-error.ts';
+import { toDequeuedKeyText } from '../dequeue/dequeue-batch.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
 import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
+    type ResourceInboxClaimOrder,
     type ResourceInboxFinalizationSelection,
     type ResourceInboxReleaseDisposition
 } from '../queue-box-types.ts';
@@ -25,7 +28,9 @@ import { isNotReadyException, NotReadyException } from './not-ready-exception.ts
 import {
     computeResourceInboxAttempt,
     recordResourceInboxAttemptRelease,
+    toResourceInboxAttemptFailureCause,
     type ResourceInboxAttempt,
+    type ResourceInboxAttemptFailureCause,
     type ResourceInboxAttemptReleaseTelemetry
 } from './resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from './resource-inbox-completion-notifications.ts';
@@ -116,6 +121,26 @@ export class ResourceInboxHandlerFinalizedSuccess {
     }
 }
 
+/**
+ * A handler's typed rejection whose own transaction already committed the terminal entry: a value, not an operational
+ * failure. The queue releases nothing, records the attempt as non-retryable and logs the rejection's cause chain.
+ */
+export class ResourceInboxHandlerFinalizedRejection {
+    readonly entry: ResourceEntry;
+    readonly code: string;
+    readonly cause: Error;
+
+    constructor(entry: ResourceEntry, code: string, cause: Error) {
+        this.entry = entry;
+        this.code = code;
+        this.cause = cause;
+    }
+}
+
+export type ResourceInboxHandlerFinalized =
+    | ResourceInboxHandlerFinalizedSuccess
+    | ResourceInboxHandlerFinalizedRejection;
+
 export interface ResourceInboxDequeuerInput {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
@@ -130,6 +155,8 @@ export interface ResourceInboxDequeuerInput {
 
 export interface DequeueResourceEntryOptions {
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
+    /** The order the NEW lane claims in; absent claims in queue order. The other lanes always claim in queue order. */
+    readonly newLaneClaimOrder?: ResourceInboxClaimOrder;
     /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
     readonly isRetryableConflict?: (error: Error) => boolean;
     readonly jitterUnit?: () => number;
@@ -161,6 +188,8 @@ interface ResourceInboxReservationSelection {
 interface ResourceInboxReleasedSuccess<V> {
     readonly original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>;
     readonly entry: ResourceEntry;
+    readonly classification: 'accepted' | 'non-retryable';
+    readonly failure: ResourceInboxAttemptFailureCause | undefined;
 }
 
 interface ResourceInboxFailureDecision {
@@ -235,7 +264,8 @@ async function reserveResourceInboxAttempts(
         reservationInput: {
             maxToReserve: selection.maxToReserve,
             maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
-        }
+        },
+        claimOrder: selection.lane === Reservator.NEW ? dependencies.options.newLaneClaimOrder ?? 'queue' : 'queue'
     });
     return toResourceInboxAttempts(dependencies, entries, selection.lane);
 }
@@ -342,17 +372,15 @@ async function releaseResourceInboxSuccesses<V>(
     dependencies: ResourceInboxDequeueDependencies,
     successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
 ): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
-    const reserved = [...successes.values()].filter((success) =>
-        !(success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess)
-    );
+    const reserved = [...successes.values()].filter((success) => !isHandlerFinalized(success.computedValue));
     const released = reserved.length === 0 ? new Map<Resource.Key, ResourceEntry>() : await dependencies.repository
         .releaseEntries(reserved.map((success) => ({
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
         })));
     const handlerFinalized = [...successes.values()].flatMap((success) =>
-        success.computedValue instanceof ResourceInboxHandlerFinalizedSuccess
-            ? [toHandlerFinalizedResourceInboxSuccess(success, success.computedValue.entry)]
+        isHandlerFinalized(success.computedValue)
+            ? [toHandlerFinalizedResourceInboxRelease(success, success.computedValue)]
             : []
     );
     const releasedByQueue = [...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes));
@@ -361,12 +389,12 @@ async function releaseResourceInboxSuccesses<V>(
     }
     const releases = [...handlerFinalized, ...releasedByQueue];
     const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
-    for (const { original, entry } of releases) {
+    for (const { original, entry, classification, failure } of releases) {
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
             released: entry,
-            classification: 'accepted',
-            exception: undefined
+            classification,
+            failure
         });
         result.set(original.key, {
             key: original.key,
@@ -404,7 +432,7 @@ async function releaseResourceInboxFailure(
             attempt: original.value,
             released: failure.value.entry,
             classification: failure.value.entry.status === EntityStatus.COMPLETED ? 'accepted' : 'non-retryable',
-            exception: failure.exception
+            failure: toResourceInboxAttemptFailureCause(failure.exception)
         });
         return failure;
     }
@@ -429,7 +457,7 @@ async function releaseResourceInboxFailure(
         attempt: original.value,
         released: entry,
         classification: decision.classification,
-        exception: failure.exception
+        failure: toResourceInboxAttemptFailureCause(failure.exception)
     });
     return { key: original.key, value: { ...failure.value, entry }, exception: failure.exception };
 }
@@ -585,18 +613,39 @@ function publishResourceInboxCompletion(
     }
 }
 
-function toHandlerFinalizedResourceInboxSuccess<V>(
+function isHandlerFinalized(computedValue: unknown): computedValue is ResourceInboxHandlerFinalized {
+    return computedValue instanceof ResourceInboxHandlerFinalizedSuccess ||
+        computedValue instanceof ResourceInboxHandlerFinalizedRejection;
+}
+
+function toHandlerFinalizedResourceInboxRelease<V>(
     original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>,
-    entry: ResourceEntry
+    finalized: ResourceInboxHandlerFinalized
 ): ResourceInboxReleasedSuccess<V> {
+    const { entry } = finalized;
+    const expectedStatuses: readonly EntityStatus[] = finalized instanceof ResourceInboxHandlerFinalizedSuccess
+        ? [EntityStatus.COMPLETED]
+        : [EntityStatus.FAILED, EntityStatus.NON_RETRYABLE];
     if (
         !isKeysEqual(entry.key, original.key) ||
         entry.dequeueAudit.attempts !== original.value.entry.dequeueAudit.attempts ||
-        entry.status !== EntityStatus.COMPLETED
+        !expectedStatuses.includes(entry.status)
     ) {
-        throw new Error('Handler-finalized entry does not complete the claimed reservation');
+        throw new Error('Handler-finalized entry does not finalize the claimed reservation');
     }
-    return { original, entry };
+    if (finalized instanceof ResourceInboxHandlerFinalizedSuccess) {
+        return { original, entry, classification: 'accepted', failure: undefined };
+    }
+    console.error(
+        `Handler rejected dequeued key ${toDequeuedKeyText(original.key)} as ${finalized.code}.`,
+        toErrorSummary(finalized.cause)
+    );
+    return {
+        original,
+        entry,
+        classification: 'non-retryable',
+        failure: { code: finalized.code, name: finalized.cause.name }
+    };
 }
 
 function toReleasedResourceInboxSuccess<V>(
@@ -608,5 +657,5 @@ function toReleasedResourceInboxSuccess<V>(
     if (original === undefined || !isKeysEqual(entry.key, key)) {
         throw new Error(`Missing success dto for key: ${String(key)}`);
     }
-    return { original, entry };
+    return { original, entry, classification: 'accepted', failure: undefined };
 }

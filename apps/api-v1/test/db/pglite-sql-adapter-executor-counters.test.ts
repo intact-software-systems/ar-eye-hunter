@@ -33,3 +33,29 @@ Deno.test('PGlite executor counters count every statement handed to one executor
         await second.close();
     }
 });
+
+Deno.test('PGlite counter scope credits only the statements issued through the scoped handle, inside and outside its transaction, while the executor counts them all', async () => {
+    const root = createPGliteSqlClient(new PGlite('memory://'));
+    try {
+        const scoped = root.openCounterScope?.();
+        assert.ok(scoped, 'the PGlite port opens counter scopes');
+        await Promise.all([
+            scoped.begin(async (transaction) => {
+                await transaction`select pg_sleep(0.01)`;
+                await transaction`select 1 as one`;
+            }),
+            root`select 2 as two`,
+            root`select 3 as three`
+        ]);
+        await scoped`select 4 as four`;
+        await root`select 5 as five`;
+
+        assert.equal(scoped.getExecutorCounters?.()?.statements, 3, 'the scope: two transaction statements and one outside');
+        assert.equal(root.getExecutorCounters?.()?.statements, 6, 'the executor: every statement of every handle');
+        const second = root.openCounterScope?.();
+        assert.deepEqual(second?.getExecutorCounters?.(), { statements: 0, executorWaitMs: 0 }, 'a new scope starts empty');
+    }
+    finally {
+        await root.close();
+    }
+});

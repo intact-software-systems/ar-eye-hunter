@@ -23,6 +23,7 @@ import { createWsServerTargetResolver } from '../websocket/targets/create-ws-ser
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
     CreateRallarMiddlewareOptions,
+    RallarMiddlewareDequeuePassTimingOptions,
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
 
@@ -85,7 +86,7 @@ export function createRallarMiddlewareInfrastructure(
     return {
         wsQBoxServerService,
         inboxQueueReader: createMiddlewareInboxQueueReader(options),
-        outboxQueueReader: new OutboxQueueReader(options.outbox ?? options.inbox),
+        outboxQueueReader: createMiddlewareOutboxQueueReader(options),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
@@ -97,18 +98,36 @@ export function createRallarMiddlewareInfrastructure(
 function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {
     const inboxQueueReader = new InboxQueueReader(
         options.inbox,
-        { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
+        {
+            laneBudgetPolicy: InboxQueueReader.DEFAULT_LANE_BUDGET_POLICY,
+            ...options.appInboxDequeueOptions,
+            isRetryableConflict: isAppInboxRetryableConflict
+        }
     );
-    const timing = options.appInboxDequeuePassTiming;
-    if (timing !== undefined) {
-        inboxQueueReader.onDequeuePassDo(
-            new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
-                serviceId: timing.serviceId,
-                sink: timing.sink
-            })
-        );
-    }
+    installDequeuePassTiming(inboxQueueReader, options.appInboxDequeuePassTiming);
     return inboxQueueReader;
+}
+
+function createMiddlewareOutboxQueueReader(options: CreateRallarMiddlewareOptions): OutboxQueueReader {
+    const outboxQueueReader = new OutboxQueueReader(options.outbox ?? options.inbox);
+    installDequeuePassTiming(outboxQueueReader, options.appInboxDequeuePassTiming);
+    return outboxQueueReader;
+}
+
+/** Each reader observes its own passes, so each gets its own timing with the server's one sink. */
+function installDequeuePassTiming(
+    reader: Pick<InboxQueueReader, 'onDequeuePassDo'>,
+    timing: RallarMiddlewareDequeuePassTimingOptions | undefined
+): void {
+    if (timing === undefined) {
+        return;
+    }
+    reader.onDequeuePassDo(
+        new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
+            serviceId: timing.serviceId,
+            sink: timing.sink
+        })
+    );
 }
 
 function createMiddlewareWsQueueBoxServer(

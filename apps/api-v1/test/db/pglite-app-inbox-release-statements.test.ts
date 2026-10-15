@@ -44,6 +44,7 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
         let handlerCommittedAt: number | undefined;
         const queueInbox = createPSqlResourceInboxRepository(recordingSql, () => new Date());
         const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'adaptive-retry',
             completionNotifications,
             onAttemptReleaseTelemetry: (release) => {
                 releases.push(release);

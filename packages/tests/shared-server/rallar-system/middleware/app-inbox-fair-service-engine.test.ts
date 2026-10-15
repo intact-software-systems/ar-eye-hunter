@@ -27,7 +27,7 @@ describe('registered AppInbox fair service engine', () => {
     it('re-enters for every leftover NEW command and sleeps while a neutral retry is delayed', async () => {
         vi.useFakeTimers();
         const queue = new ObservedEngineQueue(new Map(), () => Temporal.Instant.fromEpochMilliseconds(Date.now()));
-        const reader = new InboxQueueReader(queue, { nowEpochMs: Date.now });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: Date.now });
         const engine = new InboxOutboxEngine();
         const resilience = createQueueResilience();
         registerApplicationQueueReaderTasks({

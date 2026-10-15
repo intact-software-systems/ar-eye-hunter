@@ -9,13 +9,10 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import { createCountingIndexedDbOperationObserver, type IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
-import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueMessageReader } from '@shared/services/queue-message-reader.ts';
 
 import {
     createQueueMessage,
@@ -23,21 +20,11 @@ import {
     seedRetry
 } from './fair-service-fixture.ts';
 
-const ARMS = ['current1000', 'fixed1', 'adaptive', 'fixedRetry2'] as const;
-
-function fixedBudgets(retryQuota: number): DequeueController.LaneBudgets {
-    return {
-        FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1 },
-        NEW: { maxToReserve: 1, maxNumToDequeue: 1 },
-        FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1 },
-        RETRY: { maxToReserve: 1, maxNumToDequeue: retryQuota },
-        TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1 }
-    };
-}
+const ARMS = InboxQueueReader.LANE_BUDGET_POLICIES;
 
 namespace QueueComparison {
     export interface Result {
-        readonly arm: typeof ARMS[number];
+        readonly arm: InboxQueueReader.LaneBudgetPolicy;
         readonly passes: number;
         readonly retryCompletionPass: number;
         readonly completed: readonly string[];
@@ -53,27 +40,20 @@ class QueueComparison {
         observer: this.observer,
         now: () => Temporal.Instant.fromEpochMilliseconds(this.now)
     });
-    private readonly options = { nowEpochMs: () => this.now };
-    private readonly reader = new InboxQueueReader(this.queue, this.options);
-    private readonly genericReader = new QueueMessageReader(this.queue, {
-        creationNow: Temporal.Now.instant,
-        enqueueType: EnqueuedType.APP_INBOX,
-        dequeueOptions: this.options
-    });
+    private readonly reader: InboxQueueReader;
     private readonly resilience = createQueueResilience();
     private readonly completed: string[] = [];
     private readonly entries: ResourceEntry[] = [];
     private passes = 0;
     private retryCompletionPass = 0;
-    private readonly arm: typeof ARMS[number];
+    private readonly arm: InboxQueueReader.LaneBudgetPolicy;
     private readonly recurring: boolean;
 
-    constructor(arm: typeof ARMS[number], recurring: boolean) {
+    constructor(arm: InboxQueueReader.LaneBudgetPolicy, recurring: boolean) {
         this.arm = arm;
         this.recurring = recurring;
-        const callback = { onMessage: async (message: ALMessage) => this.onMessage(message) };
-        this.reader.onInboxMessageDo('test.fair-service', callback);
-        this.genericReader.onMessageDo('test.fair-service', callback);
+        this.reader = new InboxQueueReader(this.queue, { laneBudgetPolicy: arm, nowEpochMs: () => this.now });
+        this.reader.onInboxMessageDo('test.fair-service', { onMessage: async (message: ALMessage) => this.onMessage(message) });
     }
 
     async run(): Promise<QueueComparison.Result> {
@@ -113,18 +93,7 @@ class QueueComparison {
 
     private async dequeuePass(): Promise<void> {
         this.passes += 1;
-        if (this.arm === 'adaptive') {
-            await this.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, this.resilience);
-        }
-        else {
-            await this.genericReader.dequeue({
-                typesToDequeue: InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                resilience: this.resilience,
-                readLaneBudgets: this.arm === 'current1000' ? undefined : () => fixedBudgets(this.arm === 'fixedRetry2' ? 2 : 1),
-                workAdvertisement: undefined,
-                handlerObserver: undefined
-            });
-        }
+        await this.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, this.resilience);
     }
 
     private async onMessage(message: ALMessage): Promise<void> {
@@ -201,7 +170,8 @@ describe('AppInbox four-arm durable-work comparison', () => {
             results.push(await new QueueComparison(arm, false).run());
         }
         process.stdout.write(`BACKLOG_COMPARISON ${JSON.stringify(results)}\n`);
-        expect(results[0]!.completed.slice(0, 12).every((id) => id.startsWith('new'))).toBe(true);
+        expect(results[0]!.completed[0]).toBe('new-0');
+        expect(results[0]!.completed.slice(1, 13).every((id) => id.startsWith('retry'))).toBe(true);
         for (const result of results.slice(1)) {
             expect(result.completed.slice(0, 2)).toEqual(['new-0', 'retry-0']);
         }

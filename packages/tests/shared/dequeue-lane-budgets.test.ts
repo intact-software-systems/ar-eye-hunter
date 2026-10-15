@@ -137,6 +137,16 @@ describe('DequeueController lane budgets', () => {
         expect(reserve).toHaveBeenCalledWith(new Set(['APP_INBOX']), 2);
     });
 
+    it('ends a lane after a round that claimed fewer rows than it asked for, so the pass issues no empty reservation', async () => {
+        const reserve = vi.fn(async () => new Map([['only', 'work']]));
+        const controller = createScalarController({ maxNumToDequeue: 8, maxToReserve: () => 4, reserve });
+
+        const results = await controller.dequeueForCompute(async (key) => key);
+
+        expect([...results.get(Reservator.NEW)!.keys()]).toEqual(['only']);
+        expect(reserve).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps numeric limits per lane when no budget callback is configured', async () => {
         let now = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => now);

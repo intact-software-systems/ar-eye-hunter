@@ -97,9 +97,10 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         attempt: ResourceInboxAttempt,
         computed: AppInboxCompletionComputed<Result>
     ): Promise<void> {
+        const transactionScope = this.openTransactionScope();
         await timeAppInboxPhase({
             sink: this.config.timing,
-            database: this.database,
+            database: transactionScope,
             event: {
                 component: 'app-inbox-phase',
                 operation: 'transaction',
@@ -108,7 +109,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 details: { ...attempt.telemetry, classification: 'non-retryable' }
             }
         }, async () =>
-            await runInPSqlTransaction(this.database, async (transaction) => {
+            await runInPSqlTransaction(transactionScope, async (transaction) => {
                 await writeAppInboxCompletion(transaction, computed);
             }));
         this.completionNotifications?.publish(computed.finalizedEntry.key);
@@ -146,10 +147,11 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         details: RallarTimingDetails,
         write: PSqlTransactionWrite<ReturnResult>
     ): Promise<ReturnResult> {
+        const transactionScope = this.openTransactionScope();
         return await timeAppInboxPhase(
             {
                 sink: this.config.timing,
-                database: this.database,
+                database: transactionScope,
                 event: {
                     component: 'app-inbox-phase',
                     operation: 'transaction',
@@ -160,10 +162,15 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             },
             async () =>
                 await runInPSqlTransaction(
-                    this.database,
+                    transactionScope,
                     async (transaction) => await write(transaction)
                 )
         );
+    }
+
+    /** One scope per transaction, so its line counts this transaction's statements alone when the port scopes. */
+    private openTransactionScope(): PSqlSql {
+        return this.database.openCounterScope?.() ?? this.database;
     }
 
     private toTimingDetails(context: AppInboxExecutionMetadata): RallarTimingDetails {

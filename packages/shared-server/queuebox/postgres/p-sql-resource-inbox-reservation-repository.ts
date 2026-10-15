@@ -3,6 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     toResourceInboxReservationOptions,
+    type ResourceInboxClaimOrder,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationInput,
     type ResourceInboxWorkPage
@@ -33,12 +34,15 @@ export interface StartProcessingEntitySkipped {
 }
 
 export namespace PSqlResourceInboxReservationRepository {
-    export interface ReservationClaim {
+    export interface ReservationSelection {
         readonly typeIds: ReadonlySet<string>;
         readonly statusIds: ReadonlySet<EntityStatus>;
         readonly reservationInput: ResourceInboxReservationInput;
     }
-    export interface ReservationRead extends ReservationClaim {
+    export interface ReservationClaim extends ReservationSelection {
+        readonly claimOrder: ResourceInboxClaimOrder;
+    }
+    export interface ReservationRead extends ReservationSelection {
         readonly observedRowIds: readonly string[];
     }
     export interface TimeoutReservationRead {
@@ -147,12 +151,13 @@ export class PSqlResourceInboxReservationRepository {
     /**
      * Selects and starts processing the next eligible rows in one statement: the same rows
      * `findEntriesSkipLocked` would lock, carrying the lease and attempt `startProcessingEntity` gives.
-     * A row whose selected lifecycle was corrupt throws, so the caller's transaction rolls the claim
-     * back instead of repairing the row. `RETURNING` keeps no order, so the selection order is
-     * restored from the selected due time.
+     * In `oldest-per-context` order a row is selected only when no eligible row of its context is ahead
+     * of it, so the claim takes each context's first row. A row whose selected lifecycle was corrupt
+     * throws, so the caller's transaction rolls the claim back instead of repairing the row.
+     * `RETURNING` keeps no order, so the selection order is restored from the selected due time.
      */
     async reserveEntriesSkipLocked(
-        { typeIds, statusIds, reservationInput }: PSqlResourceInboxReservationRepository.ReservationClaim
+        { typeIds, statusIds, reservationInput, claimOrder }: PSqlResourceInboxReservationRepository.ReservationClaim
     ): Promise<Map<string, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -162,7 +167,9 @@ export class PSqlResourceInboxReservationRepository {
             return new Map();
         }
 
-        const rows = await this.sql<ClaimedResourceInboxRow[]>`
+        // Separate query shapes keep the queue-order claim's plan free of the per-context probe.
+        const rows = claimOrder === 'queue'
+            ? await this.sql<ClaimedResourceInboxRow[]>`
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
                 ri_attempts = ri_attempts + 1,
@@ -190,6 +197,66 @@ export class PSqlResourceInboxReservationRepository {
                   )
                 order by next_ts asc nulls first, ri_row_id asc
                     for update skip locked
+                limit ${maxToReserve}
+            ) as selected
+            where resource_inbox.ri_row_id = selected.ri_row_id
+            returning resource_inbox.*,
+                      selected.selected_status,
+                      selected.selected_attempts,
+                      selected.selected_start_ts,
+                      selected.selected_end_ts,
+                      selected.selected_next_ts
+        `
+            : await this.sql<ClaimedResourceInboxRow[]>`
+            update resource_inbox
+            set ri_status   = ${EntityStatus.RESERVED},
+                ri_attempts = ri_attempts + 1,
+                start_ts    = now() at time zone 'UTC',
+                end_ts      = null,
+                next_ts     = null
+            from (
+                select candidate.ri_row_id,
+                       candidate.ri_status as selected_status,
+                       candidate.ri_attempts as selected_attempts,
+                       candidate.start_ts as selected_start_ts,
+                       candidate.end_ts as selected_end_ts,
+                       candidate.next_ts as selected_next_ts
+                from resource_inbox candidate
+                where candidate.ri_type_id in ${this.sql([...typeIds])}
+                  and candidate.ri_status in ${this.sql([...statusIds])}
+                  and candidate.ri_status <> ${EntityStatus.FAILED}
+                  and candidate.expire_ts > (now() at time zone 'UTC')
+                  and candidate.ri_attempts < ${maxAttempts}
+                  and (
+                      (candidate.ri_status = ${EntityStatus.RETRY} and candidate.next_ts <= (now() at time zone 'UTC'))
+                      or
+                      (candidate.ri_status <> ${EntityStatus.RETRY} and candidate.start_ts is null
+                          and (candidate.next_ts is null or candidate.next_ts <= (now() at time zone 'UTC')))
+                  )
+                  and not exists (
+                      select 1
+                      from resource_inbox ahead
+                      where ahead.fk_ext_bank_id = candidate.fk_ext_bank_id
+                        and ahead.ri_type_id in ${this.sql([...typeIds])}
+                        and ahead.ri_status in ${this.sql([...statusIds])}
+                        and ahead.ri_status <> ${EntityStatus.FAILED}
+                        and ahead.expire_ts > (now() at time zone 'UTC')
+                        and ahead.ri_attempts < ${maxAttempts}
+                        and (
+                            (ahead.ri_status = ${EntityStatus.RETRY} and ahead.next_ts <= (now() at time zone 'UTC'))
+                            or
+                            (ahead.ri_status <> ${EntityStatus.RETRY} and ahead.start_ts is null
+                                and (ahead.next_ts is null or ahead.next_ts <= (now() at time zone 'UTC')))
+                        )
+                        and (
+                            (ahead.next_ts is null and candidate.next_ts is not null)
+                            or (ahead.next_ts is not distinct from candidate.next_ts
+                                and ahead.ri_row_id < candidate.ri_row_id)
+                            or ahead.next_ts < candidate.next_ts
+                        )
+                  )
+                order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
+                    for update of candidate skip locked
                 limit ${maxToReserve}
             ) as selected
             where resource_inbox.ri_row_id = selected.ri_row_id

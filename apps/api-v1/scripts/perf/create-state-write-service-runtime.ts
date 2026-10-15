@@ -99,6 +99,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     });
     const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql, () => new Date(nowEpochMs()));
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'adaptive-retry',
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     });
     const results = new ResourceInboxResultsRepository(instrumentedSql);

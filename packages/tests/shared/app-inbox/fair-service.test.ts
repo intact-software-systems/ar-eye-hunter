@@ -34,7 +34,7 @@ describe('AppInbox fair service', () => {
     it('completes an overdue retry before trailing NEW work is consumed', async () => {
         let now = Date.now();
         const queue = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(now));
-        const reader = new InboxQueueReader(queue, { nowEpochMs: () => now });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => now });
         const resilience = createQueueResilience();
         const retry = await seedRetry(queue, 'retry');
         const first = await reader.enqueueIfAbsent(createQueueMessage('first'));

@@ -18,10 +18,18 @@ type PGliteSavepointState = {
     nextId: number;
 };
 
-/** Owned by the root handle and shared with every transaction handle it opens. */
 interface PGliteExecutorCounterState {
     statements: number;
     executorWaitMs: number;
+}
+
+/**
+ * The executor's state is owned by the root handle and credited by every handle; a counter scope adds its own
+ * state, which the scoped handle and the transactions it opens report.
+ */
+interface PGliteCounterBinding {
+    readonly credited: readonly PGliteExecutorCounterState[];
+    readonly reported: PGliteExecutorCounterState;
 }
 
 type PGliteSavepointSql = PSqlSql & {
@@ -43,7 +51,7 @@ type SqlCallableOptions = Readonly<{
     raw: PGlite;
     executor: PGliteQueryExecutor;
     ready: Promise<void>;
-    counters: PGliteExecutorCounterState;
+    counters: PGliteCounterBinding;
     stopBeforeClose?: () => Promise<void>;
     inTransaction: boolean;
     savepointState?: PGliteSavepointState;
@@ -67,11 +75,12 @@ export function createPGliteSqlClient(
     options: PGliteSqlClientOptions = {}
 ): PGliteSql {
     const ready = options.ready ?? raw.waitReady;
+    const executorCounters: PGliteExecutorCounterState = { statements: 0, executorWaitMs: 0 };
     return createSqlCallable({
         raw,
         executor: raw,
         ready,
-        counters: { statements: 0, executorWaitMs: 0 },
+        counters: { credited: [executorCounters], reported: executorCounters },
         stopBeforeClose: options.stopBeforeClose,
         inTransaction: false
     }) as PGliteSql;
@@ -92,10 +101,9 @@ function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
         return queryRows(options, stringsOrValues, values);
     }) as PSqlSql;
 
-    sql.getExecutorCounters = (): PSqlExecutorCounters => ({
-        statements: options.counters.statements,
-        executorWaitMs: options.counters.executorWaitMs
-    });
+    sql.getExecutorCounters = (): PSqlExecutorCounters => ({ ...options.counters.reported });
+    sql.openCounterScope = (): PSqlSql =>
+        createSqlCallable({ ...options, counters: toScopedCounterBinding(options.counters) }) as PSqlSql;
     attachPGliteBegin(sql, options);
     attachPGliteSavepoint(sql, options);
     return attachPGliteLifecycle(sql, options);
@@ -196,14 +204,24 @@ async function executeCountedStatement<T>(
     text: string,
     params: readonly PSqlParameter[] = []
 ): Promise<{ rows: T[]; }> {
-    options.counters.statements += 1;
+    for (const counters of options.counters.credited) {
+        counters.statements += 1;
+    }
     const calledAt = performance.now();
     try {
         return await options.executor.query<T>(text, params, PGLITE_QUERY_OPTIONS);
     }
     finally {
-        options.counters.executorWaitMs += performance.now() - calledAt;
+        const waitedMs = performance.now() - calledAt;
+        for (const counters of options.counters.credited) {
+            counters.executorWaitMs += waitedMs;
+        }
     }
+}
+
+function toScopedCounterBinding(binding: PGliteCounterBinding): PGliteCounterBinding {
+    const scope: PGliteExecutorCounterState = { statements: 0, executorWaitMs: 0 };
+    return { credited: [...binding.credited, scope], reported: scope };
 }
 
 function renderPGliteTemplate(

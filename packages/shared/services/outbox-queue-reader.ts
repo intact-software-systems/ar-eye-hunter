@@ -46,11 +46,16 @@ export class OutboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
+    onDequeuePassDo(observer: QueueMessageReader.DequeuePassObserver): void {
+        this.reader.onDequeuePassDo(observer);
+    }
+
+    /** One storage read naming the lanes the next pass may claim from; the engine's work probe for this queue. */
     async readWorkAdvertisement(
         typesToDequeue: Set<string>,
         resilience: ResourceInboxResilience
     ): Promise<DequeueController.WorkAdvertisement> {
-        return await this.outbox.readWorkAdvertisement(typesToDequeue, resilience.toWorkAdvertisementOptions());
+        return await this.reader.readWorkAdvertisement(typesToDequeue, resilience);
     }
 
     /** Resolves with the number of entries this invocation claimed; a preceding probe limits the lanes it offers. */
@@ -63,8 +68,7 @@ export class OutboxQueueReader {
             typesToDequeue,
             resilience,
             readLaneBudgets: undefined,
-            workAdvertisement,
-            handlerObserver: undefined
+            workAdvertisement
         });
     }
 }

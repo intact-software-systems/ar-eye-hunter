@@ -51,6 +51,7 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxClaimOrder,
     type ResourceInboxReservationRequest,
     type ResourceInboxTimeoutReservationRequest
 } from './queue-box-types.ts';
@@ -60,6 +61,7 @@ import {
     validateResourceEntryObservation,
     validateResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
+import { ResourceInboxClaimedContexts } from './resource-inbox-claimed-contexts.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,
@@ -426,6 +428,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 observations,
                 maxToReserve,
                 now,
+                claimOrder: 'queue',
                 isReservable: (stored) =>
                     stored.dequeueAudit.attempts < maxAttempts &&
                     isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
@@ -442,7 +445,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
+        { typeIds, statusIds, reservationInput, observedEntries, claimOrder }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const operation = this.#connection.beginOperation();
         try {
@@ -463,13 +466,17 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 observations,
                 typeIds,
                 statusIds,
-                maxToReadPerCombination: maxToReserve
+                // Look ahead like the probe: one context's backlog sorting first must not hide another context's row.
+                maxToReadPerCombination: claimOrder === 'oldest-per-context'
+                    ? Math.max(maxToReserve, INDEXED_DB_QUEUE_PROBE_MAX_TO_READ)
+                    : maxToReserve
             });
             const selection = computeIndexedDbReservation({
                 candidates,
                 observations,
                 maxToReserve,
                 now,
+                claimOrder: claimOrder ?? 'queue',
                 isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
             });
             // An unreservable row that is also expired is swept by the write this claim already owes.
@@ -858,6 +865,7 @@ interface ComputeIndexedDbReservationInput {
     readonly observations: ReadonlyMap<string, ResourceEntry> | undefined;
     readonly maxToReserve: number;
     readonly now: Temporal.Instant;
+    readonly claimOrder: ResourceInboxClaimOrder;
     readonly isReservable: (stored: StoredResourceEntry) => boolean;
 }
 
@@ -866,6 +874,7 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
     const reserved = new Map<Key, ResourceEntry>();
     const mutations: ComputedIndexedDbQueueMutation[] = [];
     const ineligible: StoredResourceEntry[] = [];
+    const claimedContexts = new ResourceInboxClaimedContexts(input.claimOrder);
     for (const stored of input.candidates) {
         if (reserved.size >= input.maxToReserve) {
             break;
@@ -880,6 +889,10 @@ function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): I
             ineligible.push(stored);
             continue;
         }
+        if (!claimedContexts.admits(stored.key)) {
+            continue;
+        }
+        claimedContexts.record(stored.key);
         const updated = computeReservedQueueEntry(decodeStoredResourceEntry(stored), input.now);
         reserved.set(updated.key, updated);
         mutations.push(computeIndexedDbQueuePut(stored, updated));

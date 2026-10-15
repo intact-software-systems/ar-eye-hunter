@@ -1,12 +1,20 @@
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
 export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
 export const DEFAULT_APP_INBOX_WAIT_JITTER_RATIO = 0.2;
 /** Above the hosted p99 handler time; an abandoned claim's late finish still fails its attempt guard after a reclaim. */
 export const APP_INBOX_RESERVATION_LEASE_MS = 60_000;
+/**
+ * A waiter with a live completion subscription re-reads on a wake, or on this tick when a wake was lost. Well below
+ * any caller's HTTP allowance (the native fixtures allow 5 s), so one lost wake costs a tick, not the request.
+ */
+export const APP_INBOX_WAIT_SAFETY_TICK_MSECS = 1_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;
+    readonly laneBudgetPolicy?: InboxQueueReader.LaneBudgetPolicy;
     readonly waitMaxElapsedMsecs?: number;
     readonly waitRetryIntervalMsecs?: number;
     readonly waitMaxRetryIntervalMsecs?: number;
@@ -39,6 +47,10 @@ export function normalizeAppInboxOptions(options: AppInboxOptions): NormalizedAp
         ),
         waitJitterRatio: toRatio(options.waitJitterRatio, DEFAULT_APP_INBOX_WAIT_JITTER_RATIO)
     };
+}
+
+export function toAppInboxLaneBudgetPolicy(options: AppInboxOptions): InboxQueueReader.LaneBudgetPolicy {
+    return options.laneBudgetPolicy ?? InboxQueueReader.DEFAULT_LANE_BUDGET_POLICY;
 }
 
 function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {

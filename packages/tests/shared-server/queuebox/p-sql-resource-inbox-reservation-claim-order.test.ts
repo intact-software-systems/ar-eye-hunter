@@ -25,7 +25,8 @@ describe('PSqlResourceInboxReservationRepository claim order', () => {
         const claimed = await repository.reserveEntriesSkipLocked({
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
-            reservationInput: 4
+            reservationInput: 4,
+            claimOrder: 'queue'
         });
 
         expect([...claimed.values()].map((entry) => entry.key.resourceId))

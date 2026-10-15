@@ -21,6 +21,7 @@ import { authTicketDigestKey } from '@shared-server/rallar-system/auth/persisten
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { toErrorSummary, type ErrorSummary } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -141,14 +142,10 @@ async function verifyTicketRejection(
     }
     const before = await fixture.runtime.findAllEntries('auth-sessions:ws-tickets');
     const requestId = `consume-${provenance}`;
-    const loggedErrors: Error[] = [];
+    const loggedCalls: unknown[][] = [];
     const originalConsoleError = console.error;
     console.error = (...values) => {
-        for (const value of values) {
-            if (value instanceof Error) {
-                loggedErrors.push(value);
-            }
-        }
+        loggedCalls.push(values);
         originalConsoleError(...values);
     };
     originalConsoleError(`BEGIN ${provenance}`);
@@ -156,14 +153,13 @@ async function verifyTicketRejection(
         const response = await rejectUpgrade(fixture, requestId, ticket);
         assert.equal(response.status, 401);
         assert.deepEqual(await response.json(), { error: 'Unauthorized: Invalid or expired websocket auth ticket' });
-        verifyRejectedErrors(loggedErrors, provenance);
         const originalRejection = fixture.mutationRejections.at(-1);
         assert.ok(originalRejection);
-        assert.ok(loggedErrors.flatMap(toErrorCauses).includes(originalRejection));
+        verifyRejectedErrors(loggedCalls, provenance, originalRejection);
         await verifyDurableRejection(fixture, requestId, provenance);
         assert.deepEqual(await fixture.runtime.findAllEntries('auth-sessions:ws-tickets'), before);
         assert.equal(fixture.runtime.ticketReads.get(authTicketDigestKey(ticketDigest)), 1);
-        const renderedErrors = Deno.inspect(loggedErrors, { depth: Infinity });
+        const renderedErrors = Deno.inspect(loggedCalls, { depth: Infinity });
         assert.equal(renderedErrors.includes(ticketDigest), false);
         assert.equal(renderedErrors.includes(await hashAuthSecret('raw-access-token')), false);
         for (const entry of before) {
@@ -235,16 +231,32 @@ async function rejectUpgrade(fixture: TicketRejectionFixture, requestId: string,
     return await responsePending;
 }
 
-function verifyRejectedErrors(loggedErrors: readonly Error[], provenance: 'expired' | 'absent' | 'live'): void {
-    const rejection = loggedErrors.flatMap(toErrorCauses).find((error) => error instanceof AuthMutationRejectedError);
-    assert.ok(rejection instanceof AuthMutationRejectedError);
-    assert.equal(rejection.code, 'auth-mutation-rejected');
-    assert.equal(rejection.status, provenance === 'live' ? 401 : 404);
+/** The dequeuer logs the committed typed rejection once, as the key and the cause chain's summary, without a stack. */
+function verifyRejectedErrors(
+    loggedCalls: readonly unknown[][],
+    provenance: 'expired' | 'absent' | 'live',
+    originalRejection: Error
+): void {
+    const rejectionCall = loggedCalls.find((call) =>
+        typeof call[0] === 'string' && call[0].startsWith('Handler rejected dequeued key')
+    );
+    assert.ok(rejectionCall, Deno.inspect(loggedCalls, { depth: Infinity }));
+    assert.match(
+        String(rejectionCall[0]),
+        new RegExp(`"resourceId":"consume-${provenance}".* as auth-mutation-rejected\\.$`, 'u')
+    );
+    assert.doesNotMatch(Deno.inspect(rejectionCall, { depth: Infinity }), /\n\s+at /u);
+    assert.ok(originalRejection instanceof AuthMutationRejectedError);
+    const summary = rejectionCall[1] as ErrorSummary;
+    assert.deepEqual(summary, toErrorSummary(originalRejection));
+    assert.equal(summary.name, 'AuthMutationRejectedError');
+    assert.equal(summary.properties.code, 'auth-mutation-rejected');
+    assert.equal(summary.properties.status, provenance === 'live' ? 401 : 404);
     assert.equal(
-        rejection.message,
+        summary.message,
         provenance === 'live' ? 'Websocket ticket authority differs' : 'Auth ticket is invalid or consumed'
     );
-    assert.deepEqual(rejection.consumeRead, {
+    assert.deepEqual(summary.properties.consumeRead, {
         consumeRequestId: `consume-${provenance}`,
         expectedSessionId: 'expected-session',
         capturedAtEpochMs: 200,
@@ -254,7 +266,7 @@ function verifyRejectedErrors(loggedErrors: readonly Error[], provenance: 'expir
         ticketIssuedAtEpochMs: provenance === 'live' ? 1 : null,
         ticketExpiresAtEpochMs: provenance === 'live' ? FUTURE_MS : null
     });
-    const upgradeError = loggedErrors.find((error) => error instanceof RequestAuthFailure);
+    const upgradeError = loggedCalls.flat().find((value) => value instanceof RequestAuthFailure);
     assert.ok(upgradeError instanceof RequestAuthFailure);
     assert.deepEqual(upgradeError.details, { requestId: `consume-${provenance}`, sessionId: 'expected-session' });
     assert.equal(upgradeError.code, 'authentication-required');

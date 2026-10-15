@@ -57,7 +57,7 @@ describe('Committed AppInbox completion publication', () => {
             replace: async (entry: typeof harness.entry) => entry,
             findByKey: async (key: typeof harness.entry.key) => harness.database.state.results.get(toKeyAsString(key))
         };
-        const inboxQueueReader = new InboxQueueReader(queue, { completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -98,7 +98,7 @@ describe('Committed AppInbox completion publication', () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
-        const inboxQueueReader = new InboxQueueReader(queue, { completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,

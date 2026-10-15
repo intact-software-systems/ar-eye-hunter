@@ -346,11 +346,20 @@ export interface DequeueResourceEntryRepository {
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 }
 
+/**
+ * `queue` claims eligible rows in the queue's own order across contexts; `oldest-per-context` claims at most one
+ * row per context, each context's first eligible row in that order, so one context's backlog cannot hold back
+ * another context's work while each context keeps its own order.
+ */
+export type ResourceInboxClaimOrder = 'queue' | 'oldest-per-context';
+
 export interface ResourceInboxReservationRequest {
     readonly typeIds: Set<string>;
     readonly statusIds: Set<Resource.EntityStatus>;
     readonly reservationInput: ResourceInboxReservationInput;
     readonly observedEntries?: readonly ResourceEntry[];
+    /** Absent claims in queue order. */
+    readonly claimOrder?: ResourceInboxClaimOrder;
 }
 
 export interface ResourceInboxTimeoutReservationRequest {
