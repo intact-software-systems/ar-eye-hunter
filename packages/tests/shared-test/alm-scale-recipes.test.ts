@@ -126,7 +126,6 @@ describe('ALM scale recipes', () => {
             expect(connect).toMatchObject({
                 roomRef: GROUP,
                 transport: 'messages.rtc',
-                readiness: { minReadyPeers: 1, timeoutMs: 45_000 },
                 rallar: {
                     username: '{auth.username}',
                     password: '',
@@ -224,6 +223,30 @@ describe('ALM scale recipes', () => {
             `alm-scale-${role}-audience`
         ]);
         expect(groupRequests.map((command) => command.timeoutMs)).toEqual([8_750, 8_750, 5_000]);
+    });
+
+    it('appoints the director on its own connection before the group-created barrier releases the players', () => {
+        const scale = createAlmScaleRecipes({ participantCount: 30, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const [director, player] = scale.recipes;
+
+        expect(director.commands.slice(0, 6).map((command) => command.commandId)).toEqual([
+            'alm-scale-director-sign-in',
+            'alm-scale-director-ensure-group',
+            'alm-scale-director-ensure-member',
+            'alm-scale-director-connect',
+            'alm-scale-director-appoint',
+            'alm-scale-director-group-created'
+        ]);
+        expect(director.commands[3]).not.toHaveProperty('readiness');
+        expect(flattenCommands(director.commands).filter((command) => command.kind === 'director.appoint')).toHaveLength(1);
+        expect(player.commands.slice(0, 5).map((command) => command.commandId)).toEqual([
+            'alm-scale-player-sign-in',
+            'alm-scale-player-group-created',
+            'alm-scale-player-ensure-group',
+            'alm-scale-player-ensure-member',
+            'alm-scale-player-connect'
+        ]);
+        expect(player.commands[4]).toMatchObject({ readiness: { minReadyPeers: 1, timeoutMs: 45_000 } });
     });
 
     it.each([15, 30, 50] as const)(

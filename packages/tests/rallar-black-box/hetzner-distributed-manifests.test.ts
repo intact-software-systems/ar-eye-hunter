@@ -234,7 +234,7 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('requires explicit RTC readiness before non-diagnostic live manifests send RTC traffic', () => {
+    it('requires explicit RTC readiness before non-diagnostic live manifests send RTC traffic, from the first peer that can have one', () => {
         const expectedReadyPeers = new Map([
             ['apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
             ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', {
@@ -338,7 +338,9 @@ describe('Hetzner distributed manifest catalog', () => {
                 continue;
             }
 
-            const connect = commands.find((command) => command.kind === 'rtc.connect');
+            // The ALM scale director connects and appoints itself before any player exists; its stable-layout wait gates its traffic.
+            const connect = commands.filter((command) => command.commandId !== 'alm-scale-director-connect')
+                .find((command) => command.kind === 'rtc.connect');
             const expected = expectedReadyPeers.get(entry.filePath);
             expect(connect?.readiness, entry.filePath).toEqual({
                 minReadyPeers: expected?.peers,

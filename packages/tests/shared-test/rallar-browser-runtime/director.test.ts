@@ -83,7 +83,7 @@ it('appoints a director and exposes its refreshed room status', async () => {
         roomRef,
         expect.objectContaining({ heartbeatTtlMs: 1_200 })
     ]);
-    expect(facade.records.roomRefreshes.length).toBeGreaterThan(0);
+    expect(facade.records.roomRefreshes).toEqual([[roomRef, {}]]);
     expect(appoint).toMatchObject({ status: 'appointed', role: 'director' });
     expect(status).toMatchObject({ status: 'status', state: 'fresh' });
     expect(start).toMatchObject({ status: 'relay_started', handle: 'relay-1' });

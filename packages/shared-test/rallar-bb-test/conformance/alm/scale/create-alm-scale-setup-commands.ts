@@ -1,5 +1,8 @@
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
-import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRtcConnectReadiness
+} from '../../../rallar-black-box-test-contracts.ts';
 
 import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
@@ -25,18 +28,11 @@ export function createAlmScaleSetupCommands(
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
         createSignInCommand(input, prefix),
-        ...(role === 'director' ? [...ensure, created] : [created, ...ensure]),
-        createConnectCommand(input, prefix),
+        ...(role === 'director'
+            ? [...ensure, createConnectCommand(input, prefix, undefined), createAppointCommand(input, prefix), created]
+            : [created, ...ensure, createConnectCommand(input, prefix, createPlayerReadiness(input))]),
         createSetupBarrier(input, prefix, 'connected'),
         createAudienceWait(input, prefix),
-        ...(role === 'director'
-            ? [{
-                kind: 'director.appoint' as const,
-                commandId: `${prefix}-appoint`,
-                roomRef: { ...input.group },
-                timeoutMs: 5_000
-            }]
-            : []),
         createSetupBarrier(input, prefix, 'appointed'),
         createDirectorWait(input, prefix),
         {
@@ -87,7 +83,26 @@ function createSetupBarrier(input: AlmScaleRecipeInput, prefix: string, phase: s
     };
 }
 
-function createConnectCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+/** The appointment needs only the director's own session, so the first layout with peers is already rooted at it. */
+function createAppointCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    return {
+        kind: 'director.appoint',
+        commandId: `${prefix}-appoint`,
+        roomRef: { ...input.group },
+        timeoutMs: 5_000
+    };
+}
+
+/** Only a player connects after a peer exists: the director's readiness would wait on players the barrier still holds. */
+function createPlayerReadiness(input: AlmScaleRecipeInput): RallarBlackBoxTestRtcConnectReadiness {
+    return { minReadyPeers: 1, timeoutMs: input.readyTimeoutMs, intervalMs: 100 };
+}
+
+function createConnectCommand(
+    input: AlmScaleRecipeInput,
+    prefix: string,
+    readiness: RallarBlackBoxTestRtcConnectReadiness | undefined
+): RallarBlackBoxTestCommand {
     return {
         kind: 'rtc.connect',
         commandId: `${prefix}-connect`,
@@ -99,7 +114,7 @@ function createConnectCommand(input: AlmScaleRecipeInput, prefix: string): Ralla
         roomRef: { ...input.group },
         transport: 'messages.rtc',
         timeoutMs: input.readyTimeoutMs + 5_000,
-        readiness: { minReadyPeers: 1, timeoutMs: input.readyTimeoutMs, intervalMs: 100 },
+        ...(readiness === undefined ? {} : { readiness }),
         rallar: {
             ...RESTORED_SESSION_RALLAR,
             almDiagnostics: input.almDiagnostics,

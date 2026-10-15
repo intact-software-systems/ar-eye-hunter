@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { createBlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import type {
@@ -49,8 +50,10 @@ import {
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarConnectStatus, RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 import {
@@ -219,6 +222,12 @@ interface CohortPolicy {
 
 const NORMAL_POLICY: CohortPolicy = { shotAckMs: 2_000, admissionMs: 0, wrongLeader: false, partialLeader: false, cancelAtMs: undefined };
 
+interface ScaleLayoutPlan {
+    readonly groupRevision: number;
+    readonly rootSessionId: string | undefined;
+    readonly sessionIds: readonly string[];
+}
+
 class ScaleActor {
     readonly agentId: string;
     readonly role: 'director' | 'player';
@@ -305,28 +314,17 @@ class ScaleActor {
     private createBrowserRuntime(): RallarBlackBoxBrowserTestRuntime {
         return createDefaultRallarBlackBoxBrowserTestRuntime({
             now: Date.now,
+            readSession: () => this.session,
+            fetch: async (url: RequestInfo | URL, init?: RequestInit) => this.cohort.serveHttp(url, init),
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
-                connect: async () =>
-                    this.native.connect({
-                        connection: `alm-scale-${this.role}`,
-                        roomRef: GROUP,
-                        rallar: {
-                            apiBaseUrl: 'https://api.example.test',
-                            applicationId: GROUP.applicationId,
-                            workspaceId: GROUP.workspaceId,
-                            username: this.session.username,
-                            password: 'test-password',
-                            transport: 'messages.rtc',
-                            typeId: 'room.ar-eye-hunter.director.intent.v1',
-                            topicId: 'room.ar-eye-hunter.director'
-                        }
-                    }),
+                connect: async () => this.joinRoom(),
                 send: async () => {
                     throw new Error('Scale uses typed messages.send');
                 },
                 refreshRoom: async () => undefined,
                 health: async () => this.native.health(),
+                waitForRoom: async () => this.cohort.readRoomStatus(this),
                 sendMessage: async (send) => this.native.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(send))),
                 observeDelivery: async (observe) => this.native.observeDelivery(requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryObserveInput(observe))),
                 readReceipts: async (receipt) => this.native.readReceipts(requireBlackBoxRallarInput(decodeBlackBoxRallarDeliveryHandleInput(receipt))),
@@ -356,9 +354,7 @@ class ScaleActor {
 
     private createDirectorPort(): RallarBlackBoxBrowserRallarDirectorRuntime {
         return {
-            appoint: async () => {
-                throw new Error('Appointment is established before traffic');
-            },
+            appoint: async () => this.cohort.appoint(this),
             resign: async () => {
                 throw new Error('No resignation in scale traffic');
             },
@@ -374,8 +370,27 @@ class ScaleActor {
             syncRequest: async () => {
                 throw new Error('No sync request in scale traffic');
             },
-            status: async () => ({ directorStatus: { active: true, appointment: { sessionId: 'director-session' } } })
+            status: async () => this.cohort.readDirectorStatus()
         };
+    }
+
+    private async joinRoom(): Promise<BlackBoxRallarConnectDiagnostics> {
+        const connected = await this.native.connect({
+            connection: `alm-scale-${this.role}`,
+            roomRef: GROUP,
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                applicationId: GROUP.applicationId,
+                workspaceId: GROUP.workspaceId,
+                username: this.session.username,
+                password: 'test-password',
+                transport: 'messages.rtc',
+                typeId: 'room.ar-eye-hunter.director.intent.v1',
+                topicId: 'room.ar-eye-hunter.director'
+            }
+        });
+        this.cohort.join(this);
+        return connected;
     }
 
     async connect(): Promise<void> {
@@ -385,10 +400,24 @@ class ScaleActor {
         }
         this.connectResult = await this.runtime.execute({ ...connect, readiness: undefined });
         expect(this.connectResult, JSON.stringify(this.connectResult)).toMatchObject({ ok: true, value: { sessionId: this.session.sessionId } });
+        const appoint = this.recipe.commands.find((command) => command.kind === 'director.appoint');
+        if (appoint !== undefined) {
+            expect(await this.runtime.execute(appoint)).toMatchObject({ ok: true });
+        }
         expect(await this.runtime.execute({ kind: 'director.status', commandId: `alm-scale-${this.role}-ready-status`, roomRef: GROUP, refresh: true }))
             .toMatchObject({ ok: true });
         expect(await this.runtime.execute({ kind: 'storage.counters', commandId: `alm-scale-${this.role}-storage-reset`, reset: true })).toMatchObject({
             ok: true
+        });
+    }
+
+    async runSetup(): Promise<RallarBlackBoxTestResult> {
+        const setupComplete = this.recipe.commands.findIndex((command) => command.commandId === `alm-scale-${this.role}-setup-complete`);
+        await this.runtime.execute({ kind: 'configure', config: { runId: 'scale-proof', agentId: this.agentId, apiBaseUrl: 'https://api.example.test' } });
+        return await this.runtime.execute({
+            kind: 'recipe.run',
+            commandId: `${this.agentId}-setup`,
+            recipe: { ...this.recipe, commands: this.recipe.commands.slice(0, setupComplete + 1) }
         });
     }
 
@@ -419,8 +448,15 @@ class ScaleCohort {
     readonly arrivals = new Map<string, Set<string>>();
     readonly lifecycle: ScaleWirePayload[] = [];
     readonly releasedAtMs = new Map<string, number>();
+    readonly layoutPlans: ScaleLayoutPlan[] = [];
+    appointmentRevision: number | undefined;
     private readonly seenArrivals = new Set<string>();
+    private readonly joinedSessionIds: string[] = [];
+    private leaderSessionId: string | undefined;
+    private acceptedLayoutIdentity: GroupLayoutIdentity | undefined;
     private groupRevision = 56;
+    private presenceRevision = 1;
+    private layoutVersion = 5;
 
     constructor(policy: CohortPolicy) {
         this.policy = policy;
@@ -447,18 +483,92 @@ class ScaleCohort {
     readLayoutReadiness(): RallarBlackBoxTestRecord {
         return {
             readyAtEpochMs: Date.now(),
-            formation: { roomRef: GROUP, causalRevision: { groupRevision: this.groupRevision, presenceRevision: 1 } }
+            formation: { roomRef: GROUP, causalRevision: { groupRevision: this.groupRevision, presenceRevision: this.presenceRevision } }
         };
     }
 
-    /** The planner re-plans from the current revision; accepting the plan writes the next one. */
-    replanLayout(): void {
-        const identity = { groupRevision: this.groupRevision, presenceRevision: 1, version: 5, state: 'active' };
+    /** The planner re-plans from the current revision around the appointed leader; accepting the plan writes the next one. */
+    planLayout(): void {
+        const identity: GroupLayoutIdentity = {
+            groupRevision: this.groupRevision,
+            presenceRevision: this.presenceRevision,
+            version: ++this.layoutVersion,
+            state: 'active'
+        };
+        this.layoutPlans.push({ groupRevision: this.groupRevision, rootSessionId: this.leaderSessionId, sessionIds: [...this.joinedSessionIds] });
         this.publishLayout({ kind: 'layoutPlanned', role: 'planned', identity });
         setTimeout(() => {
             this.groupRevision += 1;
+            this.acceptedLayoutIdentity = identity;
             this.publishLayout({ kind: 'layoutAccepted', role: 'accepted', identity });
         }, 500);
+    }
+
+    join(actor: ScaleActor): void {
+        this.joinedSessionIds.push(actor.session.sessionId);
+        this.presenceRevision += 1;
+        this.planLayout();
+    }
+
+    /** Re-rooting a layout with peers at a newly appointed leader is a full rebuild; a lone peer has no edge to move. */
+    appoint(actor: ScaleActor): RallarBlackBoxTestRecord {
+        this.groupRevision += 1;
+        this.appointmentRevision = this.groupRevision;
+        this.leaderSessionId = actor.session.sessionId;
+        const latest = this.layoutPlans.at(-1);
+        if (latest !== undefined && latest.sessionIds.length > 1 && latest.rootSessionId !== this.leaderSessionId) {
+            this.planLayout();
+        }
+        return this.readDirectorStatus();
+    }
+
+    readDirectorStatus(): RallarBlackBoxTestRecord {
+        return {
+            directorStatus: {
+                active: this.leaderSessionId !== undefined,
+                appointment: this.leaderSessionId === undefined ? null : { sessionId: this.leaderSessionId }
+            }
+        };
+    }
+
+    /** Every joined peer counts as ready once a layout is accepted; formation timing is outside this model. */
+    readRoomStatus(actor: ScaleActor): RallarRoomTransportStatus {
+        const peerIds = this.joinedSessionIds.filter((sessionId) => sessionId !== actor.session.sessionId);
+        return {
+            ws: {
+                connectState: 'connected',
+                readyState: 'open',
+                isOpen: true,
+                reconnecting: false,
+                reconnectEnabled: true,
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 5,
+                reconnectExhausted: false
+            },
+            rtc: {
+                desired: true,
+                mode: 'eager',
+                state: peerIds.length > 0 ? 'open' : 'connecting',
+                laneId: 'scale-lane',
+                peers: [],
+                failedPeerIds: [],
+                desiredPeerIds: peerIds,
+                knownPeerIds: peerIds,
+                activePeerIds: peerIds,
+                readyPeerIds: peerIds,
+                ...(this.acceptedLayoutIdentity === undefined ? {} : { acceptedLayoutIdentity: this.acceptedLayoutIdentity })
+            }
+        };
+    }
+
+    /** A membership write advances the group revision; the room read reports the joined sessions. */
+    serveHttp(url: RequestInfo | URL, init: RequestInit | undefined): Response {
+        if (init?.method === 'PUT') {
+            this.groupRevision += 1;
+        }
+        const room = new URL(String(url)).pathname.endsWith(`/groups/${GROUP.groupId}`);
+        const body = room ? { activeSessions: this.joinedSessionIds.map((sessionId) => ({ sessionId })) } : {};
+        return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
     }
 
     private publishLayout(data: RallarBlackBoxTestRecord): void {
@@ -641,13 +751,25 @@ it('passes all 231 assertions from real generated 15-participant traffic and fin
 it('holds setup-complete until the layout re-planned after readiness stays unreplaced for the quiet window', async () => {
     const cohort = new ScaleCohort(NORMAL_POLICY);
     const replanAtMs = Date.now() + 1_000;
-    setTimeout(() => cohort.replanLayout(), replanAtMs - Date.now());
+    setTimeout(() => cohort.planLayout(), replanAtMs - Date.now());
     const execution = Promise.all(cohort.actors.map((actor) => actor.runSetupCompletion()));
     await vi.runAllTimersAsync();
     const results = await execution;
 
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
     expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(6_000);
+});
+
+it('roots the first layout with peers at the director, so its appointment plans no rebuild', async () => {
+    const cohort = new ScaleCohort(NORMAL_POLICY);
+    const execution = Promise.all(cohort.actors.map((actor) => actor.runSetup()));
+    await vi.runAllTimersAsync();
+    const results = await execution;
+
+    expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
+    expect(cohort.layoutPlans.filter((plan) => plan.groupRevision === cohort.appointmentRevision)).toEqual([]);
+    expect(cohort.layoutPlans.filter((plan) => plan.sessionIds.length > 1).map((plan) => plan.rootSessionId))
+        .toEqual(Array.from({ length: 14 }, () => 'director-session'));
 });
 
 it.each([

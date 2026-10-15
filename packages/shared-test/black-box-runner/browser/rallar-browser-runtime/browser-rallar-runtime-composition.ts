@@ -52,6 +52,7 @@ import type {
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
+import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RoomSendFence } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -142,7 +143,10 @@ export interface BlackBoxBrowserRoomsDependency {
         options?: Parameters<BrowserRallarRooms['join']>[1]
     ): Promise<void>;
     leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
-    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
+    refreshRoom(
+        room: Parameters<BrowserRallarRooms['session']>[0],
+        options: Parameters<RallarRoomSession['refresh']>[0]
+    ): Promise<void>;
     formation(
         room: Parameters<BrowserRallarRooms['formation']>[0]
     ): RallarRoomFormation;
@@ -400,8 +404,8 @@ function toBlackBoxBrowserRuntimeDependency(
             leave: async (options) => {
                 await rooms.rooms.leave(options);
             },
-            refresh: async (options) => {
-                await rooms.rooms.refresh(options);
+            refreshRoom: async (room, options) => {
+                await rooms.rooms.session(room).refresh(options);
             },
             formation: (room) => rooms.rooms.formation(room)
         },

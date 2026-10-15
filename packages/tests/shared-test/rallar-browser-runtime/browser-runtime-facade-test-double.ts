@@ -81,7 +81,7 @@ export interface BrowserRuntimeFacadeRecords {
     readonly roomStateRefreshes: Array<[GroupRef, RallarScopedOperationOptions]>;
     readonly roomJoins: Array<Parameters<BlackBoxBrowserRoomsDependency['join']>>;
     readonly roomLeaves: Array<Parameters<BlackBoxBrowserRoomsDependency['leave']>>;
-    readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refresh']>>;
+    readonly roomRefreshes: Array<Parameters<BlackBoxBrowserRoomsDependency['refreshRoom']>>;
     readonly realtimeSubscriptions: Array<[
         Parameters<BlackBoxBrowserRealtimeDependency['onJson']>[0],
         RallarRealtimeHandler<never>
@@ -184,7 +184,7 @@ export const facadeBehavior = {
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
-    roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
+    roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refreshRoom']>(),
     roomFormation: vi.fn<BlackBoxBrowserRoomsDependency['formation']>(),
     realtimeHealth: vi.fn<BlackBoxBrowserRealtimeDependency['health']>(),
     realtimeSend: vi.fn<BlackBoxBrowserRealtimeDependency['sendJson']>(),
@@ -271,9 +271,9 @@ const rooms: BlackBoxBrowserRoomsDependency = {
         facadeRecords.roomLeaves.push([input]);
         return await facadeBehavior.roomLeave(input);
     },
-    refresh: async (input) => {
-        facadeRecords.roomRefreshes.push([input]);
-        return await facadeBehavior.roomRefresh(input);
+    refreshRoom: async (room, options) => {
+        facadeRecords.roomRefreshes.push([room, options]);
+        return await facadeBehavior.roomRefresh(room, options);
     },
     formation: (room) => facadeBehavior.roomFormation(room)
 };
