@@ -323,7 +323,8 @@ function computeActivationPromotion(
         currentFormationEpoch: stored.formationEpoch,
         planned: read.plannedLayoutRow,
         acceptedIdentity: stored.acceptedLayoutIdentity,
-        acceptedRow: read.acceptedLayoutRow
+        acceptedRow: read.acceptedLayoutRow,
+        supersededFence: 'reject'
     });
     return promotion;
 }

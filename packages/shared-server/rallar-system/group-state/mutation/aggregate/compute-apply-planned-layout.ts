@@ -79,7 +79,8 @@ export function computeApplyPlannedLayout(
         currentFormationEpoch: stored.value.formationEpoch,
         planned: read.plannedLayoutRow,
         acceptedIdentity: stored.value.acceptedLayoutIdentity,
-        acceptedRow: read.acceptedLayoutRow
+        acceptedRow: read.acceptedLayoutRow,
+        supersededFence: 'promote-dominating'
     });
     if (promotion.outcome === 'already-applied') {
         return noOp(command, read, facts);

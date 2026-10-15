@@ -5,8 +5,10 @@ import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';
 import { computeTopologyPromotionEntry, decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
+import { createAuthorityHarness, createResilience, createRoom, SCOPE } from '../inbox/group-state-inbox-test-runtime.ts';
 
 import {
     computePlannedLayoutPromotion,
@@ -15,11 +17,14 @@ import {
 import { toGroupLayoutPromotionEffects } from '@shared-server/rallar-system/group-state/persistence/layout/to-group-layout-promotion-effects.ts';
 import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
-    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
+    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+    toStoredRtcTopologySnapshotRow
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 const GROUP_REF = {
     applicationId: 'promotion-app',
@@ -58,6 +63,23 @@ const PLANNED: GroupPlannedLayoutRow = {
     revision: 11
 };
 
+/** A replan of the same group at a later presence revision: the plan a late promotion finds in the slot. */
+const NEWER_IDENTITY: GroupLayoutIdentity = { ...IDENTITY, presenceRevision: 7, version: 4 };
+
+const NEWER_PLANNED: GroupPlannedLayoutRow = {
+    snapshot: {
+        ...SNAPSHOT,
+        sourceGroupStateCausalRevision: {
+            groupRevision: NEWER_IDENTITY.groupRevision,
+            presenceRevision: NEWER_IDENTITY.presenceRevision
+        },
+        version: NEWER_IDENTITY.version,
+        activeSessionIds: ['session-a', 'session-b'],
+        nextHopsBySessionId: { 'session-a': ['session-b'], 'session-b': ['session-a'] }
+    },
+    revision: 12
+};
+
 interface PlannedLayoutApplyHarness {
     readonly service: GroupStateTestService;
     readonly captureIngress: (command: GroupMutationCommand) => Promise<GroupStateMutationCommand>;
@@ -71,11 +93,13 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: null,
-            acceptedRow: null
+            acceptedRow: null,
+            supersededFence: 'promote-dominating'
         });
 
         expect(promotion).toEqual({
             outcome: 'apply',
+            promoted: 'expected',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: null,
@@ -90,7 +114,8 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: { ...IDENTITY, version: 2 },
-            acceptedRow: { snapshot: SNAPSHOT, revision: 8 }
+            acceptedRow: { snapshot: SNAPSHOT, revision: 8 },
+            supersededFence: 'promote-dominating'
         });
 
         expect(promotion.outcome).toBe('apply');
@@ -123,10 +148,10 @@ describe('computePlannedLayoutPromotion', () => {
             outcome: 'no-planned-layout'
         },
         {
-            name: 'planned-layout-superseded on an identity mismatch',
+            name: 'planned-layout-superseded when the stored plan is older than the fence',
             input: {
                 expectedFormationEpoch: 2,
-                expectedLayout: { ...IDENTITY, version: 2 },
+                expectedLayout: { ...IDENTITY, version: 4 },
                 planned: PLANNED
             },
             outcome: 'planned-layout-superseded'
@@ -136,9 +161,70 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             acceptedIdentity: null,
             acceptedRow: null,
+            supersededFence: 'promote-dominating',
             ...row.input
         });
         expect(promotion.outcome).toBe(row.outcome);
+    });
+
+    it('promotes a newer plan that supersedes the fenced one in the same attempt', () => {
+        const promotion = computePlannedLayoutPromotion({
+            expectedFormationEpoch: 2,
+            expectedLayout: IDENTITY,
+            currentFormationEpoch: 2,
+            planned: NEWER_PLANNED,
+            acceptedIdentity: null,
+            acceptedRow: null,
+            supersededFence: 'promote-dominating'
+        });
+
+        expect(promotion).toEqual({
+            outcome: 'apply',
+            promoted: 'newer',
+            acceptedSnapshot: NEWER_PLANNED.snapshot,
+            acceptedIdentity: NEWER_IDENTITY,
+            acceptedExpectedRevision: null,
+            plannedExpectedRevision: 12
+        });
+    });
+
+    it.each([
+        {
+            name: 'an older plan',
+            planned: { ...PLANNED, snapshot: { ...SNAPSHOT, version: 2 } }
+        },
+        {
+            name: 'an incomparable plan',
+            planned: {
+                ...PLANNED,
+                snapshot: { ...SNAPSHOT, sourceGroupStateCausalRevision: { groupRevision: 3, presenceRevision: 9 } }
+            }
+        }
+    ])('keeps $name as a superseded rejection', ({ planned }) => {
+        const promotion = computePlannedLayoutPromotion({
+            expectedFormationEpoch: 2,
+            expectedLayout: IDENTITY,
+            currentFormationEpoch: 2,
+            planned,
+            acceptedIdentity: null,
+            acceptedRow: null,
+            supersededFence: 'promote-dominating'
+        });
+        expect(promotion).toEqual({ outcome: 'planned-layout-superseded' });
+    });
+
+    it('keeps a dominating plan superseded when the caller keeps its fence exact', () => {
+        const promotion = computePlannedLayoutPromotion({
+            expectedFormationEpoch: 2,
+            expectedLayout: IDENTITY,
+            currentFormationEpoch: 2,
+            planned: NEWER_PLANNED,
+            acceptedIdentity: null,
+            acceptedRow: null,
+            supersededFence: 'reject'
+        });
+
+        expect(promotion).toEqual({ outcome: 'planned-layout-superseded' });
     });
 
     it('computes already-applied when the accepted identity matches the plan', () => {
@@ -148,7 +234,8 @@ describe('computePlannedLayoutPromotion', () => {
             currentFormationEpoch: 2,
             planned: PLANNED,
             acceptedIdentity: IDENTITY,
-            acceptedRow: { snapshot: SNAPSHOT, revision: 8 }
+            acceptedRow: { snapshot: SNAPSHOT, revision: 8 },
+            supersededFence: 'promote-dominating'
         });
         expect(promotion.outcome).toBe('already-applied');
     });
@@ -158,6 +245,7 @@ describe('groupLayoutPromotionEffects', () => {
     it('re-asserts the planned row and inserts the first accepted row atomically', () => {
         const effects = toGroupLayoutPromotionEffects({
             outcome: 'apply',
+            promoted: 'expected',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: null,
@@ -179,6 +267,7 @@ describe('groupLayoutPromotionEffects', () => {
     it('revision-guards a re-promotion of the accepted row', () => {
         const effects = toGroupLayoutPromotionEffects({
             outcome: 'apply',
+            promoted: 'expected',
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: 8,
@@ -194,7 +283,7 @@ describe('groupLayoutPromotionEffects', () => {
 });
 
 describe('applyPlannedLayout through the durable service', () => {
-    async function createApplyHarness(): Promise<PlannedLayoutApplyHarness> {
+    async function createApplyHarness(planned: GroupPlannedLayoutRow = PLANNED): Promise<PlannedLayoutApplyHarness> {
         const service = createTestGroupStateService({
             runtimeRepository: new FakeRuntimeStateRepository(),
             now: () => 1_000,
@@ -203,7 +292,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 return () => `apply-id-${++generated}`;
             })(),
             serviceId: 'apply-service',
-            readPlannedLayoutRow: async () => ({ snapshot: SNAPSHOT, revision: 11 }),
+            readPlannedLayoutRow: async () => planned,
             readAcceptedLayoutRow: async () => null
         });
         await service.createGroup(
@@ -253,7 +342,24 @@ describe('applyPlannedLayout through the durable service', () => {
         expect(computed.guard.value.formationAttemptCount).toBe(0);
     });
 
-    it('rejects a superseded fence as a typed value', async () => {
+    it('promotes the newer plan a superseded fence finds in the slot, in the same attempt', async () => {
+        const { service, captureIngress } = await createApplyHarness(NEWER_PLANNED);
+        const ingress = await captureIngress(toApplyPlannedLayoutCommand({
+            groupRef: GROUP_REF,
+            formationEpoch: 0,
+            expectedLayout: IDENTITY
+        }));
+
+        const computed = service.compute(ingress, await service.read(ingress));
+
+        if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
+            throw new Error(`Expected a group write, computed ${computed.outcome}`);
+        }
+        expect(computed.acceptedLayoutPromotion).toMatchObject({ promoted: 'newer', plannedExpectedRevision: 12 });
+        expect(computed.guard.value.acceptedLayoutIdentity).toEqual(NEWER_IDENTITY);
+    });
+
+    it('rejects a fence newer than the stored plan as a typed value', async () => {
         const { service, captureIngress } = await createApplyHarness();
         const ingress = await captureIngress(toApplyPlannedLayoutCommand({
             groupRef: GROUP_REF,
@@ -305,6 +411,89 @@ describe('applyPlannedLayout through the durable service', () => {
 
         expect(() => assertGroupMutationAuthority(ingress.command, ingress.facts))
             .not.toThrow();
+    });
+});
+
+describe('applyPlannedLayout through the inbox lane', () => {
+    const LANE_GROUP_REF = { ...SCOPE, groupId: 'lane-promotion-room' };
+
+    interface LanePromotion {
+        readonly lines: readonly RallarTimingEvent[];
+        readonly acceptedSnapshotStored: boolean;
+    }
+
+    /** Stores `planned` as the lane group's planned slot and runs one dequeue pass over the queued promotion. */
+    async function promoteThroughLane(
+        planned: RallarOverlayTopologySnapshot,
+        expectedLayout: GroupLayoutIdentity
+    ): Promise<LanePromotion> {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const plannedSnapshot = { ...planned, groupRef: LANE_GROUP_REF, overlayId: toScopedOverlayId(LANE_GROUP_REF) };
+        const plannedRow = toStoredRtcTopologySnapshotRow(plannedSnapshot);
+        const timing: RallarTimingEvent[] = [];
+        const harness = await createAuthorityHarness(['owner'], {
+            runtimeRepository,
+            readPlannedLayoutRow: async () => {
+                const entry = await runtimeRepository.findEntry(RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, plannedRow.key);
+                return entry === undefined ? null : { snapshot: plannedSnapshot, revision: entry.revision };
+            },
+            timing: (event) => {
+                timing.push(event);
+            }
+        });
+        await createRoom(harness, LANE_GROUP_REF.groupId, 'Lane promotion room');
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            plannedRow.key,
+            plannedRow.value,
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        await harness.service.enqueueTopologyPublicationCommand(
+            toApplyPlannedLayoutCommand({ groupRef: LANE_GROUP_REF, formationEpoch: 0, expectedLayout }),
+            harness.nowEpochMs
+        );
+        timing.length = 0;
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        return {
+            lines: timing.filter((event) => event.component === 'group-topology-publication'),
+            acceptedSnapshotStored: await runtimeRepository.findEntry(RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE, plannedRow.key) !== undefined
+        };
+    }
+
+    it('promotes a newer plan and reports both identities on one timing line', async () => {
+        const promotion = await promoteThroughLane(NEWER_PLANNED.snapshot, IDENTITY);
+
+        expect(promotion.acceptedSnapshotStored).toBe(true);
+        expect(promotion.lines).toEqual([
+            expect.objectContaining({
+                operation: 'promote',
+                status: 'ok',
+                groupId: LANE_GROUP_REF.groupId,
+                details: {
+                    expected: 'group=4;presence=6;version=3;state=active',
+                    planned: 'group=4;presence=7;version=4;state=active',
+                    outcome: 'promoted-newer'
+                }
+            })
+        ]);
+    });
+
+    it('reports a fence the stored plan cannot satisfy as a rejected outcome, not an error', async () => {
+        const promotion = await promoteThroughLane(SNAPSHOT, { ...IDENTITY, version: 4 });
+
+        expect(promotion.acceptedSnapshotStored).toBe(false);
+        expect(promotion.lines).toEqual([
+            expect.objectContaining({
+                operation: 'promote',
+                status: 'ok',
+                details: {
+                    expected: 'group=4;presence=6;version=4;state=active',
+                    planned: 'group=4;presence=6;version=3;state=active',
+                    outcome: 'rejected',
+                    rejection: 'Planned layout promotion is planned-layout-superseded'
+                }
+            })
+        ]);
     });
 });
 

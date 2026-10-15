@@ -1,3 +1,4 @@
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupEvent,
     GroupRef,
@@ -17,7 +18,7 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
-import { timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
+import { nowMs, recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
 import { validateWsSessionConnectGuard } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
@@ -29,7 +30,11 @@ import type {
     GroupStateMutationService
 } from '../group-state-service-contracts.ts';
 import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
-import type { GroupMutationComputed, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationComputed,
+    GroupMutationRead
+} from '../mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
 import {
     readAndComputeGroupPresenceConnect,
@@ -50,13 +55,20 @@ export interface GroupStateInboxResultReader {
     readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
 }
 
-/** Present only while AppInbox phase timing is on; each lane phase then reports as `app-inbox-phase`. */
-export interface GroupStateLanePhaseTiming {
+/** A timing sink and the service its lines name. */
+export interface GroupStateInboxTiming {
     readonly sink: RallarTimingSink;
     readonly serviceId: string;
 }
 
 type GroupStateLanePhase = 'ingress-capture' | 'ingress-persist';
+
+interface PlannedLayoutPromotionAttempt {
+    readonly command: Extract<GroupMutationCommand, { operation: 'applyPlannedLayout'; }>;
+    readonly read: GroupMutationRead;
+    readonly computed: GroupMutationComputed;
+    readonly startedAtMs: number;
+}
 
 export interface GroupStateInboxHandlerDependencies {
     readonly mutationService: GroupStateMutationService;
@@ -66,7 +78,10 @@ export interface GroupStateInboxHandlerDependencies {
         AppInboxMutationTransactionWriter,
         'readCompletionFacts' | 'writeComputedMutation'
     >;
-    readonly lanePhaseTiming: GroupStateLanePhaseTiming | undefined;
+    /** Present only while AppInbox phase timing is on; each lane phase then reports as `app-inbox-phase`. */
+    readonly lanePhaseTiming: GroupStateInboxTiming | undefined;
+    /** Present while the service is timed; a layout promotion attempt then reports as `group-topology-publication`. */
+    readonly publicationTiming: GroupStateInboxTiming | undefined;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
     readonly captureAuthenticatedMutationIngress: (
@@ -137,8 +152,17 @@ export class GroupStateInboxHandler {
         if (command.command.operation === 'connectPresence') {
             return await this.processPresenceConnect(context, command);
         }
+        const startedAtMs = nowMs();
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
+        if (command.command.operation === 'applyPlannedLayout') {
+            this.recordPlannedLayoutPromotion({
+                command: command.command,
+                read: resultRead.mutationRead,
+                computed,
+                startedAtMs
+            });
+        }
         if (!isCommittableMutation(computed)) {
             this.validateMutation(command, resultRead.mutationRead, computed);
             throwNonCommittableMutation(command, computed);
@@ -350,6 +374,36 @@ export class GroupStateInboxHandler {
         }
     }
 
+    private recordPlannedLayoutPromotion(attempt: PlannedLayoutPromotionAttempt): void {
+        const timing = this.dependencies.publicationTiming;
+        if (timing === undefined) {
+            return;
+        }
+        const { command, read, computed } = attempt;
+        recordRallarTiming({
+            sink: timing.sink,
+            event: {
+                component: 'group-topology-publication',
+                operation: 'promote',
+                serviceId: timing.serviceId,
+                requestId: command.requestId ?? undefined,
+                applicationId: command.aggregateRef.applicationId,
+                workspaceId: command.aggregateRef.workspaceId,
+                groupId: command.aggregateRef.groupId,
+                details: {
+                    expected: toLayoutIdentityLabel(command.input.expectedLayout),
+                    planned: read.plannedLayoutRow === null
+                        ? 'none'
+                        : toLayoutIdentityLabel(toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)),
+                    outcome: toPlannedLayoutPromotionOutcome(computed),
+                    rejection: computed.outcome === 'rejected' ? computed.receipt.rejection ?? undefined : undefined
+                }
+            },
+            status: 'ok',
+            durationMs: nowMs() - attempt.startedAtMs
+        });
+    }
+
     private recordGroupMutation(
         command: GroupStateMutationCommand,
         outcome: GroupFormationMutationOutcome
@@ -393,6 +447,23 @@ function throwNonCommittableMutation(
         );
     }
     throw toGroupMutationRejectionError(computed);
+}
+
+function toPlannedLayoutPromotionOutcome(computed: GroupMutationComputed): string {
+    switch (computed.outcome) {
+        case 'write':
+            return computed.acceptedLayoutPromotion?.promoted === 'newer' ? 'promoted-newer' : 'promoted';
+        case 'no-op':
+            return 'already-applied';
+        default:
+            return computed.outcome;
+    }
+}
+
+function toLayoutIdentityLabel(identity: GroupLayoutIdentity | null): string {
+    return identity === null
+        ? 'none'
+        : `group=${identity.groupRevision};presence=${identity.presenceRevision};version=${identity.version};state=${identity.state}`;
 }
 
 function isPresenceOperation(operation: GroupStateMutationCommand['command']['operation']): boolean {

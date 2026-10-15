@@ -113,14 +113,14 @@ export class GroupStateInboxService {
         this.wakeQueue = config.wakeOwningQueue;
         this.serviceId = config.serviceId;
         const phaseTiming = normalizeAppInboxOptions(config.options ?? {}).phaseTiming;
+        const timing = config.timing === undefined ? undefined : { sink: config.timing, serviceId: config.serviceId };
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
             resultReader: dependencies.resultReader,
             transactionWriter: this.transactionWriter,
-            lanePhaseTiming: phaseTiming && config.timing !== undefined
-                ? { sink: config.timing, serviceId: config.serviceId }
-                : undefined,
+            lanePhaseTiming: phaseTiming ? timing : undefined,
+            publicationTiming: timing,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
             captureAuthenticatedMutationIngress: (descriptor, authority) =>
