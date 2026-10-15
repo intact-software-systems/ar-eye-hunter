@@ -141,6 +141,8 @@ export interface OverlayInfo {
     readonly degreeLimit: number;
     readonly overlayVersion: number;
     readonly updatedAtEpochMs: number;
+    /** The accepted layout's whole adjacency, every session's next hops; undefined for a bootstrap overlay. */
+    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
 }
 
 export interface RttMeasurementInfo {

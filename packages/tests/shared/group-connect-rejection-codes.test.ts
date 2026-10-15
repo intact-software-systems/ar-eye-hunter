@@ -37,6 +37,7 @@ describe('group connect rejection codes', () => {
                 createdByClientId: 'server',
                 createdAtEpochMs: 1,
                 nextHopSessionIds: [],
+                nextHopsBySessionId: undefined,
                 degreeLimit: 2,
                 overlayVersion: 7,
                 updatedAtEpochMs: 1

@@ -70,6 +70,8 @@ export interface RtcOriginOverlayFixtureInput {
     readonly snapshot: GroupSnapshot;
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
+    /** The accepted layout's whole adjacency; absent, the overlay carries none, as a bootstrap overlay does. */
+    readonly nextHopsBySessionId?: OverlayInfo['nextHopsBySessionId'];
     readonly circuitBreaker?: CircuitBreaker;
     /** The same admission policy port production supplies; absent, the default RTC limiter. */
     readonly rateLimiter?: RateLimiter;
@@ -109,7 +111,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
-    overlays.accept('room', createOriginOverlay(input.nextHopPeerIds));
+    overlays.accept('room', createOriginOverlay(input.nextHopPeerIds, input.nextHopsBySessionId));
     const resources = createDefaultALOutboundRuntimeResources({
         decodePrepared: decodeALOutboundTransportMessage,
         stores: input.stores,
@@ -231,7 +233,10 @@ export function toOriginDirectedSnapshot(snapshot: GroupSnapshot, directorSessio
     };
 }
 
-export function createOriginOverlay(nextHopSessionIds: readonly string[]): OverlayInfo {
+export function createOriginOverlay(
+    nextHopSessionIds: readonly string[],
+    nextHopsBySessionId?: OverlayInfo['nextHopsBySessionId']
+): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
         provenance: 'server',
@@ -245,7 +250,8 @@ export function createOriginOverlay(nextHopSessionIds: readonly string[]): Overl
         nextHopSessionIds,
         degreeLimit: 3,
         overlayVersion: 1,
-        updatedAtEpochMs: 1
+        updatedAtEpochMs: 1,
+        nextHopsBySessionId
     };
 }
 

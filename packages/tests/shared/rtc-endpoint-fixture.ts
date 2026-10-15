@@ -176,7 +176,8 @@ export class RtcEndpointFixture {
         });
     }
 
-    observeOverlay(version: number): void {
+    /** The accepted overlay of this endpoint, with the layout's whole adjacency when the test supplies it. */
+    observeOverlay(version: number, nextHopsBySessionId?: OverlayInfo['nextHopsBySessionId']): void {
         this.overlays.set(toScopedOverlayId(room), {
             overlayId: toScopedOverlayId(room),
             groupRef: room,
@@ -190,7 +191,8 @@ export class RtcEndpointFixture {
             overlayVersion: version,
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
-            updatedAtEpochMs: version
+            updatedAtEpochMs: version,
+            nextHopsBySessionId
         });
     }
 

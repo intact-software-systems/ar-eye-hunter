@@ -391,6 +391,7 @@ export function createAcceptedOverlay(
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: [...nextHopSessionIds],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: identity?.version ?? 1,
         updatedAtEpochMs: 1

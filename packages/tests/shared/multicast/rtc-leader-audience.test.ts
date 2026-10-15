@@ -187,6 +187,85 @@ describe('the RTC leg of a group-leader room send', () => {
         }
     });
 
+    it.each(['the accepted tree', 'no accepted adjacency'] as const)(
+        'routes a leader shot from a far leaf to a depth-3 director with %s',
+        async (adjacency) => {
+            vi.useRealTimers();
+            const tree: Readonly<Record<string, readonly string[]>> = {
+                '00': ['01', '02', '03'],
+                '01': ['00', '04', '05'],
+                '02': ['00', '06', '07'],
+                '03': ['00', '08'],
+                '04': ['01', '09', '10'],
+                '05': ['01', '11'],
+                '06': ['02', '12', '13'],
+                '07': ['02', '14'],
+                '08': ['03', '15'],
+                '09': ['04'],
+                '10': ['04'],
+                '11': ['05'],
+                '12': ['06'],
+                '13': ['06'],
+                '14': ['07'],
+                '15': ['08']
+            };
+            const sessionIds = Object.keys(tree);
+            const message = newALMulticastMessage(
+                '12',
+                { topicId: 'room.ar-eye-hunter.director', resourceId: 'far-leaf-shot', contextId: room.groupId },
+                room,
+                'room.ar-eye-hunter.director.intent.v1',
+                { kind: 'player-shot-intent', senderId: '12', seq: 1 },
+                { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000, qos: { durability: { algo: 'volatile' } } }
+            );
+            const receipt = Promise.withResolvers<ALDeliverySettlement>();
+            const endpoints = sessionIds.map((sessionId) => {
+                const endpoint = new RtcEndpointFixture(sessionId, tree[sessionId]!, {
+                    outboundSettlements: (settlement) => {
+                        if (settlement.kind === 'acknowledgement' && settlement.msgId === message.id.msgId && settlement.complete) {
+                            receipt.resolve(settlement);
+                        }
+                    }
+                });
+                onTestFinished(() => endpoint.close());
+                return endpoint;
+            });
+            const bySession = new Map(endpoints.map((endpoint) => [endpoint.sessionId, endpoint]));
+            for (const endpoint of endpoints) {
+                endpoint.observe(1, room, sessionIds);
+                endpoint.observeOverlay(1, adjacency === 'the accepted tree' ? tree : undefined);
+                const key = toScopedOverlayId(room);
+                endpoint.groups.set(key, toOriginDirectedSnapshot(endpoint.groups.read(key)!, '09', Date.now()));
+                for (const peerId of endpoint.peers.keys()) {
+                    endpoint.connect(bySession.get(peerId)!);
+                }
+            }
+
+            const admitted = await bySession.get('12')!.multicast.enqueueIfAbsent(message);
+
+            expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+            expect(await receipt.promise).toMatchObject({
+                mode: 'leader',
+                expectedRecipientPeerIds: ['09'],
+                confirmedRecipientPeerIds: ['09'],
+                unconfirmedRecipientPeerIds: [],
+                complete: true
+            });
+            const legs = endpoints.flatMap((endpoint) =>
+                endpoint.sent
+                    .filter((copy) => copy.id.msgId === message.id.msgId)
+                    .map((copy) => `${endpoint.sessionId}->${copy.forwarding?.nextHopPeerIds?.[0]}`)
+            );
+            const receivers = new Set(legs.map((leg) => leg.split('->')[1]));
+            if (adjacency === 'the accepted tree') {
+                expect(legs.toSorted()).toEqual(['00->01', '01->04', '02->00', '04->09', '06->02', '12->06']);
+            }
+            else {
+                expect([...receivers].toSorted()).toEqual(sessionIds.filter((sessionId) => sessionId !== '12').toSorted());
+            }
+        }
+    );
+
     it('confirms a leader receipt from a director that relays to a silent leaf, with one ACK reaching the origin', async () => {
         const message = newALMulticastMessage(
             'origin',

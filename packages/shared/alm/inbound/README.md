@@ -324,7 +324,12 @@ sender's forwarding set rides on `diagnostics.visitedPeerIds`: each group copy
 carries the visited set plus its sender plus the dispatch's next hops, and a
 relay never forwards to a visited peer. In a star a recipient therefore owns no
 children and acknowledges itself `delivered`; in a tree a relay still owns its
-descendants, and a peer that is both sibling and descendant is not owned. The
+descendants, and a peer that is both sibling and descendant is not owned. A
+multicast frozen to its recipients (a `group-leader` send, a narrowed audience)
+keeps only the children whose subtree over the accepted layout's adjacency
+(`OverlayInfo.nextHopsBySessionId`) holds a recipient, at the origin, at every
+relay and at the origin's missing-recipient retry; without that adjacency, or
+with a recipient it does not place, every child stays. The
 same exclusion governs the forward of a retried copy and the relay row's
 expected set. A targeted repair copy inherits the repaired dispatch's own copy
 for its peer, so a requester never owns its siblings. Unicast copies carry no

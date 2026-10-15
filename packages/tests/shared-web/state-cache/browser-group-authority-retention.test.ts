@@ -606,6 +606,7 @@ function createAcceptedOverlay(): OverlayInfo {
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: ['origin'],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: 1,
         updatedAtEpochMs: 1

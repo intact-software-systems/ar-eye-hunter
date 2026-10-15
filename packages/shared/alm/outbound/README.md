@@ -939,7 +939,8 @@ Every member then goes through the single-message commit, one after another, and
 a planning refusal is that member's `failed` value, as a single send answers it, and a member whose
 single commit throws does not stop the members after it; the first such throw is rethrown once every
 member ran, and the runtime wakes the owner for the members that landed before it rethrows. The RTC
-multicast manager applies its circuit breaker and its rate limiter once per group.
+multicast manager applies its circuit breaker once per group and its rate limiter once per group of the session's own
+sends; a control hand-off answers an inbound message its admission already bounded and spends no quota.
 
 ## Read and failure boundaries
 

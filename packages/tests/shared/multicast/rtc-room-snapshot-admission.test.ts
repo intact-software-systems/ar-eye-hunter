@@ -33,6 +33,7 @@ function overlay(): OverlayInfo {
         name: 'Room',
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
         nextHopSessionIds: ['relay', 'downstream'],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: 1,
         createdByClientId: 'owner',

@@ -629,6 +629,7 @@ describe('repository modules', () => {
                 createdByClientId: 'owner',
                 createdAtEpochMs: 1,
                 nextHopSessionIds: ['self'],
+                nextHopsBySessionId: undefined,
                 degreeLimit: 1,
                 overlayVersion: 1,
                 updatedAtEpochMs: 1
@@ -687,6 +688,7 @@ describe('repository modules', () => {
                 createdByClientId: 'owner',
                 createdAtEpochMs: 1,
                 nextHopSessionIds: ['self'],
+                nextHopsBySessionId: undefined,
                 degreeLimit: 1,
                 overlayVersion: 1,
                 updatedAtEpochMs: 1
@@ -779,6 +781,7 @@ describe('repository modules', () => {
                 createdByClientId: 'owner',
                 createdAtEpochMs: 1,
                 nextHopSessionIds: ['peer-bootstrap'],
+                nextHopsBySessionId: undefined,
                 degreeLimit: 1,
                 overlayVersion: 5,
                 updatedAtEpochMs: 5
@@ -867,6 +870,7 @@ describe('repository modules', () => {
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['peer-a'],
+            nextHopsBySessionId: undefined,
             degreeLimit: 1,
             overlayVersion: 1,
             updatedAtEpochMs: 2

@@ -183,6 +183,7 @@ function overlay(input: OverlayFixtureInput): OverlayInfo {
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: [...(input.nextHopSessionIds ?? [])],
+        nextHopsBySessionId: undefined,
         degreeLimit: 5,
         overlayVersion: input.version,
         updatedAtEpochMs: input.version

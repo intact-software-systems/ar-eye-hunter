@@ -20,14 +20,13 @@ import {
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { ALWorkBatchTestObserver } from '../alm/work/al-work-batch-test-observer.ts';
-import { createOriginSnapshot, createRtcOriginOverlayFixture } from '../multicast/rtc-origin-overlay-fixture.ts';
 import { RtcEndpointFixture } from '../rtc-endpoint-fixture.ts';
 
 const CONTROL_RECOVERY_STARTED_AT_MS = 1791883286866;
@@ -72,7 +71,6 @@ it.each(
         [{ kind: 'duplicate' }, EntityStatus.COMPLETED],
         [{ kind: 'unroutable', reason: 'no-route', detail: 'Observed no route' }, EntityStatus.RETRY],
         [{ kind: 'unroutable', reason: 'circuit-open', detail: 'Observed circuit open' }, EntityStatus.RETRY],
-        [{ kind: 'unroutable', reason: 'rate-limited', detail: 'Observed local quota refusal' }, EntityStatus.RETRY],
         [{ kind: 'deferred', reason: 'not-yet-in-sync', detail: 'Observed pending sync' }, EntityStatus.RETRY],
         [{ kind: 'failed', detail: 'Observed failure' }, EntityStatus.RETRY],
         [
@@ -86,7 +84,7 @@ it.each(
 )('maps RTC control result %s to inbound owner %s', async (verdict, ownerStatus) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const { receiver, sender } = createConnectedEndpoints();
-    vi.spyOn(receiver.multicast, 'enqueueAllIfAbsent').mockImplementation(async (messages) =>
+    vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueAllIfAbsent').mockImplementation(async (messages) =>
         messages.map((message) => ({
             verdict,
             message,
@@ -107,10 +105,7 @@ it.each(
 
     const work = await readControlWork(receiver, ownerStatus);
     expect(work).toHaveLength(1);
-    expect(work[0]!.dequeueAudit.attempts).toBe(verdict.kind === 'unroutable' && verdict.reason === 'rate-limited' ? 0 : 1);
-    if (verdict.kind === 'unroutable' && verdict.reason === 'rate-limited') {
-        expect(Number(work[0]!.dequeueAudit.nextTs!.epochMilliseconds) - Date.now()).toBe(1);
-    }
+    expect(work[0]!.dequeueAudit.attempts).toBe(1);
 });
 
 interface ConnectedRtcEndpoints {
@@ -144,7 +139,7 @@ async function readControlWork(
     });
 }
 
-it('retains the whole quota-refused batch without admitting either control through individual fallback', async () => {
+it('retains the whole not-ready batch without admitting either control through individual fallback', async () => {
     let now = CONTROL_RECOVERY_STARTED_AT_MS;
     let ready = false;
     const admitted: string[] = [];
@@ -215,7 +210,7 @@ it.each([
     { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1250, next: CONTROL_RECOVERY_STARTED_AT_MS + 1250, admitted: [] },
     { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1251, next: CONTROL_RECOVERY_STARTED_AT_MS + 1251, admitted: [] },
     { deadline: CONTROL_RECOVERY_STARTED_AT_MS + 1252, next: CONTROL_RECOVERY_STARTED_AT_MS + 1251, admitted: ['recovery-control-1'] }
-])('clips quota readiness to expiry $deadline and never sends an expired control', async ({ deadline, next, admitted: expected }) => {
+])('clips control readiness to expiry $deadline and never sends an expired control', async ({ deadline, next, admitted: expected }) => {
     let now = CONTROL_RECOVERY_STARTED_AT_MS;
     const admitted: string[] = [];
     const run = createControlRecoveryRuntime(() => now, async (messages) => {
@@ -339,25 +334,7 @@ async function seedControlRecoveryWork(run: ControlRecoveryRuntime, sequence: nu
     return await run.resources.workQueue.enqueueIfAbsent(computed.entry);
 }
 
-it('keeps a local quota refusal without an eligible forecast on the ordinary retry budget', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(CONTROL_RECOVERY_STARTED_AT_MS);
-    const multicast = createRtcOriginOverlayFixture({
-        snapshot: createOriginSnapshot(['a', 'b'], 1),
-        nextHopPeerIds: ['b'],
-        rateLimiter: RateLimiter.init(1_000, 0)
-    });
-    const run = createControlRecoveryRuntime(() => CONTROL_RECOVERY_STARTED_AT_MS, (messages) => multicast.manager.handoffControlMessages(messages));
-    const entry = await seedControlRecoveryWork(run, 1, CONTROL_RECOVERY_STARTED_AT_MS + 10_000);
-    await run.runtime.ready();
-    await run.batches.waitForPublishedBatches();
-    const released = (await run.resources.workQueue.getItem(entry.key))!;
-    expect(released).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
-    expect(Number(released.dequeueAudit.nextTs!.epochMilliseconds)).toBe(CONTROL_RECOVERY_STARTED_AT_MS + 1);
-    expect(await multicast.resources.admissionStore.hasSentMessageAdmission('recovery-control-1')).toBe(false);
-    expect(multicast.channels.b!.sent).toEqual([]);
-});
-
-it('keeps per-control expiry clipping and delivers new work while the quota batch waits', async () => {
+it('keeps per-control expiry clipping and delivers new work while the not-ready batch waits', async () => {
     let now = CONTROL_RECOVERY_STARTED_AT_MS;
     const admitted: string[] = [];
     const run = createControlRecoveryRuntime(() => now, async (messages) => {
