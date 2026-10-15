@@ -280,6 +280,18 @@ per agent and records under a cap). Next slice (2e): the hosted lane's per-playe
 player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
 derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
 
+### Step 2e: the hosted lane's per-player cost (this PR)
+
+Step 2d is merged (#667 as `e623aa7`). The phase-timing capture and the lane survey (proposal §4)
+located the cost: six serial lane items per player, an authorization capture repeated inside every
+group mutation, an O(N²) presence follow-on, no-op client heartbeats that still read the audience,
+three PBKDF2 derivations per agent and per-measurement RTT submissions. Decisions D233–D238
+(proposal §3), each RED first and judged by the local timing table and then the hosted 50-agent
+`rtc.connect` and sign-in medians; D239 records that the four-arm lane-policy benefit gate needs an
+arm selector, backend-operation counters and a retry-inducing workload before it can be evaluated,
+and stays an open item of this plan; D240–D241 record the join contract and a typed second lane as
+not taken.
+
 ## Completion and handoff
 
 Use test-driven and subagent-driven development with distinct implementation, specification and
