@@ -2438,6 +2438,47 @@ test('uses fresh world-fleet target previews after loading an older distributed 
 
 test('shows distributed WS and RTC runtime diagnostics in the run monitor', async ({ page }) => {
     const now = Date.now();
+    const diagnosticRecipe = {
+        schemaVersion: 1,
+        recipeId: 'diagnostic-recipe',
+        commands: [{
+            kind: 'parallel',
+            commandId: 'root-parallel',
+            maxConcurrency: 1,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{
+                        kind: 'loop',
+                        commandId: 'frame-loop',
+                        count: 2,
+                        commands: [{
+                            kind: 'rtc.send',
+                            commandId: 'position-send',
+                            send: { frame: '{loop.iteration}' }
+                        }]
+                    }]
+                },
+                {
+                    groupId: 'right',
+                    commands: [
+                        {
+                            kind: 'wait',
+                            commandId: 'wait-ready',
+                            match: { topic: 'rallar.test.ready', payloadPath: 'state', equals: 'ready' }
+                        },
+                        {
+                            kind: 'assert',
+                            commandId: 'assert-event-count',
+                            source: 'events.length',
+                            operator: 'gte',
+                            expected: 99
+                        }
+                    ]
+                }
+            ]
+        }]
+    };
     const controlRun = {
         runId: 'demo-run',
         createdAtEpochMs: now - 10_000,
@@ -2453,7 +2494,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-a',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: diagnosticRecipe
                     }
                 },
                 queuedAtEpochMs: now - 5_000,
@@ -2470,7 +2511,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-b',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: diagnosticRecipe
                     }
                 },
                 queuedAtEpochMs: now - 5_000,
@@ -2643,13 +2684,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                     endedAtEpochMs: now - 4_220,
                                                     durationMs: 180,
                                                     value: {
-                                                        commandId: 'root-parallel:g2:right:c1:wait-ready',
                                                         matched: true,
-                                                        match: {
-                                                            topic: 'rallar.test.ready',
-                                                            payloadPath: 'state',
-                                                            equals: 'ready'
-                                                        },
                                                         event: {
                                                             kind: 'message',
                                                             topic: 'rallar.test.ready',
@@ -2678,8 +2713,6 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                     endedAtEpochMs: now - 3_950,
                                                     durationMs: 150,
                                                     value: {
-                                                        commandId: 'root-parallel:g2:right:c2:assert-event-count',
-                                                        source: 'events.length',
                                                         operator: 'gte',
                                                         expected: 99,
                                                         actual: 1,

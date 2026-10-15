@@ -228,6 +228,8 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly connectedPeerIds?: readonly string[];
     readonly groupMemberPeerIds?: readonly string[];
     readonly overlayNeighborPeerIds?: readonly string[];
+    /** The accepted layout's whole adjacency; absent when the carrier holds no accepted layout. */
+    readonly overlayNextHopsBySessionId?: Readonly<Record<string, readonly string[]>>;
     readonly overloaded?: boolean;
     /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
     readonly backpressured?: boolean;

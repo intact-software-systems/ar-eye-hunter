@@ -16,7 +16,10 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { resolveALOwnedChildPeerIds } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import {
+    resolveALOwnedChildPeerIds,
+    toALAcceptedOverlayAdjacency
+} from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -64,7 +67,6 @@ import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exceptio
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
-import { computeRateLimiterRetryAfterMs } from '../resilience/compute-rate-limiter-retry-after-ms.ts';
 import { Either } from '../resilience/Either.ts';
 import type { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
@@ -273,18 +275,12 @@ export class WebRtcOverlayMulticastManager {
         return result!;
     }
 
-    /** Translates control admission into the inbound worker's exception-based handoff protocol. */
+    /**
+     * Translates control admission into the inbound worker's exception-based handoff protocol. A control answers
+     * an inbound message its admission already bounded, so it passes the circuit breaker but spends no send quota.
+     */
     async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
-        const results = await this.enqueueAllIfAbsent(msgs);
-        if (
-            results.length > 0 &&
-            results.every((result) => result.verdict.kind === 'unroutable' && result.verdict.reason === 'rate-limited')
-        ) {
-            const retryAfterMs = computeRateLimiterRetryAfterMs(this.rateLimiter, this.quotaNow());
-            if (retryAfterMs !== undefined) {
-                throw new NotReadyException(Math.max(1, retryAfterMs), results[0]!.reason);
-            }
-        }
+        const results = this.refuseIfCarrierClosed(msgs) ?? await this.enqueueThroughCircuitBreaker(msgs);
         for (const result of results) {
             const error = toRtcControlHandoffError(result);
             if (error !== undefined) {
@@ -323,18 +319,25 @@ export class WebRtcOverlayMulticastManager {
 
     /** An already-open circuit spends no quota token; local quota refusals never enter failure accounting. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
-        if (this.disposed) {
-            return msgs.map((msg) => WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg));
-        }
-
-        if (!this.circuitBreaker.isAllowedThrough()) {
-            return this.refuseHandoff(msgs, 'circuit-open');
+        const closed = this.refuseIfCarrierClosed(msgs);
+        if (closed !== undefined) {
+            return closed;
         }
 
         if (!this.rateLimiter.allowAt(this.quotaNow())) {
             return this.refuseHandoff(msgs, 'rate-limited');
         }
         return await this.enqueueThroughCircuitBreaker(msgs);
+    }
+
+    private refuseIfCarrierClosed(msgs: readonly ALMessage[]): readonly ALOutboundEnqueueResult[] | undefined {
+        if (this.disposed) {
+            return msgs.map((msg) => WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg));
+        }
+        if (!this.circuitBreaker.isAllowedThrough()) {
+            return this.refuseHandoff(msgs, 'circuit-open');
+        }
+        return undefined;
     }
 
     private async enqueueThroughCircuitBreaker(
@@ -505,7 +508,8 @@ export class WebRtcOverlayMulticastManager {
             fromPeerId,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
-            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : []
+            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
+            overlayNextHopsBySessionId: overlay?.nextHopsBySessionId
         };
         const policyMessage = fromPeerId !== undefined && msg.targets?.mode !== 'unicast'
             ? { ...msg, forwarding: { ...msg.forwarding, nextHopPeerIds: undefined } }
@@ -556,7 +560,8 @@ export class WebRtcOverlayMulticastManager {
             nowMs: availability.context.nowMs,
             selfPeerId: this.connectionService.input.sessionId,
             groupMemberPeerIds: availability.admission.memberPeerIds,
-            overlayNeighborPeerIds: availability.admission.forwardingPeerIds
+            overlayNeighborPeerIds: availability.admission.forwardingPeerIds,
+            overlayNextHopsBySessionId: availability.context.overlay.nextHopsBySessionId
         });
         const readyPeerIds = this.connectionService.readyPeerIdsForLane();
         return ownedChildPeerIds.length > 0 && ownedChildPeerIds.every((peerId) => !readyPeerIds.includes(peerId));
@@ -1040,10 +1045,15 @@ export class WebRtcOverlayMulticastManager {
         }
 
         if (request.failedPeerIds.length > 0) {
+            const selfPeerId = this.connectionService.input.sessionId;
             return planRtcFailedPeerRepair({
                 msg,
                 request,
-                selfPeerId: this.connectionService.input.sessionId,
+                selfPeerId,
+                adjacency: toALAcceptedOverlayAdjacency(
+                    selfPeerId,
+                    toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
+                ),
                 planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg, 'replan')
             });
         }

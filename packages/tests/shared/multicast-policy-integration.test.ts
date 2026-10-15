@@ -918,6 +918,7 @@ function createOverlayInfo(nextHopSessionIds: readonly string[]): OverlayInfo {
         createdByClientId: 'owner',
         createdAtEpochMs: 1,
         nextHopSessionIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: nextHopSessionIds.length,
         overlayVersion: 1,
         updatedAtEpochMs: 1

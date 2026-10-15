@@ -14,6 +14,7 @@ import { createAlmScaleRecipes } from '../../shared-test/rallar-bb-test/conforma
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { toOverlayLayoutIdentity } from '../../shared/repository/overlays-repository.ts';
 
 const GROUP = { applicationId: 'scale-app', workspaceId: 'scale-workspace', groupId: 'scale-room' };
 
@@ -205,7 +206,6 @@ describe('ALM scale recipes', () => {
         }
     });
 
-    // A cohort's registrations serialize on the API, so the lazy sign-in must not spend the group requests' 5 s.
     it.each(['director', 'player'] as const)('signs the %s in under the 45 s setup allowance before any group request', (role) => {
         const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
@@ -223,7 +223,79 @@ describe('ALM scale recipes', () => {
             `alm-scale-${role}-ensure-member`,
             `alm-scale-${role}-audience`
         ]);
-        expect(groupRequests.map((command) => command.timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+        expect(groupRequests.map((command) => command.timeoutMs)).toEqual([8_750, 8_750, 5_000]);
+    });
+
+    it.each([15, 30, 50] as const)(
+        'allows the %i-member cohort more than its serial joins cost at the 4 joins per second measured hosted, and keeps reads at 5 s',
+        (participantCount) => {
+            const hostedJoinsPerSecond = 4;
+            const serialJoinCostMs = participantCount / hostedJoinsPerSecond * 1_000;
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const requests = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
+                .filter((command) => command.kind === 'http.request');
+            const timeoutOf = (suffix: string) => requests.filter((command) => command.commandId?.endsWith(suffix)).map((command) => command.timeoutMs);
+
+            for (const allowance of [...timeoutOf('-ensure-group'), ...timeoutOf('-ensure-member')]) {
+                expect(allowance).toBeGreaterThan(serialJoinCostMs);
+                expect(allowance).toBeGreaterThanOrEqual(5_000);
+                expect(allowance).toBeLessThanOrEqual(45_000);
+            }
+            expect(timeoutOf('-audience')).toEqual([5_000, 5_000]);
+        }
+    );
+
+    it.each(['director', 'player'] as const)('holds the %s at setup-complete until no newer plan replaces the ready layout', (role) => {
+        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+        const prefix = `alm-scale-${role}`;
+        const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
+
+        expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+        expect(recipe.commands[setupComplete - 1]).toEqual({
+            kind: 'loop',
+            commandId: `${prefix}-layout-stable`,
+            count: 12,
+            timeoutMs: 48_500,
+            until: 'first-success',
+            commands: [
+                { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
+                {
+                    kind: 'wait',
+                    commandId: `${prefix}-layout-replan`,
+                    absent: true,
+                    timeoutMs: 3_500,
+                    match: {
+                        topic: 'rallar.browser.formation.layout',
+                        payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
+                        payloadPath: 'data.identity',
+                        contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+                    }
+                }
+            ]
+        });
+    });
+
+    it('matches a re-plan from exactly the ready revision because the layout event serializes its group revision first', () => {
+        const identity = toOverlayLayoutIdentity({
+            sourceGroupStateCausalRevision: { groupRevision: 56, presenceRevision: 7 },
+            provenance: 'server',
+            state: 'active',
+            overlayId: 'overlay-1',
+            groupRef: GROUP,
+            topology: 'tree',
+            name: 'scale-room',
+            createdByClientId: 'director',
+            createdAtEpochMs: 1_000,
+            nextHopSessionIds: [],
+            degreeLimit: 4,
+            overlayVersion: 5,
+            updatedAtEpochMs: 1_000,
+            nextHopsBySessionId: {}
+        });
+
+        expect(JSON.stringify(identity)).toMatch(/^\{"groupRevision":56,"presenceRevision"/);
     });
 
     it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {

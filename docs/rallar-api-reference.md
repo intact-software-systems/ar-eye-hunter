@@ -825,8 +825,9 @@ And Readiness below).
 
 Before a congestion decision, the RTC carrier protects its hand-off with a
 per-session rate limiter (20 hand-offs per second) and a circuit breaker (open
-after 10 consecutive failures, for 10 s). They gate the session's own sends and its control
-and ACK hand-offs; relay forwards and retransmissions bypass them. Each refused
+after 10 consecutive failures, for 10 s). The limiter gates the session's own sends only;
+control and ACK hand-offs pass through the breaker alone, because they are bounded by inbound
+admissions; relay forwards and retransmissions bypass both. Each refused
 hand-off is stated as an `rtc-handoff-refusal` outbound diagnostic naming its
 reason, `rate-limited` or `circuit-open`, and its message count, and each new
 high of the bytes a data channel held queued when a submission read it as an

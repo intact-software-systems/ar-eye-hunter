@@ -343,7 +343,13 @@ class ScaleActor {
                 readStorageCounters: async (command) =>
                     this.native.readStorageCounters(requireBlackBoxRallarInput(decodeBlackBoxRallarStorageCountersInput(command))),
                 close: async () => this.native.close(),
-                director: this.createDirectorPort()
+                director: this.createDirectorPort(),
+                formation: {
+                    command: async () => {
+                        throw new Error('Scale issues no formation command');
+                    },
+                    readiness: async () => this.cohort.readLayoutReadiness()
+                }
             }
         });
     }
@@ -386,6 +392,17 @@ class ScaleActor {
         });
     }
 
+    runSetupCompletion(): Promise<RallarBlackBoxTestResult> {
+        const prefix = `alm-scale-${this.role}`;
+        const readyStatus = this.recipe.commands.findIndex((command) => command.commandId === `${prefix}-ready-status`);
+        const setupComplete = this.recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
+        return this.runtime.execute({
+            kind: 'recipe.run',
+            commandId: `${this.agentId}-setup-completion`,
+            recipe: { ...this.recipe, commands: this.recipe.commands.slice(readyStatus + 1, setupComplete + 1) }
+        });
+    }
+
     run(): Promise<RallarBlackBoxTestResult> {
         const trafficIndex = this.recipe.commands.findIndex((command) => command.kind === 'parallel');
         return this.runtime.execute({
@@ -401,7 +418,9 @@ class ScaleCohort {
     readonly policy: CohortPolicy;
     readonly arrivals = new Map<string, Set<string>>();
     readonly lifecycle: ScaleWirePayload[] = [];
+    readonly releasedAtMs = new Map<string, number>();
     private readonly seenArrivals = new Set<string>();
+    private groupRevision = 56;
 
     constructor(policy: CohortPolicy) {
         this.policy = policy;
@@ -425,7 +444,31 @@ class ScaleCohort {
         }
     }
 
+    readLayoutReadiness(): RallarBlackBoxTestRecord {
+        return {
+            readyAtEpochMs: Date.now(),
+            formation: { roomRef: GROUP, causalRevision: { groupRevision: this.groupRevision, presenceRevision: 1 } }
+        };
+    }
+
+    /** The planner re-plans from the current revision; accepting the plan writes the next one. */
+    replanLayout(): void {
+        const identity = { groupRevision: this.groupRevision, presenceRevision: 1, version: 5, state: 'active' };
+        this.publishLayout({ kind: 'layoutPlanned', role: 'planned', identity });
+        setTimeout(() => {
+            this.groupRevision += 1;
+            this.publishLayout({ kind: 'layoutAccepted', role: 'accepted', identity });
+        }, 500);
+    }
+
+    private publishLayout(data: RallarBlackBoxTestRecord): void {
+        for (const actor of this.actors) {
+            actor.runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'rallar.browser.formation.layout', data });
+        }
+    }
+
     private releaseBarrier(barrierId: string, arrivedAgentIds: readonly string[]): void {
+        this.releasedAtMs.set(barrierId, Date.now());
         for (const actor of this.actors) {
             actor.runtime.recordEvent(
                 toBarrierResolvedEvent({
@@ -593,6 +636,18 @@ it('passes all 231 assertions from real generated 15-participant traffic and fin
     expect(assertions).toHaveLength(231);
     expect(assertions.filter((assertion) => !assertion.ok)).toEqual([]);
     expect(assertions.every((assertion) => assertion.perAgent.every((row) => row.evidence === 'resolved'))).toBe(true);
+});
+
+it('holds setup-complete until the layout re-planned after readiness stays unreplaced for the quiet window', async () => {
+    const cohort = new ScaleCohort(NORMAL_POLICY);
+    const replanAtMs = Date.now() + 1_000;
+    setTimeout(() => cohort.replanLayout(), replanAtMs - Date.now());
+    const execution = Promise.all(cohort.actors.map((actor) => actor.runSetupCompletion()));
+    await vi.runAllTimersAsync();
+    const results = await execution;
+
+    expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(6_000);
 });
 
 it.each([

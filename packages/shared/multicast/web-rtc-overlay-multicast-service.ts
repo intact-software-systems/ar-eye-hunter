@@ -61,7 +61,8 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             fromPeerId: forwarding.fromPeerId,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
-            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : []
+            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
+            overlayNextHopsBySessionId: context.overlay.nextHopsBySessionId
         }, forwarding.qos);
         const handlingPlan = toRtcRoomSnapshotHandlingPlan(plan, admission, forwarding.fromPeerId);
         return {

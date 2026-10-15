@@ -60,6 +60,7 @@ import {
     type ResultCachePolicy
 } from './runtime-command-outcomes.ts';
 import { sleepWithAbort } from './sleep-with-abort.ts';
+import { toCommandResultEventPayload } from './to-command-result-event-payload.ts';
 import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
 import { computeCommandDeadlineEpochMs } from './to-runtime-command-values.ts';
 import {
@@ -1017,7 +1018,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             topic: 'rallar.bb.command.result',
             commandId: result.commandId,
             severity: result.ok ? 'info' : 'error',
-            payload: result
+            payload: toCommandResultEventPayload(result)
         }, input);
         this.notify();
         return result;

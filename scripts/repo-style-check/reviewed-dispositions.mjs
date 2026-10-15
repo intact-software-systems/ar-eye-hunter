@@ -719,6 +719,17 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'isCommandKind'
     }),
+    // The run-monitor spec mocks the control server and the API inside anonymous
+    // test callbacks: route handlers receive raw request bodies, mock services take
+    // raw configuration, and one window global is cast at the DOM boundary. Every
+    // unknown stays inside its mock and feeds no domain decision; this cap
+    // approves the ten existing occurrences and no growth.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/tabbed-navigation.spec.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 10
+    }),
     // This caught-value boundary immediately normalizes arbitrary thrown values
     // to Error, exactly as required by the code standard. No unknown value
     // propagates to callers; the textual checker cannot distinguish that case.

@@ -52,6 +52,34 @@ describe('ALWorkQueuePort', () => {
         expect(retried?.dequeueAudit.attempts).toBe(1);
     });
 
+    it.each([
+        { readyAfterMs: 1_249, nextAfterMs: 1_249 },
+        { readyAfterMs: 1_251, nextAfterMs: 1_250 }
+    ])('schedules not-ready work $readyAfterMs ms out no later than its deadline 1,250 ms out', async ({ readyAfterMs, nextAfterMs }) => {
+        const now = Temporal.Now.instant().epochMilliseconds;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => now,
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
+        });
+        const entry = newWorkEntry('AL_TEST', 'w-deadline');
+        await port.retainIfAbsent({
+            ...entry,
+            audit: { ...entry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(now + 1_250) }
+        });
+        const [claim] = await port.claim({ maxCount: 1, observedEntries: undefined });
+
+        await port.releaseAll([{ claim: claim!, outcome: { status: 'not-ready', readyAtMs: now + readyAfterMs } }]);
+
+        const released = await port.readEntry(claim!.entry.key);
+        expect(released?.dequeueAudit.nextTs?.epochMilliseconds).toBe(now + nextAfterMs);
+        expect(released?.dequeueAudit.attempts).toBe(0);
+    });
+
     it('leases from the reservation the queue stamped, not from the claiming clock', async () => {
         // 9_998.5 ms: behind the port's clock and sub-millisecond, so a JS-clock lease and a
         // truncating one both differ from the readiness a reserved row reports.

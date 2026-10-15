@@ -404,7 +404,8 @@ function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterCon
             createdAtEpochMs: 1,
             nextHopSessionIds: peerIds,
             overlayVersion: 1,
-            updatedAtEpochMs: 1
+            updatedAtEpochMs: 1,
+            nextHopsBySessionId: undefined
         }
     };
 }

@@ -1195,6 +1195,7 @@ function createOverlayContext(
         createdByClientId: 'owner',
         createdAtEpochMs: 1,
         nextHopSessionIds,
+        nextHopsBySessionId: undefined,
         degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion: 1,
         updatedAtEpochMs: 1

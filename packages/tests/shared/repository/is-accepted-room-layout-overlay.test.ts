@@ -68,6 +68,7 @@ function createOverlay(overrides: Partial<OverlayInfo> = {}): OverlayInfo {
         createdByClientId: 'self',
         createdAtEpochMs: 1,
         updatedAtEpochMs: 1,
+        nextHopsBySessionId: undefined,
         ...overrides
     };
 }

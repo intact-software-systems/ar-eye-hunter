@@ -35,6 +35,7 @@ function createOverlay(version: number): OverlayInfo {
         createdByClientId: 'server',
         createdAtEpochMs: 1,
         nextHopSessionIds: ['peer-a'],
+        nextHopsBySessionId: undefined,
         degreeLimit: 2,
         overlayVersion: version,
         updatedAtEpochMs: 1

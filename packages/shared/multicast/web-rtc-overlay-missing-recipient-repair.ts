@@ -4,6 +4,10 @@ import {
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALAckAlgo } from '../al-contracts/al-policy.ts';
+import {
+    resolveALChildPeerIdsTowardRecipients,
+    type ALAcceptedOverlayAdjacency
+} from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
@@ -27,12 +31,16 @@ export interface ComputeMissingRecipientRepairInput {
     readonly frozen: readonly string[];
     readonly confirmed: readonly string[];
     readonly tree: OverlayTree;
+    /** Absent when the origin holds no accepted layout to route by. */
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
 }
 
 export interface PlanRtcFailedPeerRepairInput {
     readonly msg: ALMessage;
     readonly request: ALOutboundRepairRequest;
     readonly selfPeerId: string;
+    /** Absent when the origin holds no accepted layout to route by. */
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
 }
 
@@ -48,14 +56,16 @@ interface RtcMissingRecipientRepairInput {
     readonly ackTracking: ALOutboundAckTrackingPlan;
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
+    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
 }
 
 /**
  * The next hops a retry still owes (D25): a missing recipient that is a direct hop, and every hop whose
  * subtree has not completed, since a missing recipient may sit behind it. A completed hop never gets a copy.
  * A hop outside the frozen audience never reads complete: its terminal ACK confirms no expected recipient,
- * so the origin refuses it and it never enters the ACK history. Every retry therefore resends to such a
- * hop, and the receipt retry budget alone bounds how often.
+ * so the origin refuses it and it never enters the ACK history. Over an accepted layout such a hop gets a copy
+ * only while its subtree holds a missing recipient; without one every retry resends to it, and the receipt
+ * retry budget alone bounds how often.
  */
 export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepairInput): OverlayRepairPlan {
     const confirmed = new Set(input.confirmed);
@@ -64,9 +74,8 @@ export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepa
         return { nextHopPeerIds: [] };
     }
     const completed = new Set(input.tree.completedHopPeerIds);
-    return {
-        nextHopPeerIds: input.tree.nextHopPeerIds.filter((peerId) => missing.has(peerId) || !completed.has(peerId))
-    };
+    const owing = input.tree.nextHopPeerIds.filter((peerId) => missing.has(peerId) || !completed.has(peerId));
+    return { nextHopPeerIds: resolveALChildPeerIdsTowardRecipients(owing, input.adjacency, [...missing]) };
 }
 
 /**
@@ -84,7 +93,13 @@ export function planRtcFailedPeerRepair(
         : undefined;
     return outgoing?.ackTracking !== undefined && isALLogicalReceiptMode(outgoing.ackTracking.mode) &&
             frozen !== undefined
-        ? toMissingRecipientRepairPlan({ outgoing, ackTracking: outgoing.ackTracking, request: input.request, frozen })
+        ? toMissingRecipientRepairPlan({
+            outgoing,
+            ackTracking: outgoing.ackTracking,
+            request: input.request,
+            frozen,
+            adjacency: input.adjacency
+        })
         : planRtcAlternateParentRepair(input);
 }
 
@@ -145,7 +160,8 @@ function toMissingRecipientRepairPlan(
         tree: {
             nextHopPeerIds: outgoing.preparedMessages.flatMap((prepared) => prepared.forwarding?.nextHopPeerIds ?? []),
             completedHopPeerIds: request.completedHopPeerIds
-        }
+        },
+        adjacency: input.adjacency
     });
     const targets = new Set(repair.nextHopPeerIds);
     const preparedMessages = outgoing.preparedMessages.filter((prepared) => isAddressedToAny(prepared, targets));

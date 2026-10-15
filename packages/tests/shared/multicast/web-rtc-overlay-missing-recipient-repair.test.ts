@@ -7,7 +7,7 @@ import {
     vi
 } from 'vitest';
 
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
@@ -22,7 +22,9 @@ import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
+    ORIGIN_ROOM,
     readSentTargets,
+    toOriginDirectedSnapshot,
     toOriginFrozenTargets
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -36,7 +38,8 @@ describe('computeMissingRecipientRepair', () => {
         expect(computeMissingRecipientRepair({
             frozen: ['r', 'b', 'c', 'e'],
             confirmed: ['c'],
-            tree: { nextHopPeerIds: ['r', 'c', 'e'], completedHopPeerIds: ['c'] }
+            tree: { nextHopPeerIds: ['r', 'c', 'e'], completedHopPeerIds: ['c'] },
+            adjacency: undefined
         })).toEqual({ nextHopPeerIds: ['r', 'e'] });
     });
 
@@ -44,7 +47,20 @@ describe('computeMissingRecipientRepair', () => {
         expect(computeMissingRecipientRepair({
             frozen: ['r', 'b', 'c'],
             confirmed: ['r', 'c'],
-            tree: { nextHopPeerIds: ['r', 'c'], completedHopPeerIds: ['c'] }
+            tree: { nextHopPeerIds: ['r', 'c'], completedHopPeerIds: ['c'] },
+            adjacency: undefined
+        })).toEqual({ nextHopPeerIds: ['r'] });
+    });
+
+    it('skips a hop over the accepted tree whose subtree holds no missing recipient, though it never completed', () => {
+        expect(computeMissingRecipientRepair({
+            frozen: ['r', 'b', 'c'],
+            confirmed: ['c'],
+            tree: { nextHopPeerIds: ['r', 'x'], completedHopPeerIds: [] },
+            adjacency: {
+                selfPeerId: 'a',
+                nextHopsBySessionId: { a: ['r', 'x'], r: ['a', 'b'], b: ['r'], x: ['a', 'c'], c: ['x'] }
+            }
         })).toEqual({ nextHopPeerIds: ['r'] });
     });
 
@@ -52,7 +68,8 @@ describe('computeMissingRecipientRepair', () => {
         expect(computeMissingRecipientRepair({
             frozen: ['r', 'b'],
             confirmed: ['b', 'r'],
-            tree: { nextHopPeerIds: ['r', 'x'], completedHopPeerIds: [] }
+            tree: { nextHopPeerIds: ['r', 'x'], completedHopPeerIds: [] },
+            adjacency: undefined
         })).toEqual({ nextHopPeerIds: [] });
     });
 });
@@ -287,6 +304,31 @@ describe('the RTC origin retry of a receiver receipt', () => {
 
         expect(retried).toBe(RETRY_BUDGET);
         expect(fixture.channels.d!.sent).toHaveLength(RETRY_BUDGET);
+    });
+
+    it('retries a leader send only along the accepted path toward its unconfirmed director', async () => {
+        const snapshot = toOriginDirectedSnapshot(createOriginSnapshot(['a', 'b', 'c', 'd'], 4), 'd', Date.now());
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot,
+            nextHopPeerIds: ['b', 'c'],
+            nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] }
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'leader-path', contextId: 'room' },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            {},
+            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+        );
+        await enqueueAndDrain(fixture.manager, message);
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toOriginFrozenTargets(['d'], 4), toOriginFrozenTargets(['d'], 4)]);
+        expect(fixture.channels.b!.sent).toEqual([]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'leader', expectedPeerIds: ['d'], attempts: 1 });
     });
 
     it('acknowledges an origin alone in its room at once, with an empty frozen audience', async () => {

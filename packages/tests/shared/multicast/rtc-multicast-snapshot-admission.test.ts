@@ -117,6 +117,7 @@ describe('RTC multicast snapshot admission at the cache boundary', () => {
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['peer-2'],
+            nextHopsBySessionId: undefined,
             degreeLimit: 1,
             overlayVersion: 1,
             updatedAtEpochMs: 1

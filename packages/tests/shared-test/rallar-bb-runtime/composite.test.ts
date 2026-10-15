@@ -1,5 +1,6 @@
 import * as timers from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
+import { toRallarBlackBoxCompositeResultFlatEntries } from '../../../shared-test/rallar-bb-test/composite-results.ts';
 import {
     createDefaultRallarBlackBoxTestRuntime,
     getRallarBlackBoxCommandHistory,
@@ -890,5 +891,44 @@ describe('rallar-bb runtime composite', () => {
         finally {
             vi.useRealTimers();
         }
+    });
+
+    it('records each wait and assert command once, in the recipe, and only its evidence in a nested result', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'round.closed', payload: { data: { waitedField: 1, assertedField: 2 } } });
+
+        const result = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'director-run',
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'director',
+                commands: [{
+                    kind: 'loop',
+                    commandId: 'rounds',
+                    count: 2,
+                    commands: [
+                        { kind: 'wait', commandId: 'round-wait', match: { kind: 'message', payloadPath: 'data.waitedField', exists: true } },
+                        { kind: 'assert', commandId: 'round-assert', source: 'messages.0.payload.data.assertedField', operator: 'equals', expected: 2 }
+                    ]
+                }]
+            }
+        });
+
+        const wire = JSON.stringify(result);
+        const leaves = toRallarBlackBoxCompositeResultFlatEntries([result]).filter((entry) => entry.depth === 2)
+            .map((entry) => entry.result);
+        expect(result.ok).toBe(true);
+        expect(wire).not.toContain('data.waitedField');
+        expect(wire).not.toContain('payload.data.assertedField');
+        expect(leaves.map((leaf) => leaf.kind)).toEqual(['wait', 'assert', 'wait', 'assert']);
+        expect(leaves.filter((leaf) => leaf.kind === 'wait').map((leaf) => leaf.value)).toEqual([
+            { matched: true, event: expect.objectContaining({ topic: 'round.closed' }) },
+            { matched: true, event: expect.objectContaining({ topic: 'round.closed' }) }
+        ]);
+        expect(leaves.filter((leaf) => leaf.kind === 'assert').map((leaf) => leaf.value)).toEqual([
+            { operator: 'equals', expected: 2, actual: 2, exists: true, passed: true },
+            { operator: 'equals', expected: 2, actual: 2, exists: true, passed: true }
+        ]);
     });
 });

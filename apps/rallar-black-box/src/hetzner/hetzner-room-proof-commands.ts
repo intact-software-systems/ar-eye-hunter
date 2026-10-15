@@ -18,7 +18,8 @@ export function toHetznerRoomProofCommands(input: HetznerRoomProofInput): readon
             requestPrefix: input.prefix,
             group: input.group,
             groupRequestId: input.groupRequestId,
-            memberRequestId: input.memberRequestId
+            memberRequestId: input.memberRequestId,
+            timeoutMs: 5_000
         }),
         toRoomProofConnect(input),
         toRoomProofSend(input),

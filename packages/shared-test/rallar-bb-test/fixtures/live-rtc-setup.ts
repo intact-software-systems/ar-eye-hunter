@@ -116,6 +116,7 @@ interface EnsureGroupInput {
     readonly actor?: string;
     readonly groupRequestId?: string;
     readonly memberRequestId?: string;
+    readonly timeoutMs: number;
 }
 
 interface EnsureGroupCommandInput {
@@ -129,7 +130,7 @@ function toEnsureGroupCommand(context: EnsureGroupCommandInput): RallarBlackBoxT
     return {
         kind: 'http.request',
         commandId: `${input.commandPrefix}-ensure-group`,
-        timeoutMs: 5_000,
+        timeoutMs: input.timeoutMs,
         metadata: {
             purpose: 'Ensure the backend group exists before RTC room join.',
             idempotent: true,
@@ -163,7 +164,7 @@ function toEnsureMemberCommand(context: EnsureMemberCommandInput): RallarBlackBo
     return {
         kind: 'http.request',
         commandId: `${input.commandPrefix}-ensure-member`,
-        timeoutMs: 5_000,
+        timeoutMs: input.timeoutMs,
         metadata: {
             purpose: 'Ensure the logged-in browser client is an active group member ' +
                 'before RTC room join.',

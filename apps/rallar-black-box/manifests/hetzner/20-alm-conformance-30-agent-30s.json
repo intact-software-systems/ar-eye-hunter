@@ -1504,7 +1504,7 @@
             "kind": "http.request",
             "commandId": "alm-scale-director-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
             },
             "request": {
               "method": "GET",
@@ -1521,7 +1521,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-director-ensure-group",
-            "timeoutMs": 5000,
+            "timeoutMs": 12500,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -1553,7 +1553,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-director-ensure-member",
-            "timeoutMs": 5000,
+            "timeoutMs": 12500,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -1713,6 +1713,40 @@
             },
             "refresh": true,
             "timeoutMs": 5000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-scale-director-layout-stable",
+            "count": 12,
+            "timeoutMs": 48500,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-scale-director-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "wait",
+                "commandId": "alm-scale-director-layout-replan",
+                "absent": true,
+                "timeoutMs": 3500,
+                "match": {
+                  "topic": "rallar.browser.formation.layout",
+                  "payloadFields": {
+                    "data.kind": "layoutPlanned",
+                    "data.role": "planned"
+                  },
+                  "payloadPath": "data.identity",
+                  "contains": "\"groupRevision\":{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.causalRevision.groupRevision},"
+                }
+              }
+            ]
           },
           {
             "kind": "barrier",
@@ -5755,7 +5789,7 @@
             "kind": "http.request",
             "commandId": "alm-scale-player-sign-in",
             "metadata": {
-              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' 5 s."
+              "purpose": "Sign in under the setup allowance: a cohort registers serially on the API, so the lazy sign-in must not spend the group requests' allowance."
             },
             "request": {
               "method": "GET",
@@ -5778,7 +5812,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-player-ensure-group",
-            "timeoutMs": 5000,
+            "timeoutMs": 12500,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -5810,7 +5844,7 @@
           {
             "kind": "http.request",
             "commandId": "alm-scale-player-ensure-member",
-            "timeoutMs": 5000,
+            "timeoutMs": 12500,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,
@@ -5954,6 +5988,40 @@
             },
             "refresh": true,
             "timeoutMs": 5000
+          },
+          {
+            "kind": "loop",
+            "commandId": "alm-scale-player-layout-stable",
+            "count": 12,
+            "timeoutMs": 48500,
+            "until": "first-success",
+            "commands": [
+              {
+                "kind": "formation.readiness",
+                "commandId": "alm-scale-player-layout-readiness",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 5000
+              },
+              {
+                "kind": "wait",
+                "commandId": "alm-scale-player-layout-replan",
+                "absent": true,
+                "timeoutMs": 3500,
+                "match": {
+                  "topic": "rallar.browser.formation.layout",
+                  "payloadFields": {
+                    "data.kind": "layoutPlanned",
+                    "data.role": "planned"
+                  },
+                  "payloadPath": "data.identity",
+                  "contains": "\"groupRevision\":{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.causalRevision.groupRevision},"
+                }
+              }
+            ]
           },
           {
             "kind": "barrier",

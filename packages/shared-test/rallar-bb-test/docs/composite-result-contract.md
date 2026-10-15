@@ -12,6 +12,29 @@ artifact export. UI-facing summaries should use the display helpers so result
 values and errors pass through the same redaction rules as ordinary
 `rallar-bb-test` results.
 
+The nested tree lives in the command result: the runtime's result cache and the
+root result a control agent sends. Every child also emits its own
+`rallar.bb.command.result` event, so a composite's event carries counts in place
+of its children: `childResultCount`, `passed` and `failed`, and for `parallel`
+each group's outcome without its `results`. Read nested results from command
+results, never from result events.
+
+A `wait` or `assert` result records only its evidence: `matched`, the matched
+`event` and the window flags for a wait; `operator`, `expected`, `actual`,
+`exists` and `passed` (with `comparisonActual` and `comparisonExists` for a set
+comparison) for an assert. The command's own `match`, `source`,
+`comparisonSource` and `commandId` live once, in the command, so a nested tree
+does not repeat them per iteration. A failed wait still reports its resolved
+match in the error details. Composite rows resolve a child's authored command
+from the recipe through its `sourceRecipePath` when the observed root command
+carries the recipe, and summarise without the command's match or source
+otherwise.
+
+A control agent that cannot send a result within the control frame limit sends
+a bounded `failed` result with `RALLAR_BLACK_BOX_CONTROL_FRAME_TOO_LARGE`; its
+`details.oversizeResult` keeps the replaced result's `status`, `ok` and error
+`code` and `message`, so the command's own verdict survives the oversize frame.
+
 ## Path Format
 
 Composite result paths use version `1` and start at `$`.

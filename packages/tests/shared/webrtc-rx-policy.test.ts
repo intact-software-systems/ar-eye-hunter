@@ -671,6 +671,7 @@ class RtcReceiveFixture {
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
             nextHopSessionIds: ['peer-2', 'peer-3'],
+            nextHopsBySessionId: undefined,
             degreeLimit: 2,
             overlayVersion: 1,
             updatedAtEpochMs: 1

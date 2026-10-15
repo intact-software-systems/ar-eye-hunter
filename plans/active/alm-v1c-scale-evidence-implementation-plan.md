@@ -186,7 +186,7 @@ binds the two slices that follow from them; step 2a is merged (#662) and step 2b
 
 Step 2a (the leader-ACK path and the harness amplification, D199, D200, D202) is merged as #662.
 
-### Step 2b: the engine, the handler cost, the director-rooted tree and the diagnostic volume (this PR)
+### Step 2b: the engine, the handler cost, the director-rooted tree and the diagnostic volume (merged, #664)
 
 Delivered on `claude/alm-v1c-step-2b-engine-topology` (draft PR #664) as D194–D205, D207 and D208, with
 D206 refuted and withdrawn (a probe showed a relay already forwards in the committing batch; the
@@ -202,21 +202,23 @@ assertion are unchanged. Hosted 15 from the branch passes through `Run GitHub Fr
 `hetzner-control` mode (15/15, 231/231, run 38662616218); the all-on-one-VM Hetzner run still fails at RTC
 readiness because the co-located host stalls once the browsers start (recorded in the proposal §1.7).
 
-### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted
+### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted (this PR)
 
-After step 2b is manually merged, on a fresh branch, from the measured 50-agent evidence (proposal
+Step 2b is merged (#664 as `9f71ea2`). On branch `claude/alm-v1c-step-2c-ack-tail`, from the measured 50-agent evidence (proposal
 §1.8): the shot-ACK tail grows with depth (p50 49 ms at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
 and completes in steps (≈1.25 s, then every 0.5 s), which is a retry or acknowledgement timer, not
 queue draining; attempts per acknowledged shot equal the sender's degree, so every shot still floods
 the tree; the per-session 20/s limiter refuses 4,793 hand-offs at 50 (1,228 at 30, 72 at 15) on every
-agent, the director included, and its imposed wait is unmeasured. Owners: `packages/shared` ALM
-outbound repair and acknowledgement timers, the multicast manager's hand-off limiter. First measure
-(per-message hop timestamps, the acknowledgement-timeout schedule, the limiter's wait), then one
-change at a time with RED → GREEN at the owner, judged by the local 50-agent run under the unchanged
-window. Harness: barrier resolution takes 0.75–1.65 s at 50 (0.004–0.23 s at 30) because parent
-result frames re-embed their children's results (≈58 MB of 159 MB); measure the control server's
-receive and resolution times, then stop re-embedding. Topology: the accepted layout landed 0.95 s
-before traffic; the `traffic-ready` barrier should follow a stable layout. Harness fault tolerance: on a control-socket outage the control server redispatches unfinished
+agent, the director included, and its imposed wait is unmeasured. The survey located both: the stepped completion is the per-session 20/s hand-off
+limiter whose 250 ms buckets forecast refusals of up to 1,251 ms (exactly 20 ACKs leave, then a gap),
+and a leader-addressed send floods every overlay neighbour because the audience freeze narrows the
+receipt but not the route. Decisions D209 and D210 (proposal §3) take control hand-offs off the limiter
+(the breaker stays) and route frozen-audience sends along the accepted tree with a pure
+subtree-contains-a-recipient filter at the origin, the relays and the repair. One change at a time with
+RED → GREEN at the owner, judged by the local 50-agent run under the unchanged window. Harness (D211–D213): composite result events carry counts and no child results (the root
+envelope stays nested; 88.5 MB of 159 MB at 50 were re-embedded children behind which the barrier
+resolution waited); a redispatched command joins its in-flight execution instead of starting a second
+run; the scale recipes wait for a stable accepted layout before `setup-complete`. Harness fault tolerance: on a control-socket outage the control server redispatches unfinished
 commands and an agent whose run is in flight starts a second run of the same command id; the agent
 must join the in-flight run (one run per command id) and the barriers must keep arrivals made during
 the outage. Hosted: the single Hetzner VM stalls its API and control server once 15 co-located
@@ -226,6 +228,32 @@ GitHub runners, the VM left to the servers), 15 before 30 before 50, and the fou
 AppInbox concurrency and the cross-server AppInbox wake (F4, F5) still need Postgres evidence and stay
 outcome-shaped. A failed run earns exact evidence review and a meaningful change before another
 workload; no unchanged acceptance retry is selected.
+
+**As applied (PR #666).** D209–D213 landed with two review-driven fix waves recorded as D214–D218
+in the proposal (§3, §6): no command echoes in the result envelopes and a frame-limited result
+that keeps its verdict; the rejection-log contract kept after the Deno gate pinned it; the
+director prunes its own legs, a stale layout falls back to the flood for its subtree, and relays
+arm no doomed repair hints; heartbeats out of the AL admission; a cohort-proportional group-request
+allowance. Measured (proposal §1.9): the local 50-agent manifest passes for the first time
+(50/50, 231/231, shot-ACK p50 33 ms against 1,290 ms on the step 2b head, the end event
+acknowledged with ≈3 s of the window left), 15 and 30 pass locally, hosted 15 passes through
+GitHub Free `hetzner-control` (231/231, shot-ACK p99 190 ms against 1,326 ms). Hosted 30 fails
+after setup: the single-lane hosted API relays one offer→answer in 7.1 s p50 (4.3 s at 15; 0.17 to
+0.93 s locally), RTC formation takes 52–59 s per agent, and the director-rooted rebuild after the
+appointment re-forms the overlay behind the same queue while 5 s status reads time out. That bound
+is the next slice.
+
+### Step 2d: hosted formation throughput, then 30 → 50 hosted
+
+Static analysis of the hosted plane's serial path first (the `prod-in-memory` AppInbox lane, the
+WS outbox worker's wake cadence, the signal relay and the audience reads: where a relay, a presence
+update and a status read wait), then one change at a time at the owner (per-key or per-lane
+concurrency for the in-memory profile, F4, or a relay path that does not queue behind mutations),
+each RED first and judged by the hosted 30-agent run; then 50 and the four-arm lane-policy benefit
+gate. The recipes need no further harness change for this: they pass locally at 50 and hosted at
+15. Also carried: the three IndexedDB abort errors at page teardown (queue engine tasks still
+running when the database closes) and the hosted worker's `session.expected_mismatch` diagnostic
+(the agent id passed as the expected session id).
 
 ## Completion and handoff
 
