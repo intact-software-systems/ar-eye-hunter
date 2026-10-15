@@ -17,6 +17,7 @@ export function createAlmScaleSetupCommands(
     });
     const created = createSetupBarrier(input, prefix, 'group-created');
     return [
+        createSignInCommand(input, prefix),
         ...(role === 'director' ? [...ensure, created] : [created, ...ensure]),
         createConnectCommand(input, prefix),
         createSetupBarrier(input, prefix, 'connected'),
@@ -42,6 +43,24 @@ export function createAlmScaleSetupCommands(
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
         createSetupBarrier(input, prefix, 'traffic-ready')
     ];
+}
+
+function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    return {
+        kind: 'http.request',
+        commandId: `${prefix}-sign-in`,
+        metadata: {
+            purpose: 'Sign in under the setup allowance: a cohort registers serially on the API, ' +
+                'so the lazy sign-in must not spend the group requests\' 5 s.'
+        },
+        request: {
+            method: 'GET',
+            path: `/api/state/apps/${encodeURIComponent(input.group.applicationId)}` +
+                `/workspaces/${encodeURIComponent(input.group.workspaceId)}/stats/me/realtime`
+        },
+        response: { body: 'json', acceptedStatusCodes: [200] },
+        timeoutMs: input.readyTimeoutMs
+    };
 }
 
 function createSetupBarrier(input: AlmScaleRecipeInput, prefix: string, phase: string): RallarBlackBoxTestCommand {

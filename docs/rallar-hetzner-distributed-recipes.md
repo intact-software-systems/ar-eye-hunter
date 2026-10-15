@@ -152,7 +152,11 @@ all-local lifecycle and the GitHub Free job, because every WebSocket connect of
 one shared principal fans out a full snapshot to all of that principal's
 sessions on the serial AppInbox and stalls a 15-agent room join. The
 `RALLAR_BLACK_BOX_USERNAME` secret remains the operator credential for the
-controller smoke and other operator phases.
+controller smoke and other operator phases. The ALM scale recipes (19–21 and
+their diagnostic checkpoints) sign in as their first step, a read of
+`stats/me/realtime` under the 45-second setup allowance, because a cohort's
+registrations serialize on the API and must not consume the group requests'
+5-second allowance.
 
 Headless agents on the controller VM register and log in from one IP. The API
 default of 20 registrations and 30 logins per IP per minute refuses cohorts
