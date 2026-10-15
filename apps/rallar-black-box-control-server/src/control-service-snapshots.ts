@@ -114,7 +114,8 @@ export function toControlRunSnapshot(
         events: toBoundedTail(run.events, bounds.events),
         stats: toBoundedTail(run.stats, bounds.stats),
         reports: toBoundedTail(run.reports, bounds.reports),
-        heartbeats: toBoundedTail(run.heartbeats, bounds.heartbeats)
+        heartbeats: toBoundedTail(run.heartbeats, bounds.heartbeats),
+        completion: run.completion
     };
 }
 
@@ -199,7 +200,7 @@ export function toRestoredControlSnapshot(
             (issue) => {
                 throw new Error(issue);
             },
-            (decoded) => decoded
+            (decoded) => ({ ...decoded, completion: run.completion })
         )
     );
     const evidenceCommandKeys = toDistributedAssessmentEvidenceKeys(snapshot);
@@ -261,7 +262,8 @@ function toRestoredControlRun(
         tokens: new Map(),
         retentionRevision: 0,
         issuedRunTokenStateRevision: 0,
-        barriers: new Map()
+        barriers: new Map(),
+        completion: runSnapshot.completion
     };
 }
 

@@ -1,4 +1,5 @@
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import { assert, assertEquals } from '@std/assert';
 
@@ -142,6 +143,12 @@ function createRetentionRouteDependencies(
             timers: createDefaultTimers(),
             config: DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
         }),
+        completedRuns: {
+            readRun: (runId) =>
+                Promise.resolve(
+                    Either.ofRight(toControlRun(runId, 0))
+                )
+        },
         persistence: { persist: () => persistCalls.push('persist') },
         retentionPlanTokens: createRetentionPlanTokenAdapter({ key: new Uint8Array(32) }),
         commandDestinations: { httpAllowedHosts: [], httpAllowedOrigins: [], wsAllowedHosts: [], wsAllowedOrigins: [] },

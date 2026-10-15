@@ -271,7 +271,8 @@ function toArtifactCommandId(envelope: ControlClientEnvelope): string | undefine
     return 'commandId' in envelope && typeof envelope.commandId === 'string' ? envelope.commandId : undefined;
 }
 
-function toArtifactRunDirectory(storageDir: string, runId: string): string {
+/** Every file of a run, the recorder's JSONL and the completed run's rows, lives in this directory. */
+export function toArtifactRunDirectory(storageDir: string, runId: string): string {
     return `${storageDir.replace(/\/+$/, '')}/runs/${toRunDirectoryName(runId)}`;
 }
 

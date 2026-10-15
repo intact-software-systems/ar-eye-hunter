@@ -1,3 +1,9 @@
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlEventEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
+
+import { toCommandIdSegment } from './control-command-queue-policy.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
 
 export interface ControlAgentSocket {
@@ -17,6 +23,25 @@ export type ControlAgentSocketService = Pick<
 >;
 
 const OPEN_SOCKET_STATE = 1;
+
+/** The run-level record of a socket replaced by a later registration of the same agent. */
+export function toDuplicateAgentSocketDiagnostic(runId: string, agentId: string, atEpochMs: number): ControlEventEnvelope {
+    return {
+        kind: 'diagnostic',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId,
+        agentId,
+        atEpochMs,
+        eventId: `duplicate-agent-socket-${toCommandIdSegment(agentId, 'segment')}-${atEpochMs}`,
+        payload: {
+            topic: 'rallar.bb.control.duplicate-agent-socket',
+            severity: 'warning',
+            message: 'Another websocket registered with the same runId and agentId; replacing the previous socket.',
+            runId,
+            agentId
+        }
+    };
+}
 const DUPLICATE_AGENT_CLOSE_CODE = 4000;
 const RUN_DELETED_CLOSE_CODE = 1000;
 

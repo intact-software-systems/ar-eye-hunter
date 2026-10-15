@@ -1,5 +1,6 @@
 import type { ControlAgentSockets } from '../control-agent-sockets.ts';
 import type { ControlArtifactRecorder } from '../control-artifact-recorder.ts';
+import type { ControlCompletedRunArchive } from '../control-run-completion.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlSnapshotPersistence } from '../control-snapshot-persistence.ts';
 import type { ControlHttpResponses } from '../http/control-http-responses.ts';
@@ -27,6 +28,7 @@ export interface ControlHttpRouteDependencies {
     readonly responses: ControlHttpResponses;
     readonly agentSockets: ControlAgentSockets;
     readonly artifactRecorder: ControlArtifactRecorder;
+    readonly completedRuns: Pick<ControlCompletedRunArchive, 'readRun'>;
     readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
     readonly retentionPlanTokens: RetentionPlanTokenAdapter;
     readonly commandDestinations: BrowserCommandDestinationPolicy;
@@ -95,7 +97,7 @@ async function routeControlReadRequest(
     dependencies: ControlHttpRouteDependencies
 ): Promise<Response | undefined> {
     return routeFleetReportReadRequest(url, dependencies) ??
-        routeDistributedRunReadRequest(url, dependencies) ??
+        await routeDistributedRunReadRequest(url, dependencies) ??
         await routeRunReadRequest(url, dependencies);
 }
 

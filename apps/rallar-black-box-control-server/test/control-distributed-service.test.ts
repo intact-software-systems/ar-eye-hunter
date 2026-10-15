@@ -41,6 +41,7 @@ import {
     toRegisterEnvelope,
     toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
+import { createDistributedRunArtifactBundle } from './support/create-distributed-run-artifact-bundle.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 interface CaptureIntentTestRuntime extends RallarBlackBoxTestRuntime {
@@ -355,7 +356,7 @@ for (
                 distributedRuns: [assertRight(decodeControlDistributedRunSnapshot(JSON.parse(JSON.stringify(accepted))))]
             });
             assertEquals(restored.snapshotDistributedRun('capture-variant')?.manifest, manifest);
-            const bundle = restored.createDistributedRunArtifactBundle('capture-variant', {});
+            const bundle = createDistributedRunArtifactBundle(restored, 'capture-variant');
             assert(bundle);
             const exported = decodeJsonValue(JSON.parse(bundle.files['manifest.json']));
             assertEquals(exported, decodeJsonValue(manifest));
@@ -407,7 +408,7 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertJsonEquals(passed.rollup.ok, true);
     assertJsonEquals(passed.rollup.summary.passedRecipes, 2);
 
-    const bundle = service.createDistributedRunArtifactBundle('dist-1', {});
+    const bundle = createDistributedRunArtifactBundle(service, 'dist-1');
     assert(bundle);
     assertJsonEquals(JSON.parse(bundle.files['manifest.json']).distributedRunId, 'dist-1');
     assert(typeof bundle.files['target-resolution.json'] === 'string');

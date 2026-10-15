@@ -24,7 +24,8 @@ import {
     toRunDirectoryName
 } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
-import { ControlSnapshotPersistence, toJsonPieces } from '../src/control-snapshot-persistence.ts';
+import { toJsonPieces } from '../src/control-sliced-json-file.ts';
+import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
 import {
     assertRight,
     toCommandResultEnvelope,
@@ -34,6 +35,7 @@ import {
     toHeartbeatEnvelope,
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
+import { createDistributedRunArtifactBundle } from './support/create-distributed-run-artifact-bundle.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
 function toStagedService(): RallarBlackBoxControlService {
@@ -314,7 +316,7 @@ Deno.test('capture admission preserves an unidentified capture blocker through d
     const { service, warnings } = await restoreSnapshotText(persisted);
     assertEquals(warnings, []);
     assertEquals(service.snapshotDistributedRun('dist-1')?.targetResolution?.blockers, [blocker]);
-    const bundle = service.createDistributedRunArtifactBundle('dist-1', {});
+    const bundle = createDistributedRunArtifactBundle(service, 'dist-1');
     assert(bundle);
     const exported = assertRight(decodeControlDistributedRunSnapshot(JSON.parse(bundle.files['distributed-run.json'])));
     assertEquals(exported.targetResolution?.blockers, [blocker]);
@@ -409,7 +411,7 @@ Deno.test({
             });
             const fallbackText = await (await fallback.response({ runId: run.runId, kind: 'results', fallbackRun: restoredRun, corsOrigins: [] })).text();
             assertSdkArtifactReceipt({ text: fallbackText, result: root.result, receipt: receipt, invocation: invocation });
-            const bundle = restored.createDistributedRunArtifactBundle('sdk-distributed', {});
+            const bundle = createDistributedRunArtifactBundle(restored, 'sdk-distributed');
             assert(bundle);
             const exported = assertRight(decodeControlRunSnapshot(JSON.parse(bundle.files['control-run.json'])));
             const exportedRoot = exported.results.find((entry) => entry.commandId === witness.commandId);

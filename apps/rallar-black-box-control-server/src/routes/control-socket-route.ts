@@ -100,6 +100,10 @@ function acceptControlClientEnvelope(
         ? controlService.snapshotCommand(envelope.runId, envelope.commandId)
         : undefined;
     const received = controlService.receiveClientEnvelope(envelope);
+    if (received.kind === 'register' && !received.accepted) {
+        socket.close(POLICY_VIOLATION_CLOSE_CODE, 'Run is completed; register with another run id.');
+        return;
+    }
     if (received.accepted) {
         artifactRecorder.record(envelope, command);
     }

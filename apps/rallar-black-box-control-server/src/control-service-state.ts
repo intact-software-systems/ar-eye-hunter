@@ -12,6 +12,7 @@ import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlRunCompletion } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
@@ -75,6 +76,8 @@ export interface ControlRunState {
     retentionRevision: number;
     issuedRunTokenStateRevision: number;
     barriers: Map<string, ControlRecipeBarrierState>;
+    /** Undefined while the run is live; set once its rows moved to its own file, which empties the collections above. */
+    completion: ControlRunCompletion | undefined;
 }
 
 export interface ControlRecipeBarrierParticipant {
@@ -155,7 +158,8 @@ export function toInitialControlRunState(runId: string, nowEpochMs: number): Con
         tokens: new Map(),
         retentionRevision: 0,
         issuedRunTokenStateRevision: 0,
-        barriers: new Map()
+        barriers: new Map(),
+        completion: undefined
     };
 }
 
