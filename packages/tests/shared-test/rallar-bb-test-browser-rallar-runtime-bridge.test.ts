@@ -71,7 +71,7 @@ describe('browser Rallar runtime bridge', () => {
     });
 
     it('reads the congestion counters through the runtime a page already installed', async () => {
-        const counters = { dropped: 1, deferred: 2, handedOver: 1 };
+        const counters = { dropped: 1, deferred: 2, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
         vi.stubGlobal('window', { __blackBoxRallar: { readCongestionCounters: async () => counters } });
 
         expect(await createSpaBrowserRallarRuntime().readCongestionCounters()).toBe(counters);

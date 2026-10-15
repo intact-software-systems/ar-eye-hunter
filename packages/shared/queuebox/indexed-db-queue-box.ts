@@ -67,7 +67,6 @@ import {
     Key,
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     toKeyAsString,
     type ResourceEntryKeyString
 } from './ResourceEntry.ts';
@@ -852,7 +851,7 @@ interface IndexedDbEntryToLockInput {
 
 async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promise<boolean> {
     const { newAndRetryCandidates, reservedCandidates, options, typeIds, now } = input;
-    const { maxAttempts, finalizationStaleAfterMs } = options;
+    const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } = options;
     const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
         options.checkTimeout,
         async () =>
@@ -861,7 +860,7 @@ async function hasIndexedDbEntryToLock(input: IndexedDbEntryToLockInput): Promis
                 isStoredQueueEntryTimedOut({
                     stored,
                     typeIds,
-                    duration: TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    duration: Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
                     now
                 })
             ),

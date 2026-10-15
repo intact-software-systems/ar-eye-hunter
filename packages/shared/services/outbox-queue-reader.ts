@@ -45,10 +45,11 @@ export class OutboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
+    /** Resolves with the number of entries this invocation claimed. */
     async dequeueOutbox(
         typesToDequeue: Set<string>,
         resilience: ResourceInboxResilience
-    ): Promise<void> {
-        await this.reader.dequeue(typesToDequeue, resilience);
+    ): Promise<number> {
+        return await this.reader.dequeue(typesToDequeue, resilience);
     }
 }

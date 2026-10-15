@@ -984,8 +984,8 @@ function topologyQueryWithPlanned(version: number, pending: PendingTopologyRepla
     };
 }
 
-async function authorityFingerprintFor(group: GroupSnapshot): Promise<string> {
-    return await computeRtcTopologyInputFingerprint({
+function authorityFingerprintFor(group: GroupSnapshot): string {
+    return computeRtcTopologyInputFingerprint({
         group,
         effectiveConfig: createTopologyConfigView().effective,
         kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
@@ -1023,7 +1023,7 @@ Deno.test('formation view clears layoutStale when the group runs on the planned 
     const app = createRouteApp({
         group,
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
-        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group)
+        readPlannedLayoutFingerprint: async () => authorityFingerprintFor(group)
     });
 
     const view = await readFormationView(app);
@@ -1036,7 +1036,7 @@ Deno.test('formation view latches layoutStale while a newer planned layout await
     const app = createRouteApp({
         group,
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version + 1),
-        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group)
+        readPlannedLayoutFingerprint: async () => authorityFingerprintFor(group)
     });
 
     const view = await readFormationView(app);
@@ -1174,7 +1174,7 @@ Deno.test('formation view hands a stale layout to the application only under com
     const app = createRouteApp({
         group,
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version + 1),
-        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group),
+        readPlannedLayoutFingerprint: async () => authorityFingerprintFor(group),
         readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: commandedReplanningPolicy() })
     });
 

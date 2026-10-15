@@ -4,6 +4,15 @@ import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 
 export const RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
 
+export interface ResourceInboxExpiredRowOwners {
+    readonly entries: ExpiredRowOwner;
+    readonly results: ExpiredRowOwner;
+}
+
+interface ExpiredRowOwner {
+    deleteExpired(): Promise<number>;
+}
+
 export class PSqlResourceInboxMaintenance {
     private readonly sql: PSqlSql;
 
@@ -24,14 +33,18 @@ export class PSqlResourceInboxMaintenance {
 }
 
 export async function initResourceInboxExpiryEviction(
-    repository: Readonly<{ deleteExpired(): Promise<number>; }>,
+    owners: ResourceInboxExpiredRowOwners,
     intervalMs: number = RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS
 ): Promise<void> {
     await tryRunInIntervals({
         handler: async () => {
-            const removed = await repository.deleteExpired();
-            if (removed > 0) {
-                console.log(`Evicted expired resource_inbox rows: ${removed}`);
+            const removedEntries = await owners.entries.deleteExpired();
+            if (removedEntries > 0) {
+                console.log(`Evicted expired resource_inbox rows: ${removedEntries}`);
+            }
+            const removedResults = await owners.results.deleteExpired();
+            if (removedResults > 0) {
+                console.log(`Evicted expired resource_inbox_results rows: ${removedResults}`);
             }
         },
         intervalMsecs: intervalMs,

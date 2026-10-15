@@ -33,10 +33,12 @@ import {
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
     toALOutboundCongestionDrop,
+    writeALOutboundRuntimeDiagnostic,
     type ALOutboundCancelOutcome,
     type ALOutboundDropReasonCode,
     type ALOutboundEnqueueResult,
     type ALOutboundPreparedSendResult,
+    type ALOutboundRtcHandoffRefusal,
     type ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -180,6 +182,7 @@ export class WebRtcOverlayMulticastManager {
     private readonly rateLimiter: RateLimiter;
     private readonly quotaNow: () => number;
     private readonly faultPort: TransportFaultPort;
+    private readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     private readonly clock: ALOutboundMessageRuntime.Clock;
     private readonly submission: RtcOutboundSubmission;
 
@@ -194,6 +197,7 @@ export class WebRtcOverlayMulticastManager {
         this.quotaNow = dependencies.quotaNow;
         this.qosProvider = dependencies.qosProvider;
         this.faultPort = dependencies.faultPort;
+        this.outboundDiagnostics = dependencies.outboundDiagnostics;
         this.clock = dependencies.outboundRuntime.clock;
         this.submission = new RtcOutboundSubmission({
             connectionService: dependencies.connectionService,
@@ -324,17 +328,11 @@ export class WebRtcOverlayMulticastManager {
         }
 
         if (!this.circuitBreaker.isAllowedThrough()) {
-            return msgs.map(WebRtcOverlayMulticastManager.toCircuitOpenResult);
+            return this.refuseHandoff(msgs, 'circuit-open');
         }
 
         if (!this.rateLimiter.allowAt(this.quotaNow())) {
-            return msgs.map((msg) =>
-                WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                    kind: 'unroutable',
-                    reason: 'rate-limited',
-                    detail: 'RTC enqueue rate limit exceeded'
-                })
-            );
+            return this.refuseHandoff(msgs, 'rate-limited');
         }
         return await this.enqueueThroughCircuitBreaker(msgs);
     }
@@ -348,31 +346,34 @@ export class WebRtcOverlayMulticastManager {
             (results) => results.every(isRtcEnqueueBreakerSuccess)
         );
         return either.fold(
-            (error) => msgs.map((msg) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(msg, error)),
+            (error) =>
+                error.message === 'Not allowed to execute'
+                    ? this.refuseHandoff(msgs, 'circuit-open')
+                    : msgs.map((msg) =>
+                        WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                            kind: 'failed',
+                            detail: `RTC enqueue failed: ${error.message}`
+                        })
+                    ),
             (value) => value
         );
     }
 
-    private static toCircuitBreakerResult(
-        msg: ALMessage,
-        error: Error
-    ): ALOutboundEnqueueResult {
-        if (error.message === 'Not allowed to execute') {
-            return WebRtcOverlayMulticastManager.toCircuitOpenResult(msg);
-        }
-
-        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-            kind: 'failed',
-            detail: `RTC enqueue failed: ${error.message}`
+    private refuseHandoff(
+        msgs: readonly ALMessage[],
+        reason: ALOutboundRtcHandoffRefusal['reason']
+    ): readonly ALOutboundEnqueueResult[] {
+        writeALOutboundRuntimeDiagnostic(this.outboundDiagnostics, {
+            kind: 'rtc-handoff-refusal',
+            reason,
+            messageCount: msgs.length
         });
-    }
-
-    private static toCircuitOpenResult(msg: ALMessage): ALOutboundEnqueueResult {
-        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-            kind: 'unroutable',
-            reason: 'circuit-open',
-            detail: 'RTC enqueue circuit breaker open'
-        });
+        const detail = reason === 'circuit-open'
+            ? 'RTC enqueue circuit breaker open'
+            : 'RTC enqueue rate limit exceeded';
+        return msgs.map((msg) =>
+            WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, { kind: 'unroutable', reason, detail })
+        );
     }
 
     private static toProtectedEnqueueResult(

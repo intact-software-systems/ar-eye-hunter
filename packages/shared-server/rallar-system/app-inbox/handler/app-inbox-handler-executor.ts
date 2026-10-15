@@ -1,5 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    ResourceInboxHandlerEntryError,
+    ResourceInboxHandlerFinalizedSuccess
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
@@ -93,9 +96,14 @@ export class AppInboxHandlerExecutor {
         this.options = config.options ?? {};
     }
 
+    /**
+     * Resolves with the committed entry when the handler's own transaction finalized it, so the queue releases nothing.
+     * A handler that outlives its reservation lease is reported, not stopped: the claim may already be reclaimed, and a
+     * reclaimed attempt's late finish fails its attempt guard.
+     */
     async execute<Command, Result>(
         input: AppInboxHandlerExecutor.Input<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
         const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
@@ -103,22 +111,28 @@ export class AppInboxHandlerExecutor {
             contextId: entry.key.contextId,
             data: null
         };
-        await timeRallarAsync(
-            this.timing,
-            {
-                component: 'app-inbox-handler',
-                operation: String(registration.type),
-                serviceId: this.serviceId,
-                requestId: entry.key.resourceId,
-                details: {
-                    type: registration.type,
-                    topicId: entry.key.topicId,
-                    contextId: entry.key.contextId,
-                    resourceId: entry.key.resourceId
-                }
-            },
-            async () => await this.executeAttempt({ ...input, undecodedEnqueue })
-        );
+        const startedAtEpochMs = this.nowEpochMs();
+        try {
+            return await timeRallarAsync(
+                this.timing,
+                {
+                    component: 'app-inbox-handler',
+                    operation: String(registration.type),
+                    serviceId: this.serviceId,
+                    requestId: entry.key.resourceId,
+                    details: {
+                        type: registration.type,
+                        topicId: entry.key.topicId,
+                        contextId: entry.key.contextId,
+                        resourceId: entry.key.resourceId
+                    }
+                },
+                async () => await this.executeAttempt({ ...input, undecodedEnqueue })
+            );
+        }
+        finally {
+            this.recordHandlerOutranLease(input, this.nowEpochMs() - startedAtEpochMs);
+        }
     }
 
     async rejectMalformedMessage(attempt: ResourceInboxAttempt): Promise<ResourceEntry> {
@@ -143,8 +157,9 @@ export class AppInboxHandlerExecutor {
 
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess | undefined> {
         let context: AppInboxMessageContext<Result> | undefined;
+        let finalizedEntry: ResourceEntry;
         try {
             const begun = this.beginExecution(attempt);
             context = begun.context;
@@ -156,13 +171,14 @@ export class AppInboxHandlerExecutor {
                 details: {}
             });
             const finalization = this.transactionWriter.read(begun.context);
-            if (finalization.state === 'transaction-finalized') {
-                return;
+            if (finalization.state !== 'transaction-finalized') {
+                await this.writeNonTransactionalResult(attempt.registration, begun.context, result);
+                return undefined;
             }
-            await this.writeNonTransactionalResult(attempt.registration, begun.context, result);
+            finalizedEntry = finalization.entry;
         }
         catch (caught) {
-            await this.finishFailedExecution({
+            return await this.finishFailedExecution({
                 ...attempt,
                 entry: caught instanceof ResourceInboxHandlerEntryError ? caught.entry : attempt.entry,
                 error: caught instanceof Error ? caught : new Error(String(caught)),
@@ -172,6 +188,12 @@ export class AppInboxHandlerExecutor {
                 context
             });
         }
+        if (finalizedEntry.status !== EntityStatus.COMPLETED) {
+            throw new Error(
+                `AppInbox handler returned after finalizing its entry as ${finalizedEntry.status}; a returning handler must finalize it COMPLETED`
+            );
+        }
+        return new ResourceInboxHandlerFinalizedSuccess(finalizedEntry);
     }
 
     private beginExecution<Command, Result>(
@@ -220,14 +242,14 @@ export class AppInboxHandlerExecutor {
 
     private async finishFailedExecution<Command, Result>(
         input: FailedAppInboxExecution<Command, Result>
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerFinalizedSuccess> {
         if (input.context) {
             const finalization = this.transactionWriter.read(input.context);
             if (
                 finalization.state === 'transaction-finalized' &&
-                finalization.status === EntityStatus.COMPLETED
+                finalization.entry.status === EntityStatus.COMPLETED
             ) {
-                return;
+                return new ResourceInboxHandlerFinalizedSuccess(finalization.entry);
             }
         }
         if (input.classification.kind === 'retryable') {
@@ -291,6 +313,35 @@ export class AppInboxHandlerExecutor {
             status: 'ok',
             durationMs: 0,
             error
+        });
+    }
+
+    private recordHandlerOutranLease<Command, Result>(
+        input: AppInboxHandlerExecutor.Input<Command, Result>,
+        handlerDurationMs: number
+    ): void {
+        const { entry, attemptTelemetry } = input;
+        if (handlerDurationMs <= attemptTelemetry.reservationLeaseMs) {
+            return;
+        }
+        recordRallarTiming({
+            sink: this.timing,
+            event: {
+                component: 'app-inbox-handler',
+                operation: 'handler-outran-lease',
+                serviceId: this.serviceId,
+                requestId: entry.key.resourceId,
+                details: {
+                    type: input.registration.type,
+                    topicId: entry.key.topicId,
+                    contextId: entry.key.contextId,
+                    resourceId: entry.key.resourceId,
+                    attempt: attemptTelemetry.attempt,
+                    reservationLeaseMs: attemptTelemetry.reservationLeaseMs
+                }
+            },
+            status: 'error',
+            durationMs: handlerDurationMs
         });
     }
 

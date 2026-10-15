@@ -118,7 +118,7 @@ async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise
         concurrencyReduceStep: 1
     });
     const fixture = createRallarMiddlewareTestRuntime({
-        resilience: { inbox: resilience, appOutbox: resilience }
+        resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience }
     });
     const engine = new InboxOutboxEngine();
     engine.start();

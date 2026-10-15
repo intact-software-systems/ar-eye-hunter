@@ -317,7 +317,7 @@ async function runClientMutation(
         throw new Error(`Completed client AppInbox entry not found: ${requestId}`);
     }
     const commandInput = toClientWorkerCommandInput(input);
-    const command = await toClientMutationCommand(
+    const command = toClientMutationCommand(
         commandInput,
         {
             nowEpochMs: input.atEpochMs,
@@ -459,7 +459,7 @@ async function runGroupMutation(
                 new PSqlRuntimeStateRepository(sql)
             ).findIdempotentGroupMutationReceipt(
                 { ...input.scope, groupId: input.groupId },
-                await toGroupAppInboxStorageCommandId(enqueue, authority.clientId)
+                toGroupAppInboxStorageCommandId(enqueue, authority.clientId)
             )
         )?.receipt;
     if (!receipt) {
@@ -530,7 +530,7 @@ async function runTopologyMutation(
         expiresAtEpochMs: 4_102_444_800_000
     };
     await runtime.authSessions.putSession(authority);
-    const data = await toTopologyAppInboxCommand({
+    const data = toTopologyAppInboxCommand({
         actor: { principalId, sessionId: authority.sessionId },
         groupRef: input.groupRef,
         requestId,

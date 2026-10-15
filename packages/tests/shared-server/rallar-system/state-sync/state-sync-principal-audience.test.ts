@@ -69,11 +69,11 @@ describe('principal state-sync audience', () => {
     });
 
     it('stamps principal-audience rows with the principal scope', () => {
-        const [entry] = computeClientStateSyncEntries(
+        const [stateSyncEntry] = computeClientStateSyncEntries(
             createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])),
             'server-1'
         );
-        const message = decodePersistedALMessage(entry!.resource);
+        const message = decodePersistedALMessage(stateSyncEntry!.entry.resource);
 
         expect(message.targets).toEqual({
             mode: 'broadcast',
@@ -124,7 +124,7 @@ describe('principal state-sync audience', () => {
     // installed it (observed as the api-v1-rtc-topology-convergence CI flake).
     it('delivers producer-authorized own-session carriers when the local cache lags the mutation', () => {
         const messages = computeClientStateSyncEntries(createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])), 'server-1')
-            .map((entry) => decodePersistedALMessage(entry.resource));
+            .map(({ entry }) => decodePersistedALMessage(entry.resource));
         const webSocketServer = createOpenConnections(['alice-session-1']);
 
         const recipients = messages.flatMap((message) =>
@@ -216,19 +216,19 @@ describe('principal state-sync audience', () => {
 });
 
 function toPrincipalStampedMessage(principalId: string, sessionIds: readonly string[]): ALMessage {
-    const [entry] = computeClientStateSyncEntries(
+    const [stateSyncEntry] = computeClientStateSyncEntries(
         createComputedClientSnapshotStateSync(createClientSnapshot(principalId, sessionIds)),
         'server-1'
     );
-    return decodePersistedALMessage(entry!.resource);
+    return decodePersistedALMessage(stateSyncEntry!.entry.resource);
 }
 
 function toPrincipalStampedEventMessage(principalId: string): ALMessage {
-    const [entry] = computeClientStateSyncEntries(
+    const [stateSyncEntry] = computeClientStateSyncEntries(
         createComputedClientEventStateSync(createClientEvent(principalId)),
         'server-1'
     );
-    return decodePersistedALMessage(entry!.resource);
+    return decodePersistedALMessage(stateSyncEntry!.entry.resource);
 }
 
 function createOpenConnections(connectionIds: readonly string[]): JsonWebSocketServer {

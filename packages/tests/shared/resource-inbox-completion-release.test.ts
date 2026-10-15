@@ -13,6 +13,7 @@ import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 afterEach(() => vi.useRealTimers());
 describe('ResourceInbox post-release completion hints', () => {
@@ -52,12 +53,11 @@ describe('ResourceInbox post-release completion hints', () => {
             resilience,
             options: { completionNotifications }
         });
-        const processing = controller.dequeueForCompute(async () => entry.key);
+        const processing = controller.dequeueForCompute(async () => entry.key).then(() => undefined, toError);
         await vi.advanceTimersByTimeAsync(0);
         expect(woke).toBe(false);
         subscription.close();
-        await vi.advanceTimersByTimeAsync(1000);
-        await processing;
+        expect(await processing).toMatchObject({ message: expect.stringContaining('Missing success dto') });
         expect(vi.getTimerCount()).toBe(0);
     });
 
@@ -115,13 +115,12 @@ describe('ResourceInbox post-release completion hints', () => {
                     throw new Error('processing failed');
                 }
                 return entry.key;
-            });
+            }).then(() => undefined, toError);
             await vi.advanceTimersByTimeAsync(0);
             expect((await queue.getItem(entry.key))?.status).toBe(status);
             expect(woke).toBe(status !== 'RETRY');
             subscription.close();
-            await vi.advanceTimersByTimeAsync(1000);
-            await processing;
+            expect(await processing).toMatchObject({ message: 'diagnostic failure' });
             expect(vi.getTimerCount()).toBe(0);
         }
     );

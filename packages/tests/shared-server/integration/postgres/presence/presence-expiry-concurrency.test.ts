@@ -745,7 +745,7 @@ describe('Postgres presence expiry concurrency', () => {
                     ? (
                         await repository.findIdempotentGroupMutationReceipt(
                             groupRef,
-                            await toGroupAppInboxStorageCommandId(
+                            toGroupAppInboxStorageCommandId(
                                 toAuthenticatedGroupAppInboxEnqueue(acceptedInput),
                                 acceptedInput.authority.clientId
                             )

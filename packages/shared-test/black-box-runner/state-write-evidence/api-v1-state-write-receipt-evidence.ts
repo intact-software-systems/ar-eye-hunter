@@ -182,7 +182,7 @@ export async function readPersistedCommandEvidence(
             row,
             command: identity.command
         });
-        return receipt ?? await readStandaloneCommandEvidence(row, identity.command);
+        return receipt ?? readStandaloneCommandEvidence(row, identity.command);
     }
     catch (error) {
         return invalid(row, {
@@ -231,10 +231,10 @@ async function readMutationReceiptEvidence({
     return undefined;
 }
 
-async function readStandaloneCommandEvidence(
+function readStandaloneCommandEvidence(
     row: InboxCommandRow,
     command: AppInboxEnqueueInput
-): Promise<PersistedCommandEvidence> {
+): PersistedCommandEvidence {
     const commandType = command.type;
     if (commandType === AppInboxType.TOPOLOGY_RECONFIGURE) {
         const topologyCommand = readTopologyReconfigureCommand(command.authority);
@@ -247,7 +247,7 @@ async function readStandaloneCommandEvidence(
         };
     }
     if (commandType === AppInboxType.ADMIN_PRUNE_EXPIRED) {
-        return await readAdminPruneEvidence(
+        return readAdminPruneEvidence(
             row,
             {
                 topicId: command.topicId,
@@ -543,7 +543,7 @@ interface InvalidEvidenceInput {
     readonly failure: string;
 }
 
-async function readAdminPruneEvidence(
+function readAdminPruneEvidence(
     row: InboxCommandRow,
     enqueue: Readonly<{
         readonly topicId?: string;
@@ -553,7 +553,7 @@ async function readAdminPruneEvidence(
         readonly data: Parameters<typeof decodeAdminPruneCommand>[0];
     }>,
     commandType: AppInboxType
-): Promise<PersistedCommandEvidence> {
+): PersistedCommandEvidence {
     const command = decodeAdminPruneCommand(enqueue.data);
     const key = {
         resourceId: row.ri_resource_id,
@@ -568,11 +568,11 @@ async function readAdminPruneEvidence(
     const currentIdentity = row.ri_resource_id === expectedCurrentKey.resourceId &&
         row.ri_topic_id === expectedCurrentKey.topicId &&
         row.fk_ext_bank_id === expectedCurrentKey.contextId &&
-        command.jobId === (await toAdminPruneJobId(key));
+        command.jobId === (toAdminPruneJobId(key));
     if (!currentIdentity) {
         throw new TypeError('Admin prune queue identity differs from physical queue identity');
     }
-    await assertAdminPruneStoredIdentity(key, enqueue, command);
+    assertAdminPruneStoredIdentity(key, enqueue, command);
     return {
         ...toPersistedCommandIdentity(row),
         valid: true,

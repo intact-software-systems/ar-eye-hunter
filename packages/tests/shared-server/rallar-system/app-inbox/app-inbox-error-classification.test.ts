@@ -5,7 +5,7 @@ import {
 } from 'vitest';
 
 import { AppInboxIdempotencyConflictError, AppInboxReservationConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
+import { classifyAppInboxError, isAppInboxRetryableConflict } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts';
@@ -214,5 +214,19 @@ describe('AppInbox error classification', () => {
         }
     ])('classifies $name by its current typed contract', ({ error, kind }) => {
         expect(classifyAppInboxError(error).kind).toBe(kind);
+    });
+
+    it.each([
+        { code: 'resource-inbox-lost-reservation', conflict: true },
+        { code: 'runtime-state-write-conflict', conflict: true },
+        { code: 'state-snapshot-read-conflict', conflict: true },
+        { code: 'group-topology-commit-conflict', conflict: true },
+        { code: 'app-inbox-transient', conflict: false },
+        { code: 'ECONNRESET', conflict: false }
+    ])('treats $code as an optimistic conflict: $conflict', ({ code, conflict }) => {
+        const error = Object.assign(new Error('The write did not apply'), { code });
+
+        expect(classifyAppInboxError(error).kind).toBe('retryable');
+        expect(isAppInboxRetryableConflict(error)).toBe(conflict);
     });
 });

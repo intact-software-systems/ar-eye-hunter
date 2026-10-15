@@ -11,6 +11,8 @@ export interface ResourceInboxAttemptTelemetry {
     readonly dueAgeMs: number;
     readonly attempt: number;
     readonly selectedDueAtEpochMs: number;
+    /** How long this claim may stay RESERVED before the TIMEOUT lane reclaims it for another attempt. */
+    readonly reservationLeaseMs: number;
 }
 
 export interface ResourceInboxAttemptReleaseTelemetry {
@@ -45,6 +47,7 @@ interface ResourceInboxAttemptInput {
     readonly selectedLane: Reservator;
     readonly selectedAtEpochMs: number;
     readonly selectedDueAtEpochMs: number | undefined;
+    readonly reservationLeaseMs: number;
 }
 
 interface ResourceInboxAttemptReleaseInput {
@@ -55,7 +58,7 @@ interface ResourceInboxAttemptReleaseInput {
 }
 
 export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): ResourceInboxAttempt {
-    const { entry, selectedLane, selectedAtEpochMs, selectedDueAtEpochMs } = input;
+    const { entry, selectedLane, selectedAtEpochMs, selectedDueAtEpochMs, reservationLeaseMs } = input;
     const createdAtEpochMs = Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds);
     const dueAtEpochMs = selectedDueAtEpochMs ?? Number(
         entry.dequeueAudit.nextTs?.epochMilliseconds ?? entry.dequeueAudit.startTs?.epochMilliseconds ??
@@ -68,7 +71,8 @@ export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): R
             queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
             dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
             attempt: entry.dequeueAudit.attempts,
-            selectedDueAtEpochMs: dueAtEpochMs
+            selectedDueAtEpochMs: dueAtEpochMs,
+            reservationLeaseMs
         }
     };
 }

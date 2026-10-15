@@ -6,9 +6,9 @@ import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-co
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
     encodeJsonWireValue,
-    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '../../protocol/json-wire-identity.ts';
@@ -58,7 +58,7 @@ export async function createRtcRttDurableEnqueue(
             sessionId: session.sessionId
         },
         requestId,
-        mutationCommandHash: await hashMutationCommand(
+        mutationCommandHash: computeMutationCommandDigest(
             encodeJsonWireValue(stableRequest, 'RTC RTT stable request')
         ),
         capturedAtEpochMs: input.request.capturedAtEpochMs,
@@ -72,7 +72,7 @@ export async function createRtcRttDurableEnqueue(
     } as const;
     const command: RtcRttAppInboxCommand = {
         ...commandWithoutHash,
-        commandHash: await hashMutationCommand(
+        commandHash: computeMutationCommandDigest(
             encodeJsonWireValue(stableCommand, 'RTC RTT stable command')
         )
     };
@@ -109,7 +109,7 @@ export function decodeRtcRttAppInboxAuthority(
         return {
             kind: 'rtc-rtt',
             proof,
-            command: readRtcRttAppInboxCommand(authority.command)
+            command: decodeRtcRttAppInboxCommand(authority.command)
         };
     }
     catch {
@@ -117,7 +117,7 @@ export function decodeRtcRttAppInboxAuthority(
     }
 }
 
-export function readRtcRttAppInboxCommand(
+export function decodeRtcRttAppInboxCommand(
     value: JsonWireValue
 ): RtcRttAppInboxCommand {
     const command = requireRtcRttJsonObject(value, 'command');
@@ -187,10 +187,10 @@ export async function verifyRtcRttAppInboxAuthority(
             'RTC RTT authority proof does not match the command.'
         );
     }
-    await verifyRtcRttCommandHashes(input.authority.command);
+    verifyRtcRttCommandHashes(input.authority.command);
 }
 
-async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promise<void> {
+function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): void {
     const canonicalStableCommand = {
         actor: command.actor,
         requestId: command.requestId,
@@ -198,10 +198,10 @@ async function verifyRtcRttCommandHashes(command: RtcRttAppInboxCommand): Promis
         rtt: command.rtt
     };
     if (
-        (await hashMutationCommand(
+        (computeMutationCommandDigest(
                 encodeJsonWireValue(canonicalStableCommand, 'RTC RTT stable command')
             )) !== command.commandHash ||
-        (await hashMutationCommand(encodeJsonWireValue({
+        (computeMutationCommandDigest(encodeJsonWireValue({
                 rtt: command.rtt,
                 alSenderId: command.actor.sessionId
             }, 'RTC RTT mutation command'))) !== command.mutationCommandHash

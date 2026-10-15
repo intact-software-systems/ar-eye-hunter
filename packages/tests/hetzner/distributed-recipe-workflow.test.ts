@@ -861,6 +861,14 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(manual.jobs.run.with?.agent_count).toBe('${{ inputs.agent_count }}');
     });
 
+    it('registers per-agent users by default at the manual and reusable boundaries', async () => {
+        const manual = await readWorkflow(distributedWorkflowPath);
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        expect(manual.on.workflow_dispatch?.inputs?.register_before_login).toMatchObject({ default: true });
+        expect(runner.on.workflow_call?.inputs?.register_before_login).toMatchObject({ default: true });
+        expect(manual.jobs.run.with?.register_before_login).toBe('${{ inputs.register_before_login }}');
+    });
+
     it('binds external-agent and split prepare/run operator modes at their public workflow fields', async () => {
         const manual = await readWorkflow(distributedWorkflowPath);
         const runner = await readWorkflow(distributedRunnerWorkflowPath);

@@ -1,4 +1,4 @@
-import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, encodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 import type {
     ClientMutationAuthority,
@@ -10,17 +10,17 @@ import { assertClientMutationCommand } from './command-validation/assert-client-
 
 export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHash'>;
 
-export async function toClientMutationCommand(
+export function toClientMutationCommand(
     input: ClientMutationCommandInput,
     facts: ClientMutationPersistedFacts,
     authority: ClientMutationAuthority
-): Promise<ClientMutationCommand> {
+): ClientMutationCommand {
     const command: ClientMutationCommand = {
         ...input,
         authority,
         facts: {
             ...facts,
-            commandHash: await hashMutationCommand(
+            commandHash: computeMutationCommandDigest(
                 encodeJsonWireValue(
                     { ...input, authority },
                     'Client mutation command identity'

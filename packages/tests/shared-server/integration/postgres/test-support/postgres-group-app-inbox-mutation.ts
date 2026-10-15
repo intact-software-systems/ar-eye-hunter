@@ -51,11 +51,11 @@ export function groupAppInboxStart(
     return () => input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, input.authority);
 }
 
-export async function toGroupAppInboxStorageCommandId(
+export function toGroupAppInboxStorageCommandId(
     enqueue: AuthenticatedGroupMutationEnqueue,
     callerPrincipalId: string
-): Promise<string> {
-    return await toScopedGroupMutationCommandId(
+): string {
+    return toScopedGroupMutationCommandId(
         toGroupMutationDescriptor(enqueue),
         callerPrincipalId
     );

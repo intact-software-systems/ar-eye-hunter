@@ -1,9 +1,10 @@
+import type { RallarMiddlewareResilience } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 
-import { createApiV1QueueResilience } from '../src/middleware-resilience.ts';
+import { createApiV1MiddlewareResilience } from '../src/middleware-resilience.ts';
 
-export function createApiV1TestQueueResilience(): ResourceInboxResilience {
-    return createApiV1QueueResilience({
+export function createApiV1TestMiddlewareResilience(): RallarMiddlewareResilience {
+    return createApiV1MiddlewareResilience({
         failureThreshold: 10,
         openDurationMs: 10_000,
         resetDurationMs: 10_000,
@@ -14,4 +15,8 @@ export function createApiV1TestQueueResilience(): ResourceInboxResilience {
         decreaseRate: 1,
         maxFairnessSelectionsPerWindow: 10
     });
+}
+
+export function createApiV1TestQueueResilience(): ResourceInboxResilience {
+    return createApiV1TestMiddlewareResilience().inbox;
 }

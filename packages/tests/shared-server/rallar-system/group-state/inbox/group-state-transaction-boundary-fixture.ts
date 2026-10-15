@@ -339,7 +339,8 @@ async function createReservedContext(
             entry: entry,
             selectedLane: Reservator.NEW,
             selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-            selectedDueAtEpochMs: undefined
+            selectedDueAtEpochMs: undefined,
+            reservationLeaseMs: 60_000
         }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };
@@ -388,7 +389,8 @@ async function createReconfigureReservedContext(
             entry: entry,
             selectedLane: Reservator.NEW,
             selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-            selectedDueAtEpochMs: undefined
+            selectedDueAtEpochMs: undefined,
+            reservationLeaseMs: 60_000
         }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Group transaction test result')
     };

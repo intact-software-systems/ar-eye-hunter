@@ -23,14 +23,12 @@ import type {
     ClientMutationComputedWrite
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import {
-    assertClientMutation,
-    ClientMutationIdempotencyConflictError
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
 import type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
@@ -154,7 +152,7 @@ async function prepareClientStateTestMutation(
     attempt: number
 ): Promise<ClientMutationComputed> {
     const authority = await toTestAuthority(context.authSessions, input, context.serviceId);
-    const command = await toClientMutationCommand(
+    const command = toClientMutationCommand(
         input,
         {
             nowEpochMs: context.nowEpochMs(),
@@ -173,7 +171,7 @@ async function prepareClientStateTestMutation(
     timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.validate' },
         () => {
-            assertClientMutation({ command, read, computed });
+            assertClientMutationMatchesRecompute({ command, read, computed });
             const issue = validateClientMutationAuthorityPolicy(command, read)[0];
             if (issue !== undefined) {
                 throw issue.cause;

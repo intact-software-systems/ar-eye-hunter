@@ -430,7 +430,10 @@ function computeLargestCounters(
     return largest === undefined ? reading : {
         dropped: Math.max(largest.dropped, reading.dropped),
         deferred: Math.max(largest.deferred, reading.deferred),
-        handedOver: Math.max(largest.handedOver, reading.handedOver)
+        handedOver: Math.max(largest.handedOver, reading.handedOver),
+        rateLimited: Math.max(largest.rateLimited, reading.rateLimited),
+        circuitOpen: Math.max(largest.circuitOpen, reading.circuitOpen),
+        queuedBytesHighWater: Math.max(largest.queuedBytesHighWater, reading.queuedBytesHighWater)
     };
 }
 

@@ -90,7 +90,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: await principalCommand('audience-read'),
+            command: principalCommand('audience-read'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
         if (!read.snapshot) {
@@ -154,7 +154,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: await principalCommand('concurrent-membership'),
+            command: principalCommand('concurrent-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
         if (!read.snapshot) {
@@ -214,7 +214,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: await principalCommand('audience-sessions'),
+            command: principalCommand('audience-sessions'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         });
         if (!read.snapshot) {
@@ -265,7 +265,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: await principalCommand('corrupt-membership'),
+            command: principalCommand('corrupt-membership'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption',
@@ -303,7 +303,7 @@ describe('client mutation principal audience read', () => {
             repository: clients,
             groupRepository: groups,
             authSessionRepository: { findBySessionId: async () => undefined },
-            command: await principalCommand('corrupt-co-group-client'),
+            command: principalCommand('corrupt-co-group-client'),
             audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
         })).rejects.toMatchObject({
             code: 'client-state-repository-invariant-corruption',

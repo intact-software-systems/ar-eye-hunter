@@ -169,6 +169,30 @@ describe('RTC enqueue protection', () => {
         expect(circuitBreaker.isClosed()).toBe(true);
     });
 
+    it('states one refusal per hand-off the limiter or the open breaker refuses, with its reason and message count', async () => {
+        const circuitBreaker = toCircuitBreaker();
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 1),
+            nextHopPeerIds: ['b'],
+            circuitBreaker
+        });
+        const readRefusals = () => fixture.diagnostics.filter((event) => event.kind === 'rtc-handoff-refusal');
+        for (let sequence = 0; sequence < 20; sequence++) {
+            await fixture.manager.enqueueIfAbsent(createAck(sequence));
+        }
+        expect(readRefusals()).toEqual([]);
+
+        await expect(fixture.manager.handoffControlMessages([createAck(100), createAck(101), createAck(102)]))
+            .rejects.toBeInstanceOf(NotReadyException);
+        circuitBreaker.failureCount(11);
+        await fixture.manager.enqueueIfAbsent(createAck(103));
+
+        expect(readRefusals()).toEqual([
+            { kind: 'rtc-handoff-refusal', reason: 'rate-limited', messageCount: 3 },
+            { kind: 'rtc-handoff-refusal', reason: 'circuit-open', messageCount: 1 }
+        ]);
+    });
+
     it('reports circuit-open first when both protections refuse an ACK', async () => {
         const circuitBreaker = toCircuitBreaker();
         const quotaNow = vi.fn(() => Date.now());

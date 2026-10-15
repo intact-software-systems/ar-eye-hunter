@@ -125,9 +125,9 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly publisherStreamId: string | undefined;
 }
 
-export async function computeRtcTopologyWorkWrite(
+export function computeRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput
-): Promise<AcceptedRtcTopologyWorkWrite> {
+): AcceptedRtcTopologyWorkWrite {
     const { accepted, entry, reservationFinish } = input;
     if (
         accepted.decision === 'skipped-rtt-refinement' ||
@@ -164,7 +164,7 @@ export async function computeRtcTopologyWorkWrite(
             }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),
             delivery: accepted.decision === 'accepted' && accepted.publication
-                ? await computeRtcTopologyPublicationDeliveryWrite(
+                ? computeRtcTopologyPublicationDeliveryWrite(
                     accepted.publication,
                     input.publisherStreamId
                 )
@@ -174,11 +174,11 @@ export async function computeRtcTopologyWorkWrite(
     };
 }
 
-export async function validateRtcTopologyWorkWrite(
+export function validateRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput,
     computed: AcceptedRtcTopologyWorkWrite
-): Promise<ReturnType<typeof validateComputedProjection>> {
-    return validateComputedProjection(await computeRtcTopologyWorkWrite(input), computed, 'computed');
+): ReturnType<typeof validateComputedProjection> {
+    return validateComputedProjection(computeRtcTopologyWorkWrite(input), computed, 'computed');
 }
 
 export function computeRtcTopologyReplayWrite(

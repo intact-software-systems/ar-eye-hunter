@@ -9,7 +9,7 @@ import type {
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import {
-    hashRtcTopologyExecutionCommand,
+    computeRtcTopologyExecutionCommandDigest,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     type RtcTopologyClaimedPublication,
@@ -86,7 +86,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
                 'RTC topology execution receipt effects differ from publication'
             );
         }
-        const commandHash = await hashRtcTopologyExecutionCommand(publication);
+        const commandHash = computeRtcTopologyExecutionCommandDigest(publication);
         if (claim.value.commandHash !== commandHash) {
             throw publicationCorruption(
                 claim.entry.key,

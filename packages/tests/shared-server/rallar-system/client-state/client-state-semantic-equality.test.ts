@@ -12,8 +12,8 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { connectCommand, emptyRead, instanceCommand, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client state semantic equality', () => {
-    it('treats object-key order as semantic but preserves array order', async () => {
-        const command = await principalCommand();
+    it('treats object-key order as semantic but preserves array order', () => {
+        const command = principalCommand();
         const principal = requireWrite(
             computeClientMutation({
                 command,
@@ -41,22 +41,22 @@ describe('client state semantic equality', () => {
         ).toBe(false);
     });
 
-    it('compares the exact principal, instance, and session semantic fields', async () => {
-        const principalMutation = await principalCommand();
+    it('compares the exact principal, instance, and session semantic fields', () => {
+        const principalMutation = principalCommand();
         const principalWrite = requireWrite(
             computeClientMutation({
                 command: principalMutation,
                 read: emptyRead(principalMutation)
             })
         );
-        const instanceMutation = await instanceCommand();
+        const instanceMutation = instanceCommand();
         const instanceWrite = requireWrite(
             computeClientMutation({
                 command: instanceMutation,
                 read: readAfterWrite(instanceMutation, principalWrite)
             })
         );
-        const connectMutation = await connectCommand();
+        const connectMutation = connectCommand();
         const connectWrite = requireWrite(
             computeClientMutation({
                 command: connectMutation,

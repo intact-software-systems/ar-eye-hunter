@@ -185,8 +185,8 @@ describe('the stats result rallar.alm block', () => {
     )('settling held $kind $source $settlement retains assignment ownership; reassigned=$reassigned', async ({ kind, settlement, reassigned, source }) => {
         const entered = Promise.withResolvers<void>();
         const held = Promise.withResolvers<RallarBlackBoxTestAlmUsage | ALCongestionCounters>();
-        const firstCongestion = { dropped: 0, deferred: 3, handedOver: 0 };
-        const secondCongestion = { dropped: 1, deferred: 3, handedOver: 1 };
+        const firstCongestion = { dropped: 0, deferred: 3, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 };
+        const secondCongestion = { dropped: 1, deferred: 3, handedOver: 1, rateLimited: 2, circuitOpen: 1, queuedBytesHighWater: 4_096 };
         let reading = 0;
         const readHeldPageValue = async () => {
             if (reading++ === 0) {
@@ -350,8 +350,22 @@ describe('the stats result rallar.alm block', () => {
 });
 
 describe('the stats result rallar.congestion block', () => {
-    const DEFERRED: ALCongestionCounters = { dropped: 0, deferred: 3, handedOver: 0 };
-    const HANDED_OVER: ALCongestionCounters = { dropped: 1, deferred: 3, handedOver: 1 };
+    const DEFERRED: ALCongestionCounters = {
+        dropped: 0,
+        deferred: 3,
+        handedOver: 0,
+        rateLimited: 0,
+        circuitOpen: 0,
+        queuedBytesHighWater: 0
+    };
+    const HANDED_OVER: ALCongestionCounters = {
+        dropped: 1,
+        deferred: 3,
+        handedOver: 1,
+        rateLimited: 20,
+        circuitOpen: 3,
+        queuedBytesHighWater: 65_536
+    };
 
     it('reads the page congestion counters afresh at every stats command, beside the ledger', async () => {
         const runtime = createCongestionPageRuntime([DEFERRED, HANDED_OVER]);
@@ -378,13 +392,26 @@ describe('the stats result rallar.congestion block', () => {
     });
 
     it('fails the stats command when the page answers counters that are not counts, naming each bad field', async () => {
-        const runtime = createCongestionPageRuntime([{ dropped: -1, deferred: 2.5, handedOver: 0 }]);
+        const runtime = createCongestionPageRuntime([{ ...DEFERRED, dropped: -1, deferred: 2.5, queuedBytesHighWater: -4 }]);
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toBe(
-            'The page\'s congestion counters are not valid: dropped is not a count; deferred is not a count'
+            'The page\'s congestion counters are not valid: dropped is not a count; deferred is not a count; ' +
+                'queuedBytesHighWater is not a count'
+        );
+    });
+
+    it('fails the stats command when the page answers counters without the refused hand-offs and the queued bytes', async () => {
+        const runtime = createCongestionPageRuntime([{ dropped: 0, deferred: 3, handedOver: 0 }]);
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s congestion counters are not valid: rateLimited is not a count; circuitOpen is not a count; ' +
+                'queuedBytesHighWater is not a count'
         );
     });
 });

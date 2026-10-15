@@ -1155,6 +1155,17 @@ the connection: a `close` resets them, and the block is absent while the page is
 not connected, in the same places `rallar.alm` is absent. An `assert` reads it as
 `latestStats.rallar.congestion.deferred`.
 
+The same block carries the page's RTC hand-off protections, `rateLimited`,
+`circuitOpen` and `queuedBytesHighWater`: the first two count the messages of
+each hand-off of the page's own sends and controls that the RTC carrier's
+per-session rate limiter or open circuit breaker refused (relay forwards and
+retransmissions bypass both), from its `rtc-handoff-refusal` outbound
+diagnostics; `queuedBytesHighWater` is the most bytes an RTC data channel of the
+page held queued (`bufferedAmount`) when a submission read it, from its
+`rtc-queued-bytes-high-water` diagnostics. All six counters are counted before
+the `almDiagnostics` flag is read, so they hold with the diagnostic stream off,
+and a page answer missing any of them fails the `stats` command.
+
 `rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
 to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns

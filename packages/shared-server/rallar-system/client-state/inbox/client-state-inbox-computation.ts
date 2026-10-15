@@ -41,7 +41,7 @@ import type {
     ClientMutationRead
 } from '../mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
-import { assertClientMutationComparison } from '../mutation/result-validation/assert-client-mutation.ts';
+import { assertClientMutationInvariants } from '../mutation/result-validation/assert-client-mutation.ts';
 import {
     computeClientSnapshotProvenance,
     type ClientSnapshotProvenanceInsert
@@ -183,9 +183,9 @@ interface AssertExpiredSessionsOperationInput {
     readonly computed: ExpiredSessionsOperationComputed;
 }
 
-export async function computeClientMutationOperation(
+export function computeClientMutationOperation(
     input: ComputeClientMutationOperationInput
-): Promise<ClientMutationOperationComputed> {
+): ClientMutationOperationComputed {
     const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
@@ -209,31 +209,30 @@ export async function computeClientMutationOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
-        sidecarWrites: await computeClientSnapshotProvenance(mutation, input.command.facts.serviceId),
+        sidecarWrites: computeClientSnapshotProvenance(mutation),
         committedSnapshots: [mutation.snapshot]
     };
 }
 
-export async function assertClientMutationOperation(
+export function assertClientMutationOperation(
     input: AssertClientMutationOperationInput
-): Promise<void> {
-    const expected = await computeClientMutationOperation(input);
+): void {
+    const expected = computeClientMutationOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
         'Client mutation operation computed'
     );
-    assertClientMutationComparison({
+    assertClientMutationInvariants({
         command: input.command,
         read: input.read,
-        computed: input.computed.mutation,
-        expected: expected.mutation
+        computed: input.computed.mutation
     });
 }
 
-export async function computeAuthorisedWsConnectOperation(
+export function computeAuthorisedWsConnectOperation(
     input: ComputeAuthorisedWsConnectOperationInput
-): Promise<AuthorisedWsConnectOperationComputed> {
+): AuthorisedWsConnectOperationComputed {
     if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
         const durableResult = {
             status: 'inactive',
@@ -266,15 +265,15 @@ export async function computeAuthorisedWsConnectOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
-        sidecarWrites: await computeClientSnapshotProvenance(mutation, input.command.facts.serviceId),
+        sidecarWrites: computeClientSnapshotProvenance(mutation),
         committedSnapshots: [mutation.snapshot]
     };
 }
 
-export async function assertAuthorisedWsConnectOperation(
+export function assertAuthorisedWsConnectOperation(
     input: AssertAuthorisedWsConnectOperationInput
-): Promise<void> {
-    const expected = await computeAuthorisedWsConnectOperation(input);
+): void {
+    const expected = computeAuthorisedWsConnectOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
@@ -283,11 +282,10 @@ export async function assertAuthorisedWsConnectOperation(
     if (expected.outcome === 'inactive' || input.computed.outcome === 'inactive') {
         return;
     }
-    assertClientMutationComparison({
+    assertClientMutationInvariants({
         command: input.command,
         read: input.read,
-        computed: input.computed.mutation,
-        expected: expected.mutation
+        computed: input.computed.mutation
     });
 }
 
@@ -320,9 +318,9 @@ export function assertMissingSessionDisconnect(
     );
 }
 
-export async function computeExpiredSessionsOperation(
+export function computeExpiredSessionsOperation(
     input: ComputeExpiredSessionsOperationInput
-): Promise<ExpiredSessionsOperationComputed> {
+): ExpiredSessionsOperationComputed {
     const mutations = input.reads.map(({ command, read }) => computeClientMutation({ command, read }));
     if (mutations.some((mutation) => mutation.outcome === 'idempotency-conflict')) {
         return { outcome: 'idempotency-conflict', mutations };
@@ -339,31 +337,26 @@ export async function computeExpiredSessionsOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: completedMutations.filter(requiresClientWrite),
-        sidecarWrites: (await Promise.all(
-            completedMutations.map((mutation, index) =>
-                computeClientSnapshotProvenance(mutation, input.reads[index]!.command.facts.serviceId)
-            )
-        )).flat(),
+        sidecarWrites: completedMutations.flatMap(computeClientSnapshotProvenance),
         committedSnapshots: applied.map((mutation) => mutation.snapshot),
         successorWrite: computeExpiredSessionSuccessorWrite(input)
     };
 }
 
-export async function assertExpiredSessionsOperation(
+export function assertExpiredSessionsOperation(
     input: AssertExpiredSessionsOperationInput
-): Promise<void> {
-    const expected = await computeExpiredSessionsOperation(input);
+): void {
+    const expected = computeExpiredSessionsOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
         'Expired client sessions operation computed'
     );
     for (const [index, { command, read }] of input.reads.entries()) {
-        assertClientMutationComparison({
+        assertClientMutationInvariants({
             command,
             read,
-            computed: input.computed.mutations[index]!,
-            expected: expected.mutations[index]!
+            computed: input.computed.mutations[index]!
         });
     }
 }

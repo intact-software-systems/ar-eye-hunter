@@ -120,6 +120,12 @@ export function classifyAppInboxError(error: unknown): AppInboxErrorClassificati
     return toRetryableClassification(code);
 }
 
+/** An optimistic conflict is an expected typed outcome: redelivery retries it and it is never an operational failure. */
+export function isAppInboxRetryableConflict(error: Error): boolean {
+    return error instanceof AppInboxReservationConflictError ||
+        RETRYABLE_CONFLICT_CODES.has(toAppInboxErrorCode(error));
+}
+
 export function toAppInboxErrorCode(error: unknown): string {
     return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
         ? error.code

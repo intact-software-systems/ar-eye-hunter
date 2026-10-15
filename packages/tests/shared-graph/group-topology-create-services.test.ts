@@ -17,7 +17,8 @@ describe('group topology create services', () => {
             const result = createGroupTree({
                 group: createGroupSnapshot('tree-room', memberSessionIds),
                 globalGraph: graph,
-                maxDegree: 5
+                maxDegree: 5,
+                preferredSource: undefined
             });
 
             expect(result.success).toBe(true);
@@ -48,7 +49,8 @@ describe('group topology create services', () => {
         const result = createGroupTree({
             group: createGroupSnapshot('sparse-tree-room', memberSessionIds),
             globalGraph: graph,
-            maxDegree: 5
+            maxDegree: 5,
+            preferredSource: undefined
         });
 
         expect(result.success).toBe(true);
@@ -58,6 +60,23 @@ describe('group topology create services', () => {
             new Set(memberSessionIds)
         );
         expect(result.tree.edges()).toHaveLength(memberSessionIds.length - 1);
+    });
+
+    it('grows the tree from the preferred source member instead of the best-located member', () => {
+        const memberSessionIds = createMemberIds(16);
+        const graph = createCompleteMemberGraph(memberSessionIds, 5);
+        const group = createGroupSnapshot('preferred-source-room', memberSessionIds);
+
+        const preferred = createGroupTree({ group, globalGraph: graph, maxDegree: 5, preferredSource: 'peer-16' });
+        const outsider = createGroupTree({ group, globalGraph: graph, maxDegree: 5, preferredSource: 'outsider' });
+
+        expect(preferred.success).toBe(true);
+        expect(preferred.source).toBe('peer-16');
+        expect(preferred.tree.degree('peer-16')).toBe(5);
+        expect(new Set(preferred.tree.nodes() as string[])).toEqual(new Set(memberSessionIds));
+        expect(outsider.success).toBe(true);
+        expect(outsider.source).not.toBe('peer-16');
+        expect(['peer-8', 'peer-9']).toContain(outsider.source);
     });
 
     it('creates a member-only mesh for 16 members with degree <= 5', () => {

@@ -12,7 +12,7 @@ describe('topology inbox result decoding', () => {
     it('returns the exact terminal left for a malformed completed topology result', async () => {
         const harness = await createAuthorityHarness(['owner']);
         const authority = harness.sessions.owner;
-        const command = await toTopologyAppInboxCommand({
+        const command = toTopologyAppInboxCommand({
             actor: {
                 principalId: authority.clientId,
                 sessionId: authority.sessionId

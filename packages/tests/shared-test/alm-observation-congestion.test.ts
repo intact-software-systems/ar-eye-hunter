@@ -51,23 +51,27 @@ describe('the ALM observation congestion readings', () => {
             runId: 'alm-congestion',
             results: [],
             events: [
-                toStatsEvent(1_000, SENDER_AGENT_ID, { dropped: 1, deferred: 0, handedOver: 1 }),
+                toStatsEvent(1_000, SENDER_AGENT_ID, { dropped: 1, deferred: 0, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 toStatsEvent(1_100, SENDER_AGENT_ID, undefined),
                 toStatsEvent(1_200, RECEIVER_AGENT_ID, { dropped: 0, deferred: 0 })
             ]
         });
 
         expect(decoded.right?.congestionReadings).toEqual([
-            { atEpochMs: 1_000, agentId: SENDER_AGENT_ID, counters: { dropped: 1, deferred: 0, handedOver: 1 } }
+            {
+                atEpochMs: 1_000,
+                agentId: SENDER_AGENT_ID,
+                counters: { dropped: 1, deferred: 0, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }
+            }
         ]);
     });
 
     it('sums each page\'s largest count across the cell\'s pages', () => {
         const regime = toRegime([
-            toStatsEvent(1_000, SENDER_AGENT_ID, { dropped: 1, deferred: 2, handedOver: 1 }),
-            toStatsEvent(2_000, SENDER_AGENT_ID, { dropped: 1, deferred: 5, handedOver: 1 }),
-            toStatsEvent(2_500, RECEIVER_AGENT_ID, { dropped: 0, deferred: 3, handedOver: 0 }),
-            toStatsEvent(4_000, SENDER_AGENT_ID, { dropped: 0, deferred: 1, handedOver: 0 })
+            toStatsEvent(1_000, SENDER_AGENT_ID, { dropped: 1, deferred: 2, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
+            toStatsEvent(2_000, SENDER_AGENT_ID, { dropped: 1, deferred: 5, handedOver: 1, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
+            toStatsEvent(2_500, RECEIVER_AGENT_ID, { dropped: 0, deferred: 3, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
+            toStatsEvent(4_000, SENDER_AGENT_ID, { dropped: 0, deferred: 1, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 })
         ]);
 
         expect(regime.congestion).toEqual({ outcome: 'measured', readingCount: 4, dropped: 1, deferred: 8, handedOver: 1 });

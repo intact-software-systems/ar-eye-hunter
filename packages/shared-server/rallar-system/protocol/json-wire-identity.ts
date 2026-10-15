@@ -1,4 +1,4 @@
-import { serializeCanonicalJson, sha256CanonicalJson } from './canonical-json.ts';
+import { computeSha256CanonicalJson, serializeCanonicalJson } from './canonical-json.ts';
 
 export type JsonWireValue = null | boolean | number | string | readonly JsonWireValue[] | JsonWireObject;
 
@@ -10,9 +10,18 @@ interface InspectedJsonArray {
     readonly length: number;
 }
 
+/** One traversal's state: the objects on the current path, for cycle detection, and the first issue found. */
+interface JsonSafetyInspection {
+    readonly activeObjects: Set<object>;
+    readonly issues: string[];
+}
+
 export function decodeJsonWireValue(value: unknown, label = 'JSON wire value'): JsonWireValue {
-    assertJsonWireValue(value, label);
-    return value as JsonWireValue;
+    const inspection: JsonSafetyInspection = { activeObjects: new Set<object>(), issues: [] };
+    if (isInspectedJsonWireValue(value, inspection)) {
+        return value;
+    }
+    throw new TypeError(`${label} must be JSON-safe: ${inspection.issues[0]}`);
 }
 
 export function decodeJsonWireText(serialized: string, label = 'JSON wire value'): JsonWireValue {
@@ -20,70 +29,58 @@ export function decodeJsonWireText(serialized: string, label = 'JSON wire value'
 }
 
 export function encodeJsonWireValue<Value>(value: Value, label = 'JSON wire value'): JsonWireValue {
-    assertJsonWireValue(value, label);
-    return value as JsonWireValue;
+    return decodeJsonWireValue(value, label);
 }
 
-export async function hashMutationCommand(command: JsonWireValue): Promise<string> {
-    return `sha256:${await sha256CanonicalJson(command)}`;
+export function computeMutationCommandDigest(command: JsonWireValue): string {
+    return `sha256:${computeSha256CanonicalJson(command)}`;
 }
 
 export function serializeCanonicalMutationCommand(command: JsonWireValue): string {
     return serializeCanonicalJson(command);
 }
 
-function assertJsonWireValue(value: unknown, label: string): void {
-    let issue: string | undefined;
+function isInspectedJsonWireValue(value: unknown, inspection: JsonSafetyInspection): value is JsonWireValue {
     try {
-        issue = findJsonSafetyIssue(value, '$', new Set<object>());
+        return isJsonSafeValue(value, '$', inspection);
     }
     catch {
-        issue = 'value could not be inspected without executing custom behavior';
-    }
-    if (issue) {
-        throw new TypeError(`${label} must be JSON-safe: ${issue}`);
+        inspection.issues.push('value could not be inspected without executing custom behavior');
+        return false;
     }
 }
 
-function findJsonSafetyIssue(
-    value: unknown,
-    path: string,
-    activeObjects: Set<object>
-): string | undefined {
+function isJsonSafeValue(value: unknown, path: string, inspection: JsonSafetyInspection): value is JsonWireValue {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-        return undefined;
+        return true;
     }
     if (typeof value === 'number') {
         if (!Number.isFinite(value)) {
-            return `${path} contains a non-finite number`;
+            return rejectJsonSafety(inspection, `${path} contains a non-finite number`);
         }
         if (Object.is(value, -0)) {
-            return `${path} contains negative zero`;
+            return rejectJsonSafety(inspection, `${path} contains negative zero`);
         }
-        return undefined;
+        return true;
     }
     if (typeof value !== 'object') {
-        return `${path} contains unsupported ${typeof value}`;
+        return rejectJsonSafety(inspection, `${path} contains unsupported ${typeof value}`);
     }
-    if (activeObjects.has(value)) {
-        return `${path} contains a cycle`;
+    if (inspection.activeObjects.has(value)) {
+        return rejectJsonSafety(inspection, `${path} contains a cycle`);
     }
 
-    activeObjects.add(value);
-    const issue = Array.isArray(value)
-        ? findJsonArraySafetyIssue(value, path, activeObjects)
-        : findJsonObjectSafetyIssue(value, path, activeObjects);
-    activeObjects.delete(value);
-    return issue;
+    inspection.activeObjects.add(value);
+    const safe = Array.isArray(value)
+        ? isJsonSafeArray(value, path, inspection)
+        : isJsonSafeObject(value, path, inspection);
+    inspection.activeObjects.delete(value);
+    return safe;
 }
 
-function findJsonArraySafetyIssue(
-    value: InspectedJsonArray,
-    path: string,
-    activeObjects: Set<object>
-): string | undefined {
+function isJsonSafeArray(value: InspectedJsonArray, path: string, inspection: JsonSafetyInspection): boolean {
     if (Object.getPrototypeOf(value) !== Array.prototype) {
-        return `${path} uses a non-standard array prototype`;
+        return rejectJsonSafety(inspection, `${path} uses a non-standard array prototype`);
     }
     const entryKeys: string[] = [];
     for (const key of Reflect.ownKeys(value)) {
@@ -91,59 +88,58 @@ function findJsonArraySafetyIssue(
             continue;
         }
         if (typeof key === 'symbol') {
-            return `${path} contains a symbol key`;
+            return rejectJsonSafety(inspection, `${path} contains a symbol key`);
         }
         if (!isCanonicalArrayIndex(key, value.length)) {
-            return `${path} contains non-index array property ${JSON.stringify(key)}`;
+            return rejectJsonSafety(inspection, `${path} contains non-index array property ${JSON.stringify(key)}`);
         }
         entryKeys.push(key);
     }
     if (entryKeys.length !== value.length) {
-        return `${path} contains a sparse array`;
+        return rejectJsonSafety(inspection, `${path} contains a sparse array`);
     }
     for (const key of entryKeys) {
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         if (!descriptor || !descriptor.enumerable) {
-            return `${path}[${key}] is not an enumerable data property`;
+            return rejectJsonSafety(inspection, `${path}[${key}] is not an enumerable data property`);
         }
         if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
-            return `${path}[${key}] is an accessor property`;
+            return rejectJsonSafety(inspection, `${path}[${key}] is an accessor property`);
         }
-        const issue = findJsonSafetyIssue(descriptor.value, `${path}[${key}]`, activeObjects);
-        if (issue) {
-            return issue;
+        if (!isJsonSafeValue(descriptor.value, `${path}[${key}]`, inspection)) {
+            return false;
         }
     }
-    return undefined;
+    return true;
 }
 
-function findJsonObjectSafetyIssue(
-    value: object,
-    path: string,
-    activeObjects: Set<object>
-): string | undefined {
+function isJsonSafeObject(value: object, path: string, inspection: JsonSafetyInspection): boolean {
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-        return `${path} uses a non-plain object`;
+        return rejectJsonSafety(inspection, `${path} uses a non-plain object`);
     }
     for (const key of Reflect.ownKeys(value)) {
         if (typeof key === 'symbol') {
-            return `${path} contains a symbol key`;
+            return rejectJsonSafety(inspection, `${path} contains a symbol key`);
         }
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         const propertyPath = `${path}.${key}`;
         if (!descriptor || !descriptor.enumerable) {
-            return `${propertyPath} is not an enumerable data property`;
+            return rejectJsonSafety(inspection, `${propertyPath} is not an enumerable data property`);
         }
         if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
-            return `${propertyPath} is an accessor property`;
+            return rejectJsonSafety(inspection, `${propertyPath} is an accessor property`);
         }
-        const issue = findJsonSafetyIssue(descriptor.value, propertyPath, activeObjects);
-        if (issue) {
-            return issue;
+        if (!isJsonSafeValue(descriptor.value, propertyPath, inspection)) {
+            return false;
         }
     }
-    return undefined;
+    return true;
+}
+
+function rejectJsonSafety(inspection: JsonSafetyInspection, issue: string): false {
+    inspection.issues.push(issue);
+    return false;
 }
 
 function isCanonicalArrayIndex(key: string, length: number): boolean {

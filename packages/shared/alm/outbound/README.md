@@ -896,7 +896,10 @@ carriers. Each decision is one `congestion` diagnostic, `{ carrier, cause, actio
 `drop` (the outbound admission), `defer` (the submission, for every message the page holds there, relay forwards and
 controls included) or `hand-over` (the browser's message dispatch, which hands a congested RTC leg to WS at admission
 and names the message's own normalized congestion priority, not the one the carrier's QoS provider planned with) (D186);
-the black-box harness counts them as `ALCongestionCounters`.
+the black-box harness counts them as `ALCongestionCounters`. Beside the three actions the counters carry
+`rateLimited` and `circuitOpen`, the messages whose RTC hand-off the carrier's per-session rate limiter or open circuit
+breaker refused (each `rtc-handoff-refusal` diagnostic adds its `messageCount`), and `queuedBytesHighWater`, the most
+bytes an RTC data channel held queued when a submission read it (the largest `rtc-queued-bytes-high-water`).
 
 The age limit bounds the admissions the ledger counts, not the ordering state the pairs keep (D181): the volatile
 pairs keep an ordering track for the repository's hour (`orderingTrackTtlMs`), because a receiver that forgot a track

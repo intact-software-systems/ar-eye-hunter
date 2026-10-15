@@ -46,6 +46,7 @@ export namespace RtcOutboundSubmission {
 /** Translates an authorized next hop into native RTC submission and its settlement. */
 export class RtcOutboundSubmission {
     private readonly dependencies: RtcOutboundSubmission.Dependencies;
+    private queuedBytesHighWater = 0;
 
     constructor(dependencies: RtcOutboundSubmission.Dependencies) {
         this.dependencies = dependencies;
@@ -75,6 +76,7 @@ export class RtcOutboundSubmission {
         }
 
         const health = peer.channel.readHealth();
+        this.observeQueuedBytes(health.bufferedAmount);
         if (health.readyState !== 'open') {
             return {
                 status: 'not-ready',
@@ -92,6 +94,18 @@ export class RtcOutboundSubmission {
             msg,
             lifecycle
         );
+    }
+
+    /** Only a new high is reported, so a page reads the session's peak queue without one diagnostic per send. */
+    private observeQueuedBytes(queuedBytes: number): void {
+        if (queuedBytes <= this.queuedBytesHighWater) {
+            return;
+        }
+        this.queuedBytesHighWater = queuedBytes;
+        writeALOutboundRuntimeDiagnostic(this.dependencies.diagnostics, {
+            kind: 'rtc-queued-bytes-high-water',
+            queuedBytes
+        });
     }
 
     /**

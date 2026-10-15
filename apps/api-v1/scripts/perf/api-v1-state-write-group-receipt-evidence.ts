@@ -20,9 +20,9 @@ import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import {
+    computeMutationCommandDigest,
     decodeJsonWireValue,
     encodeJsonWireValue,
-    hashMutationCommand,
     serializeCanonicalMutationCommand,
     type JsonWireObject,
     type JsonWireValue
@@ -92,7 +92,7 @@ export async function readScopedGroupCommandsByRequestId({
         if (expectation === undefined) {
             continue;
         }
-        const identity = await readScopedGroupCommandIdentity(row, expectation);
+        const identity = readScopedGroupCommandIdentity(row, expectation);
         if (identity === undefined) {
             throw new TypeError(
                 `Benchmark scoped group command differs from its exact expected identity: ${expectation.requestId}`
@@ -115,10 +115,10 @@ export async function readScopedGroupCommandsByRequestId({
     return identities;
 }
 
-export async function readScopedGroupCommandIdentity(
+export function readScopedGroupCommandIdentity(
     row: PersistedScopedGroupCommandRow,
     expectation: ScopedGroupCommandExpectation
-): Promise<ScopedGroupCommandIdentity | undefined> {
+): ScopedGroupCommandIdentity | undefined {
     const queueKey = toScopedGroupCommandQueueKey(expectation);
     if (
         row.ri_topic_id !== queueKey.topicId ||
@@ -128,7 +128,7 @@ export async function readScopedGroupCommandIdentity(
         return undefined;
     }
     const ingress = decodeScopedGroupIngress(row.ri_resource, expectation);
-    return ingress ? await resolveScopedGroupCommandIdentity(ingress, expectation) : undefined;
+    return ingress ? resolveScopedGroupCommandIdentity(ingress, expectation) : undefined;
 }
 
 interface ScopedGroupIngress {
@@ -190,10 +190,10 @@ function decodeScopedGroupIngress(
     }
 }
 
-async function resolveScopedGroupCommandIdentity(
+function resolveScopedGroupCommandIdentity(
     ingress: ScopedGroupIngress,
     expectation: ScopedGroupCommandExpectation
-): Promise<ScopedGroupCommandIdentity | undefined> {
+): ScopedGroupCommandIdentity | undefined {
     const { command, descriptor } = ingress;
     let semanticCommand: GroupMutationCommand;
     let commandHash: string;
@@ -201,13 +201,13 @@ async function resolveScopedGroupCommandIdentity(
         semanticCommand = toDescriptorCommand(descriptor, () => {
             throw new TypeError('Benchmark group mutation request ID is required');
         });
-        commandHash = await hashMutationCommand(encodeJsonWireValue(semanticCommand));
+        commandHash = computeMutationCommandDigest(encodeJsonWireValue(semanticCommand));
     }
     catch {
         return undefined;
     }
     const target = toGroupMutationDescriptorTargetIdentity(command);
-    const expectedCommandId = await toScopedGroupMutationCommandIdFromIdentity({
+    const expectedCommandId = toScopedGroupMutationCommandIdFromIdentity({
         operation: command.operation,
         scope: descriptor.scope,
         groupId: descriptor.groupId,

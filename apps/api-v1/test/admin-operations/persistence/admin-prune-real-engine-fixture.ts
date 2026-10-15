@@ -45,6 +45,7 @@ export class RealEngineAdminPruneFixture {
         const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({
             engine: this.engine,
+            nowEpochMs: Date.now,
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,
             appInboxResilience: resilience,

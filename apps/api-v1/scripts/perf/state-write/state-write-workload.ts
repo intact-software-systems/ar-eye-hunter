@@ -14,6 +14,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { mapWithConcurrency } from '../map-with-concurrency.ts';
 import {
@@ -468,7 +469,7 @@ async function runMeasuredTopologyMutation(
     input: RoutedBenchmarkMutation
 ): Promise<void> {
     const { runtime, scope, command, groupContextId } = input;
-    const data = await toTopologyAppInboxCommand({
+    const data = toTopologyAppInboxCommand({
         actor: {
             principalId: command.ownerId,
             sessionId: command.ownerAuthority.sessionId
@@ -587,12 +588,9 @@ export async function runAppInboxMutation<Failure extends string | Readonly<{ me
             settled = true;
             return { status: 'fulfilled' as const, value };
         },
-        (reason: unknown) => {
+        (reason) => {
             settled = true;
-            return {
-                status: 'rejected' as const,
-                reason: reason instanceof Error ? reason : new Error(String(reason))
-            };
+            return { status: 'rejected' as const, reason: toError(reason) };
         }
     );
     while (!settled) {

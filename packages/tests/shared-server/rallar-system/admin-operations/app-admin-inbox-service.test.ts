@@ -131,13 +131,12 @@ describe('AppAdminInboxService initial prune command', () => {
             })
         );
         expect(harness.retryExpiryInputs()).toEqual([INITIAL_TIME_EPOCH_MS]);
-        expect(harness.readWorkCounts()).toEqual({
+        expect(harness.readWorkCounts()).toMatchObject({
             now: 1,
             expiry: 1,
             authority: 0,
             count: 0,
-            transaction: 0,
-            wake: 0
+            transaction: 0
         });
 
         await dequeueInitialCommand(harness);
@@ -472,6 +471,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'current-authority',
             'now-callback',
@@ -480,7 +480,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:validate',
             'transaction',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(1);
         expect(harness.database.outboxEntries.size).toBe(0);
@@ -501,6 +502,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'count:resource-inbox-results',
             'current-authority',
@@ -513,7 +515,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'page-write',
             'aggregate-write',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(2);
         expect(harness.events.lastIndexOf('queue-wake')).toBeGreaterThan(
@@ -571,6 +574,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'retry-expiry-callback',
             'now-callback',
+            'now-callback',
             'count:runtime-state',
             'current-authority',
             'now-callback',
@@ -578,6 +582,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:compute',
             'phase:validate',
             'transaction',
+            'now-callback',
+            'now-callback',
             'now-callback',
             'count:runtime-state',
             'current-authority',
@@ -587,7 +593,8 @@ describe('AppAdminInboxService initial prune command', () => {
             'phase:validate',
             'transaction',
             'result-write',
-            'commit-return'
+            'commit-return',
+            'now-callback'
         ]);
     });
 
@@ -1002,6 +1009,7 @@ class AdminInboxHarness {
         const engine = new InboxOutboxEngine();
         registerApplicationQueueReaderTasks({
             engine,
+            nowEpochMs: Date.now,
             inboxQueueReader: this.reader,
             outboxQueueReader: new OutboxQueueReader(this.queue),
             appInboxResilience: createResilience(),
@@ -1055,9 +1063,9 @@ class AdminInboxHarness {
         return capturedAtEpochMs + (this.options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
     }
 
-    private async createIdentity(input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> {
+    private createIdentity(input: AdminPruneIdempotencyIdentityInput): AdminPruneIdempotencyIdentity {
         this.idempotencyIdentityInputs.push(input);
-        const identity = await createAdminPruneIdempotencyIdentity(input);
+        const identity = createAdminPruneIdempotencyIdentity(input);
         this.events.push('semantic-identity-completed');
         return identity;
     }

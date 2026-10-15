@@ -40,7 +40,8 @@ function createAlmScaleManifestEntry(input: AlmScaleManifestInput): HetznerDistr
     const scale = createAlmScaleRecipes({
         participantCount: input.participantCount,
         group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        readyTimeoutMs: 45_000
+        readyTimeoutMs: 45_000,
+        almDiagnostics: input.diagnostic
     });
     return createManifestEntry({
         filePath: input.filePath,

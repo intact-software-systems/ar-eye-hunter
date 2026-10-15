@@ -25,7 +25,10 @@ export namespace InboxOutboxEngine {
     export interface Dependencies {
         readonly nowEpochMs: () => number;
         readonly random: () => number;
-        /** Receives each settled task failure synchronously once, after runnable-owned cleanup finishes. */
+        /**
+         * Receives each settled runnable failure synchronously once, after runnable-owned cleanup finishes, and a
+         * task's readiness failure once per pass, which leaves only that task without work for the pass.
+         */
         readonly reportTaskFailure: (taskId: string, error: Error) => undefined;
     }
 }
@@ -291,6 +294,7 @@ export class InboxOutboxEngine {
     }
 
     private toTaskPass(task: ComputeAsyncTask.LoopsTaskDto, generation: number): ComputeAsyncTask.LoopsTaskDto {
+        let readinessFailed = false;
         return {
             ...task,
             executor: (runnable) =>
@@ -300,11 +304,18 @@ export class InboxOutboxEngine {
                 ),
             maxConcurrency: async () => this.isCurrentTask(task, generation) ? await task.maxConcurrency() : 0,
             isWork: async () => {
-                if (!this.isCurrentTask(task, generation)) {
+                if (readinessFailed || !this.isCurrentTask(task, generation)) {
                     return false;
                 }
-                const isWork = await task.isWork();
-                return isWork && this.isCurrentTask(task, generation);
+                try {
+                    const isWork = await task.isWork();
+                    return isWork && this.isCurrentTask(task, generation);
+                }
+                catch (error) {
+                    readinessFailed = true;
+                    this.reportTaskFailure(task.name, toError(error));
+                    return false;
+                }
             },
             runnable: async () => {
                 if (this.isCurrentTask(task, generation)) {

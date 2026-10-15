@@ -7,6 +7,13 @@ export interface ComputedDataValidationIssue {
     readonly cause: TypeError;
 }
 
+type ComputedDataPath = string | ComputedDataFieldPath;
+
+interface ComputedDataFieldPath {
+    readonly parent: ComputedDataPath;
+    readonly key: PropertyKey;
+}
+
 interface ComputedDataValidationState {
     readonly ancestors: Set<object>;
     readonly issues: ComputedDataValidationIssue[];
@@ -20,7 +27,7 @@ interface ComputedProjectionValidationState {
 interface ComputedProjectionComparison<Expected, Candidate> {
     readonly expected: Expected;
     readonly candidate: Candidate;
-    readonly path: string;
+    readonly path: ComputedDataPath;
 }
 
 /** Rejects executable and opaque values before a domain validator reads candidate fields. */
@@ -53,7 +60,7 @@ export function validateComputedProjection<Expected, Candidate>(
 
 function validateComputedDataValue<Value>(
     value: Value,
-    path: string,
+    path: ComputedDataPath,
     state: ComputedDataValidationState
 ): void {
     if (typeof value === 'function' || typeof value === 'symbol') {
@@ -81,7 +88,7 @@ function validateComputedDataValue<Value>(
 
     state.ancestors.add(value);
     for (const key of Reflect.ownKeys(value)) {
-        const fieldPath = `${path}.${String(key)}`;
+        const fieldPath = { parent: path, key };
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
             state.issues.push(toComputedDataValidationIssue(fieldPath, 'must be a data property'));
@@ -131,14 +138,13 @@ function compareComputedDataProperties(
     state: ComputedProjectionValidationState
 ): void {
     const { expected, candidate, path } = comparison;
-    const expectedFields = Object.getOwnPropertyDescriptors(expected);
-    const candidateFields = Object.getOwnPropertyDescriptors(candidate);
-    for (const key of Reflect.ownKeys(expectedFields)) {
-        const fieldPath = `${path}.${String(key)}`;
-        const expectedField = Object.getOwnPropertyDescriptor(expected, key);
-        const candidateField = Object.getOwnPropertyDescriptor(candidate, key);
+    const expectedFields = toOwnPropertyDescriptors(expected);
+    const candidateFields = toOwnPropertyDescriptors(candidate);
+    for (const [key, expectedField] of expectedFields) {
+        const fieldPath = { parent: path, key };
+        const candidateField = candidateFields.get(key);
         if (
-            !expectedField || !candidateField ||
+            !candidateField ||
             !Object.prototype.hasOwnProperty.call(expectedField, 'value') ||
             !Object.prototype.hasOwnProperty.call(candidateField, 'value')
         ) {
@@ -150,13 +156,24 @@ function compareComputedDataProperties(
             state
         );
     }
-    for (const key of Reflect.ownKeys(candidateFields)) {
-        if (!Object.prototype.hasOwnProperty.call(expectedFields, key)) {
+    for (const key of candidateFields.keys()) {
+        if (!expectedFields.has(key)) {
             state.issues.push(
-                toComputedDataValidationIssue(`${path}.${String(key)}`, 'is not part of the computed value')
+                toComputedDataValidationIssue({ parent: path, key }, 'is not part of the computed value')
             );
         }
     }
+}
+
+function toOwnPropertyDescriptors(value: object): ReadonlyMap<PropertyKey, PropertyDescriptor> {
+    const descriptors = new Map<PropertyKey, PropertyDescriptor>();
+    for (const key of Reflect.ownKeys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor) {
+            descriptors.set(key, descriptor);
+        }
+    }
+    return descriptors;
 }
 
 function isSupportedComputedDataObject(value: object): boolean {
@@ -210,9 +227,14 @@ function isAtomicComputedDataObject(value: object): boolean {
 }
 
 function toComputedDataValidationIssue(
-    path: string,
+    path: ComputedDataPath,
     reason: string
 ): ComputedDataValidationIssue {
-    const message = `${path} ${reason}`;
-    return { path, message, cause: new TypeError(message) };
+    const pathText = toComputedDataPathText(path);
+    const message = `${pathText} ${reason}`;
+    return { path: pathText, message, cause: new TypeError(message) };
+}
+
+function toComputedDataPathText(path: ComputedDataPath): string {
+    return typeof path === 'string' ? path : `${toComputedDataPathText(path.parent)}.${String(path.key)}`;
 }

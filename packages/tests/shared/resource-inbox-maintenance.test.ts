@@ -1,31 +1,37 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
+
 describe('Resource inbox expiry eviction', () => {
     afterEach(() => {
         vi.useRealTimers();
         vi.restoreAllMocks();
     });
 
-    it('runs deleteExpired immediately and then on the configured interval', async () => {
+    it('evicts expired entries and expired results immediately and then on the configured interval', async () => {
         vi.useFakeTimers();
-        let deletionRuns = 0;
-        const repo = {
-            deleteExpired: async () => {
-                deletionRuns += 1;
-                return 2;
-            }
-        };
-        const log = vi.spyOn(console, 'log').mockImplementation(() => {
-        });
-        const { initResourceInboxExpiryEviction } = await import(
-            '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts'
-        );
+        const evictions: string[] = [];
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-        await initResourceInboxExpiryEviction(repo as never, 1_000);
-        expect(deletionRuns).toBe(1);
+        await initResourceInboxExpiryEviction({
+            entries: {
+                deleteExpired: async () => {
+                    evictions.push('entries');
+                    return 2;
+                }
+            },
+            results: {
+                deleteExpired: async () => {
+                    evictions.push('results');
+                    return 3;
+                }
+            }
+        }, 1_000);
+        expect(evictions).toEqual(['entries', 'results']);
         expect(log).toHaveBeenCalledWith('Evicted expired resource_inbox rows: 2');
+        expect(log).toHaveBeenCalledWith('Evicted expired resource_inbox_results rows: 3');
 
         await vi.advanceTimersByTimeAsync(1_000);
-        expect(deletionRuns).toBe(2);
+        expect(evictions).toEqual(['entries', 'results', 'entries', 'results']);
     });
 });

@@ -147,7 +147,7 @@ async function writeTopologyAppInboxCommand(
     authority: IssuedAuthSession
 ): Promise<Either<AppInboxFailure, GroupTopologyConfigMutationExecution>> {
     const principalId = input.request.updatedByPrincipalId;
-    const data = await toTopologyAppInboxCommand({
+    const data = toTopologyAppInboxCommand({
         actor: { principalId, sessionId: authority.sessionId },
         groupRef: input.groupRef,
         requestId: input.request.requestId,

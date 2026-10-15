@@ -7,8 +7,8 @@ import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/gro
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../auth/persistence/persisted-auth-session.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
-import { serializeCanonicalJson, sha256CanonicalJson } from '../protocol/canonical-json.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-identity.ts';
+import { computeSha256CanonicalJson, serializeCanonicalJson } from '../protocol/canonical-json.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -100,14 +100,14 @@ async function captureAuthorizedGroupMutationIngress(
 ): Promise<GroupMutationIngress> {
     const { dependencies, descriptor, authority, useScopedCommandId } = input;
     const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
-    const materialized = await materializeAuthenticatedGroupMutationCommand({
+    const materialized = materializeAuthenticatedGroupMutationCommand({
         descriptor: authorized.descriptor,
         authorityProof: authorized.authorityProof,
         randomId: dependencies.randomId,
         useScopedCommandId
     });
     const { command } = materialized;
-    const commandHash = await hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     const resolvedJoinCode = resolveCommandJoinCode(command, commandHash);
@@ -127,24 +127,22 @@ async function captureAuthorizedGroupMutationIngress(
         }
     };
     const ingressCausalRevision = (await dependencies.readCausalRevision(command.aggregateRef)) ?? null;
-    const causalToken = await sha256CanonicalJson({
+    const causalToken = computeSha256CanonicalJson({
         command,
         facts,
         ingressCausalRevision
     });
     const queueResourceId = `g-${
-        (
-            await sha256CanonicalJson({
-                requestId: command.requestId,
-                authoritySession: {
-                    sessionId: authorized.authorityProof.sessionId,
-                    issuedAtEpochMs: authorized.authorityProof.sessionIssuedAtEpochMs,
-                    expiresAtEpochMs: authorized.authorityProof.sessionExpiresAtEpochMs
-                },
-                commandMac: authorized.authorityProof.commandMac,
-                causalToken
-            })
-        ).slice(0, 34)
+        computeSha256CanonicalJson({
+            requestId: command.requestId,
+            authoritySession: {
+                sessionId: authorized.authorityProof.sessionId,
+                issuedAtEpochMs: authorized.authorityProof.sessionIssuedAtEpochMs,
+                expiresAtEpochMs: authorized.authorityProof.sessionExpiresAtEpochMs
+            },
+            commandMac: authorized.authorityProof.commandMac,
+            causalToken
+        }).slice(0, 34)
     }`;
     return {
         ...authorized,
@@ -195,14 +193,14 @@ export async function readAndVerifyGroupMutationIngressAuthority(
             'Authenticated mutation descriptor changed before execution.'
         );
     }
-    const materialized = await materializeAuthenticatedGroupMutationCommand({
+    const materialized = materializeAuthenticatedGroupMutationCommand({
         descriptor: verified.descriptor,
         authorityProof: ingress.authorityProof,
         randomId: dependencies.randomId,
         useScopedCommandId: isScopedGroupMutationCommandId(ingress.command.commandId)
     });
     const { command } = materialized;
-    const commandHash = await hashMutationCommand(
+    const commandHash = computeMutationCommandDigest(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     if (
@@ -229,16 +227,16 @@ interface MaterializedAuthenticatedGroupMutation {
     readonly semanticCommand: GroupMutationCommand;
 }
 
-async function materializeAuthenticatedGroupMutationCommand(
+function materializeAuthenticatedGroupMutationCommand(
     { descriptor, authorityProof, randomId, useScopedCommandId }: MaterializeAuthenticatedGroupMutationInput
-): Promise<MaterializedAuthenticatedGroupMutation> {
+): MaterializedAuthenticatedGroupMutation {
     const semanticCommand = toDescriptorCommand(descriptor, randomId);
     return {
         semanticCommand,
         command: useScopedCommandId
             ? {
                 ...semanticCommand,
-                commandId: await toScopedGroupMutationCommandId(descriptor, authorityProof.principalId)
+                commandId: toScopedGroupMutationCommandId(descriptor, authorityProof.principalId)
             }
             : semanticCommand
     };

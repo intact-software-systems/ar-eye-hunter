@@ -13,15 +13,45 @@ to_rallar_headless_worker_env_value() {
 	printf '"%s"' "${value}"
 }
 
+write_rallar_headless_worker_env_line() {
+	local destination="$1"
+	local key="$2"
+	local value="$3"
+	local quoted_value
+	quoted_value="$(to_rallar_headless_worker_env_value "${value}")" || return $?
+	printf '%s=%s\n' "${key}" "${quoted_value}" >>"${destination}" || return $?
+}
+
 write_rallar_headless_worker_env_var() {
 	local destination="$1"
 	local key="$2"
 	local value="${!key-}"
-	if [[ -n "${value}" || ( "${key}" == RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS && "${!key+x}" == x ) ]]; then
-		local quoted_value
-		quoted_value="$(to_rallar_headless_worker_env_value "${value}")" || return $?
-		printf '%s=%s\n' "${key}" "${quoted_value}" >>"${destination}" || return $?
+	if [[ -n "${value}" || ("${key}" == RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS && "${!key+x}" == x) ]]; then
+		write_rallar_headless_worker_env_line "${destination}" "${key}" "${value}" || return $?
 	fi
+}
+
+rallar_headless_worker_registers_agents() {
+	local register
+	register="$(printf '%s' "${RALLAR_BLACK_BOX_REGISTER-}" | tr '[:upper:]' '[:lower:]')"
+	[[ "${register}" == 1 || "${register}" == true || "${register}" == yes || "${register}" == on ]]
+}
+
+# A registered run gives every agent its own user, named after its agent id, so no
+# two agents share one principal's connect-time snapshot fan-out.
+write_rallar_headless_worker_registered_agent_credentials() {
+	local destination="$1"
+	if [[ -z "${RALLAR_BLACK_BOX_PASSWORD-}" ]]; then
+		echo "RALLAR_BLACK_BOX_REGISTER needs RALLAR_BLACK_BOX_PASSWORD for the per-agent users." >&2
+		return 1
+	fi
+
+	local local_index agent_id
+	for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
+		agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))")"
+		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "${agent_id}" || return $?
+		write_rallar_headless_worker_env_line "${destination}" "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "${RALLAR_BLACK_BOX_PASSWORD}" || return $?
+	done
 }
 
 write_rallar_headless_worker_env_file() (
@@ -43,7 +73,6 @@ EOF_ENV
 		PLAYWRIGHT_BROWSERS_PATH
 	)
 	local optional_vars=(
-		RALLAR_BLACK_BOX_USERNAME RALLAR_BLACK_BOX_PASSWORD
 		RALLAR_BLACK_BOX_CONTROL_TOKEN RALLAR_BLACK_BOX_CONTROL_READ_TOKEN
 		RALLAR_BLACK_BOX_REPORT_UPLOAD_URL RALLAR_BLACK_BOX_ENVIRONMENT
 		RALLAR_BLACK_BOX_TRANSPORT RALLAR_BLACK_BOX_STATS_INTERVAL_MS
@@ -64,9 +93,19 @@ EOF_ENV
 		write_rallar_headless_worker_env_var "${tmp_env_file}" "${key}" || exit $?
 	done
 
+	local per_agent_pattern
+	if rallar_headless_worker_registers_agents; then
+		write_rallar_headless_worker_registered_agent_credentials "${tmp_env_file}" || exit $?
+		per_agent_pattern='^RALLAR_BLACK_BOX_AGENT_[0-9]+_CONTROL_TOKEN$'
+	else
+		write_rallar_headless_worker_env_var "${tmp_env_file}" RALLAR_BLACK_BOX_USERNAME || exit $?
+		write_rallar_headless_worker_env_var "${tmp_env_file}" RALLAR_BLACK_BOX_PASSWORD || exit $?
+		per_agent_pattern='^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$'
+	fi
+
 	while IFS= read -r key; do
 		write_rallar_headless_worker_env_var "${tmp_env_file}" "${key}" || exit $?
-	done < <(compgen -e | grep -E '^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$' | sort || true)
+	done < <(compgen -e | grep -E "${per_agent_pattern}" | sort || true)
 
 	mv "${tmp_env_file}" "${destination}" || exit $?
 	chmod 0600 "${destination}" || exit $?

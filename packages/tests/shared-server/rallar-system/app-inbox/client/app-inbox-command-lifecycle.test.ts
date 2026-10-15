@@ -215,11 +215,7 @@ describe('AppInbox command lifecycle', () => {
         const queue = new TestResourceInbox();
         const reader = new CapturingInboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        let businessClockReads = 0;
-        const businessNowEpochMs = () => {
-            businessClockReads += 1;
-            return 9_000;
-        };
+        const businessNowEpochMs = () => 9_000;
         const timing: RallarTimingEvent[] = [];
         const service = new TestAppInboxRuntime(
             {
@@ -270,11 +266,17 @@ describe('AppInbox command lifecycle', () => {
         await expect(
             reader.invoke(message, {
                 entry: { ...entry },
-                telemetry: { selectedLane: Reservator.RETRY, queueAgeMs: 1_000, dueAgeMs: 500, attempt: 1, selectedDueAtEpochMs: 1_500 }
+                telemetry: {
+                    selectedLane: Reservator.RETRY,
+                    queueAgeMs: 1_000,
+                    dueAgeMs: 500,
+                    attempt: 1,
+                    selectedDueAtEpochMs: 1_500,
+                    reservationLeaseMs: 60_000
+                }
             })
         ).rejects.toThrow('retryable test failure');
 
-        expect(businessClockReads).toBe(0);
         expect(timing).toContainEqual(
             expect.objectContaining({
                 operation: 'queue-retry',

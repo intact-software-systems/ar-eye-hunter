@@ -16,7 +16,7 @@ const identity = { runId: 'alm-test', agentId: 'agent-1' };
 
 describe('set assertion control admission', () => {
     it.each([6, 11, 15, 30, 50] as const)('loads both canonical ALM recipes for %i participants', (participantCount) => {
-        const { recipes } = createAlmScaleRecipes({ participantCount, group, readyTimeoutMs: 45_000 });
+        const { recipes } = createAlmScaleRecipes({ participantCount, group, readyTimeoutMs: 45_000, almDiagnostics: false });
         expect(recipes).toHaveLength(2);
 
         for (const recipe of recipes) {
@@ -37,7 +37,7 @@ describe('set assertion control admission', () => {
     });
 
     it('requires and advertises the set operator for the canonical sender recipe', () => {
-        const { recipes } = createAlmScaleRecipes({ participantCount: 6, group, readyTimeoutMs: 45_000 });
+        const { recipes } = createAlmScaleRecipes({ participantCount: 6, group, readyTimeoutMs: 45_000, almDiagnostics: false });
         const features = computeDistributedAssertionFeatures(recipes);
         expect(features.operators).toContain('sameUniqueStringSet');
 

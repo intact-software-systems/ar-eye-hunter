@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export type CanonicalJsonInput = null | boolean | number | string | object;
 
 interface CanonicalJsonObjectEntry {
@@ -5,12 +7,8 @@ interface CanonicalJsonObjectEntry {
     readonly value: CanonicalJsonInput;
 }
 
-export async function sha256CanonicalJson(value: CanonicalJsonInput): Promise<string> {
-    const digest = await crypto.subtle.digest(
-        'SHA-256',
-        new TextEncoder().encode(serializeCanonicalJson(value))
-    );
-    return bytesToHex(new Uint8Array(digest));
+export function computeSha256CanonicalJson(value: CanonicalJsonInput): string {
+    return createHash('sha256').update(serializeCanonicalJson(value), 'utf8').digest('hex');
 }
 
 export function serializeCanonicalJson(value: CanonicalJsonInput): string {
@@ -160,10 +158,4 @@ function withActiveObject<Result>(
 
 function compareCanonicalJsonKeys(left: string, right: string): number {
     return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-    return Array.from(bytes)
-        .map((value) => value.toString(16).padStart(2, '0'))
-        .join('');
 }

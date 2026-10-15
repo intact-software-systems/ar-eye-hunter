@@ -40,6 +40,7 @@ describe('toRtcTransportVisitedPeerIds', () => {
         const nextHopsBySessionId = computeNoRttTopologyNextHops({
             topology,
             activeSessionIds: sessionIds,
+            preferredSourceSessionId: undefined,
             degreeLimit: config.degreeLimit,
             meshParamK: config.meshParamK
         });

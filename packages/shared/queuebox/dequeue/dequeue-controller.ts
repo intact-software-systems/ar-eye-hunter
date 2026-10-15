@@ -37,7 +37,6 @@ export class DequeueController<K, V, T> {
     public static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
     public static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
 
-    private static readonly MAX_CONSECUTIVE_FAILURE_RETRY = 5;
     private static readonly DEFAULT_RETURN_DEQUEUED_ENTRIES = false;
 
     private readonly log: Pick<Console, 'debug' | 'warn' | 'error'>;
@@ -238,50 +237,31 @@ export class DequeueController<K, V, T> {
         return this.returnDequeuedEntries ? finalized : new Map();
     }
 
+    /** A reservation or release error leaves the lane at once: the caller owns its backoff, never this slot. */
     private async dequeueLane(
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => Promise<T>,
         budget: DequeueController.LaneBudget | undefined
     ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
-        let consecutiveFailureCounter = 0;
         let claimedCount = 0;
         const allComputed = new Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>();
-        while (
-            this.checkIsTypesToDequeue(this.typesToDequeue()) &&
-            claimedCount < maxNumDequeue &&
-            consecutiveFailureCounter < DequeueController.MAX_CONSECUTIVE_FAILURE_RETRY
-        ) {
-            try {
-                const numToReserve = Math.min(
-                    budget?.maxToReserve ?? this.maxNumToReserve(),
-                    maxNumDequeue - claimedCount
-                );
-                if (numToReserve <= 0) {
-                    return allComputed;
-                }
-                if (!isPositiveSafeInteger(numToReserve)) {
-                    throw new TypeError('Reservation request requires a positive safe integer');
-                }
-                const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
-                claimedCount += reserved.size;
-                const processedCount = await this.computeAndReleaseReserved(reserved, computer, allComputed);
-                consecutiveFailureCounter = 0;
-                if (processedCount === 0) {
-                    return allComputed;
-                }
+        while (this.checkIsTypesToDequeue(this.typesToDequeue()) && claimedCount < maxNumDequeue) {
+            const numToReserve = Math.min(
+                budget?.maxToReserve ?? this.maxNumToReserve(),
+                maxNumDequeue - claimedCount
+            );
+            if (numToReserve <= 0) {
+                return allComputed;
             }
-            catch (error) {
-                const exception = error instanceof Error ? error : new Error(String(error));
-                consecutiveFailureCounter += 1;
-                if (!await this.backoffAfterDequeueFailure(exception, consecutiveFailureCounter)) {
-                    this.log.warn('Backoff with sleep interrupted, returning quietly.');
-                    break;
-                }
+            if (!isPositiveSafeInteger(numToReserve)) {
+                throw new TypeError('Reservation request requires a positive safe integer');
             }
-        }
-        if (consecutiveFailureCounter >= DequeueController.MAX_CONSECUTIVE_FAILURE_RETRY) {
-            this.log.warn(`Dequeue experienced ${consecutiveFailureCounter} failures in a row. Giving up ...`);
+            const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
+            claimedCount += reserved.size;
+            if (await this.computeAndReleaseReserved(reserved, computer, allComputed) === 0) {
+                return allComputed;
+            }
         }
         return allComputed;
     }
@@ -305,23 +285,6 @@ export class DequeueController<K, V, T> {
             }
         }
         return computed.size;
-    }
-
-    private async backoffAfterDequeueFailure(exception: Error, failureCounter: number): Promise<boolean> {
-        this.log.error(
-            `Exception caught while working on queue with these types: ${Array.from(this.typesToDequeue()).join(',')}`,
-            exception
-        );
-        try {
-            const sleepSeconds = toExponentialBackoffSeconds(failureCounter);
-            this.log.warn(`${failureCounter} attempt. Backoff sleeping ${sleepSeconds} secs`);
-            await sleep(sleepSeconds * 1000);
-            return true;
-        }
-        catch (e) {
-            this.log.warn('Exception caught in backoff', e);
-            return false;
-        }
     }
 }
 
@@ -352,17 +315,4 @@ function requireNonNull<T>(v: T | null | undefined, message = 'Value was null/un
         throw new Error(message);
     }
     return v;
-}
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Minimal exponential backoff in seconds.
- */
-function toExponentialBackoffSeconds(failureCounter: number, maxSeconds = 60): number {
-    const fc = Math.max(1, Math.floor(failureCounter));
-    const secs = Math.pow(2, fc - 1); // 1,2,4,8,...
-    return Math.min(secs, maxSeconds);
 }

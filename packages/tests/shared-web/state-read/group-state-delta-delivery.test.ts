@@ -197,7 +197,7 @@ function toProducedClientMessage(revision: number): ALMessage {
                 payload: {}
             }
         }]
-    }, 'server-1');
+    }, 'server-1').map(({ entry }) => entry);
     const entry = entries[0];
     if (!entry) {
         throw new Error('Client event did not produce an envelope');

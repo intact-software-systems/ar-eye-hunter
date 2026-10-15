@@ -307,7 +307,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             outboxWriter
         });
         const staleConfigRead = await baselineMutation.configMutation.read(
-            await topologyConfigCommand(
+            topologyConfigCommand(
                 groupRef,
                 'lifecycle-change-after-conflict',
                 'tree'
@@ -399,7 +399,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 }
             }
         );
-        const seedCommand = await toTopologyAppInboxCommand({
+        const seedCommand = toTopologyAppInboxCommand({
             actor: { principalId: authority.clientId, sessionId: authority.sessionId },
             groupRef,
             requestId: 'lifecycle-conflict-seed-override',
@@ -422,7 +422,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             createApiV1TestQueueResilience()
         );
         assert.ok((await seedPending).right);
-        const command = await toTopologyAppInboxCommand({
+        const command = toTopologyAppInboxCommand({
             actor: { principalId: authority.clientId, sessionId: authority.sessionId },
             groupRef,
             requestId: 'lifecycle-change-after-conflict',
@@ -501,7 +501,7 @@ Deno.test(
                 isPlatformAdmin: () => false,
                 outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
             });
-            const command = await topologyConfigCommand(
+            const command = topologyConfigCommand(
                 groupRef,
                 'pglite-overlapping-archive',
                 'tree'

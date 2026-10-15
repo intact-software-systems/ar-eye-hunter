@@ -6,9 +6,9 @@ import type { GroupMutationDescriptor } from '../group-state/group-state-service
 import { decodeGroupMutationDescriptor } from '../group-state/inbox/decode-group-state-inbox-authority.ts';
 import { assertGroupMutationCommand } from '../group-state/mutation/command-validation/assert-group-mutation-command.ts';
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { readRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
+import { decodeRtcRttAppInboxCommand } from '../rtc-rtt/inbox/rtc-rtt-app-inbox-authority.ts';
 import {
-    readDurableTopologyAppInboxCommand,
+    decodeDurableTopologyAppInboxCommand,
     toTopologyAppInboxType
 } from '../topology/inbox/topology-app-inbox-command.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
@@ -143,7 +143,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
             }, 'Logical CRDT AppInbox command');
         }
         if (type === AppInboxType.RTC_RTT_SUBMIT) {
-            const command = readRtcRttAppInboxCommand(value);
+            const command = decodeRtcRttAppInboxCommand(value);
             return encodeJsonWireValue({
                 actor: command.actor,
                 requestId: command.requestId,
@@ -155,7 +155,7 @@ function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWi
         if (!TOPOLOGY_APP_INBOX_TYPES.has(type)) {
             return undefined;
         }
-        const command = readDurableTopologyAppInboxCommand(value);
+        const command = decodeDurableTopologyAppInboxCommand(value);
         if (toTopologyAppInboxType(command.operation) !== type) {
             throw new TypeError('Topology operation differs from AppInbox type');
         }

@@ -72,6 +72,7 @@ export interface ResourceInboxWorkAdvertisementOptions {
     readonly checkFinalization: RateLimiter;
     readonly maxAttempts: number;
     readonly finalizationStaleAfterMs: number;
+    readonly reservationLeaseMs: number;
 }
 
 export type ResourceInboxTerminalReleaseStatus =
@@ -174,9 +175,6 @@ export function isIdempotentHandlerFinalizedRelease(input: HandlerFinalizedRelea
             !Resource.isExpiredResourceEntry(current, observedAt);
         if (!commonFinalization) {
             return false;
-        }
-        if (reserved.typeId === EnqueuedType.APP_INBOX) {
-            return true;
         }
 
         if (
@@ -296,30 +294,21 @@ export function toResourceInboxFinalizationReservationOptions(
 }
 
 export function toResourceInboxWorkAdvertisementOptions(
-    input: unknown
+    input: ResourceInboxWorkAdvertisementOptions
 ): ResourceInboxWorkAdvertisementOptions {
-    if (
-        typeof input !== 'object' ||
-        input === null ||
-        !('maxAttempts' in input) ||
-        typeof input.maxAttempts !== 'number' ||
-        !Number.isSafeInteger(input.maxAttempts) ||
-        input.maxAttempts < 1
-    ) {
+    if (!Number.isSafeInteger(input.maxAttempts) || input.maxAttempts < 1) {
         throw new Error('maxAttempts must be a positive safe integer');
     }
-    if (
-        !('finalizationStaleAfterMs' in input) ||
-        typeof input.finalizationStaleAfterMs !== 'number' ||
-        !Number.isSafeInteger(input.finalizationStaleAfterMs) ||
-        input.finalizationStaleAfterMs < 0
-    ) {
+    if (!Number.isSafeInteger(input.finalizationStaleAfterMs) || input.finalizationStaleAfterMs < 0) {
         throw new Error('finalizationStaleAfterMs must be a non-negative safe integer');
     }
+    if (!Number.isSafeInteger(input.reservationLeaseMs) || input.reservationLeaseMs < 0) {
+        throw new Error('reservationLeaseMs must be a non-negative safe integer');
+    }
     if (
-        !('checkTimeout' in input) || !(input.checkTimeout instanceof RateLimiter) ||
-        !('checkFairness' in input) || !(input.checkFairness instanceof RateLimiter) ||
-        !('checkFinalization' in input) || !(input.checkFinalization instanceof RateLimiter)
+        !(input.checkTimeout instanceof RateLimiter) ||
+        !(input.checkFairness instanceof RateLimiter) ||
+        !(input.checkFinalization instanceof RateLimiter)
     ) {
         throw new Error('work advertisement checks must be rate limiters');
     }
@@ -329,7 +318,8 @@ export function toResourceInboxWorkAdvertisementOptions(
         checkFairness: input.checkFairness,
         checkFinalization: input.checkFinalization,
         maxAttempts: input.maxAttempts,
-        finalizationStaleAfterMs: input.finalizationStaleAfterMs
+        finalizationStaleAfterMs: input.finalizationStaleAfterMs,
+        reservationLeaseMs: input.reservationLeaseMs
     };
 }
 

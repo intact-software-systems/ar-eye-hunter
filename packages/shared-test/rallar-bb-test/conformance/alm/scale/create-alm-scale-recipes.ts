@@ -19,6 +19,7 @@ export interface AlmScaleRecipeInput {
     readonly participantCount: 6 | 11 | 15 | 30 | 50;
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly readyTimeoutMs: number;
+    readonly almDiagnostics: boolean;
 }
 
 export interface AlmScaleRecipes {

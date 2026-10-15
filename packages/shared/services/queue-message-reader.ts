@@ -6,7 +6,8 @@ import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-type
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
-    type DequeueResourceEntryOptions
+    type DequeueResourceEntryOptions,
+    type ResourceInboxHandlerFinalizedSuccess
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -56,8 +57,8 @@ export class QueueMessageReader {
         typesToDequeue: Set<string>,
         resilience: ResourceInboxResilience,
         readLaneBudgets?: DequeueController.ReadLaneBudgets
-    ): Promise<void> {
-        await QueueBoxUtilities.defaultDequeue(
+    ): Promise<number> {
+        return await QueueBoxUtilities.defaultDequeue(
             {
                 qbox: this.repository,
                 typesToDequeue: typesToDequeue,
@@ -72,7 +73,7 @@ export class QueueMessageReader {
     private async dispatchQueuedMessage(
         entry: ResourceEntry,
         attemptTelemetry: ResourceInboxAttemptTelemetry
-    ): Promise<void> {
+    ): Promise<void | ResourceInboxHandlerFinalizedSuccess> {
         let message: ALMessage;
         try {
             message = entry.typeId === EnqueuedType.APP_OUTBOX && entry.key.topicId === RTC_TOPOLOGY_OUTBOX_TOPIC
@@ -91,6 +92,6 @@ export class QueueMessageReader {
         if (!callback) {
             throw new Error(`No ${this.config.enqueueType} callback registered for type ${message.payload.typeId}`);
         }
-        await callback.onMessage(message, entry, attemptTelemetry);
+        return await callback.onMessage(message, entry, attemptTelemetry);
     }
 }

@@ -58,6 +58,11 @@ export type ComputedGroupStateSyncEffect =
         payload: GroupStateDeltaEnvelope;
     }>;
 
+export interface StateSyncEntry {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+}
+
 export interface ComputedClientStateSync {
     readonly commandId: string;
     readonly aggregateRef: ClientPrincipalRef;
@@ -81,7 +86,7 @@ export interface ComputedGroupStateSync {
 export function computeClientStateSyncEntries(
     computed: ComputedClientStateSync,
     senderId: string
-): readonly ResourceEntry[] {
+): readonly StateSyncEntry[] {
     validateComputedStateSyncFacts(computed, senderId);
     if (
         !Number.isSafeInteger(computed.acceptedCausalRevision) ||
@@ -128,7 +133,7 @@ export function computeGroupStateSyncEntries(
             effect,
             senderId,
             topicId
-        });
+        }).map(({ entry }) => entry);
     });
 }
 
@@ -144,7 +149,7 @@ interface ToStateSyncEntryInput {
     readonly topicId: string;
 }
 
-function toStateSyncEntries(input: ToStateSyncEntryInput): readonly ResourceEntry[] {
+function toStateSyncEntries(input: ToStateSyncEntryInput): readonly StateSyncEntry[] {
     const { computed, effect, senderId, topicId } = input;
     const causalIdentity = typeof computed.acceptedCausalRevision === 'number'
         ? `revision=${computed.acceptedCausalRevision}`
@@ -194,7 +199,7 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly ResourceEntr
                 : {}),
             payload: { typeId: topicId, contentType: 'application/json', resource: JSON.stringify(effect.payload) }
         })];
-    return messages.map((message) => toStateSyncPageEntry(computed, message));
+    return messages.map((message) => ({ message, entry: toStateSyncPageEntry(computed, message) }));
 }
 
 interface StateSyncEnvelopeFacts {

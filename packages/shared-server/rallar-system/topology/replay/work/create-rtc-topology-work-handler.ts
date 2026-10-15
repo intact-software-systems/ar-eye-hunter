@@ -158,14 +158,14 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         reservationFinish
     });
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
-    const computation = await computeRtcTopologyWork(computationInput);
+    const computation = computeRtcTopologyWork(computationInput);
     const computed = computation.fold(
         () => {
             throw new RuntimeStateWriteConflictError();
         },
         (prepared) => prepared
     );
-    const issues = await validateRtcTopologyWork(computationInput, computation);
+    const issues = validateRtcTopologyWork(computationInput, computation);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }
@@ -237,8 +237,8 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
-    const computedWrite = await computeRtcTopologyWorkWrite(writeInput);
-    const issues = await validateRtcTopologyWorkWrite(writeInput, computedWrite);
+    const computedWrite = computeRtcTopologyWorkWrite(writeInput);
+    const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }

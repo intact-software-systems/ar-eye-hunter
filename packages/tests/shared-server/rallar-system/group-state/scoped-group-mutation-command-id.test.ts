@@ -19,9 +19,9 @@ const descriptor: GroupMutationDescriptor = {
 };
 
 describe('scoped group AppInbox command identity', () => {
-    it('survives an authenticated session renewal for the same stable principal', async () => {
-        await expect(toScopedGroupMutationCommandId(descriptor, 'owner')).resolves.toBe(
-            await toScopedGroupMutationCommandId(
+    it('survives an authenticated session renewal for the same stable principal', () => {
+        expect(toScopedGroupMutationCommandId(descriptor, 'owner')).toBe(
+            toScopedGroupMutationCommandId(
                 {
                     ...descriptor,
                     request: { ...descriptor.request, actorSessionId: 'owner-session-2' }
@@ -31,9 +31,9 @@ describe('scoped group AppInbox command identity', () => {
         );
     });
 
-    it('isolates operation, caller, target, and group scope with a bounded opaque key', async () => {
-        const baseline = await toScopedGroupMutationCommandId(descriptor, 'owner');
-        const variants = await Promise.all([
+    it('isolates operation, caller, target, and group scope with a bounded opaque key', () => {
+        const baseline = toScopedGroupMutationCommandId(descriptor, 'owner');
+        const variants = [
             toScopedGroupMutationCommandId({ ...descriptor, operation: 'appointDirector' }, 'owner'),
             toScopedGroupMutationCommandId(descriptor, 'other-owner'),
             toScopedGroupMutationCommandId(
@@ -41,7 +41,7 @@ describe('scoped group AppInbox command identity', () => {
                 'owner'
             ),
             toScopedGroupMutationCommandId({ ...descriptor, groupId: 'other-group' }, 'owner')
-        ]);
+        ];
 
         expect(baseline).toMatch(/^group-app-inbox:[0-9a-f]{64}$/);
         expect(baseline.length).toBeLessThanOrEqual(128);

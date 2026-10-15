@@ -12,9 +12,9 @@ import type {
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
+import { assertClientMutationMatchesRecompute } from '@shared-test/shared-server/assert-client-mutation-matches-recompute.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
 import {
@@ -208,8 +208,8 @@ describe('client mutation computation determinism', () => {
         });
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        assertClientMutation({ command, read, computed: first });
-        assertClientMutation({ command, read, computed: second });
+        assertClientMutationMatchesRecompute({ command, read, computed: first });
+        assertClientMutationMatchesRecompute({ command, read, computed: second });
         expect(second).toEqual(first);
         expect(command).toEqual(deepFreeze(structuredClone(command)));
         expect(read).toEqual(deepFreeze(structuredClone(read)));

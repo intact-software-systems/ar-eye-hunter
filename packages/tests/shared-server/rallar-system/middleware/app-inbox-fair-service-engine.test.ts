@@ -32,6 +32,7 @@ describe('registered AppInbox fair service engine', () => {
         const resilience = createQueueResilience();
         registerApplicationQueueReaderTasks({
             engine,
+            nowEpochMs: Date.now,
             inboxQueueReader: reader,
             outboxQueueReader: new OutboxQueueReader(queue),
             appInboxResilience: resilience,

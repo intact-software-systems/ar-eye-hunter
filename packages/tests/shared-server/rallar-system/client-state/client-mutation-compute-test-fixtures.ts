@@ -1,3 +1,7 @@
+import { Temporal } from '@js-temporal/polyfill';
+
+import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import type { ComputeAuthorisedWsConnectOperationInput } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -15,20 +19,23 @@ import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system
 import { toHeartbeatClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-heartbeat-client-session-mutation-input.ts';
 import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { toWsSessionLifecycleKey } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1'
 };
 
-export async function principalCommand(
+export function principalCommand(
     commandId = 'principal-1',
     displayName: string | undefined = 'Alice'
-): Promise<ClientMutationCommand> {
-    return await command(
+): ClientMutationCommand {
+    return command(
         toUpsertClientPrincipalMutationInput({
             scope: TEST_SCOPE,
             principalId: 'alice',
@@ -44,8 +51,8 @@ export async function principalCommand(
     );
 }
 
-export async function instanceCommand(commandId = 'instance-1'): Promise<ClientMutationCommand> {
-    return await command(
+export function instanceCommand(commandId = 'instance-1'): ClientMutationCommand {
+    return command(
         toUpsertClientInstanceMutationInput({
             scope: TEST_SCOPE,
             principalId: 'alice',
@@ -61,12 +68,12 @@ export async function instanceCommand(commandId = 'instance-1'): Promise<ClientM
     );
 }
 
-export async function connectCommand(
+export function connectCommand(
     commandId = 'connect-1',
     generationId = 'generation-1',
     connectedAtEpochMs = 2_000
-): Promise<ClientMutationCommand> {
-    return await command(
+): ClientMutationCommand {
+    return command(
         toConnectClientSessionMutationInput({
             operation: 'connectSession',
             scope: TEST_SCOPE,
@@ -85,11 +92,11 @@ export async function connectCommand(
     );
 }
 
-export async function heartbeatCommand(
+export function heartbeatCommand(
     commandId = 'heartbeat-1',
     generationId = 'generation-1'
-): Promise<ClientMutationCommand> {
-    return await command(
+): ClientMutationCommand {
+    return command(
         toHeartbeatClientSessionMutationInput({
             scope: TEST_SCOPE,
             principalId: 'alice',
@@ -108,11 +115,11 @@ export async function heartbeatCommand(
     );
 }
 
-export async function disconnectCommand(
+export function disconnectCommand(
     commandId = 'disconnect-1',
     generationId = 'generation-1'
-): Promise<ClientMutationCommand> {
-    return await command(
+): ClientMutationCommand {
+    return command(
         toDisconnectClientSessionMutationInput({
             operation: 'disconnectSession',
             scope: TEST_SCOPE,
@@ -131,9 +138,9 @@ export async function disconnectCommand(
     );
 }
 
-export async function expiryCommand(
+export function expiryCommand(
     commandId = 'expire-client-session:session-1:generation-1:1:8000'
-): Promise<ClientMutationCommand> {
+): ClientMutationCommand {
     const input = toExpireClientSessionMutationInput({
         ...TEST_SCOPE,
         principalId: 'alice',
@@ -143,7 +150,76 @@ export async function expiryCommand(
         generationVersion: 1,
         observedExpiresAtEpochMs: 8_000
     });
-    return await command({ ...input, commandId, requestId: commandId }, 8_000);
+    return command({ ...input, commandId, requestId: commandId }, 8_000);
+}
+
+export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOperationInput {
+    const authSession = {
+        clientId: 'alice',
+        username: 'alice',
+        sessionId: 'session-1',
+        accessToken: 'test-token',
+        issuedAtEpochMs: 0,
+        expiresAtEpochMs: 10_000
+    };
+    const connection = toAuthorisedWsClientConnection({
+        authSession,
+        generationId: 'generation-1',
+        input: { ...TEST_SCOPE, clientInstanceId: 'browser', connectedAtEpochMs: 2_000, expiresAtEpochMs: 8_000 }
+    });
+    const requestId = `authorised-ws:connect:${authSession.sessionId}:${connection.generationId}`;
+    const command = toClientMutationCommand(
+        toConnectClientSessionMutationInput({
+            operation: 'connectAuthorisedWsSession',
+            scope: TEST_SCOPE,
+            principalId: connection.principalId,
+            clientInstanceId: connection.clientInstanceId,
+            sessionId: authSession.sessionId,
+            request: {
+                generationId: connection.generationId,
+                presenceState: 'online',
+                transport: 'ws',
+                connectionId: connection.generationId,
+                connectedAtEpochMs: connection.generationStartedAtEpochMs,
+                expiresAtEpochMs: connection.expiresAtEpochMs,
+                actorPrincipalId: connection.principalId,
+                actorSessionId: authSession.sessionId,
+                requestId
+            },
+            defaultCommandId: requestId,
+            identityDefaults: { platform: connection.platform, principalUsername: authSession.username }
+        }),
+        {
+            nowEpochMs: 1_000,
+            serviceId: 'client-service',
+            eventId: `event:${requestId}`,
+            attemptCount: 1,
+            expireAtEpochMs: 20_000
+        },
+        toClientMutationIssuedSessionAuthority(authSession, TEST_SCOPE, 'connectAuthorisedWsSession')
+    );
+    const identity = {
+        scope: { kind: 'client', ...TEST_SCOPE, principalId: 'alice', clientInstanceId: 'browser' },
+        sessionId: authSession.sessionId
+    } as const;
+    return {
+        connection,
+        command,
+        read: emptyRead(command),
+        lifecycleFacts: {
+            ...identity,
+            generationId: connection.generationId,
+            generationStartedAtEpochMs: connection.generationStartedAtEpochMs
+        },
+        lifecycleRead: {
+            identity,
+            key: toWsSessionLifecycleKey(identity),
+            revision: null,
+            persistedExpireAtEpochMs: null,
+            state: null
+        },
+        completionFacts: { entry: completionEntry(), completedAtEpochMs: 8_000 }
+    };
 }
 
 export function emptyRead(command: ClientMutationCommand): ClientMutationRead {
@@ -225,10 +301,10 @@ export function sessionFrom(computed: ClientMutationComputedAppliedWrite): Clien
     return computed.session.value;
 }
 
-async function command(
+function command(
     input: ClientMutationCommandInput,
     nowEpochMs = 1_000
-): Promise<ClientMutationCommand> {
+): ClientMutationCommand {
     const authority = input.operation === 'expireSession'
         ? toClientMutationSystemAuthority('client-service')
         : toClientMutationIssuedSessionAuthority(
@@ -243,7 +319,7 @@ async function command(
             input.aggregateRef,
             input.operation
         );
-    return await toClientMutationCommand(
+    return toClientMutationCommand(
         input,
         {
             nowEpochMs,
@@ -254,4 +330,20 @@ async function command(
         },
         authority
     );
+}
+
+function completionEntry(): ResourceEntry {
+    return {
+        key: { topicId: 'app-inbox.client-state', resourceId: 'authorised-connect', contextId: 'client-state' },
+        resource: '{}',
+        typeId: EnqueuedType.APP_INBOX,
+        audit: {
+            date: Temporal.PlainTime.from('00:00:01'),
+            createdBy: 'client-service',
+            createdTs: Temporal.PlainDateTime.from('1970-01-01T00:00:01'),
+            expiryTs: NEVER_EXPIRE_TS
+        },
+        status: EntityStatus.RESERVED,
+        dequeueAudit: { attempts: 1 }
+    };
 }

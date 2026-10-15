@@ -823,6 +823,17 @@ planned with. Channel health itself is `rallar.rtc.status()`: each lane's
 overflow policy, its `queuedItemCount` and its send `counters` (see RTC Status
 And Readiness below).
 
+Before a congestion decision, the RTC carrier protects its hand-off with a
+per-session rate limiter (20 hand-offs per second) and a circuit breaker (open
+after 10 consecutive failures, for 10 s). They gate the session's own sends and its control
+and ACK hand-offs; relay forwards and retransmissions bypass them. Each refused
+hand-off is stated as an `rtc-handoff-refusal` outbound diagnostic naming its
+reason, `rate-limited` or `circuit-open`, and its message count, and each new
+high of the bytes a data channel held queued when a submission read it as an
+`rtc-queued-bytes-high-water` diagnostic. The black-box harness counts them per
+connection beside the congestion counters, as `rateLimited`, `circuitOpen` and
+`queuedBytesHighWater`; no facade method reads them.
+
 **Limit:** a backpressured RTC room send is refused or held as a whole: the
 carrier does not route around one backpressured peer, reduce a relay's fanout
 or apply `replace-latest` or a bounded queue on the reliable lane, an RTC

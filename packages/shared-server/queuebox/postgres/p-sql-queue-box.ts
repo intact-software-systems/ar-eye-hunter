@@ -1,4 +1,4 @@
-import type { Temporal } from '@js-temporal/polyfill';
+import { Temporal } from '@js-temporal/polyfill';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
@@ -31,7 +31,6 @@ import {
 } from '@shared/queuebox/resource-entry-observations.ts';
 import {
     NEW_AND_RETRY_STATUSES,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -85,14 +84,14 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
+        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs, reservationLeaseMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
         const isTimedOutReservedEntryToLock: boolean = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
                 await this.resourceInbox.reservations.isTimeoutOnReservedEntries(
                     typeIds,
-                    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+                    Temporal.Duration.from({ milliseconds: reservationLeaseMs }),
                     maxAttempts
                 ),
             false

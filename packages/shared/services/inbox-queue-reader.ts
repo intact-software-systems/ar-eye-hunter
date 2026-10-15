@@ -91,7 +91,8 @@ export class InboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<void> {
+    /** Resolves with the number of entries this invocation claimed. */
+    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<number> {
         const isAppInbox = typesToDequeue.size === 1 && typesToDequeue.has(EnqueuedType.APP_INBOX);
         const scope = isAppInbox ? `${EnqueuedType.APP_INBOX}:${resilience.retryPolicy.maxAttempts}` : undefined;
         if (this.pressureScope !== scope) {
@@ -100,7 +101,7 @@ export class InboxQueueReader {
             this.pressureSample = undefined;
             this.pressureCursor = null;
         }
-        await this.reader.dequeue(
+        return await this.reader.dequeue(
             typesToDequeue,
             resilience,
             isAppInbox ? () => this.readLaneBudgets(resilience.retryPolicy.maxAttempts) : undefined

@@ -99,7 +99,7 @@ function createExpectedMatchResults(): NonNullable<ArenaMatchState['results']> {
 
 describe('ALM scale recipes', () => {
     it.each([15, 30, 50] as const)('declares complete receipt audiences and valid commands for %i participants', (participantCount) => {
-        const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000 });
+        const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
 
         expect(scale.recipes.map((recipe) => recipe.recipeId)).toEqual(['alm-scale-director', 'alm-scale-player']);
         expect(scale.metadata).toMatchObject({
@@ -205,8 +205,37 @@ describe('ALM scale recipes', () => {
         }
     });
 
+    // A cohort's registrations serialize on the API, so the lazy sign-in must not spend the group requests' 5 s.
+    it.each(['director', 'player'] as const)('signs the %s in under the 45 s setup allowance before any group request', (role) => {
+        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+        const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+
+        expect(recipe.commands[0]).toMatchObject({
+            kind: 'http.request',
+            commandId: `alm-scale-${role}-sign-in`,
+            request: { method: 'GET', path: '/api/state/apps/scale-app/workspaces/scale-workspace/stats/me/realtime' },
+            response: { acceptedStatusCodes: [200] },
+            timeoutMs: 45_000
+        });
+        const groupRequests = flattenCommands(recipe.commands).filter((command) => command.kind === 'http.request').slice(1);
+        expect(groupRequests.map((command) => command.commandId)).toEqual([
+            `alm-scale-${role}-ensure-group`,
+            `alm-scale-${role}-ensure-member`,
+            `alm-scale-${role}-audience`
+        ]);
+        expect(groupRequests.map((command) => command.timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+    });
+
+    it.each([false, true])('connects both roles with the ALM diagnostic stream %s', (almDiagnostics) => {
+        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics });
+
+        const connects = scale.recipes.flatMap((recipe) => flattenCommands(recipe.commands))
+            .filter((command) => command.kind === 'rtc.connect');
+        expect(connects.map((command) => command.rallar?.almDiagnostics)).toEqual([almDiagnostics, almDiagnostics]);
+    });
+
     it('authors coherent AR Eye shot and completed-match wire specimens', () => {
-        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000 });
+        const scale = createAlmScaleRecipes({ participantCount: 15, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const playerCommands = flattenCommands(scale.recipes[1].commands);
         const shots = playerCommands.filter((command) => command.kind === 'messages.send');
         expect(shots).toHaveLength(6);

@@ -16,7 +16,7 @@ import {
 } from '@shared-server/rallar-system/client-state/persistence/client-state-principal-storage-key.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeMutationCommandDigest, decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -76,7 +76,7 @@ describe('client mutation command and request projection', () => {
         ).toThrow(ClientMutationRejectedError);
     });
 
-    it('hashes the exact input and authority before adding persisted facts', async () => {
+    it('hashes the exact input and authority before adding persisted facts', () => {
         const input = toConnectClientSessionMutationInput({
             operation: 'connectSession',
             scope,
@@ -107,14 +107,14 @@ describe('client mutation command and request projection', () => {
             expireAtEpochMs: 10_000
         };
 
-        const command = await toClientMutationCommand(input, facts, authority);
+        const command = toClientMutationCommand(input, facts, authority);
         if (command.operation !== 'connectSession') {
             throw new Error(`Expected a connectSession command, received ${command.operation}`);
         }
 
         expect(command.facts).toEqual({
             ...facts,
-            commandHash: await hashMutationCommand(
+            commandHash: computeMutationCommandDigest(
                 decodeJsonWireValue({ ...input, authority }, 'Client mutation command identity')
             )
         });
@@ -202,7 +202,7 @@ const malformedCommandActor = {
     traceId: null
 } as const;
 
-function malformedAuthoritativeCommands(): readonly unknown[] {
+function malformedAuthoritativeCommands(): readonly object[] {
     return [
         [],
         malformedPrincipalCommand(),

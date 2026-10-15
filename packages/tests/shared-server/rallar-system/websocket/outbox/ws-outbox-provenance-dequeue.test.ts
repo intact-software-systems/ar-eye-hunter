@@ -73,7 +73,7 @@ describe('producer provenance through WS dequeue', () => {
                     admittedAudience: ['peer']
                 }
             };
-            const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+            const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
             await fixture.repository.upsert(
                 WS_OUTBOX_PROVENANCE_NAMESPACE,
                 toWsOutboxProvenanceKey(entry.key),
@@ -125,7 +125,7 @@ describe('producer provenance through WS dequeue', () => {
                 expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
                 target: { kind: 'scoped-world-broadcast', scope: SCOPE }
             };
-            const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+            const proof = { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
             await fixture.repository.upsert(
                 WS_OUTBOX_PROVENANCE_NAMESPACE,
                 toWsOutboxProvenanceKey(entry.key),
@@ -245,7 +245,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
         qos: { durability: { algo: 'local-outbox' } }
     });
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant());
-    const proof = await createProof(message.id.msgId, entry);
+    const proof = createProof(message.id.msgId, entry);
     const repository = new FakeRuntimeStateRepository();
     const key = toWsOutboxProvenanceKey(entry.key);
     await repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, key, JSON.stringify(proof), proof.expiresAtMs);
@@ -287,7 +287,7 @@ async function createFixture(): Promise<ProvenanceDequeueFixture> {
     return { message, entry, proof, repository, key, socket, native, authentication, engine, stores, settled, service };
 }
 
-async function createProof(messageId: string, entry: ResourceEntry): Promise<WsOutboxProvenance> {
+function createProof(messageId: string, entry: ResourceEntry): WsOutboxProvenance {
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
         producerKind: 'state-sync',
@@ -298,7 +298,7 @@ async function createProof(messageId: string, entry: ResourceEntry): Promise<WsO
         expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
         target: { kind: 'scoped-unicast', peerId: 'peer', scope: SCOPE, admittedAudience: ['peer'] }
     };
-    return { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+    return { ...facts, digest: computeWsOutboxProvenanceDigest(entry, facts) };
 }
 
 interface ProvenanceAuthentication {

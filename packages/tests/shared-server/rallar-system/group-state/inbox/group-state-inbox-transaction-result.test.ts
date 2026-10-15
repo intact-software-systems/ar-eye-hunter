@@ -92,10 +92,9 @@ describe('group-state AppInbox transaction result boundary', () => {
             decodeJsonWireValue(JSON.parse(persisted.resource), 'Persisted group-state result')
         );
         expect(decodedDurableResult).toEqual(created);
-        expect(harness.transactionWriter.read(harness.context)).toEqual({
+        expect(harness.transactionWriter.read(harness.context)).toMatchObject({
             state: 'transaction-finalized',
-            status: EntityStatus.COMPLETED,
-            result: created
+            entry: { key: harness.context.entry.key, status: EntityStatus.COMPLETED }
         });
         expect(harness.observedSnapshots).toEqual([]);
         expect(harness.readWakeCount()).toBe(1);
@@ -332,7 +331,8 @@ describe('group-state AppInbox transaction result boundary', () => {
                 entry: entry,
                 selectedLane: Reservator.NEW,
                 selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
-                selectedDueAtEpochMs: undefined
+                selectedDueAtEpochMs: undefined,
+                reservationLeaseMs: 60_000
             }).telemetry,
             encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
         };

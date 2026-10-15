@@ -199,7 +199,7 @@ describe('direct resource outbox writes', () => {
         const client = createComputedClientEventStateSync(createClientEvent());
         const group = createComputedGroupStateSync(createGroupSnapshot());
         const entries = [
-            ...computeClientStateSyncEntries(client, 'server-1'),
+            ...computeClientStateSyncEntries(client, 'server-1').map(({ entry }) => entry),
             ...computeGroupStateSyncEntries(group, 'server-1')
         ];
         const writes = entries.map(computeAppOutboxInsert);
@@ -242,7 +242,7 @@ describe('direct resource outbox writes', () => {
             ]
         };
 
-        const [entry] = computeClientStateSyncEntries(computed, 'server-1');
+        const [{ entry }] = computeClientStateSyncEntries(computed, 'server-1');
 
         expect(entry.typeId).toBe(EnqueuedType.WS_OUTBOX);
         const message = decodePersistedALMessage(entry.resource);
