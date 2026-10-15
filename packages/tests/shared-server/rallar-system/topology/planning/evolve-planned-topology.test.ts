@@ -203,6 +203,44 @@ describe('evolve a tree through formation and director appointment', () => {
         expect(replanned.snapshot.nextHopsBySessionId).toEqual(joined.snapshot.nextHopsBySessionId);
     });
 
+    it.each([
+        { memberCount: 30, burstSizes: [3, 4, 15, 7] },
+        { memberCount: 30, burstSizes: Array.from({ length: 29 }, () => 1) },
+        { memberCount: 50, burstSizes: [5, 10, 20, 14] },
+        { memberCount: 50, burstSizes: Array.from({ length: 49 }, () => 1) }
+    ])(
+        'grows a director-first tree of $memberCount members by join bursts within the director depth bound',
+        ({ memberCount, burstSizes }) => {
+            const memberSessionIds = createRtcTopologyMemberIds(memberCount);
+            const directorSessionId = memberSessionIds[Math.floor(memberCount / 2)]!;
+            const joinOrder = [directorSessionId, ...memberSessionIds.filter((sessionId) => sessionId !== directorSessionId)];
+            const toDirectedGroup = (count: number) =>
+                toRtcTopologyGroupWithDirector(createRtcTopologyGroupSnapshot('evolve-director-first', joinOrder.slice(0, count)), directorSessionId);
+            let accepted = planTree({ group: toDirectedGroup(1), previous: undefined });
+            let joinedCount = 1;
+
+            for (const burstSize of burstSizes) {
+                joinedCount += burstSize;
+                const group = toDirectedGroup(joinedCount);
+                const joined = planTree({ group, previous: accepted.snapshot });
+                const rootedAtDirector = planTree({ group, previous: undefined });
+                const replanned = planTree({ group, previous: joined.snapshot });
+
+                expect(joined.planningObservation).toMatchObject({ incrementalPlanCount: 1, incrementalFallbackReasons: [] });
+                expect(computeRtcTopologyHopEccentricity(joined.snapshot.nextHopsBySessionId, directorSessionId)).toBeLessThanOrEqual(
+                    computeRtcTopologyHopEccentricity(rootedAtDirector.snapshot.nextHopsBySessionId, directorSessionId)
+                );
+                expect(Math.max(...Object.values(joined.snapshot.nextHopsBySessionId).map((nextHops) => nextHops.length)))
+                    .toBeLessThanOrEqual(5);
+                expectValidPlan(joined);
+                expect(replanned.planningObservation.incrementalFallbackReasons).toEqual([]);
+                expect(replanned.snapshot.nextHopsBySessionId).toEqual(joined.snapshot.nextHopsBySessionId);
+                accepted = joined;
+            }
+            expect(joinedCount).toBe(memberCount);
+        }
+    );
+
     it('rebuilds a tree when more members leave at once than the delta budget allows', () => {
         const memberSessionIds = createRtcTopologyMemberIds(22);
         const formed = planTree({

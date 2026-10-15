@@ -53,16 +53,8 @@ export function computeEvolvedTopologyNextHops(
         return { outcome: 'full-rebuild', reason: rebuildReason };
     }
 
-    let evolved = reconstructPreviousGraph(input);
-    try {
-        for (const sessionId of delta.removedSessionIds) {
-            evolved = applyMembershipChange(input, evolved, { sessionId, type: MessageType.TO_SERVER_LEAVE });
-        }
-        for (const sessionId of delta.addedSessionIds) {
-            evolved = applyMembershipChange(input, evolved, { sessionId, type: MessageType.TO_SERVER_ENTER });
-        }
-    }
-    catch {
+    const evolved = computeEvolvedGraph(input, delta);
+    if (evolved === undefined) {
         return { outcome: 'full-rebuild', reason: 'update-failed' };
     }
 
@@ -81,6 +73,13 @@ export function computeEvolvedTopologyNextHops(
 interface TopologyMembershipDelta {
     readonly addedSessionIds: readonly string[];
     readonly removedSessionIds: readonly string[];
+}
+
+interface LeaderBreadthFirstJoinsInput {
+    readonly evolve: EvolvePlannedTopologyInput;
+    readonly graph: WeightedGraph;
+    readonly leaderSessionId: string;
+    readonly joinedSessionIds: readonly string[];
 }
 
 interface TopologyMembershipChange {
@@ -141,18 +140,70 @@ function computeHopEccentricity(
     nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
     sessionId: string
 ): number {
-    const hopsBySessionId = new Map([[sessionId, 0]]);
-    const frontier = [sessionId];
-    for (const current of frontier) {
-        const currentHops = hopsBySessionId.get(current) ?? 0;
-        for (const neighbour of nextHopsBySessionId[current] ?? []) {
-            if (!hopsBySessionId.has(neighbour)) {
-                hopsBySessionId.set(neighbour, currentHops + 1);
-                frontier.push(neighbour);
-            }
+    return computeHopLevels((current) => nextHopsBySessionId[current] ?? [], sessionId).length - 1;
+}
+
+/** Breadth-first levels from the root, each in canonical order, so a level-order scan is deterministic. */
+function computeHopLevels(
+    neighboursOf: (sessionId: string) => readonly string[],
+    rootSessionId: string
+): readonly (readonly string[])[] {
+    const visited = new Set([rootSessionId]);
+    const levels: string[][] = [[rootSessionId]];
+    for (let depth = 0; depth < levels.length; depth += 1) {
+        const nextLevel = [...new Set((levels[depth] ?? []).flatMap(neighboursOf))]
+            .filter((sessionId) => !visited.has(sessionId))
+            .sort(compareRtcTopologyIdentifiers);
+        nextLevel.forEach((sessionId) => visited.add(sessionId));
+        if (nextLevel.length > 0) {
+            levels.push(nextLevel);
         }
     }
-    return Math.max(...hopsBySessionId.values());
+    return levels;
+}
+
+function computeEvolvedGraph(
+    input: EvolvePlannedTopologyInput,
+    delta: TopologyMembershipDelta
+): WeightedGraph | undefined {
+    let evolved = reconstructPreviousGraph(input);
+    try {
+        for (const sessionId of delta.removedSessionIds) {
+            evolved = applyMembershipChange(input, evolved, { sessionId, type: MessageType.TO_SERVER_LEAVE });
+        }
+        if (input.kind === 'tree' && input.leaderSessionId !== undefined) {
+            return computeLeaderBreadthFirstJoins({
+                evolve: input,
+                graph: evolved,
+                leaderSessionId: input.leaderSessionId,
+                joinedSessionIds: delta.addedSessionIds
+            });
+        }
+        for (const sessionId of delta.addedSessionIds) {
+            evolved = applyMembershipChange(input, evolved, { sessionId, type: MessageType.TO_SERVER_ENTER });
+        }
+    }
+    catch {
+        return undefined;
+    }
+    return evolved;
+}
+
+/** Attaching each join to the shallowest open session keeps the leader within the no-RTT rooted depth by construction. */
+function computeLeaderBreadthFirstJoins(input: LeaderBreadthFirstJoinsInput): WeightedGraph | undefined {
+    const { degreeLimit, globalGraph } = input.evolve;
+    const joined = input.graph.copy();
+    for (const sessionId of input.joinedSessionIds) {
+        const parentSessionId = computeHopLevels((current) => joined.neighbors(current), input.leaderSessionId)
+            .flat()
+            .find((candidate) => joined.degree(candidate) < degreeLimit);
+        if (parentSessionId === undefined) {
+            return undefined;
+        }
+        joined.addNode(sessionId, toClientVertex(sessionId, degreeLimit));
+        joined.addEdge(parentSessionId, sessionId, toTreeEdge(globalGraph, parentSessionId, sessionId));
+    }
+    return joined;
 }
 
 function applyMembershipChange(
@@ -211,12 +262,7 @@ function reconstructPreviousGraph(input: EvolvePlannedTopologyInput): WeightedGr
         compareRtcTopologyIdentifiers
     );
     for (const sessionId of previousSessionIds) {
-        graph.addNode(sessionId, {
-            id: sessionId,
-            type: VertexType.CLIENT,
-            state: VertexState.MEMBER,
-            degreeLimit: input.degreeLimit
-        });
+        graph.addNode(sessionId, toClientVertex(sessionId, input.degreeLimit));
     }
 
     for (const from of previousSessionIds) {
@@ -224,16 +270,23 @@ function reconstructPreviousGraph(input: EvolvePlannedTopologyInput): WeightedGr
             if (from === to || !graph.hasNode(to) || graph.hasEdge(from, to)) {
                 continue;
             }
-            graph.addEdge(from, to, {
-                from,
-                to,
-                weight: readGlobalEdgeWeight(input.globalGraph, from, to) ??
-                    computeCanonicalTopologyPairWeight(from, to)
-            });
+            graph.addEdge(from, to, toTreeEdge(input.globalGraph, from, to));
         }
     }
 
     return graph;
+}
+
+function toClientVertex(sessionId: string, degreeLimit: number): VertexProp {
+    return { id: sessionId, type: VertexType.CLIENT, state: VertexState.MEMBER, degreeLimit };
+}
+
+function toTreeEdge(globalGraph: WeightedGraph, from: string, to: string): EdgeProp {
+    return {
+        from,
+        to,
+        weight: readGlobalEdgeWeight(globalGraph, from, to) ?? computeCanonicalTopologyPairWeight(from, to)
+    };
 }
 
 function readGlobalEdgeWeight(

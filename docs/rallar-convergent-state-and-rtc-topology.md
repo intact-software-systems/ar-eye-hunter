@@ -312,6 +312,8 @@ in it exceeds its depth in the no-RTT tree rooted at it. A group without a leade
 its fingerprint and plan are as before. A tree attaches joins incrementally whatever their number;
 any other delta, a mesh's joins included, falls back to a full rebuild when it exceeds
 `max(2, ceil(previous members / 4))` changes, and the invariant validator judges every evolved tree.
+With a leader, joins attach breadth-first from the leader, each to the shallowest session with spare
+degree (depth, then canonical order), so the leader stays within the depth bound as the tree grows.
 In a weighted room graph an unmeasured pair weighs the worst measured RTT plus its hashed canonical
 spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
 the no-RTT tree rooted at it.
