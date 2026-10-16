@@ -310,6 +310,17 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(stderr.includes('::error::')).toBe(storeFailed);
     });
 
+    it('installs an API unit that refuses to start, also at boot, while the store is marked unusable', async () => {
+        const deployScript = await readFile(deployScriptPath, 'utf8');
+        const helperScript = await readFile(helperScriptPath, 'utf8');
+        const apiUnit = /cat >\/etc\/systemd\/system\/rallar-api-v1\.service <<EOF\n([\s\S]*?)\nEOF\n/u.exec(deployScript)?.[1] ?? '';
+
+        expect(apiUnit.split('[Service]')[0]).toContain('\nConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}\n');
+        expect(helperScript).toContain(
+            'RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-v1.store-failure}"'
+        );
+    });
+
     it('reports an unusable store in the status', async (context) => {
         const stubDirectory = await createStubDirectory(context, {
             systemctl: recordingStub,

@@ -199,6 +199,7 @@ cat >/etc/systemd/system/rallar-api-v1.service <<EOF
 Description=Rallar API-v1 controller
 After=network-online.target postgresql.service
 Wants=network-online.target postgresql.service
+ConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}
 
 [Service]
 Type=simple

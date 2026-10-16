@@ -210,7 +210,10 @@ the services are stopped, the script attempts to start them again, except
 API-v1 after a failed database wipe or migration: the script reports it as an
 `::error::`, writes `/etc/rallar/api-v1.store-failure` (shown by
 `07-status-controller.sh`), and leaves `rallar-api-v1.service` stopped until a
-rollout succeeds.
+rollout succeeds. The unit that `02-deploy-controller.sh` installs carries
+`ConditionPathExists=!/etc/rallar/api-v1.store-failure`, so systemd skips
+starting API-v1 at boot or by hand while that file exists; `08-rollout-controller.sh`
+does not rewrite the unit, so re-run `02-deploy-controller.sh` once to install it.
 
 Override the branch/ref:
 
