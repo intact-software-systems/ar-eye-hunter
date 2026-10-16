@@ -447,7 +447,7 @@ async function releaseResourceInboxConflicts<V>(
             key: success.key,
             value: success.value,
             exception: new ResourceInboxHandlerEntryError(conflict.entry, conflict.cause)
-        });
+        }, conflict.retryDelayMs);
         if (released !== undefined) {
             result.set(success.key, { key: success.key, value: released.value, computedValue: success.computedValue });
         }
@@ -471,7 +471,8 @@ async function releaseResourceInboxFailures(
 
 async function releaseResourceInboxFailure(
     dependencies: ResourceInboxDequeueDependencies,
-    original: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>
+    original: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>,
+    retryDelayMs: number | null = null
 ): Promise<DequeueController.Failure<Resource.Key, ResourceInboxAttempt> | undefined> {
     const failure = toHandlerEntryFailure(original);
     if (
@@ -486,11 +487,12 @@ async function releaseResourceInboxFailure(
         });
         return failure;
     }
-    const decision = computeResourceInboxFailureDecision(
+    const decision = computeResourceInboxFailureDecision({
         failure,
-        dependencies.resilience.retryPolicy,
-        dependencies.jitterUnit()
-    );
+        policy: dependencies.resilience.retryPolicy,
+        jitterUnit: dependencies.jitterUnit(),
+        retryDelayMs
+    });
     const entry = decision.exhausted && dependencies.options.onRetryExhausted
         ? await finalizeResourceInboxFailure(dependencies, failure)
         : [...(await dependencies.repository.releaseEntries([
@@ -527,11 +529,18 @@ async function finalizeResourceInboxFailure(
     return finalized;
 }
 
+interface ComputeResourceInboxFailureDecisionInput {
+    readonly failure: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>;
+    readonly policy: ResourceInboxRetryPolicy;
+    readonly jitterUnit: number;
+    /** A retryable conflict's ceiling on the backoff; null keeps the backoff. */
+    readonly retryDelayMs: number | null;
+}
+
 function computeResourceInboxFailureDecision(
-    failure: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>,
-    policy: ResourceInboxRetryPolicy,
-    jitterUnit: number
+    input: ComputeResourceInboxFailureDecisionInput
 ): ResourceInboxFailureDecision {
+    const { failure, policy, jitterUnit } = input;
     if (isNotReadyException(failure.exception)) {
         return {
             classification: 'not-ready',
@@ -550,10 +559,15 @@ function computeResourceInboxFailureDecision(
     return {
         classification: 'retryable',
         disposition: retry.status === 'retry'
-            ? { status: EntityStatus.RETRY, delayMs: retry.delayMs }
+            ? { status: EntityStatus.RETRY, delayMs: toConflictRetryDelayMs(retry.delayMs, input.retryDelayMs) }
             : { status: EntityStatus.FAILED, delayMs: null },
         exhausted: retry.status === 'failed'
     };
+}
+
+/** The backoff's short early delays stand; a conflict's ceiling replaces only the long ones. */
+function toConflictRetryDelayMs(backoffDelayMs: number, retryDelayMs: number | null): number {
+    return retryDelayMs === null ? backoffDelayMs : Math.min(backoffDelayMs, retryDelayMs);
 }
 
 function toResourceInboxAttempts(

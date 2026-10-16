@@ -10,6 +10,7 @@ import {
     isCanonicalGroupPresenceSummaryEntry,
     type GroupPresenceSummaryWorkData
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -17,6 +18,7 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { writeCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work.ts';
@@ -53,7 +55,11 @@ import {
     type GroupPresenceSummaryCoalescedWrite
 } from './compute-group-presence-summary-coalesced-write.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
-import { computeGroupDeltaProvenance, writeGroupDeltaProvenance } from './group-delta-provenance.ts';
+import {
+    computeGroupDeltaProvenance,
+    writeGroupDeltaProvenance,
+    type GroupDeltaProvenanceInsert
+} from './group-delta-provenance.ts';
 import {
     computeGroupPresenceSummaryWork,
     toTopologyReplanEnqueueFacts,
@@ -90,6 +96,15 @@ interface GroupPresenceSummaryExpansion {
 
 type GroupPresenceSummaryPhase = 'claim' | 'read' | 'compute' | 'write';
 
+type GroupPresenceSummaryWriteOutcome = 'written' | 'summary-changed';
+
+/**
+ * Another server summarised the group between this attempt's read and its write (D304). The next attempt reads the
+ * fresh rows and recomputes, so it cannot repeat the lost write: its retry is capped at this, not the queue's backoff,
+ * which reaches 1–8 s from the sixth attempt. The early backoff stays shorter, and the attempt budget still bounds it.
+ */
+export const GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS = 100;
+
 /** The queue caps a work page at 256 rows; one page of pending APP_OUTBOX work is scanned per expansion. */
 const COALESCED_SUMMARY_WORK_SCAN_LIMIT = 256;
 
@@ -119,7 +134,7 @@ export class GroupPresenceSummaryWork {
         ]);
         if (stored.status === 'concurrent-change') {
             return Either.ofLeft({
-                code: 'group-presence-summary-roster-inconsistent',
+                code: 'group-presence-summary-concurrent-change',
                 message: 'Group presence summary rows changed while they were read'
             });
         }
@@ -246,7 +261,7 @@ export class GroupPresenceSummaryWork {
     public async processReservedEntry(
         message: ALMessage,
         entry: ResourceEntry
-    ): Promise<void> {
+    ): Promise<ResourceInboxHandlerRetryableConflict | undefined> {
         const database = this.options.database;
         if (!database) {
             throw new TypeError('Presence-summary queue processing requires a database');
@@ -263,7 +278,17 @@ export class GroupPresenceSummaryWork {
                     reservation: toReservationRead(sibling)
                 }))
             ]);
-            await this.expandItems(database, primary, items);
+            const written = await this.expandItems(database, primary, items);
+            if (written === 'summary-changed') {
+                await this.releaseClaimedWork(claimed);
+                return new ResourceInboxHandlerRetryableConflict(
+                    entry,
+                    'group-presence-summary-changed',
+                    new RuntimeStateWriteConflictError(),
+                    GROUP_PRESENCE_SUMMARY_CONFLICT_RETRY_DELAY_MS
+                );
+            }
+            return undefined;
         }
         catch (error) {
             await this.releaseClaimedWork(claimed);
@@ -275,7 +300,7 @@ export class GroupPresenceSummaryWork {
         database: PSqlSql,
         primary: GroupPresenceSummaryWorkData,
         items: readonly GroupPresenceSummaryWorkItem[]
-    ): Promise<void> {
+    ): Promise<GroupPresenceSummaryWriteOutcome> {
         const workCount = { coalescedWorkCount: items.length };
         const read = await timeRallarAsync(
             this.options.timing,
@@ -299,22 +324,42 @@ export class GroupPresenceSummaryWork {
         };
         this.recordPhase(primary, 'compute', effectDetails, computeStartedAtMs);
         const proofs = expansions.flatMap((expansion) => computeGroupDeltaProvenance(expansion.computed));
-        await timeRallarAsync(
+        const outcome = await timeRallarAsync(
             this.options.timing,
             this.toPhaseTimingEvent(primary, 'write', effectDetails),
-            async () =>
-                await runInPSqlTransaction(database, async (transaction) => {
-                    await this.write(transaction, coalesced);
-                    await writeGroupDeltaProvenance(transaction, proofs);
-                    for (const reservationFinish of coalesced.reservationFinishes) {
-                        if (!await writeResourceInboxReservationFinish(transaction, reservationFinish)) {
-                            throw new Error('Presence-summary reservation changed before commit');
-                        }
-                    }
-                })
+            async () => await this.writeExpansion(database, coalesced, proofs)
         );
-        this.options.wakeQueue?.();
-        this.recordFormationMetrics(coalesced);
+        if (outcome === 'written') {
+            this.options.wakeQueue?.();
+            this.recordFormationMetrics(coalesced);
+        }
+        return outcome;
+    }
+
+    /** One transaction for the summary, its deltas, their proofs and every reservation finish; a lost summary write rolls all back. */
+    private async writeExpansion(
+        database: PSqlSql,
+        coalesced: GroupPresenceSummaryCoalescedWrite,
+        proofs: readonly GroupDeltaProvenanceInsert[]
+    ): Promise<GroupPresenceSummaryWriteOutcome> {
+        try {
+            await runInPSqlTransaction(database, async (transaction) => {
+                await this.write(transaction, coalesced);
+                await writeGroupDeltaProvenance(transaction, proofs);
+                for (const reservationFinish of coalesced.reservationFinishes) {
+                    if (!await writeResourceInboxReservationFinish(transaction, reservationFinish)) {
+                        throw new Error('Presence-summary reservation changed before commit');
+                    }
+                }
+            });
+            return 'written';
+        }
+        catch (error) {
+            if (error instanceof GroupPresenceSummaryChangedError) {
+                return 'summary-changed';
+            }
+            throw error;
+        }
     }
 
     private expand(
@@ -525,6 +570,14 @@ async function writePresenceSummary(
             returning revision
         `;
     if (rows.length !== 1) {
-        throw new Error('Presence summary changed before write');
+        throw new GroupPresenceSummaryChangedError();
+    }
+}
+
+/** Rolls the expansion's transaction back when its summary's compare-and-set loses; the handler answers a conflict. */
+class GroupPresenceSummaryChangedError extends Error {
+    constructor() {
+        super('Presence summary changed before write');
+        this.name = 'GroupPresenceSummaryChangedError';
     }
 }

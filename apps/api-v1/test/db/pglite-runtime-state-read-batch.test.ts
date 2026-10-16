@@ -81,6 +81,10 @@ Deno.test('PGlite probes a version of exactly the rows a batch reads that every 
         const initial = await repository.readRuntimeStateBatchVersion(selectors);
 
         assert.deepEqual(initial?.expireAtEpochMs, [FUTURE_MS]);
+        // The full read names the same version from its own statement, so a value read with it can be kept under it.
+        const versioned = await repository.readRuntimeStateBatchWithVersion(selectors);
+        assert.deepEqual(versioned.version, initial);
+        assert.deepEqual(versioned.selections, await repository.readRuntimeStateBatch(selectors));
         assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);
         await repository.upsert(`${namespace}:sibling`, 'prefix:a', 'sibling', FUTURE_MS);
         assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);

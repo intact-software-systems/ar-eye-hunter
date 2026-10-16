@@ -1,21 +1,17 @@
 import { LatestRepository } from '../LatestRepository.ts';
 
-/** What the cheap probe tells about the stored value without reading it. */
-export interface VersionProbe {
-    readonly version: string;
+/** A full read of the value with the version of exactly what it read, from the same read. */
+export interface VersionProbedRead<V> {
+    readonly value: V;
+    /** Null when the read could not name its version; such a value is returned but never kept. */
+    readonly version: string | null;
     /** Null when only a write can change the value; otherwise the first instant it may read differently. */
     readonly validUntilEpochMs: number | null;
 }
 
-/** A full read of the value and the instant it stays valid until, null when only a write can change it. */
-export interface VersionProbedRead<V> {
-    readonly value: V;
-    readonly validUntilEpochMs: number | null;
-}
-
 export interface VersionProbedReadThroughCacheDependencies<K, V> {
-    /** Undefined when nothing is stored for the key. */
-    readonly readVersion: (key: K) => Promise<VersionProbe | undefined>;
+    /** The cheap probe: the current version of the value, or undefined when nothing is stored. */
+    readonly readVersion: (key: K) => Promise<string | undefined>;
     readonly readValue: (key: K) => Promise<VersionProbedRead<V> | undefined>;
     readonly toCacheKey: (key: K) => string;
     readonly nowEpochMs: () => number;
@@ -28,10 +24,10 @@ interface VersionedEntry<V> {
 }
 
 /**
- * A read-through cache whose every read asks the store for the current version first: an
- * unchanged version is served from memory, any other version reads the value again. A full read
- * is kept only when a second probe after it finds the first probe's version, so a write landing
- * around the read is never served under a version it does not belong to.
+ * A read-through cache that serves a kept value only while the store still reports the version that value was read
+ * at: a key with a kept value costs one probe when unchanged and a probe plus a read when changed, and a key with none
+ * costs one read. A value is kept under the version its own read reported, never a probe's, so a write that lands
+ * before or during the read cannot be served under an older version.
  */
 export class VersionProbedReadThroughCache<K, V> {
     private readonly dependencies: VersionProbedReadThroughCacheDependencies<K, V>;
@@ -44,32 +40,22 @@ export class VersionProbedReadThroughCache<K, V> {
 
     public async read(key: K): Promise<V | undefined> {
         const cacheKey = this.dependencies.toCacheKey(key);
-        const probed = await this.dependencies.readVersion(key);
         const nowEpochMs = this.dependencies.nowEpochMs();
         const cached = this.entries.readAt(cacheKey, nowEpochMs);
-        if (probed !== undefined && cached?.version === probed.version) {
+        if (cached !== undefined && await this.dependencies.readVersion(key) === cached.version) {
             return cached.value;
         }
         const read = await this.dependencies.readValue(key);
-        const confirmed = read === undefined ? undefined : await this.dependencies.readVersion(key);
-        if (read === undefined || probed === undefined || confirmed?.version !== probed.version) {
+        if (read === undefined || read.version === null) {
             this.entries.take(cacheKey);
             return read?.value;
         }
-        const validUntilEpochMs = toEarliestInstant(read.validUntilEpochMs, confirmed.validUntilEpochMs);
         this.entries.acceptAt({
             key: cacheKey,
-            value: { version: probed.version, value: read.value },
+            value: { version: read.version, value: read.value },
             nowEpochMs,
-            ...(validUntilEpochMs === null ? {} : { expireAtEpochMs: validUntilEpochMs })
+            ...(read.validUntilEpochMs === null ? {} : { expireAtEpochMs: read.validUntilEpochMs })
         });
         return read.value;
     }
-}
-
-function toEarliestInstant(left: number | null, right: number | null): number | null {
-    if (left === null) {
-        return right;
-    }
-    return right === null ? left : Math.min(left, right);
 }

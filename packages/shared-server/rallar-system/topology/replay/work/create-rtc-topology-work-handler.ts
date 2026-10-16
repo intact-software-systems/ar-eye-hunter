@@ -71,6 +71,7 @@ interface RtcTopologyWorkHandlerOptions {
     readonly topologyPlanning: Pick<
         GroupTopologyPlanningService,
         | 'readTopologyPlanningAuthority'
+        | 'readTopologyPlanningAuthorityIfPresent'
         | 'readDurationNowMs'
         | 'observeCommittedTopology'
         | 'recordTopologyPlanningObservation'
@@ -154,6 +155,11 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         entry,
         reservationFinish
     });
+    if (computationInput === null) {
+        // The group is gone: there is no layout to plan or remove, so the row is settled work (D290).
+        await writeRtcTopologyWorkCompletion(options.database, reservationFinish);
+        return;
+    }
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
     const computation = computeRtcTopologyWork(computationInput);
     const issues = validateRtcTopologyWork(computationInput, computation);
@@ -177,9 +183,10 @@ interface ReadRtcTopologyWorkComputationInput extends RtcTopologyWorkAttemptInpu
     readonly reservationFinish: ResourceInboxReservationFinish;
 }
 
+/** Null when the group the work names no longer exists, so there is nothing to compute. */
 async function readRtcTopologyWorkComputationInput(
     input: ReadRtcTopologyWorkComputationInput
-): Promise<ComputeRtcTopologyWorkInput> {
+): Promise<ComputeRtcTopologyWorkInput | null> {
     const { options, facts, mutationRead, entry, reservationFinish } = input;
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
@@ -187,7 +194,7 @@ async function readRtcTopologyWorkComputationInput(
     const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
         // A membership change plans from the group's current stored state, which is at or past
         // the revision that asked (D290); an RTT refresh still carries the snapshot it measured.
-        options.topologyPlanning.readTopologyPlanningAuthority({
+        options.topologyPlanning.readTopologyPlanningAuthorityIfPresent({
             groupRef,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
             ...(work.kind === 'rtt-refresh' ? { knownGroup: work.groupSnapshot } : {})
@@ -198,6 +205,9 @@ async function readRtcTopologyWorkComputationInput(
         }),
         options.executionRepository.readTopologyInputFingerprint(groupRef)
     ]);
+    if (authority === null) {
+        return null;
+    }
     return {
         facts,
         read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint },

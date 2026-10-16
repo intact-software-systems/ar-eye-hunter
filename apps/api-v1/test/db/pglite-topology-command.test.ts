@@ -345,10 +345,10 @@ Deno.test(
                 topologySnapshotRepository: snapshots
             });
             const readTopologyPlanningAuthority = topologyManagement.planning
-                .readTopologyPlanningAuthority.bind(
+                .readTopologyPlanningAuthorityIfPresent.bind(
                     topologyManagement.planning
                 );
-            topologyManagement.planning.readTopologyPlanningAuthority = async (input) => {
+            topologyManagement.planning.readTopologyPlanningAuthorityIfPresent = async (input) => {
                 const authority = await readTopologyPlanningAuthority(input);
                 authorityReadCount += 1;
                 if (authorityReadCount === 1) {

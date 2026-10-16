@@ -43,17 +43,21 @@ export type ResourceInboxHandlerFinalized =
 
 /**
  * A handler's optimistic conflict that committed nothing: a value, not an operational failure. The queue releases the
- * still-reserved entry on the retry path, with its attempt count and backoff, and logs the cause chain once.
+ * still-reserved entry on the retry path, with its attempt count and backoff, and logs the cause chain once. A conflict
+ * whose next attempt recomputes from fresh rows names a short retry delay that caps the backoff, never the attempt
+ * budget; null keeps the queue's backoff.
  */
 export class ResourceInboxHandlerRetryableConflict {
     readonly entry: ResourceEntry;
     readonly code: string;
     readonly cause: Error;
+    readonly retryDelayMs: number | null;
 
-    constructor(entry: ResourceEntry, code: string, cause: Error) {
+    constructor(entry: ResourceEntry, code: string, cause: Error, retryDelayMs: number | null = null) {
         this.entry = entry;
         this.code = code;
         this.cause = cause;
+        this.retryDelayMs = retryDelayMs;
     }
 }
 

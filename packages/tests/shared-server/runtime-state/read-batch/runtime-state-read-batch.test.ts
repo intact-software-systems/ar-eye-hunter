@@ -248,7 +248,7 @@ describe('runtime-state read batches', () => {
         );
         expect(query.source).not.toMatch(/\blike\b|\bsimilar\b|~/iu);
         expect(query.source).not.toMatch(/jsonb_agg/iu);
-        expect(query.values.filter((value) => typeof value === 'boolean')).toEqual([true, true]);
+        expect(query.values.filter((value) => typeof value === 'boolean')).toEqual([true]);
         expect(query.source).not.toMatch(/for\s+update|pg_advisory|lock\s+table/iu);
         for (
             const secret of [
@@ -331,7 +331,7 @@ function toDriverRow(selectorOrdinal: number, entry: RuntimeStateEntry): PSqlRow
         expire_at_timestamp: String(entry.expireAtTimestamp),
         updated_timestamp: entry.updatedTimestamp,
         revision: String(entry.revision),
-        row_version: null
+        row_version: '1/(0,1)'
     };
 }
 

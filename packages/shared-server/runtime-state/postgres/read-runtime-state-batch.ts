@@ -2,7 +2,8 @@ import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
 import {
     type RuntimeStateReadBatchSelection,
     type RuntimeStateReadBatchSelector,
-    type RuntimeStateReadBatchVersion
+    type RuntimeStateReadBatchVersion,
+    type RuntimeStateVersionedReadBatch
 } from '../read-batch/runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchResult } from '../read-batch/validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from '../read-batch/validate-runtime-state-read-batch-selectors.ts';
@@ -48,6 +49,23 @@ export async function readRuntimeStateBatch(
 }
 
 /**
+ * The selection with the version of exactly the rows it returned, from the same statement and so the same
+ * database snapshot (D289): a value assembled from these rows is current for as long as a probe reports this
+ * version.
+ */
+export async function readRuntimeStateBatchWithVersion(
+    sql: RuntimeStateReadBatchQuery,
+    input: readonly RuntimeStateReadBatchSelector[]
+): Promise<RuntimeStateVersionedReadBatch> {
+    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const rows = await selectRuntimeStateBatchRows(sql, selectors, true);
+    return {
+        selections: validateRuntimeStateReadBatchResult(selectors, toRuntimeStateReadBatchSelections(selectors, rows)),
+        version: toRuntimeStateReadBatchVersion(selectors, rows)
+    };
+}
+
+/**
  * The same selection without the stored values, reduced to the identity of every selected row
  * version (D289): any write of a selected row, a delete and re-insert included, writes a new row
  * version, so equal versions mean no selected row was written in between.
@@ -72,8 +90,7 @@ async function selectRuntimeStateBatchRows(
            round(extract(epoch from matched.expire_at_ts) * 1000)::bigint::text as expire_at_timestamp,
            to_jsonb(matched.updated_ts) #>> '{}' as updated_timestamp,
            matched.revision::text as revision,
-           case when ${includeValues} then null else matched.xmin::text || '/' || matched.ctid::text end
-             as row_version
+           matched.xmin::text || '/' || matched.ctid::text as row_version
     from (
       select descriptor.ordinality as selector_ordinal,
              descriptor.value ->> 'kind' as selector_kind,

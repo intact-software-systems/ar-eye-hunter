@@ -6,7 +6,7 @@ import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-control
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
+import type { OnQueuedMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import type { QueueBoxUtilities } from './queue-box-utilities.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
@@ -33,7 +33,8 @@ export class OutboxQueueReader {
         });
     }
 
-    onOutboxMessageDo(type: string, callback: OnMessageCallback): this {
+    /** A handler may answer a typed outcome, such as a retryable conflict with its own retry delay (D304). */
+    onOutboxMessageDo(type: string, callback: OnQueuedMessageCallback): this {
         this.reader.onMessageDo(type, callback);
         return this;
     }

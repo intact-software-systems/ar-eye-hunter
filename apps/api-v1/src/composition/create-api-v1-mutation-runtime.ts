@@ -299,7 +299,7 @@ function createApiV1MutationResources(
         clientSnapshotCache: new ClientStateSnapshotReadThroughCache({ clientsRepository }),
         groupSnapshotCache: new GroupStateSnapshotReadThroughCache({ groupsRepository }),
         groupCurrentSnapshotCache: new GroupStateCurrentSnapshotCache({
-            durable: groupsRepository,
+            repository: groupsRepository,
             versionReader: runtimeStateRepository,
             nowEpochMs,
             maxEntries: GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES

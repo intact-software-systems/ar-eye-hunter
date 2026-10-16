@@ -124,13 +124,26 @@ export class GroupTopologyPlanningService {
     async readTopologyPlanningAuthority(
         input: ReadGroupTopologyPlanningAuthorityInput
     ): Promise<GroupTopologyPlanningAuthority> {
+        return requireGroupTopologyPlanningAuthority(
+            input.groupRef,
+            await this.readTopologyPlanningAuthorityIfPresent(input)
+        );
+    }
+
+    /** The planning authority, or null when neither the store nor the caller holds the group: nothing to plan for. */
+    async readTopologyPlanningAuthorityIfPresent(
+        input: ReadGroupTopologyPlanningAuthorityInput
+    ): Promise<GroupTopologyPlanningAuthority | null> {
         const currentGroup = await this.dependencies.readCurrentGroupSnapshot(
             input.groupRef,
             input.knownGroup
         );
         const group = input.knownGroup
             ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup)
-            : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
+            : currentGroup;
+        if (group === undefined) {
+            return null;
+        }
         const [config, rttMeasurements, replanning] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
             this.dependencies.readRttMeasurements(group),
@@ -354,14 +367,14 @@ export class GroupTopologyPlanningService {
     }
 }
 
-function requireGroupTopologyPlanningSnapshot(
+function requireGroupTopologyPlanningAuthority(
     groupRef: GroupRef,
-    snapshot: GroupSnapshot | undefined
-): GroupSnapshot {
-    if (!snapshot) {
+    authority: GroupTopologyPlanningAuthority | null
+): GroupTopologyPlanningAuthority {
+    if (authority === null) {
         throw new Error(`Group snapshot not found: ${groupRef.groupId}`);
     }
-    return snapshot;
+    return authority;
 }
 
 interface ReconfigureGroupTopologyResponseInput {

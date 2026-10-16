@@ -587,6 +587,40 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(retiredRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
     });
 
+    it('completes group-revision work for a removed group without planning or publishing (D290)', async () => {
+        const queue = new InMemoryQueueBox();
+        const outboxQueueReader = new OutboxQueueReader(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        const planning = createGroupTopologyRuntimeOwners({
+            findGroupSnapshotByRef: () => undefined,
+            readCurrentGroupSnapshot: async () => undefined,
+            readRttMeasurements: () => [],
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: snapshots
+        }).planning;
+        const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
+            outboxQueueReader,
+            database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }),
+            topologyPlanning: planning,
+            executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
+        });
+        const group = createGroupSnapshot(4);
+        await enqueueGroupRevisionWork(outboxQueueReader, group);
+        const reserved = await queue.reserveEntries({
+            typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1
+        });
+        const entry = [...reserved.values()][0]!;
+
+        await expect(handler.onMessage(decodePersistedALMessage(entry.resource), entry)).resolves.toBeUndefined();
+
+        expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect(await snapshots.findSnapshot(group.group)).toBeUndefined();
+    });
+
     it('skips sub-threshold RTT work before planning and reuses a qualifying retry decision', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
@@ -619,6 +653,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),
@@ -738,6 +773,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority: async () => authority,
+                readTopologyPlanningAuthorityIfPresent: async () => authority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),
@@ -839,6 +875,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),

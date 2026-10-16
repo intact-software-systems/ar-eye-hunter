@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { VersionProbedReadThroughCache } from '@shared/cache/store-backed/version-probed-read-through-cache.ts';
+import { VersionProbedReadThroughCache, type VersionProbedRead } from '@shared/cache/store-backed/version-probed-read-through-cache.ts';
 
 interface StoredDocument {
     readonly version: string;
@@ -8,7 +8,7 @@ interface StoredDocument {
     readonly validUntilEpochMs: number | null;
 }
 
-/** A versioned store that counts its cheap probes and its full reads. */
+/** A versioned store that counts its cheap probes and its full reads; a full read reports its own version. */
 function createStore(initial: StoredDocument | undefined) {
     let current = initial;
     const counts = { probes: 0, fullReads: 0 };
@@ -17,15 +17,15 @@ function createStore(initial: StoredDocument | undefined) {
         write(next: StoredDocument | undefined): void {
             current = next;
         },
-        readVersion: async (_key: string) => {
+        readVersion: async (_key: string): Promise<string | undefined> => {
             counts.probes += 1;
-            return current === undefined ? undefined : { version: current.version, validUntilEpochMs: null };
+            return current?.version;
         },
-        readValue: async (_key: string) => {
+        readValue: async (_key: string): Promise<VersionProbedRead<string> | undefined> => {
             counts.fullReads += 1;
             return current === undefined
                 ? undefined
-                : { value: current.body, validUntilEpochMs: current.validUntilEpochMs };
+                : { value: current.body, version: current.version, validUntilEpochMs: current.validUntilEpochMs };
         }
     };
 }
@@ -44,15 +44,14 @@ function createCache(
 }
 
 describe('VersionProbedReadThroughCache', () => {
-    it('serves a second read of an unchanged version from one probe and no full read', async () => {
+    it('reads a key it keeps nothing for once, and serves the unchanged value after from one probe', async () => {
         const store = createStore({ version: 'v1', body: 'first', validUntilEpochMs: null });
         const cache = createCache(store, () => 1_000);
 
         expect(await cache.read('doc')).toBe('first');
+        expect(store.counts).toEqual({ probes: 0, fullReads: 1 });
         expect(await cache.read('doc')).toBe('first');
-
-        // The first read probes, reads and confirms; the second only probes.
-        expect(store.counts).toEqual({ probes: 3, fullReads: 1 });
+        expect(store.counts).toEqual({ probes: 1, fullReads: 1 });
     });
 
     it('reads the value again once a write moves the probed version', async () => {
@@ -63,29 +62,31 @@ describe('VersionProbedReadThroughCache', () => {
         store.write({ version: 'v2', body: 'second', validUntilEpochMs: null });
 
         expect(await cache.read('doc')).toBe('second');
-        expect(store.counts.fullReads).toBe(2);
+        expect(store.counts).toEqual({ probes: 1, fullReads: 2 });
     });
 
-    it('keeps no full read that a write overtook before the confirming probe', async () => {
+    it('keeps a value under the version its own read reported, so a write landing after the probe is never served stale', async () => {
         const store = createStore({ version: 'v1', body: 'first', validUntilEpochMs: null });
+        const cache = createCache(store, () => 1_000);
+        await cache.read('doc');
+        store.write({ version: 'v2', body: 'second', validUntilEpochMs: null });
         let racedOnce = false;
-        // A write lands between the probe and the full read: the read sees v2 under a v1 probe.
-        const cache = createCache({
+        // A third write lands between the probe and the full read.
+        const racing = createCache({
             readVersion: store.readVersion,
             readValue: async (key) => {
                 if (!racedOnce) {
                     racedOnce = true;
-                    store.write({ version: 'v2', body: 'second', validUntilEpochMs: null });
+                    store.write({ version: 'v3', body: 'third', validUntilEpochMs: null });
                 }
                 return await store.readValue(key);
             }
         }, () => 1_000);
+        await racing.read('doc');
 
-        expect(await cache.read('doc')).toBe('second');
-        expect(await cache.read('doc')).toBe('second');
-        expect(await cache.read('doc')).toBe('second');
-
-        expect(store.counts.fullReads).toBe(2);
+        expect(await racing.read('doc')).toBe('third');
+        expect(await racing.read('doc')).toBe('third');
+        expect(await cache.read('doc')).toBe('third');
     });
 
     it('reads again once the value passes the instant it stays valid until', async () => {
@@ -101,12 +102,23 @@ describe('VersionProbedReadThroughCache', () => {
         expect(store.counts.fullReads).toBe(2);
     });
 
-    it('caches no absent value', async () => {
-        const store = createStore(undefined);
-        const cache = createCache(store, () => 1_000);
+    it('keeps neither an absent value nor one whose read named no version', async () => {
+        const absent = createStore(undefined);
+        const absentCache = createCache(absent, () => 1_000);
+        expect(await absentCache.read('doc')).toBeUndefined();
+        expect(await absentCache.read('doc')).toBeUndefined();
+        expect(absent.counts.fullReads).toBe(2);
 
-        expect(await cache.read('doc')).toBeUndefined();
-        expect(await cache.read('doc')).toBeUndefined();
-        expect(store.counts.fullReads).toBe(2);
+        const unversioned = createStore({ version: 'v1', body: 'first', validUntilEpochMs: null });
+        const unversionedCache = createCache({
+            readVersion: unversioned.readVersion,
+            readValue: async (key) => {
+                const read = await unversioned.readValue(key);
+                return read === undefined ? undefined : { ...read, version: null };
+            }
+        }, () => 1_000);
+        expect(await unversionedCache.read('doc')).toBe('first');
+        expect(await unversionedCache.read('doc')).toBe('first');
+        expect(unversioned.counts.fullReads).toBe(2);
     });
 });

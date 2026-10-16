@@ -47,9 +47,18 @@ export interface RuntimeStateReadBatchVersion {
     readonly expireAtEpochMs: readonly number[];
 }
 
-/** A store that can tell the version of a batch's selected rows without reading their values. */
+/** A batch read together with the version of exactly the rows it returned; undefined when it returned none. */
+export interface RuntimeStateVersionedReadBatch {
+    readonly selections: readonly RuntimeStateReadBatchSelection[];
+    readonly version: RuntimeStateReadBatchVersion | undefined;
+}
+
+/** A store that can tell the version of a batch's selected rows, alone or with their values in one read. */
 export interface RuntimeStateReadBatchVersionReader {
     readRuntimeStateBatchVersion(
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<RuntimeStateReadBatchVersion | undefined>;
+    readRuntimeStateBatchWithVersion(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<RuntimeStateVersionedReadBatch>;
 }

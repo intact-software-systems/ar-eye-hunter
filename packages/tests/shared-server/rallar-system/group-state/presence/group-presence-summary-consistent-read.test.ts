@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -112,6 +113,20 @@ describe('the presence summary read (D295)', () => {
 
         expect(read.right).toBeUndefined();
         expect(read.left).toMatchObject({ code: 'group-presence-summary-roster-inconsistent' });
+    });
+
+    it('answers rows that changed while they were read as a concurrent change, not as an inconsistent roster', async () => {
+        const runtime = new GroupBarrierRepository();
+        const command = await seedGroupWithMember(runtime, 'bob');
+        vi.spyOn(GroupStateRepositoryReads.prototype, 'readPresenceSummaryEntries')
+            .mockResolvedValueOnce({ status: 'concurrent-change' });
+
+        const read = await createWork(runtime).read(
+            [{ work: command, reservation: summaryReservationRead(command.commandId) }],
+            BASE_EPOCH_MS + 1_000
+        );
+
+        expect(read.left).toMatchObject({ code: 'group-presence-summary-concurrent-change' });
     });
 });
 

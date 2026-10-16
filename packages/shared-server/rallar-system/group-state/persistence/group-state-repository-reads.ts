@@ -44,6 +44,7 @@ import {
     type GroupStateMutationExactReadInput,
     type GroupStateMutationExactReadResult
 } from './read-exact-group-state-mutation.ts';
+import { toGroupPresenceSummarySelectors } from './read-group-state-authority.ts';
 
 /** A presence summary's stored rows, read as one consistent snapshot; a changed row comes back as `concurrent-change`. */
 export type GroupPresenceSummaryStoredRead =
@@ -283,20 +284,7 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
      * rows come from one database snapshot rather than one statement each (D295).
      */
     async readPresenceSummaryEntries(ref: GroupRef): Promise<GroupPresenceSummaryStoredRead> {
-        const groupKey = groupStateGroupStorageKey(ref);
-        const childPrefix = `${groupKey}:`;
-        const selectors = [
-            { selectorId: 'group', kind: 'key', namespace: GROUPS_NAMESPACE, key: groupKey },
-            { selectorId: 'members', kind: 'prefix', namespace: MEMBERS_NAMESPACE, keyPrefix: childPrefix },
-            {
-                selectorId: 'admissions',
-                kind: 'prefix',
-                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
-                keyPrefix: childPrefix
-            },
-            { selectorId: 'sessions', kind: 'prefix', namespace: SESSIONS_NAMESPACE, keyPrefix: childPrefix },
-            { selectorId: 'summary', kind: 'key', namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey }
-        ] as const;
+        const selectors = toGroupPresenceSummarySelectors(ref);
         const resolved = await resolveRuntimeStateReadBatchLiveValues(
             selectors,
             await this.repository.readRuntimeStateBatch(selectors),
@@ -305,15 +293,15 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         if (resolved.status === 'changed') {
             return { status: 'concurrent-change' };
         }
-        const [group, members, admissions, sessions, summary] = resolved.selections;
-        const storedGroup = group?.entries[0];
-        const storedSummary = summary?.entries[0];
+        const [group, members, summary, sessions, admissions] = resolved.selections;
+        const storedGroup = group.entries[0];
+        const storedSummary = summary.entries[0];
         return {
             status: 'stable',
             group: storedGroup === undefined ? undefined : canonicalStoredGroup(storedGroup, ref),
-            members: (members?.entries ?? []).map((entry) => canonicalStoredMember(entry, ref)),
-            admissions: (admissions?.entries ?? []).map((entry) => canonicalStoredAdmission(entry, ref)),
-            presenceSessions: (sessions?.entries ?? []).map((entry) => canonicalStoredSession(entry, ref)),
+            members: members.entries.map((entry) => canonicalStoredMember(entry, ref)),
+            admissions: admissions.entries.map((entry) => canonicalStoredAdmission(entry, ref)),
+            presenceSessions: sessions.entries.map((entry) => canonicalStoredSession(entry, ref)),
             current: storedSummary === undefined ? undefined : canonicalStoredSummary(storedSummary, ref)
         };
     }

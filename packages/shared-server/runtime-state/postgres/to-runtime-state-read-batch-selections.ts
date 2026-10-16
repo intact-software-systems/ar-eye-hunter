@@ -13,8 +13,8 @@ export interface PSqlRuntimeStateReadBatchRow {
     readonly expire_at_timestamp: string;
     readonly updated_timestamp: string;
     readonly revision: string;
-    /** The row version's transaction and location in a version probe; null in a read of the values. */
-    readonly row_version: string | null;
+    /** The row version's transaction and location, which every write of the row replaces. */
+    readonly row_version: string;
 }
 
 /** The driver rows grouped back into one selection per selector, in caller order, for the shared result validator. */

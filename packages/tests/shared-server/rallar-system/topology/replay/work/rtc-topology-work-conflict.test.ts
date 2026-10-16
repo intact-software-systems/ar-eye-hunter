@@ -47,21 +47,23 @@ describe('RTC topology queue conflict boundary', () => {
         const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry });
         const begin = vi.spyOn(database, 'begin');
         const observeCommittedTopology = vi.fn();
+        const readTopologyPlanningAuthority = async () => ({
+            group,
+            config: resolveGroupTopologyConfig({}),
+            kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
+            rttMeasurements: [],
+            replanning: 'auto' as const,
+            nowEpochMs: 1_000
+        });
         const handler = createRtcTopologyWorkHandler({
             nowEpochMs: () => 1_000,
             outboxQueueReader: new OutboxQueueReader(queue),
             database,
             executionRepository: new RtcTopologyExecutionRepository(runtime),
             topologyPlanning: {
-                readTopologyPlanningAuthority: async () => ({
-                    group,
-                    config: resolveGroupTopologyConfig({}),
-                    kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
-                    rttReportingDegreeLimit: 5,
-                    rttMeasurements: [],
-                    replanning: 'auto',
-                    nowEpochMs: 1_000
-                }),
+                readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology,
                 recordTopologyPlanningObservation: vi.fn(),

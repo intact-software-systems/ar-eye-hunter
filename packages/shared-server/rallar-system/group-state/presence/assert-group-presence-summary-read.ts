@@ -25,11 +25,15 @@ import {
 import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
 
 /**
- * A read whose rows contradict each other: within one consistent snapshot this is stored state no
- * write leaves behind, reported as a value so the queue retries it within its attempt budget (D295).
+ * A read the summary cannot be computed from, reported as a value so the queue retries it within its attempt budget
+ * (D295): rows that changed while they were read, or rows that contradict each other, which within one consistent
+ * snapshot is stored state no write leaves behind.
  */
 export interface GroupPresenceSummaryReadInconsistency {
-    readonly code: 'group-presence-summary-roster-inconsistent' | 'group-presence-summary-admission-inconsistent';
+    readonly code:
+        | 'group-presence-summary-concurrent-change'
+        | 'group-presence-summary-roster-inconsistent'
+        | 'group-presence-summary-admission-inconsistent';
     readonly message: string;
 }
 

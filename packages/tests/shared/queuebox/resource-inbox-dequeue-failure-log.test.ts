@@ -154,6 +154,43 @@ describe('ResourceInbox dequeue failure log', () => {
         })]);
         expect(await queue.getItem(enqueued.key)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
     });
+
+    it.each(
+        [
+            [0, EntityStatus.RETRY, 1],
+            [6, EntityStatus.RETRY, 150],
+            [19, EntityStatus.FAILED, null]
+        ] as const
+    )(
+        'caps the backoff of a conflict released after %i attempts at its retry delay, inside the attempt budget (D304)',
+        async (attemptsBefore, status, expectedDelayMs) => {
+            const pinnedNow = Temporal.Now.instant();
+            const queue = new InMemoryQueueBox(new Map(), () => pinnedNow);
+            const fresh = toResourceEntry('summary-conflict', { value: 4 });
+            await queue.enqueue({ ...fresh, dequeueAudit: { attempts: attemptsBefore } });
+            vi.spyOn(console, 'info').mockImplementation(() => {});
+
+            const { releases } = await dequeueOnce(
+                queue,
+                'summary-conflict',
+                async (attempt) =>
+                    new ResourceInboxHandlerRetryableConflict(
+                        attempt.entry,
+                        'group-presence-summary-changed',
+                        new RuntimeStateWriteConflictError(),
+                        150
+                    )
+            );
+
+            expect(releases).toEqual([expect.objectContaining({ key: fresh.key, classification: 'retryable', status })]);
+            const released = await queue.getItem(fresh.key);
+            expect(released?.dequeueAudit.attempts).toBe(attemptsBefore + 1);
+            if (expectedDelayMs !== null) {
+                // The first retry keeps the backoff's 1 ms; after the seventh attempt the 2 s backoff is capped at 150 ms.
+                expect(released?.dequeueAudit.nextTs?.epochMilliseconds).toBe(pinnedNow.epochMilliseconds + expectedDelayMs);
+            }
+        }
+    );
 });
 
 async function dequeueOnce(
