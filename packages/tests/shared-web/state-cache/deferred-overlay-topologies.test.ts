@@ -215,6 +215,20 @@ describe('browser overlay adoption deferred until the own session is in the cach
         });
     });
 
+    it('keeps the later-planned version when a new layout is incomparable to the kept one', () => {
+        const deferredTopologies = new DeferredOverlayTopologies();
+        const group = groupAt({ groupRevision: 1, presenceRevision: 1 }, OTHERS);
+        const kept = createTopologySnapshot(group, { groupRevision: 3, presenceRevision: 2 }, 4);
+        const laterPlanned = createTopologySnapshot(group, { groupRevision: 2, presenceRevision: 3 }, 5);
+        const earlierPlanned = createTopologySnapshot(group, { groupRevision: 4, presenceRevision: 1 }, 3);
+
+        expect(deferredTopologies.keep(kept)).toBe(true);
+        expect(deferredTopologies.keep(laterPlanned)).toBe(true);
+        expect(deferredTopologies.find(group.group)).toBe(laterPlanned);
+        expect(deferredTopologies.keep(earlierPlanned)).toBe(false);
+        expect(deferredTopologies.find(group.group)).toBe(laterPlanned);
+    });
+
     it('discards a kept layout once a layout at least as new is adopted directly', async () => {
         const deferredTopologies = new DeferredOverlayTopologies();
         const manager = createWebRtcGroupManager();

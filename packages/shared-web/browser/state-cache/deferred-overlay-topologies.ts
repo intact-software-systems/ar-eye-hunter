@@ -48,12 +48,17 @@ export class DeferredOverlayTopologies {
     }
 }
 
+/**
+ * Newer by the shared layout order. Causally incomparable layouts are ordered
+ * by the planner's version, which advances with every plan for the group.
+ */
 function isNewerLayout(
     candidate: RallarOverlayTopologySnapshot,
     reference: RallarOverlayTopologySnapshot
 ): boolean {
-    return resolveGroupLayoutRole({
+    const role = resolveGroupLayoutRole({
         publication: toGroupLayoutIdentity(candidate),
         accepted: toGroupLayoutIdentity(reference)
-    }) === 'planned';
+    });
+    return role === 'planned' || (role === 'incomparable' && candidate.version > reference.version);
 }
