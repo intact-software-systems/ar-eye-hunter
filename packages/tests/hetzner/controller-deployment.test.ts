@@ -422,7 +422,8 @@ describe('Hetzner controller contracts and effects', () => {
             'PORT=8080',
             'RALLAR_TIMING_LOGS=1',
             'RALLAR_APP_INBOX_PHASE_TIMING=true',
-            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory'
+            'RALLAR_API_CONFIGURATION_PROFILE=prod',
+            'RALLAR_ICE_MODE=local'
         ]);
     });
 

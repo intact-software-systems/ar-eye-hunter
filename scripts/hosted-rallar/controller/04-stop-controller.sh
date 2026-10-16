@@ -16,7 +16,7 @@ fi
 echo "Stopping controller services:"
 printf "  %s\n" "${services[@]}"
 echo
-echo "Note: stopping rallar-api-v1 resets its pglite-memory data."
+echo "Note: the API-v1 Postgres store survives a stop; only a rollout or deploy wipes it."
 
 for service in "${services[@]}"; do
 	systemctl stop "${service}"

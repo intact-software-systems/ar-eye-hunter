@@ -24,7 +24,8 @@ ln -sf ~/rallar-controller/15-logs.sh /usr/local/bin/rallar-logs
 
 ## Run Order
 
-Install base runtime dependencies:
+Install base runtime dependencies (Node.js, Deno, Caddy, and the Ubuntu
+`postgresql` server for API-v1):
 
 ```sh
 ./01-install-runtime.sh
@@ -162,12 +163,15 @@ RALLAR_INCLUDE_CADDY=1 ./08-rollout-controller.sh
 Important: these scripts stop or start services on the VM. They do not stop
 Hetzner billing. Delete the VM if you want billing to stop.
 
-Also note that API-v1 uses the `prod-in-memory` profile; stopping or restarting
-`rallar-api-v1.service` resets API-v1 in-memory data. Control-server snapshots
-are persisted under `/var/lib/rallar-black-box-control`.
+Also note that API-v1 uses the `prod` profile on a PostgreSQL server on the
+same VM (database `rallar_api_v1`). Stopping or restarting
+`rallar-api-v1.service` keeps the API data; every `02-deploy-controller.sh` and
+`08-rollout-controller.sh` wipes the database and applies the Prisma migrations
+before the API starts, so each rollout starts from an empty store. Control-server
+snapshots are persisted under `/var/lib/rallar-black-box-control`.
 
-The default controller deployment uses in-memory SQL and local ICE unless
-Metered TURN is configured. Do not treat it as the hardened `prod` profile. For
+The default controller deployment uses local ICE unless Metered TURN is
+configured. Do not treat it as the hardened `prod-hardened` profile. For
 production, follow the exact selector and platform-secret guardrails in
 [`docs/production-env-hardening-checklist.md`](../../../docs/production-env-hardening-checklist.md).
 
@@ -185,13 +189,17 @@ It performs:
 3. Run npm ci.
 4. Warm Deno caches for API-v1 and the control server.
 5. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
-6. Stop rallar-api-v1.service and rallar-black-box-control.service.
-7. Publish static SPA files to /var/www/rallar-black-box.
-8. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
-9. Refresh API-v1 and control-server browser origin policy.
-10. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
+6. Install the Ubuntu `postgresql` server if it is absent and keep it enabled.
+7. Stop rallar-api-v1.service and rallar-black-box-control.service.
+8. Publish static SPA files to /var/www/rallar-black-box.
+9. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
+10. Refresh API-v1 and control-server browser origin policy.
+11. Keep the API `DATABASE_URL` and operator allowlist, drop and recreate the
+    `rallar_api_v1` database, and run `deno task prisma migrate deploy` in
+    `apps/api-v1` as the `rallar` user.
+12. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
     and run local/public health checks.
-11. Print service status and recent logs.
+13. Print service status and recent logs.
 ```
 
 The script uses `git pull --ff-only`; it does not force-reset the checkout. If
@@ -369,8 +377,9 @@ appears as connected and the start script times out while printing recent
 service logs.
 
 Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
-`register_before_login` input, when the target API is memory-backed and has just
-been redeployed so the disposable test users must be created before login. With
+`register_before_login` input, when the target API has just been rolled out
+(every rollout wipes the controller API's database) so the disposable test
+users must be created before login. With
 it enabled, the worker env file gives each agent its own user named after its
 agent id (`<prefix>-NN`) with the shared `RALLAR_BLACK_BOX_PASSWORD`, and
 `RALLAR_BLACK_BOX_USERNAME` stays an operator-only credential. Leave it
@@ -386,8 +395,8 @@ run without `RALLAR_BLACK_BOX_REGISTER`, so a recipe's sign-in logs in only and
 pays one password derivation per agent instead of two.
 
 The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
-`register_before_login=true` for Hetzner runs because the current controller API
-uses memory-backed auth. Pass `--register-before-login false` only when running
+`register_before_login=true` for Hetzner runs because every controller rollout
+wipes the API's database. Pass `--register-before-login false` only when running
 against a persistent user database.
 
 The GitHub Actions headless browser workflow resolves credentials for
@@ -443,9 +452,10 @@ RALLAR_WRITE_HEADLESS_ENV=0
 
 ## TURN / STUN Readiness
 
-API-v1 selects `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`. That profile
-owns local ICE and intentionally returns
-`iceServers: []` from `/api/webrtc/ice`. The Rallar black-box Recipes UI shows
+The controller writes `RALLAR_ICE_MODE=local` beside the `prod` profile, so
+API-v1 intentionally returns `iceServers: []` from `/api/webrtc/ice` until
+Metered TURN is configured; the Metered secret file is loaded after
+`/etc/rallar/api-v1.env` and switches the mode to `metered`. The Rallar black-box Recipes UI shows
 this as a warning because local/LAN testing can still work, but cross-region
 WebRTC may fail without TURN.
 
@@ -465,18 +475,30 @@ unset keeps any existing VM secret file in place.
 The controller scripts own one disposable deployment shape:
 
 ```text
-RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory
+RALLAR_API_CONFIGURATION_PROFILE=prod
+RALLAR_ICE_MODE=local
 ```
 
-`02-deploy-controller.sh` writes that selector plus only controller-specific
-URLs, CORS, workload limits, topology experiment overrides, and API secrets.
+The `prod` profile owns PostgreSQL, PostgreSQL pub/sub, and disabled schema
+bootstrap, as production on Deno Deploy does. `02-deploy-controller.sh` writes
+that selector plus only controller-specific URLs, CORS, workload limits,
+topology experiment overrides, and API secrets. `DATABASE_URL` is generated once
+on the VM as a plain loopback URL
+(`postgres://rallar:<generated>@127.0.0.1:5432/rallar_api_v1`, no `schema`
+parameter) and kept across rollouts; the scripts never print it.
 `08-rollout-controller.sh` removes entries outside that subset before updating
 the selected ref. Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
-There is no environment-name selector or repeated database/auth/ICE baseline.
+There is no environment-name selector or repeated database/auth baseline.
+
+The `prod` profile requires a non-empty operator-token allowlist without
+bundled demo identities. The scripts take `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`
+from the deploy or rollout environment, else keep the VM's value, else generate
+`hosted-operator-<random>`. To use the Recipes tab's brokered operator token,
+set your own operator client id once and register that user after each rollout.
 
 Do not convert this disposable controller into the hardened public API-v1 or
-Relic deployment by accumulating overrides. Those targets select the `prod`
-profile and use the platform settings in the
+Relic deployment by accumulating overrides. Those targets use the platform
+settings in the
 [Production Environment Hardening Checklist](../../../docs/production-env-hardening-checklist.md).
 Never put `DATABASE_URL`, `METERED_API_KEY`, `RALLAR_BLACK_BOX_ADMIN_TOKEN`, or
 operator-token secrets into the SPA audit file or any `VITE_*` input.
@@ -924,9 +946,9 @@ The deploy and rollout scripts also generate or preserve
 `/etc/rallar/api-v1.env` and `/etc/rallar/control-server.env`. API-v1 uses it
 for `POST /api/black-box/control-token`; the control server uses it to accept
 the signed operator token for distributed-run admin operations. Override
-`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, or
-set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to restrict token brokerage to
-specific authenticated client IDs.
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, and
+set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to the authenticated client IDs that
+may request operator tokens (see Controller Configuration Profile).
 
 The same scripts independently generate or preserve
 `RALLAR_AUTH_CREDENTIAL_SECRET` in `/etc/rallar/api-v1.env`. Keep it stable
