@@ -1,3 +1,4 @@
+import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -161,6 +162,7 @@ export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupSt
     readonly principalId: string;
     readonly generationId: string;
     readonly connectionGenerationId: string;
+    readonly expiresAtEpochMs: number;
 }
 
 export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
@@ -357,6 +359,14 @@ export function toTransferRoomOwnershipGroupStateRequest(
     };
 }
 
+/**
+ * A joined row takes the heartbeat's lease rather than the server's 24 h default: the group heartbeats renew it while
+ * the browser lives, and a row no socket close cleans lapses within one lease.
+ */
+export function toRoomPresenceLeaseExpiresAtEpochMs(nowEpochMs: number): number {
+    return nowEpochMs + DEFAULT_STATE_HEARTBEAT_TTL_MSECS;
+}
+
 export function toConnectRoomPresenceGroupStateRequest(
     input: ToConnectRoomPresenceGroupStateRequestInput
 ): ConnectStateGroupPresenceSessionBody {
@@ -364,6 +374,7 @@ export function toConnectRoomPresenceGroupStateRequest(
         principalId: input.principalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        expiresAtEpochMs: input.expiresAtEpochMs,
         ...toActorRequest(input)
     };
 }

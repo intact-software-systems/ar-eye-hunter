@@ -42,7 +42,7 @@ export async function createAndJoinRoom(input: CreateAndJoinRoomInput): Promise<
             principalId: session.clientId,
             sessionId: session.sessionId,
             generationId: context.middleware.heartbeat.generationId,
-            connectionGenerationId: requireOwnWsConnectionGenerationId(session),
+            connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
             scope,
             policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
             requestedGroupId: createInput.groupId,
@@ -65,7 +65,7 @@ interface CreateRoomSwitchPartialFailureErrorInput {
     readonly operation: 'create-and-switch' | 'join';
     readonly joinedRoom: GroupSnapshot;
     readonly previousRoomRef: GroupRef;
-    readonly leaveError: unknown;
+    readonly leaveError: RallarRoomSwitchPartialFailureError['leaveError'];
 }
 
 export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Promise<GroupSnapshot> {

@@ -1698,7 +1698,7 @@ async function assertPolicyRejects<TResult>(
 ): Promise<void> {
     await assert.rejects(
         action,
-        (error: unknown) => {
+        (error: Error) => {
             assert.ok(error instanceof GroupPolicyDeniedError);
             assert.equal(error.denial.code, code);
             return true;

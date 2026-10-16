@@ -1,5 +1,6 @@
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
+import type { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
 import type {
@@ -50,6 +51,8 @@ export interface RallarBrowserMiddleware {
     readonly webRtcGroupManager: WebRtcGroupManager;
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly heartbeat: RallarSessionHeartbeat;
+    /** The generation of the socket that is open now, which a room presence connect names (D284). */
+    readonly ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration;
     readonly storageAvailability: BrowserALStorageAvailability;
     /**
      * The report of the session's volatile ledger, which both carriers' runtimes count against (D74); its admissions

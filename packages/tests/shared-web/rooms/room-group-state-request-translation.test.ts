@@ -404,6 +404,7 @@ describe('room request translation', () => {
             principalId: 'member-1',
             generationId: 'generation-1',
             connectionGenerationId: 'ws-generation-1',
+            expiresAtEpochMs: 121_000,
             ...actor
         } as const;
 

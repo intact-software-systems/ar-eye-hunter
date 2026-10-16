@@ -4,7 +4,6 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '
 import { vi } from 'vitest';
 import { installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
-import { createOwnWsClientSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
@@ -71,7 +70,7 @@ const mocks = await vi.hoisted(async () => {
         listStateGroupEventPage: vi.fn<ContractModules.StateEventHttpApi['listStateGroupEventPage']>(() =>
             Promise.reject(new Error('group event page not mocked'))
         ),
-        findClientStateSnapshotByPrincipalId: vi.fn<ContractModules.ClientStateSnapshotsRepository['findClientStateSnapshotByPrincipalId']>(),
+        clientRepositoryMissing: vi.fn(() => undefined),
         getAllClientStateSnapshots: vi.fn<ContractModules.ClientStateSnapshotsRepository['getAllClientStateSnapshots']>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<ContractModules.GroupStateSnapshotsRepository['findFirstGroupStateSnapshotRefSessionIdIsIn']>(),
         findGroupStateSnapshotByRef: vi.fn<ContractModules.GroupStateSnapshotsRepository['findGroupStateSnapshotByRef']>(),
@@ -154,7 +153,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<ContractModules.Auth> => ({
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ContractModules.ClientStateSnapshotsRepository> => ({
-        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+        findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
 );
@@ -181,7 +180,7 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
 }
 
 function resetSessionAndRoomMocks(): void {
-    mocks.findClientStateSnapshotByPrincipalId.mockImplementation(() => createOwnWsClientSnapshotFixture(mocks.readSession() ?? mocks.ctx.session));
+    mocks.clientRepositoryMissing.mockReturnValue(undefined);
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     installGroupSnapshotRepositoryMocks(mocks, []);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });

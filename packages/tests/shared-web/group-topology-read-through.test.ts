@@ -470,7 +470,7 @@ function removeOverlayRoles(overlayId: string): void {
     removeAcceptedOverlayById(overlayId);
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object | undefined): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

@@ -382,6 +382,59 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
     });
 });
 
+Deno.test('PGlite cleanup of another socket generation leaves the presence its own socket owns', async () => {
+    await withPGliteSql(async (sql) => {
+        const harness = await createPGliteAppInboxWsCloseHarness(sql);
+        const groupId = 'pglite-other-socket-presence';
+        await createRoom(harness, groupId, sql);
+        const wsStartedAtEpochMs = Date.now() - 500;
+        const presenceGenerationId = crypto.randomUUID();
+        const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
+            type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            resourceId: `presence-${presenceGenerationId}`,
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+            senderId: harness.authority.clientId,
+            data: {
+                scope: SCOPE,
+                groupId,
+                sessionId: harness.authority.sessionId,
+                request: {
+                    principalId: harness.authority.clientId,
+                    generationId: presenceGenerationId,
+                    connectionGenerationId: 'pglite-reconnected-ws-generation',
+                    connectedAtEpochMs: wsStartedAtEpochMs - 50,
+                    lastHeartbeatAtEpochMs: wsStartedAtEpochMs - 50,
+                    expiresAtEpochMs: FUTURE_MS,
+                    actorPrincipalId: harness.authority.clientId,
+                    actorSessionId: harness.authority.sessionId,
+                    requestId: `presence-${presenceGenerationId}`
+                }
+            }
+        }, harness.authority);
+        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+        await processNext(harness.reader);
+        assert.ok((await pending).right);
+
+        await harness.group.enqueueGroupSessionCleanup({
+            connection: toAuthorisedWsClientConnection({
+                authSession: harness.authority,
+                generationId: 'pglite-closed-ws-generation',
+                input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs }
+            }),
+            disconnectedAtEpochMs: wsStartedAtEpochMs + 100,
+            reason: 'socket-closed'
+        });
+        await processNext(harness.reader);
+
+        assert.deepEqual(
+            (await harness.groups.listAllPresenceSessions())
+                .filter((session) => session.groupId === groupId && session.disconnectedAtEpochMs === null)
+                .map((session) => session.connectionGenerationId),
+            ['pglite-reconnected-ws-generation']
+        );
+    });
+});
+
 async function createRoom(
     harness: PGliteAppInboxWsCloseHarness,
     groupId: string,

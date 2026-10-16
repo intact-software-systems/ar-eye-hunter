@@ -14,6 +14,7 @@ import {
     toCreateRoomInviteGroupStateRequest,
     toRemoveRoomMemberGroupStateRequest,
     toRevokeRoomInviteGroupStateRequest,
+    toRoomPresenceLeaseExpiresAtEpochMs,
     toRotateRoomJoinCodeGroupStateRequest,
     toSetRoomMemberRoleGroupStateRequest,
     toTransferRoomOwnershipGroupStateRequest,
@@ -145,6 +146,7 @@ export async function acceptStateGroupInvite(
                         principalId: input.actorPrincipalId,
                         generationId: input.generationId,
                         connectionGenerationId: input.connectionGenerationId,
+                        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
                         actorPrincipalId: input.actorPrincipalId,
                         actorSessionId: input.sessionId
                     }),

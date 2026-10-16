@@ -1,3 +1,4 @@
+import type { JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { GroupMutationRejectedError, type GroupMutationCommand } from '../group-mutation-contracts.ts';
 import {
     isGroupInputRecord,
@@ -9,7 +10,13 @@ import { validateGroupMutationOperationInput } from './validate-group-mutation-o
 
 type PresenceOperation = 'connectPresence' | 'heartbeatPresence' | 'disconnectPresence';
 
-export function assertGroupMutationRequest(operation: GroupMutationCommand['operation'], request: unknown): void {
+/** A decoded JSON request body or a typed request a route built; both are checked field by field. */
+type GroupMutationRequestCandidate = JsonWireValue | object;
+
+export function assertGroupMutationRequest(
+    operation: GroupMutationCommand['operation'],
+    request: GroupMutationRequestCandidate
+): void {
     let publicRequest = request;
     if (operation === 'reconfigureGroup' && isGroupInputRecord(request) && 'expectedFormationEpoch' in request) {
         const { expectedFormationEpoch, ...sparseRequest } = request;
@@ -30,7 +37,7 @@ export function assertGroupMutationRequest(operation: GroupMutationCommand['oper
 
 export function validateGroupMutationRequest(
     operation: GroupMutationCommand['operation'],
-    request: unknown
+    request: GroupMutationRequestCandidate
 ): readonly Error[] {
     const label = `Group ${operation} request`;
     const jsonIssues = validateGroupInputJson(request, label);
@@ -56,7 +63,10 @@ export function validateGroupMutationRequest(
     return [...issues, ...validateGroupMutationOperationInput({ operation, input: request })];
 }
 
-export function validateGroupPresenceMutationRequest(operation: PresenceOperation, request: unknown): readonly Error[] {
+export function validateGroupPresenceMutationRequest(
+    operation: PresenceOperation,
+    request: GroupMutationRequestCandidate
+): readonly Error[] {
     const label = `Group ${operation} request`;
     const jsonIssues = validateGroupInputJson(request, label);
     if (jsonIssues.length > 0) {
@@ -93,35 +103,31 @@ export function validateGroupPresenceMutationRequest(operation: PresenceOperatio
 
 function validatePresenceTimestampOrder(
     operation: PresenceOperation,
-    value: Readonly<Record<string, unknown>>
+    request: object
 ): readonly GroupMutationRejectedError[] {
     const issues: GroupMutationRejectedError[] = [];
-    const heartbeatAt = value.lastHeartbeatAtEpochMs;
-    const expiresAt = value.expiresAtEpochMs;
-    if (typeof heartbeatAt !== 'number') {
+    const heartbeatAt = readPresenceTimestamp(request, 'lastHeartbeatAtEpochMs');
+    const expiresAt = readPresenceTimestamp(request, 'expiresAtEpochMs');
+    if (heartbeatAt === undefined) {
         return issues;
     }
-    if (typeof expiresAt === 'number' && expiresAt < heartbeatAt) {
+    if (expiresAt !== undefined && expiresAt < heartbeatAt) {
         issues.push(
             new GroupMutationRejectedError(
                 `Group ${operation} expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`
             )
         );
     }
-    if (
-        operation === 'connectPresence' && typeof value.connectedAtEpochMs === 'number' &&
-        heartbeatAt < value.connectedAtEpochMs
-    ) {
+    const connectedAt = readPresenceTimestamp(request, 'connectedAtEpochMs');
+    if (operation === 'connectPresence' && connectedAt !== undefined && heartbeatAt < connectedAt) {
         issues.push(
             new GroupMutationRejectedError(
                 'Group connectPresence lastHeartbeatAtEpochMs must not predate connectedAtEpochMs'
             )
         );
     }
-    if (
-        operation === 'disconnectPresence' && typeof value.disconnectedAtEpochMs === 'number' &&
-        value.disconnectedAtEpochMs < heartbeatAt
-    ) {
+    const disconnectedAt = readPresenceTimestamp(request, 'disconnectedAtEpochMs');
+    if (operation === 'disconnectPresence' && disconnectedAt !== undefined && disconnectedAt < heartbeatAt) {
         issues.push(
             new GroupMutationRejectedError(
                 'Group disconnectPresence disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs'
@@ -129,6 +135,18 @@ function validatePresenceTimestampOrder(
         );
     }
     return issues;
+}
+
+type PresenceTimestampKey =
+    | 'connectedAtEpochMs'
+    | 'disconnectedAtEpochMs'
+    | 'lastHeartbeatAtEpochMs'
+    | 'expiresAtEpochMs';
+
+/** A request field read for the order check only; its type was validated beside it. */
+function readPresenceTimestamp(request: object, key: PresenceTimestampKey): number | undefined {
+    const timestamp: JsonWireValue | undefined = Reflect.get(request, key);
+    return typeof timestamp === 'number' ? timestamp : undefined;
 }
 
 export const ACTOR_INPUT_KEYS = [

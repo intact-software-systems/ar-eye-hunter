@@ -2,8 +2,7 @@ import {
     beforeEach,
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
@@ -157,18 +156,6 @@ describe('room join operations', () => {
         expect(roomWorkflowMocks.operationLog).toEqual(['join:new-room']);
         expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
         expect(facade.rooms.current()).toBe(oldRoom);
-    });
-
-    it('refuses to connect presence before the own session names its socket generation', async () => {
-        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        const { findClientStateSnapshotByPrincipalId } = await import('@shared/repository/client-state-snapshots-repository.ts');
-        vi.mocked(findClientStateSnapshotByPrincipalId).mockReturnValueOnce(undefined);
-
-        await expect(createRallarFacade().rooms.join({ roomId: 'room-1', leaveCurrent: false })).rejects.toThrow(
-            'Cannot connect room presence: the WebSocket connection generation is not known yet.'
-        );
-
-        expect(roomWorkflowMocks.joinStateGroup).not.toHaveBeenCalled();
     });
 
     it('rejects mismatched roomId and roomRef before the workflow', async () => {

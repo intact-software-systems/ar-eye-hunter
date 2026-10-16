@@ -239,6 +239,25 @@ describe('AppInbox websocket close convergence', () => {
         expect(await activeGroupSessionCount(harness, 'reconnected-socket-room')).toBe(1);
     });
 
+    it('relabels a same-generation presence for the reconnected socket, so the older socket\'s cleanup leaves it', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'relabelled-socket-room');
+        const socketA = closeFacts(harness.authSession, 'group-relabel-socket-a', 39);
+        const socketB = closeFacts(harness.authSession, 'group-relabel-socket-b', 40);
+        // A browser keeps one heartbeat generation across sockets, so socket B's join repeats socket A's presence.
+        const presence = groupPresenceFacts(socketA, 'presence-one-heartbeat-generation', -50);
+        await connectGroupPresence(harness, 'relabelled-socket-room', socketA, presence);
+        await connectGroupPresence(harness, 'relabelled-socket-room', socketB, presence);
+
+        expect(await enqueueGroupClose(harness.group, socketA)).toBe(1);
+        await processNext(harness.reader);
+
+        const sessions = (await harness.groups.listAllPresenceSessions()).filter(
+            (session) => session.groupId === 'relabelled-socket-room' && session.disconnectedAtEpochMs === null
+        );
+        expect(sessions.map((session) => session.connectionGenerationId)).toEqual([socketB.generationId]);
+    });
+
     it(
         'processes group cleanup before delayed presence connect ' + 'without orphan presence',
         async () => {
@@ -400,7 +419,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
     const presence = input.presence;
     return harness.group.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
-        resourceId: `presence-${groupId}-${presence.generationId}`,
+        resourceId: `presence-${groupId}-${presence.generationId}-${facts.generationId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: harness.authSession.clientId,
         data: {
@@ -416,7 +435,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
                 expiresAtEpochMs: presence.expiresAtEpochMs,
                 actorPrincipalId: facts.authSession.clientId,
                 actorSessionId: facts.authSession.sessionId,
-                requestId: `presence-${groupId}-${presence.generationId}`
+                requestId: `presence-${groupId}-${presence.generationId}-${facts.generationId}`
             }
         }
     }, harness.authSession);

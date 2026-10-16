@@ -57,13 +57,13 @@ export async function acceptRoomInvite(
     return await runRoomTargetMutation({
         ...input,
         options: input.options ?? {},
-        execute: async ({ roomId, session, scope, policies, generationId }) =>
+        execute: async ({ roomId, session, scope, policies, generationId, context, signal }) =>
             await acceptStateGroupInvite({
                 groupId: roomId,
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
                 generationId,
-                connectionGenerationId: requireOwnWsConnectionGenerationId(session),
+                connectionGenerationId: await requireOwnWsConnectionGenerationId(context, signal),
                 scope,
                 policies
             })

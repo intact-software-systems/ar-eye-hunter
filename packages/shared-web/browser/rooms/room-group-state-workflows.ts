@@ -14,6 +14,7 @@ import {
     toDisconnectRoomPresenceGroupStateRequest,
     toJoinGroupStateRequest,
     toLeaveRoomMemberGroupStateRequest,
+    toRoomPresenceLeaseExpiresAtEpochMs,
     type GroupSnapshot,
     type RoomCreateGroupStateFields,
     type RoomJoinGroupStateFields,
@@ -74,6 +75,7 @@ export async function createAndJoinStateGroup(
         principalId: input.principalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
@@ -121,6 +123,7 @@ export async function joinStateGroup(
         principalId: input.principalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });

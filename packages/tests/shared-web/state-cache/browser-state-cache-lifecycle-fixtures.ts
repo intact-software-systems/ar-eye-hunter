@@ -6,6 +6,7 @@ import {
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -383,17 +384,17 @@ export function createPagedSnapshotReceiver(receive: (message: ALMessage) => Pro
         if (!isStateSnapshotTopic(message.payload.typeId)) {
             return receive(message);
         }
-        const payload = readFixtureRecord(JSON.parse(message.payload.resource));
+        const payload = decodeFixtureRecord(JSON.parse(message.payload.resource));
         const topology = message.payload.typeId === AppTopics.overlayTopology;
         const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
-        const identity = readFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
+        const identity = decodeFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
         const scope = {
             kind: principal ? 'principal' as const : 'group' as const,
             applicationId: String(identity.applicationId),
             workspaceId: String(identity.workspaceId),
             resourceId: String(identity[principal ? 'principalId' : 'groupId'])
         };
-        const causal = principal ? undefined : readFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
+        const causal = principal ? undefined : decodeFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
         const revision = topology
             ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
             : principal
@@ -433,9 +434,9 @@ export function createPagedSnapshotReceiver(receive: (message: ALMessage) => Pro
     };
 }
 
-function readFixtureRecord(value: unknown): Record<string, unknown> {
+function decodeFixtureRecord(value: unknown): ApiJsonObject {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Snapshot fixture requires a record');
     }
-    return value as Record<string, unknown>;
+    return value as ApiJsonObject;
 }

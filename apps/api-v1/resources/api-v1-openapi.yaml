@@ -5282,6 +5282,7 @@ components:
           minimum: 1
         connectionGenerationId:
           type: string
+          minLength: 1
           description: WebSocket connection generation of the socket this presence belongs to.
         connectedAtEpochMs:
           type: integer

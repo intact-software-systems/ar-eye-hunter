@@ -53,6 +53,7 @@ describe('state heartbeat HTTP workflow', () => {
             ],
             {
                 generationId: 'generation-1',
+                wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,
                 policies: { command: { maxAttempts: 3 } }
             }
@@ -95,6 +96,7 @@ describe('state heartbeat HTTP workflow', () => {
             [groupSnapshot('group-1', 'ar-eye-hunter')],
             {
                 generationId: 'generation-1',
+                wsConnectionGenerationId: undefined,
                 clientSnapshot: undefined,
                 scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
                 policies: { command: { maxAttempts: 3 } }
@@ -116,6 +118,25 @@ describe('state heartbeat HTTP workflow', () => {
             lastHeartbeatAtEpochMs: 1_000,
             expiresAtEpochMs: 121_000
         });
+    });
+
+    it('repairs a missing client session under the open socket\'s generation, never the heartbeat generation', async () => {
+        const calls = await repairMissingClientSession('ws-generation-open');
+
+        expect(calls[0].body).toMatchObject({ generationId: 'ws-generation-open' });
+        expect(calls[1].body).toMatchObject({
+            generationId: 'ws-generation-open',
+            transport: 'ws',
+            connectionId: 'ws-generation-open'
+        });
+    });
+
+    it('repairs a missing client session without a socket generation under no connection id', async () => {
+        const calls = await repairMissingClientSession(undefined);
+
+        // No socket close cleans a generation no authorised socket wrote, so presence connects must not take it up.
+        expect(calls[1].body).toMatchObject({ generationId: 'generation-1', transport: 'ws' });
+        expect(calls[1].body).not.toHaveProperty('connectionId');
     });
 
     it('reuses distinct client and group request IDs across retries', async () => {
@@ -145,6 +166,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
             generationId: 'generation-1',
+            wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
             policies: { command: { maxAttempts: 2 } }
         });
@@ -183,6 +205,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [], {
             generationId: 'generation-1',
+            wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
             policies: { command: { maxAttempts: 2 } }
         });
@@ -199,6 +222,7 @@ describe('state heartbeat HTTP workflow', () => {
 
         await refreshStateHeartbeat(clientData, [], {
             generationId: 'generation-1',
+            wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
             authSession: {
                 clientId: 'principal-1',
@@ -303,4 +327,27 @@ function installEmptyLocalStorage(): void {
         setItem: vi.fn(),
         removeItem: vi.fn()
     });
+}
+
+async function repairMissingClientSession(wsConnectionGenerationId: string | undefined): Promise<readonly FetchCall[]> {
+    const calls: FetchCall[] = [];
+    const clientSessionPath = '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1' +
+        '/instances/principal-1/sessions/session-1';
+    stubFetch(calls, ({ url, method }) => {
+        if (method === 'POST' && url === `${clientSessionPath}/heartbeat`) {
+            return new Response('Client principal not found: principal-1', { status: 404 });
+        }
+        if (method === 'PUT' && url === clientSessionPath) {
+            return jsonResponse(clientSnapshot('principal-1', 'ar-eye-hunter'));
+        }
+        return notFoundResponse();
+    });
+    await refreshStateHeartbeat(clientData, [], {
+        generationId: 'generation-1',
+        wsConnectionGenerationId,
+        clientSnapshot: undefined,
+        scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
+        policies: { command: { maxAttempts: 3 } }
+    });
+    return calls;
 }

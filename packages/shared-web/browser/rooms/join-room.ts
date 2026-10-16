@@ -55,7 +55,7 @@ export async function joinRoom(input: JoinRoomInput): Promise<GroupSnapshot> {
             principalId: session.clientId,
             sessionId: session.sessionId,
             generationId: context.middleware.heartbeat.generationId,
-            connectionGenerationId: requireOwnWsConnectionGenerationId(session),
+            connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
             scope,
             policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
             intent: {

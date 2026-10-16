@@ -63,6 +63,11 @@ export function createDefaultApiMiddlewareTestDouble(
                 session.sessionId,
                 middlewareOverrides.heartbeat
             ),
+            ownWsConnectionGeneration: toServiceTestDouble<RallarBrowserMiddleware['ownWsConnectionGeneration']>({
+                read: vi.fn(async () => Either.ofRight<Error, string>(`ws-generation-${session.sessionId}`)),
+                readKnown: vi.fn(() => `ws-generation-${session.sessionId}`),
+                ...middlewareOverrides.ownWsConnectionGeneration
+            }),
             storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability),
             volatileBudget: middlewareOverrides.volatileBudget ?? createDefaultVolatileSessionBudget(),
             outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink()
