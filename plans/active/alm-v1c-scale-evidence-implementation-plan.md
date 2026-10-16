@@ -330,7 +330,9 @@ completion relay. Open after this step: the ticket consume in the connect item (
 the connect commit), the handler read phase's counter scope (D259), the route's second session read (D252), the
 ThrottledFlush migrations of the AL checkpoint writer and the artifact recorder, the remaining audit primitives
 (keyed rate limiter, serialized chain, sibling claim, JSON streaming, abort scope), the O(N) presence summary read
-per connect, sign-in PBKDF2 under the cap, and the Postgres medium-scale evidence for D261/D265 beyond CI.
+per connect, sign-in PBKDF2 under the cap, the test-only awaiting methods on the client inbox service
+(`processAuthorisedWsClientConnect`, `processAuthorisedWsClientDisconnect`, `processExpiredSessions`), the double completion
+publish for a retry-exhausted entry, and the Postgres medium-scale evidence for D261/D265 beyond CI.
 
 The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
 delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
