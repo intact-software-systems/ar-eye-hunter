@@ -1,5 +1,5 @@
-import type { ResourceInboxClaimOrder } from './queue-box-types.ts';
-import type { Key } from './ResourceEntry.ts';
+import type { ResourceInboxClaimOrder } from '../queue-box-types.ts';
+import type { Key } from '../ResourceEntry.ts';
 
 /** The contexts one claim has taken a row from; in `oldest-per-context` order a second row of a context is refused. */
 export class ResourceInboxClaimedContexts {

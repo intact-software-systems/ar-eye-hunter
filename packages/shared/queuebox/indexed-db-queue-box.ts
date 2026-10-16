@@ -61,7 +61,7 @@ import {
     validateResourceEntryObservation,
     validateResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
-import { ResourceInboxClaimedContexts } from './resource-inbox-claimed-contexts.ts';
+import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,

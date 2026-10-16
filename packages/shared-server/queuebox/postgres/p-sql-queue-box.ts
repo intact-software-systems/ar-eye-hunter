@@ -29,7 +29,7 @@ import {
     captureResourceEntryObservations,
     validateResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
-import { ResourceInboxClaimedContexts } from '@shared/queuebox/resource-inbox-claimed-contexts.ts';
+import { ResourceInboxClaimedContexts } from '@shared/queuebox/resource-inbox/resource-inbox-claimed-contexts.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '@shared/resilience/to-error.ts';
