@@ -67,13 +67,15 @@ and V1d:
   sends two all-recipient-ACK lifecycle events, with the end ordered after every player's workload
   completion. Preserve canonical AR Eye payloads, nested relay/game identities, match coherence
   and isolated room scope, including serialized arrival matches.
-- Preserve the existing 5,000 ms HTTP allowance, separate 45-second initial socket and 45-second
-  RTC-readiness allowances, 15-second coordinator start barrier and 45-second recipe setup
-  barriers. The existing 65-second shots-complete declaration is clipped by its enclosing
-  30-second absolute workload/ACK window. The declared
-  330-second outer terminal allowance and existing 120-second hosted registration allowance are
-  lifecycle bounds, not extensions of those inner deadlines. Preserve parent clipping, cancellation
-  and truthful incomplete results. Late diagnostics cannot resurrect a failed window or end event.
+- Setup allowances grow with the cohort (maintainer ruling D280, from D218, D221 and D229): group requests and
+  the ready-status read 8.75 / 12.5 / 17.5 s, the players' `rtc.connect` and connected barrier 54.75 / 64.5 /
+  77.5 s and their RTC readiness 49.75 / 59.5 / 72.5 s at 15 / 30 / 50, with the 15-second coordinator start
+  barrier, the 45-second recipe setup barriers and the 5,000 ms allowance of every other HTTP request unchanged.
+  The existing 65-second shots-complete declaration is
+  clipped by its enclosing 30-second absolute workload/ACK window. The declared 330-second outer terminal
+  allowance and existing 120-second hosted registration allowance are lifecycle bounds, not extensions of those
+  inner deadlines. Preserve parent clipping, cancellation and truthful incomplete results. Late diagnostics cannot
+  resurrect a failed window or end event.
 - Delivery remains volatile, at-least-once, 30-second TTL and rtc-with-ws-fallback. Preserve routing,
   authority, generation/currentness, authentication, QoS, frozen audience, duplicate/count-once,
   receipt revision/CAS, retry, settlement and failure behavior. An intermediate subtree ACK is
@@ -101,7 +103,8 @@ and V1d:
   remain zero. Explicitly exclude idle probes while still recording them. Require final traffic
   storage readback; sampled bounds or setup reset alone do not prove this requirement.
 - Preserve canonical source manifests, isolated effective identities, original uninstrumented
-  acceptance settings, complete native evidence retention and owned cleanup. Recorder counts, EOF,
+  acceptance settings (on the hosted plane the server's timing logs and phase timing stay off, D279),
+  complete native evidence retention and owned cleanup. Recorder counts, EOF,
   a zero worker exit or readable artifacts do not prove completed producers or accepted recipes.
 
 ## Fairness and unchanged benefit gates
@@ -209,7 +212,7 @@ assertion are unchanged. Hosted 15 from the branch passes through `Run GitHub Fr
 `hetzner-control` mode (15/15, 231/231, run 38662616218); the all-on-one-VM Hetzner run still fails at RTC
 readiness because the co-located host stalls once the browsers start (recorded in the proposal §1.7).
 
-### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted (this PR)
+### Step 2c: the acknowledgement tail at scale, the control plane at 50, then 15 → 30 → 50 hosted (merged, #666)
 
 Step 2b is merged (#664 as `9f71ea2`). On branch `claude/alm-v1c-step-2c-ack-tail`, from the measured 50-agent evidence (proposal
 §1.8): the shot-ACK tail grows with depth (p50 49 ms at depth 1, 1.5 s at depth 3, 1.8 s at depth 4)
@@ -250,7 +253,7 @@ after setup: the single-lane hosted API relays one offer→answer in 7.1 s p50 (
 appointment re-forms the overlay behind the same queue while 5 s status reads time out. That bound
 is the next slice.
 
-### Step 2d: hosted formation throughput, then 30 → 50 hosted
+### Step 2d: hosted formation throughput, then 30 → 50 hosted (merged, #667)
 
 Static analysis of the hosted plane's serial path first (the `prod-in-memory` AppInbox lane, the
 WS outbox worker's wake cadence, the signal relay and the audience reads: where a relay, a presence
@@ -287,7 +290,7 @@ per agent and records under a cap). Next slice (2e): the hosted lane's per-playe
 player at 50, serial) measured with the AppInbox phase timing on a hosted run, the sign-in
 derivation under 50 concurrent logins, ICE coalescing (D223) and the known-member join path (D228).
 
-### Step 2e: the hosted lane's per-player cost (this PR)
+### Step 2e: the hosted lane's per-player cost (merged, #668)
 
 Step 2d is merged (#667 as `e623aa7`). The phase-timing capture and the lane survey (proposal §4)
 located the cost: six serial lane items per player, an authorization capture repeated inside every
@@ -334,6 +337,16 @@ per connect, sign-in PBKDF2 under the cap, the test-only awaiting methods on the
 (`processAuthorisedWsClientConnect`, `processAuthorisedWsClientDisconnect`, `processExpiredSessions`), the double completion
 publish for a retry-exhausted entry, and the Postgres medium-scale evidence for D261/D265 beyond CI.
 
+The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
+delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
+admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under
+purpose names found twelve; four small ones land in this step as shared primitives (a failure backoff
+state over the existing exponential delay, a timer and clock seam, a repeating run, a keyed
+single-flight), and the rest stay open items of this plan for a consolidation slice: a keyed rate
+limiter for the ACK relay, a trailing flush with one in-flight write (snapshot persistence, the AL
+checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
+claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
+
 ### Step 2g: the API thread's per-player cost and the lane's fault tolerance (this PR)
 
 Step 2f is merged (#669 as `80749db`). Its hosted 50 journals (proposal §4 step 2g) show the lane 11 % busy in the
@@ -349,22 +362,11 @@ conflicts. Each RED first, judged by the hosted 50 connect, sign-in, formation t
 ### Step 2h: the shared primitives and the V1c closure
 
 D278 lists what moves here: the consolidation primitives the step 2g survey ranked, the incremental presence
-summary, the handler read phase's counters and the cached snapshot body if the D266 measurement selects them. The
-closure needs maintainer rulings, recorded before the work: whether the hosted acceptance run keeps the server's
-timing logs on (they are always on since #668), whether the cohort-proportional setup allowances of D218, D221 and
-D229 replace the binding 5 s and 45 s figures in this plan, and how the state-write comparison judges V1c step 2
-(the balanced comparison has not run since step 1's 5.40 % result). Then the Postgres four-arm comparison or the
-adaptive arm's removal, the rewritten evidence section, and the plan's deletion.
-
-The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
-delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
-admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under
-purpose names found twelve; four small ones land in this step as shared primitives (a failure backoff
-state over the existing exponential delay, a timer and clock seam, a repeating run, a keyed
-single-flight), and the rest stay open items of this plan for a consolidation slice: a keyed rate
-limiter for the ACK relay, a trailing flush with one in-flight write (snapshot persistence, the AL
-checkpoint writer, the artifact recorder), a serialized promise chain, a queuebox-level sibling-row
-claim shared by the presence summary and topology work, sliced JSON streaming, and a linked abort scope.
+summary, the handler read phase's counters and the cached snapshot body if the D266 measurement selects them.
+The maintainer's rulings bind the closure: the hosted acceptance runs without server timing (D279), the
+cohort-proportional setup allowances are binding (D280, written into the acceptance above), and one V1c-wide
+state-write comparison judges step 2 against main before step 1 at the unchanged 5 % (D281). Then the Postgres
+four-arm comparison or the adaptive arm's removal, the rewritten evidence section, and the plan's deletion.
 
 ## Completion and handoff
 
