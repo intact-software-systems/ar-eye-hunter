@@ -136,7 +136,7 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
     const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const queueBox = new PSqlQueueBox(queueInbox, Temporal.Now.instant);
-    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ completionNotifications, database: sql });
+    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ database: sql });
     const inboxQueueReader = new InboxQueueReader(queueBox, {
         laneBudgetPolicy: 'adaptive-retry',
         completionNotifications,

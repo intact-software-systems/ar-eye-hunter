@@ -1,5 +1,6 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
+import { AppInboxType, toAppInboxCompletionAwaitability } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -7,18 +8,33 @@ import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/r
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
+import {
+    decodeAuthorisedWsClientMutationResult,
+    type AuthorisedWsClientMutationResult
+} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
+import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
 
 const SERVICE_ID = 'server-12345678';
+
+it('offers no awaiting entry point for the fire-and-forget websocket and expiry types', () => {
+    // A cross-server relay never notifies a fire-and-forget completion, so a waiter on one
+    // would return only on its safety tick; production enqueues these types without waiting.
+    for (const name of ['processAuthorisedWsClientConnect', 'processAuthorisedWsClientDisconnect', 'processExpiredSessions']) {
+        expect(Reflect.get(AppClientInboxService.prototype, name), name).toBeUndefined();
+    }
+    for (const type of [AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT, AppInboxType.CLIENT_EXPIRED_SESSIONS]) {
+        expect(toAppInboxCompletionAwaitability(type), type).toBe('fire-and-forget');
+    }
+});
 
 it('rejects authorised websocket disconnect after durable auth revocation', async () => {
     const queue = new TestResourceInbox();
@@ -45,10 +61,10 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
             userAgent: 'Browser'
         }
     } as const;
-    const connected = await processAppInboxMethod(queue, reader, () => service.processAuthorisedWsClientConnect(connectInput));
+    const connected = await drainAuthorisedWsEntry({ queue, reader, results }, () => service.enqueueAuthorisedWsClientConnect(connectInput));
     await authSessions.deleteSession(authSession);
-    const disconnected = await processAppInboxMethod(queue, reader, () =>
-        service.processAuthorisedWsClientDisconnect({
+    const disconnected = await drainAuthorisedWsEntry({ queue, reader, results }, () =>
+        service.enqueueAuthorisedWsClientDisconnect({
             connection: toAuthorisedWsClientConnection(connectInput),
             disconnectedAtEpochMs: Date.now(),
             reason: 'socket-closed'
@@ -125,8 +141,8 @@ it('processes authorised websocket connects in the requested state scope', async
         runtimeRepository
     });
 
-    const connected = await processAppInboxMethod(queue, reader, () =>
-        service.processAuthorisedWsClientConnect({
+    const connected = await drainAuthorisedWsEntry({ queue, reader, results }, () =>
+        service.enqueueAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-admin',
             input: {
@@ -175,8 +191,8 @@ it('processes authorised websocket connects independently per state scope', asyn
         runtimeRepository
     });
 
-    const defaultConnect = await processAppInboxMethod(queue, reader, () =>
-        service.processAuthorisedWsClientConnect({
+    const defaultConnect = await drainAuthorisedWsEntry({ queue, reader, results }, () =>
+        service.enqueueAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-default',
             input: {
@@ -184,8 +200,8 @@ it('processes authorised websocket connects independently per state scope', asyn
                 workspaceId: 'default'
             }
         }));
-    const scopedConnect = await processAppInboxMethod(queue, reader, () =>
-        service.processAuthorisedWsClientConnect({
+    const scopedConnect = await drainAuthorisedWsEntry({ queue, reader, results }, () =>
+        service.enqueueAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation-scoped',
             input: {
@@ -234,9 +250,9 @@ it(
                 expiresAtEpochMs: Date.now() + 60_000
             }
         } as const;
-        await processAppInboxMethod(queue, reader, () => service.processAuthorisedWsClientConnect(connectInput));
-        const disconnected = await processAppInboxMethod(queue, reader, () =>
-            service.processAuthorisedWsClientDisconnect({
+        await drainAuthorisedWsEntry({ queue, reader, results }, () => service.enqueueAuthorisedWsClientConnect(connectInput));
+        const disconnected = await drainAuthorisedWsEntry({ queue, reader, results }, () =>
+            service.enqueueAuthorisedWsClientDisconnect({
                 connection: toAuthorisedWsClientConnection(connectInput),
                 disconnectedAtEpochMs: Date.now(),
                 reason: 'socket-closed'
@@ -317,17 +333,22 @@ function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {
     };
 }
 
-async function processAppInboxMethod<Result>(
-    queue: TestResourceInbox,
-    reader: InboxQueueReader,
-    run: () => Promise<Result>
-): Promise<Result> {
-    const minimumEntries = (await queue.getAllKeys()).length + 1;
-    const resultPromise = run();
-    await queue.waitForEntryCount(minimumEntries);
-    await reader.dequeueInbox(
-        InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        createAppInboxTestResilience()
-    );
-    return await resultPromise;
+interface AuthorisedWsTestQueue {
+    readonly queue: TestResourceInbox;
+    readonly reader: InboxQueueReader;
+    readonly results: TestResourceInboxResults;
+}
+
+async function drainAuthorisedWsEntry(
+    { queue, reader, results }: AuthorisedWsTestQueue,
+    enqueue: () => Promise<ResourceEntry>
+): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
+    const entry = await enqueue();
+    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience());
+    return await readCompletedAppInboxResult({
+        statusRepository: queue,
+        resultRepository: results,
+        entry,
+        decodeResult: decodeAuthorisedWsClientMutationResult
+    });
 }

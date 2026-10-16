@@ -451,7 +451,6 @@ function createAppInboxDequeueOptions(
     completionNotifications: ResourceInboxCompletionNotifications
 ): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
-        completionNotifications,
         database: input.database,
         timing: input.timing
     });

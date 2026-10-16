@@ -34,7 +34,8 @@ import { toUnexpectedAppInboxFailure, type AppInboxFailure } from '../../app-inb
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
 import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
+import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
+import type { AppInboxResultWaiter } from '../../app-inbox/client/app-inbox-result-waiter.ts';
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -123,7 +124,7 @@ export namespace AppAuthInboxService {
 }
 
 export class AppAuthInboxService {
-    private readonly commandClient: AppInboxCommandClient;
+    private readonly resultWaiter: AppInboxResultWaiter;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly authInboxHandler: AuthInboxHandler;
     private readonly authInboxRepository: AuthInboxRepository;
@@ -135,7 +136,7 @@ export class AppAuthInboxService {
     private readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
 
     constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
-        this.commandClient = createAppInboxClientRuntime({
+        this.resultWaiter = createAppInboxClientRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resourceInboxRepository: dependencies.resourceInboxRepository,
             resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
@@ -144,7 +145,7 @@ export class AppAuthInboxService {
             timing: config.timing,
             options: config.options,
             wakeOwningQueue: config.wakeOwningQueue
-        }).commandClient;
+        }).resultWaiter;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -175,62 +176,6 @@ export class AppAuthInboxService {
             });
         }
         this.handlers.assertRegistrationComplete(AUTH_TYPES);
-    }
-
-    async processAuthIntentUntilCompletion(
-        intent: RegisterAuthUserIntent
-    ): Promise<Either<AppInboxFailure, RegisterResponse>>;
-    async processAuthIntentUntilCompletion(
-        intent: IssueAuthSessionIntent
-    ): Promise<Either<AppInboxFailure, LoginResponse>>;
-    async processAuthIntentUntilCompletion(
-        intent: LogoutAuthSessionIntent
-    ): Promise<Either<AppInboxFailure, LogoutResponse>>;
-    async processAuthIntentUntilCompletion(
-        intent: IssueAuthWsTicketIntent
-    ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>>;
-    async processAuthIntentUntilCompletion(
-        intent: ConsumeAuthWsTicketIntent
-    ): Promise<Either<AppInboxFailure, IssuedAuthSession>>;
-    async processAuthIntentUntilCompletion(
-        intent: IssueAuthAgentTicketsIntent
-    ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;
-    async processAuthIntentUntilCompletion(
-        intent: ConsumeAuthAgentTicketIntent
-    ): Promise<Either<AppInboxFailure, AuthSession>>;
-    async processAuthIntentUntilCompletion(
-        intent: AuthMutationIntent
-    ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>>;
-    async processAuthIntentUntilCompletion(
-        intent: AuthMutationIntent
-    ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>> {
-        const decoded = decodeAuthMutationIntent(intent);
-        let persisted: Either<AppInboxFailure, AuthMutationResult>;
-        try {
-            persisted = await this.commandClient.enqueueAndWaitForResult<AuthMutationResult>(
-                {
-                    type: toAuthAppInboxType(decoded),
-                    topicId: toAuthAppInboxType(decoded),
-                    resourceId: decoded.requestId,
-                    contextId: toAuthIntentContextId(decoded),
-                    senderId: toAuthIntentSenderId(decoded),
-                    data: encodeAppInboxCommand(decoded, 'Auth AppInbox command')
-                },
-                decodeAuthMutationResult
-            );
-        }
-        catch (error) {
-            return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
-        }
-        if (persisted.left !== undefined) {
-            return Either.ofLeft(persisted.left);
-        }
-        if (persisted.right === undefined) {
-            throw new Error('Auth AppInbox result is missing');
-        }
-        return Either.ofRight(
-            await toAuthMutationPublicResult(decoded, persisted.right, this.credentialIssuer)
-        );
     }
 
     async registerUser(
@@ -279,7 +224,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'register-user')
         );
     }
@@ -325,7 +270,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'issue-session')
         );
     }
@@ -365,7 +310,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'logout-session')
         );
     }
@@ -387,7 +332,7 @@ export class AppAuthInboxService {
             AppInboxType.AUTH_SESSION_LOGOUT,
             physicalRequestId
         );
-        const matchingIntents: LogoutAuthSessionIntent[] = [];
+        const matchingIntents: ReservedAuthIntent<LogoutAuthSessionIntent>[] = [];
         for (const entry of entries) {
             const intent = readAuthReplayIntent(entry, AppInboxType.AUTH_SESSION_LOGOUT);
             if (intent === null) {
@@ -403,13 +348,13 @@ export class AppAuthInboxService {
                 intent?.kind === 'logout-session' &&
                 intent.expected.clientId === input.clientId
             ) {
-                matchingIntents.push(intent);
+                matchingIntents.push(toObservedAuthIntent(intent, entry));
             }
         }
         if (matchingIntents.length !== 1) {
             return null;
         }
-        return await this.processAuthIntentUntilCompletion(matchingIntents[0]);
+        return await this.waitForReservedAuthIntent(matchingIntents[0]);
     }
 
     async issueWebSocketTicket(
@@ -454,7 +399,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'issue-ws-ticket')
         );
     }
@@ -490,7 +435,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'consume-ws-ticket')
         );
     }
@@ -539,7 +484,7 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'issue-agent-tickets')
         );
     }
@@ -557,7 +502,7 @@ export class AppAuthInboxService {
             AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
             physicalRequestId
         );
-        const matchingIntents: ConsumeAuthAgentTicketIntent[] = [];
+        const matchingIntents: ReservedAuthIntent<ConsumeAuthAgentTicketIntent>[] = [];
         for (const entry of entries) {
             const intent = readAuthReplayIntent(entry, AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME);
             const expectedDigest = intent?.kind === 'consume-agent-ticket' ? intent.ticketDigest : '0'.repeat(43);
@@ -565,11 +510,11 @@ export class AppAuthInboxService {
                 constantTimeAuthDigestEqual(ticketDigest, expectedDigest) &&
                 intent?.kind === 'consume-agent-ticket'
             ) {
-                matchingIntents.push(intent);
+                matchingIntents.push(toObservedAuthIntent(intent, entry));
             }
         }
         if (matchingIntents.length === 1) {
-            return await this.processAuthIntentUntilCompletion(matchingIntents[0]);
+            return await this.waitForReservedAuthIntent(matchingIntents[0]);
         }
         const reserved = await this.reserveAuthIntent(
             {
@@ -589,8 +534,53 @@ export class AppAuthInboxService {
         if (reserved.left !== undefined) {
             return Either.ofLeft(reserved.left);
         }
-        return await this.processAuthIntentUntilCompletion(
+        return await this.waitForReservedAuthIntent(
             requireReservedIntent(reserved, 'consume-agent-ticket')
+        );
+    }
+
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<RegisterAuthUserIntent>
+    ): Promise<Either<AppInboxFailure, RegisterResponse>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<IssueAuthSessionIntent>
+    ): Promise<Either<AppInboxFailure, LoginResponse>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<LogoutAuthSessionIntent>
+    ): Promise<Either<AppInboxFailure, LogoutResponse>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<IssueAuthWsTicketIntent>
+    ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<ConsumeAuthWsTicketIntent>
+    ): Promise<Either<AppInboxFailure, IssuedAuthSession>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<IssueAuthAgentTicketsIntent>
+    ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<ConsumeAuthAgentTicketIntent>
+    ): Promise<Either<AppInboxFailure, AuthSession>>;
+    private async waitForReservedAuthIntent(
+        reserved: ReservedAuthIntent<AuthMutationIntent>
+    ): Promise<Either<AppInboxFailure, AuthMutationPublicResult>> {
+        let persisted: Either<AppInboxFailure, AuthMutationResult>;
+        try {
+            persisted = await this.resultWaiter.waitForReservedResult<AuthMutationResult>(
+                reserved.reservation,
+                decodeAuthMutationResult
+            );
+        }
+        catch (error) {
+            return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
+        }
+        if (persisted.left !== undefined) {
+            return Either.ofLeft(persisted.left);
+        }
+        if (persisted.right === undefined) {
+            throw new Error('Auth AppInbox result is missing');
+        }
+        return Either.ofRight(
+            await toAuthMutationPublicResult(reserved.intent, persisted.right, this.credentialIssuer)
         );
     }
 
@@ -598,7 +588,7 @@ export class AppAuthInboxService {
         reservation: AuthCommandReservation,
         materialize: () => Promise<I>,
         matches: (intent: AuthMutationIntent) => boolean | Promise<boolean>
-    ): Promise<Either<AppInboxFailure, I>> {
+    ): Promise<Either<AppInboxFailure, ReservedAuthIntent<I>>> {
         try {
             const observedAtMs = this.authFactNowEpochMs();
             const placeholder = toAuthInboxEntry({
@@ -627,7 +617,14 @@ export class AppAuthInboxService {
                     'received-auth-intent'
                 );
             }
-            return Either.ofRight(intent as I);
+            return Either.ofRight({
+                intent: intent as I,
+                reservation: {
+                    enqueue: toAuthIntentEnqueue(intent),
+                    key: reserved.entry.key,
+                    winner: reserved.ownCandidate
+                }
+            });
         }
         catch (error) {
             return Either.ofLeft(toAuthBoundaryFailure(classifyAppInboxError(error)));
@@ -669,6 +666,18 @@ interface AuthCommandReservation {
 interface AuthIntentReservation {
     readonly entry: ResourceEntry;
     readonly ownCandidate: boolean;
+}
+
+interface ReservedAuthIntent<I extends AuthMutationIntent> {
+    readonly intent: I;
+    readonly reservation: AppInboxReservationClient.MaterializedReservation;
+}
+
+function toObservedAuthIntent<I extends AuthMutationIntent>(intent: I, entry: ResourceEntry): ReservedAuthIntent<I> {
+    return {
+        intent,
+        reservation: { enqueue: toAuthIntentEnqueue(intent), key: entry.key, winner: false }
+    };
 }
 
 function toAuthIntentEnqueue(intent: AuthMutationIntent): AppInboxEnqueueInput {
@@ -717,13 +726,13 @@ function toAuthInboxEntry(enqueue: AppInboxEnqueueInput, facts: AuthInboxEntryFa
 }
 
 function requireReservedIntent<K extends AuthMutationIntent['kind']>(
-    reserved: Either<AppInboxFailure, AuthMutationIntent>,
+    reserved: Either<AppInboxFailure, ReservedAuthIntent<AuthMutationIntent>>,
     kind: K
-): Extract<AuthMutationIntent, { kind: K; }> {
-    if (reserved.right?.kind !== kind) {
+): ReservedAuthIntent<Extract<AuthMutationIntent, { kind: K; }>> {
+    if (reserved.right?.intent.kind !== kind) {
         throw new Error(`Reserved auth intent kind differs: ${kind}`);
     }
-    return reserved.right as Extract<AuthMutationIntent, { kind: K; }>;
+    return reserved.right as ReservedAuthIntent<Extract<AuthMutationIntent, { kind: K; }>>;
 }
 
 function readNormalizedUsername(username: string): string {

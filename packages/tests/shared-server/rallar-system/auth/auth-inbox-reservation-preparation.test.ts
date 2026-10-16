@@ -68,6 +68,43 @@ describe('auth reservation preparation', () => {
         expect(hashObservations.every((insideWrite) => !insideWrite)).toBe(true);
     });
 
+    it.each(['logout-session', 'consume-ws-ticket'] as const)(
+        'waits on the reserved %s row without enqueueing it a second time',
+        async (kind) => {
+            const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
+            const enqueueIfAbsent = vi.spyOn(auth.reader, 'enqueueIfAbsent');
+            const result = kind === 'logout-session'
+                ? await runAuthInboxCommand({
+                    pending: auth.service.logoutSession({
+                        requestId: 'reserved-once-logout',
+                        session: {
+                            clientId: 'client-1',
+                            username: 'alice',
+                            sessionId: 'session-1',
+                            accessToken: 'absent-access-token',
+                            issuedAtEpochMs: 500,
+                            expiresAtEpochMs: 2_000
+                        }
+                    }),
+                    queue: auth.queue,
+                    reader: auth.reader
+                })
+                : await runAuthInboxCommand({
+                    pending: auth.service.consumeWebSocketTicket({
+                        requestId: 'reserved-once-consume',
+                        ticket: 'absent-ws-ticket',
+                        expectedSessionId: 'session-1'
+                    }),
+                    queue: auth.queue,
+                    reader: auth.reader
+                });
+
+            expect(result.left?.retry ?? null).toBeNull();
+            expect(await auth.queue.readEntries()).toHaveLength(1);
+            expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+
     it.each(['candidate', 'live-row'] as const)('uses the owned auth observation for %s', async (boundary) => {
         const observedAtMs = Date.now() - 60_000;
         const auth = createAuthInboxTestRuntime({
@@ -127,10 +164,10 @@ describe('auth reservation preparation', () => {
         const before = JSON.stringify(existing);
         vi.spyOn(auth.queue, 'findAllByTopicAndResourceId').mockResolvedValue([existing]);
         const write = vi.spyOn(auth.queue, 'writeMaterializedIfAbsentOrReplaceExpired');
-        const completion = Either.ofRight<AppInboxFailure, LogoutResponse>({ loggedOut: true });
-        vi.spyOn(auth.service, 'processAuthIntentUntilCompletion').mockResolvedValue(completion);
 
-        await expect(auth.service.logoutSession(input)).resolves.toEqual(completion);
+        await expect(auth.service.logoutSession(input)).resolves.toEqual(
+            Either.ofRight<AppInboxFailure, LogoutResponse>({ loggedOut: true })
+        );
         expect(write).not.toHaveBeenCalled();
         expect(JSON.stringify(existing)).toBe(before);
     });

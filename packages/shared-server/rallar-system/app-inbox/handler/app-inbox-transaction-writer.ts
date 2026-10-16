@@ -1,6 +1,7 @@
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ClaimableDeadline } from '@shared/resilience/claimable-deadline.ts';
 
 import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
@@ -10,6 +11,7 @@ import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/
 import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
 import { toAppInboxEntryCompletionAwaitability } from '../app-inbox-command-identity.ts';
 import {
+    AppInboxAttemptDeadlineExceededError,
     AppInboxReservationConflictError,
     toAppInboxCompletionAwaitability,
     type AppInboxExecutionMetadata
@@ -35,6 +37,9 @@ export interface AppInboxMutationTransactionWriter {
     ): Promise<Result>;
 }
 
+/** A write outside an executor-run attempt has no deadline to lose. */
+const UNBOUNDED_ATTEMPT_DEADLINE: ClaimableDeadline.Claim = { tryClaim: () => true };
+
 export namespace AppInboxTransactionWriter {
     export interface Dependencies {
         readonly completionNotifications?: ResourceInboxCompletionNotifications;
@@ -50,6 +55,7 @@ export namespace AppInboxTransactionWriter {
 
 export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly finalizationByContext = new WeakMap<object, AppInboxHandlerFinalization>();
+    private readonly deadlineByContext = new WeakMap<object, ClaimableDeadline.Claim>();
     private readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     private readonly database: PSqlSql;
     private readonly nowEpochMs: () => number;
@@ -65,8 +71,10 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         this.config = config;
     }
 
-    begin(context: AppInboxExecutionMetadata): void {
+    /** The attempt's transaction claims the deadline just before it commits; a lost claim rolls the attempt back. */
+    begin(context: AppInboxExecutionMetadata, deadline: ClaimableDeadline.Claim): void {
         this.finalizationByContext.set(context, { state: 'pending' });
+        this.deadlineByContext.set(context, deadline);
     }
 
     read(context: AppInboxExecutionMetadata): AppInboxHandlerFinalization {
@@ -127,9 +135,13 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         write: PSqlTransactionWrite<void>
     ): Promise<void> {
         this.ensurePending(context);
+        const deadline = this.deadlineByContext.get(context) ?? UNBOUNDED_ATTEMPT_DEADLINE;
         await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
             await write(transaction);
             await writeAppInboxCompletion(transaction, computed);
+            if (!deadline.tryClaim()) {
+                throw new AppInboxAttemptDeadlineExceededError(context.entry.key);
+            }
         });
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
@@ -147,7 +159,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             throw new Error('App inbox handler context is already finalized');
         }
         if (!current) {
-            this.begin(context);
+            this.begin(context, UNBOUNDED_ATTEMPT_DEADLINE);
         }
     }
 

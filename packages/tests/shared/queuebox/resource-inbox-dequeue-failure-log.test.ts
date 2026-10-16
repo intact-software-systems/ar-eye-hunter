@@ -3,7 +3,9 @@ import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-control
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createDefaultResourceInboxDequeuer,
-    ResourceInboxHandlerFinalizedRejection
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
@@ -24,6 +26,15 @@ import {
 interface DequeuedOnce {
     readonly failures: Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>;
     readonly releases: ResourceInboxAttemptReleaseTelemetry[];
+}
+
+class RuntimeStateWriteConflictError extends Error {
+    readonly code = 'runtime-state-write-conflict';
+
+    constructor() {
+        super('Runtime state changed before the write');
+        this.name = 'RuntimeStateWriteConflictError';
+    }
 }
 
 class GroupAlreadyExistsError extends Error {
@@ -102,17 +113,51 @@ describe('ResourceInbox dequeue failure log', () => {
         })]);
         expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.FAILED);
     });
+
+    it('releases a handler conflict value for redelivery on the retry path, logged once without stack frames', async () => {
+        const queue = new InMemoryQueueBox();
+        const enqueued = toResourceEntry('write-conflict', { value: 3 });
+        await queue.enqueue(enqueued);
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const infoLog = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+        const { failures, releases } = await dequeueOnce(
+            queue,
+            'write-conflict',
+            async (attempt) =>
+                new ResourceInboxHandlerRetryableConflict(
+                    attempt.entry,
+                    'runtime-state-write-conflict',
+                    new RuntimeStateWriteConflictError()
+                )
+        );
+
+        expect(errorLog).not.toHaveBeenCalled();
+        const conflictLines = infoLog.mock.calls.filter(([message]) => String(message).includes('conflicted'));
+        expect(conflictLines).toHaveLength(1);
+        expect(conflictLines[0]![0]).toContain(enqueued.key.resourceId);
+        expect(conflictLines[0]![0]).toContain('runtime-state-write-conflict');
+        expect(JSON.stringify(conflictLines[0])).not.toMatch(/\n\s+at /u);
+        expect(failures.size).toBe(0);
+        expect(releases).toEqual([expect.objectContaining({
+            key: enqueued.key,
+            classification: 'retryable',
+            status: EntityStatus.RETRY,
+            failure: { kind: 'retryable', code: 'runtime-state-write-conflict', name: 'RuntimeStateWriteConflictError' }
+        })]);
+        expect(await queue.getItem(enqueued.key)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
+    });
 });
 
 async function dequeueOnce(
     queue: InMemoryQueueBox,
     typeId: string,
-    computer: (attempt: ResourceInboxAttempt) => Promise<ResourceInboxHandlerFinalizedRejection | undefined>
+    computer: (attempt: ResourceInboxAttempt) => Promise<ResourceInboxHandlerOutcome | undefined>
 ): Promise<DequeuedOnce> {
     const duration = Temporal.Duration.from({ seconds: 10 });
     const failures = new Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>();
     const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
-    await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedRejection | undefined>({
+    await createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
         repository: queue,
         typesToDequeue: () => new Set([typeId]),
         newLaneClaimOrder: 'queue',

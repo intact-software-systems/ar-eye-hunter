@@ -3,7 +3,7 @@ import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-
 import type { ALOutboundMessageRuntime } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     NonRetryableException,
-    ResourceInboxHandlerFinalized
+    ResourceInboxHandlerOutcome
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
@@ -40,7 +40,7 @@ export interface OnQueuedMessageCallback {
         message: ALMessage,
         entry: ResourceEntry,
         attemptTelemetry: ResourceInboxAttemptTelemetry
-    ) => Promise<void | ResourceInboxHandlerFinalized>;
+    ) => Promise<void | ResourceInboxHandlerOutcome>;
 }
 
 export interface OnRejectedQueuedMessageCallback {

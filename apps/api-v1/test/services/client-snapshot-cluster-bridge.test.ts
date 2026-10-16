@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { decodeAuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
@@ -20,6 +21,7 @@ import {
     createPostgresAppInboxWorkerRuntime,
     createPostgresAppInboxWorkerTrace
 } from '../../../../packages/tests/shared-server/integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
+import { readCompletedAppInboxResult } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/read-completed-app-inbox-result.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -142,16 +144,22 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
     };
     const runtime = createPostgresAppInboxWorkerRuntime({ sql, serviceId: 'producer', atEpochMs: recipient.now, trace: createPostgresAppInboxWorkerTrace() });
     await runtime.authSessions.putSession(authSession);
+    const entry = await runtime.client.enqueueAuthorisedWsClientConnect({
+        authSession,
+        generationId: 'generation',
+        input: {
+            ...recipient.scope,
+            clientInstanceId: 'browser',
+            connectedAtEpochMs: recipient.now,
+            expiresAtEpochMs: recipient.now + 60_000
+        }
+    });
     const result = await runtime.runUntilCompletion(() =>
-        runtime.client.processAuthorisedWsClientConnect({
-            authSession,
-            generationId: 'generation',
-            input: {
-                ...recipient.scope,
-                clientInstanceId: 'browser',
-                connectedAtEpochMs: recipient.now,
-                expiresAtEpochMs: recipient.now + 60_000
-            }
+        readCompletedAppInboxResult({
+            statusRepository: runtime.resourceInbox.entries,
+            resultRepository: runtime.resourceInboxResults,
+            entry,
+            decodeResult: decodeAuthorisedWsClientMutationResult
         })
     );
     assert.ok(result.right);

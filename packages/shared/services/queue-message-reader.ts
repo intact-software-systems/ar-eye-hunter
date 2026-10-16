@@ -7,7 +7,7 @@ import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
     type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalized
+    type ResourceInboxHandlerOutcome
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -128,7 +128,7 @@ export class QueueMessageReader {
     private async dispatchQueuedMessage(
         entry: ResourceEntry,
         attemptTelemetry: ResourceInboxAttemptTelemetry
-    ): Promise<void | ResourceInboxHandlerFinalized> {
+    ): Promise<void | ResourceInboxHandlerOutcome> {
         let message: ALMessage;
         try {
             message = QueueMessageReader.decodeQueuedMessage(entry);

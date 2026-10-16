@@ -9,6 +9,7 @@ import {
     toDomain,
     type ResourceInboxRow
 } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { decodeAuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     WsOutboxProvenanceReader
@@ -19,6 +20,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { readCompletedAppInboxResult } from '../../rallar-system/app-inbox/test-support/read-completed-app-inbox-result.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -87,11 +89,17 @@ describe('Postgres client snapshot provenance transaction', () => {
                     trace: createPostgresAppInboxWorkerTrace()
                 });
                 await runtime.authSessions.putSession(authSession);
+                const connectEntry = await runtime.client.enqueueAuthorisedWsClientConnect({
+                    authSession,
+                    generationId: 'proof-generation',
+                    input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
+                });
                 const result = await runtime.runUntilCompletion(() =>
-                    runtime.client.processAuthorisedWsClientConnect({
-                        authSession,
-                        generationId: 'proof-generation',
-                        input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
+                    readCompletedAppInboxResult({
+                        statusRepository: runtime.resourceInbox.entries,
+                        resultRepository: runtime.resourceInboxResults,
+                        entry: connectEntry,
+                        decodeResult: decodeAuthorisedWsClientMutationResult
                     })
                 );
                 expect(observedUncommitted).toBe(true);

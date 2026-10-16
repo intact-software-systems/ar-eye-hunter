@@ -104,8 +104,15 @@ never commits twice, but a handler that writes its result outside its own
 transaction may run again and replace that result. The work of one delivery must
 therefore stay below the lease: long maintenance such as admin prune, CRDT
 compaction and expired-session sweeps must run in bounded pages, one page per
-delivery. `AppInboxHandlerExecutor` reports a handler that outlives its claim's
-lease as a `handler-outran-lease` timing event.
+delivery. `AppInboxHandlerExecutor` gives each attempt a deadline the
+configured margin below its lease (`attemptDeadlineMarginMs`, default
+`DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS`). An attempt that has not claimed
+its deadline by committing when it falls due is abandoned as a retryable
+`app-inbox-attempt-deadline-exceeded` failure with a `handler-deadline-expired`
+timing event, so the serial lane serves its next entry and the entry follows the
+retry path; the abandoned handler's own commit then loses the claim and rolls
+back. A handler that claimed its deadline and still outlives its lease, such as a
+slow commit, is reported as a `handler-outran-lease` timing event.
 
 ## Outbox and publication boundary
 

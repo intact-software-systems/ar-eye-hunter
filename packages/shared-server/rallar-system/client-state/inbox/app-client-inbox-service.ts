@@ -61,12 +61,7 @@ import {
     decodeClientSessionHeartbeatAppInboxPayload
 } from './client-state-inbox-command-codec.ts';
 import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
-import {
-    decodeAuthorisedWsClientMutationResult,
-    decodeClientStateWritten,
-    decodeExpiredClientSessionsResult,
-    type AuthorisedWsClientMutationResult
-} from './client-state-inbox-result-codec.ts';
+import { decodeClientStateWritten } from './client-state-inbox-result-codec.ts';
 
 export namespace AppClientInboxService {
     export interface Dependencies {
@@ -161,41 +156,14 @@ export class AppClientInboxService {
         return result;
     }
 
-    public async processAuthorisedWsClientConnect(
-        input: ToAuthorisedWsClientConnectEnqueueInput
-    ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
-        return await this.commandClient.enqueueAndWaitForResult(
-            toAuthorisedWsClientConnectEnqueue(input),
-            decodeAuthorisedWsClientMutationResult
-        );
-    }
-
     public async enqueueAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
         return await this.queueEntryWriter.enqueue(toAuthorisedWsClientConnectEnqueue(input));
-    }
-
-    public async processAuthorisedWsClientDisconnect(
-        input: ToAuthorisedWsClientDisconnectEnqueueInput
-    ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
-        return await this.commandClient.enqueueAndWaitForResult(
-            toAuthorisedWsClientDisconnectEnqueue(input),
-            decodeAuthorisedWsClientMutationResult
-        );
     }
 
     public async enqueueAuthorisedWsClientDisconnect(
         input: ToAuthorisedWsClientDisconnectEnqueueInput
     ) {
         return await this.queueEntryWriter.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
-    }
-
-    public async processExpiredSessions(
-        atEpochMs: number = Date.now()
-    ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
-        return await this.commandClient.enqueueReplacingTerminalAndWaitForResult(
-            this.toExpiredSessionsEnqueue({ atEpochMs, afterKey: null }),
-            decodeExpiredClientSessionsResult
-        );
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
@@ -347,7 +315,7 @@ export class AppClientInboxService {
 
     private toExpiredSessionsEnqueue(
         input: ClientExpiredSessionPageInput,
-        resourceId: string = 'expire-client-sessions'
+        resourceId: string
     ): AppInboxEnqueueInput {
         return {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,

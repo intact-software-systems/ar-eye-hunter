@@ -51,7 +51,11 @@ const RETRYABLE_CONFLICT_CODES = new Set([
     'group-topology-commit-conflict'
 ]);
 
-const RETRYABLE_CODES = new Set([...RETRYABLE_CONFLICT_CODES, 'app-inbox-transient']);
+const RETRYABLE_CODES = new Set([
+    ...RETRYABLE_CONFLICT_CODES,
+    'app-inbox-transient',
+    'app-inbox-attempt-deadline-exceeded'
+]);
 
 const TERMINAL_POLICY_BY_CODE = new Map<string, TerminalAppInboxErrorPolicy>([
     ['app-inbox-malformed-command', { status: 400, queueFailure: 'operational' }],

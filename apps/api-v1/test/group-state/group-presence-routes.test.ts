@@ -278,6 +278,27 @@ Deno.test(
     }
 );
 
+Deno.test('a presence heartbeat whose client aborts mid-body answers a typed client status, not 500', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
+    const abortedBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"generationId":"generation-'));
+            controller.error(new Deno.errors.BadResource('Cannot read body'));
+        }
+    });
+
+    const response = await runtime.app.request(`${PRESENCE_HEARTBEAT_ROUTE.path}/requests/aborted-heartbeat-request`, {
+        method: PRESENCE_HEARTBEAT_ROUTE.method,
+        headers: { 'content-type': 'application/json' },
+        body: abortedBody
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal(decodeApiMutationFailure(await response.json())?.code, 'api-mutation-request-body-unreadable');
+    assert.equal(enqueued.length, 0);
+});
+
 Deno.test('inactive group presence returns the current snapshot as a no-op', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const inactiveResult: InactiveGroupPresenceResult = {

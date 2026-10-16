@@ -11,6 +11,7 @@ import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
+import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import type { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
@@ -29,6 +30,8 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import {
+    createDefaultResourceInboxDequeuer,
+    type DequeueResourceEntryOptions,
     type ResourceInboxRetryExhaustion,
     type ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -42,6 +45,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -256,6 +260,7 @@ interface RegisteredHandlerOptions {
     readonly now?: () => Temporal.Instant;
     readonly timing?: RallarTimingSink;
     readonly topicId?: string;
+    readonly timers?: Timers;
 }
 
 export function createRegisteredHandlerHarness(
@@ -284,7 +289,8 @@ export function createRegisteredHandlerHarness(
                 waitMaxElapsedMsecs: 5_000,
                 waitRetryIntervalMsecs: 1,
                 waitMaxRetryIntervalMsecs: 1,
-                waitJitterRatio: 0
+                waitJitterRatio: 0,
+                timers: options.timers
             }
         }
     );
@@ -539,6 +545,12 @@ class AtomicDatabase {
     }
 }
 
+export interface DequeueExhaustedAtomicEntryInput {
+    readonly harness: AtomicHarness;
+    readonly lane: 'initial' | 'recovery';
+    readonly options: Pick<DequeueResourceEntryOptions, 'completionNotifications' | 'toCompletionAwaitability'>;
+}
+
 interface AtomicHarnessOptions {
     readonly attempts?: number;
     readonly entryResource?: string;
@@ -771,6 +783,53 @@ function cloneState(state: AtomicState): AtomicState {
         inbox: new Map(state.inbox),
         results: new Map(state.results)
     };
+}
+
+/**
+ * Runs the harness entry, already at its last processing attempt, through one dequeue pass whose
+ * handler fails retryably: the initial lane exhausts it, the recovery lane finalizes it as exhausted.
+ */
+export async function dequeueExhaustedAtomicEntry(input: DequeueExhaustedAtomicEntryInput): Promise<void> {
+    const { harness, lane, options } = input;
+    const finalizeRetry = createAppInboxRetryFinalizer({ database: harness.database.sql });
+    let reserved = false;
+    const reserveOnce = <T>(value: T): Map<Key, T> => {
+        if (reserved) {
+            return new Map();
+        }
+        reserved = true;
+        return new Map([[harness.entry.key, value]]);
+    };
+    const controller = createDefaultResourceInboxDequeuer<Key>({
+        repository: {
+            isAnyEntryToLock: async () => true,
+            reserveEntries: async () => lane === 'initial' ? reserveOnce(harness.entry) : new Map(),
+            reserveTimeoutEntries: async () => new Map(),
+            reserveOverdueRetryEntries: async () => new Map(),
+            reserveRetryExhaustionFinalizations: async () =>
+                lane === 'recovery'
+                    ? reserveOnce({
+                        entry: harness.entry,
+                        selectedDueTs: harness.entry.audit.createdTs.toZonedDateTime('UTC').toInstant()
+                    })
+                    : new Map(),
+            releaseEntries: async () => new Map()
+        },
+        typesToDequeue: () => new Set([EnqueuedType.APP_INBOX]),
+        newLaneClaimOrder: 'queue',
+        maxToReserve: () => 1,
+        maxNumToDequeue: 1,
+        resilience: createResilience(),
+        options: {
+            ...options,
+            jitterUnit: () => 0.5,
+            onRetryExhausted: finalizeRetry,
+            onRetryExhaustionRecovery: finalizeRetry
+        }
+    });
+    await controller.dequeueForCompute(async () => {
+        throw Object.assign(new Error('conditional write lost'), { code: 'runtime-state-write-conflict' });
+    });
 }
 
 export function createResilience(): ResourceInboxResilience {

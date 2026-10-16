@@ -3,7 +3,8 @@ import {
     ResourceInboxHandlerEntryError,
     ResourceInboxHandlerFinalizedRejection,
     ResourceInboxHandlerFinalizedSuccess,
-    type ResourceInboxHandlerFinalized
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
@@ -15,6 +16,8 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { runWithClaimableDeadline, type ClaimableDeadline } from '@shared/resilience/claimable-deadline.ts';
+import type { Timers } from '@shared/resilience/timers.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
@@ -24,8 +27,16 @@ import {
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox-contracts.ts';
-import { classifyAppInboxError, type AppInboxErrorClassification } from '../app-inbox-error-classification.ts';
+import {
+    AppInboxAttemptDeadlineExceededError,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '../app-inbox-contracts.ts';
+import {
+    classifyAppInboxError,
+    isAppInboxRetryableConflict,
+    type AppInboxErrorClassification
+} from '../app-inbox-error-classification.ts';
 import { toTerminalAppInboxFailure } from '../app-inbox-failure.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
@@ -37,6 +48,7 @@ import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;
+    readonly deadline: ClaimableDeadline.Claim;
 }
 
 interface AppInboxPhaseOperation<Result> {
@@ -54,6 +66,8 @@ interface BegunAppInboxExecution<Command, Result> {
 
 interface FailedAppInboxExecution<Command, Result> extends AppInboxExecutionAttempt<Command, Result> {
     readonly error: Error;
+    /** The handler's own failure, unwrapped from the persisted-entry carrier the error may be. */
+    readonly handlerError: Error;
     readonly classification: AppInboxErrorClassification;
     readonly context: AppInboxMessageContext<Result> | undefined;
 }
@@ -72,12 +86,15 @@ export namespace AppInboxHandlerExecutor {
         /** The executor whose statement and wait counters the phase lines report. */
         readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
         readonly nowEpochMs: () => number;
+        readonly timers: Timers;
     }
 
     export interface Config {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
         readonly options?: AppInboxOptions;
+        /** How far below its reservation lease an attempt's deadline falls. */
+        readonly attemptDeadlineMarginMs: number;
     }
 }
 
@@ -86,9 +103,11 @@ export class AppInboxHandlerExecutor {
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     private readonly nowEpochMs: () => number;
+    private readonly timers: Timers;
     private readonly serviceId: string;
     private readonly timing: RallarTimingSink | undefined;
     private readonly options: AppInboxOptions;
+    private readonly attemptDeadlineMarginMs: number;
 
     constructor(
         dependencies: AppInboxHandlerExecutor.Dependencies,
@@ -98,19 +117,22 @@ export class AppInboxHandlerExecutor {
         this.transactionWriter = dependencies.transactionWriter;
         this.database = dependencies.database;
         this.nowEpochMs = dependencies.nowEpochMs;
+        this.timers = dependencies.timers;
         this.serviceId = config.serviceId;
         this.timing = config.timing;
         this.options = config.options ?? {};
+        this.attemptDeadlineMarginMs = config.attemptDeadlineMarginMs;
     }
 
     /**
      * Resolves with the committed entry when the handler's own transaction finalized it, as a success or as a typed
-     * rejection, so the queue releases nothing. A handler that outlives its reservation lease is reported, not
-     * stopped: the claim may already be reclaimed, and a reclaimed attempt's late finish fails its attempt guard.
+     * rejection, so the queue releases nothing. An attempt that has not claimed its deadline, below the reservation
+     * lease, by committing is abandoned there: it rejects as retryable so the lane serves the next entry and the entry
+     * follows the retry path, while the abandoned handler's own commit is refused and rolls back.
      */
     async execute<Command, Result>(
         input: AppInboxHandlerExecutor.Input<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalized | undefined> {
+    ): Promise<ResourceInboxHandlerOutcome | undefined> {
         const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
@@ -118,24 +140,35 @@ export class AppInboxHandlerExecutor {
             contextId: entry.key.contextId,
             data: null
         };
+        const deadlineMs = Math.max(0, input.attemptTelemetry.reservationLeaseMs - this.attemptDeadlineMarginMs);
         const startedAtEpochMs = this.nowEpochMs();
         try {
-            return await timeRallarAsync(
-                this.timing,
-                {
-                    component: 'app-inbox-handler',
-                    operation: String(registration.type),
-                    serviceId: this.serviceId,
-                    requestId: entry.key.resourceId,
-                    details: {
-                        type: registration.type,
-                        topicId: entry.key.topicId,
-                        contextId: entry.key.contextId,
-                        resourceId: entry.key.resourceId
-                    }
-                },
-                async () => await this.executeAttempt({ ...input, undecodedEnqueue })
+            const outcome = await runWithClaimableDeadline(
+                this.timers,
+                deadlineMs,
+                async (deadline) =>
+                    await timeRallarAsync(
+                        this.timing,
+                        {
+                            component: 'app-inbox-handler',
+                            operation: String(registration.type),
+                            serviceId: this.serviceId,
+                            requestId: entry.key.resourceId,
+                            details: {
+                                type: registration.type,
+                                topicId: entry.key.topicId,
+                                contextId: entry.key.contextId,
+                                resourceId: entry.key.resourceId
+                            }
+                        },
+                        async () => await this.executeAttempt({ ...input, undecodedEnqueue, deadline })
+                    )
             );
+            if (outcome.kind === 'expired') {
+                this.recordHandlerDeadlineExpired(input, outcome.deadlineMs);
+                throw new AppInboxAttemptDeadlineExceededError(entry.key);
+            }
+            return outcome.value;
         }
         finally {
             this.recordHandlerOutranLease(input, this.nowEpochMs() - startedAtEpochMs);
@@ -164,7 +197,7 @@ export class AppInboxHandlerExecutor {
 
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalized | undefined> {
+    ): Promise<ResourceInboxHandlerOutcome | undefined> {
         let context: AppInboxMessageContext<Result> | undefined;
         let finalizedEntry: ResourceEntry;
         try {
@@ -179,19 +212,23 @@ export class AppInboxHandlerExecutor {
             });
             const finalization = this.transactionWriter.read(begun.context);
             if (finalization.state !== 'transaction-finalized') {
+                if (!attempt.deadline.tryClaim()) {
+                    throw new AppInboxAttemptDeadlineExceededError(attempt.entry.key);
+                }
                 await this.writeNonTransactionalResult(attempt.registration, begun.context, result);
                 return undefined;
             }
             finalizedEntry = finalization.entry;
         }
         catch (caught) {
+            const error = caught instanceof Error ? caught : new Error(String(caught));
+            const handlerError = caught instanceof ResourceInboxHandlerEntryError ? caught.handlerError : error;
             return await this.finishFailedExecution({
                 ...attempt,
                 entry: caught instanceof ResourceInboxHandlerEntryError ? caught.entry : attempt.entry,
-                error: caught instanceof Error ? caught : new Error(String(caught)),
-                classification: classifyAppInboxError(
-                    caught instanceof ResourceInboxHandlerEntryError ? caught.handlerError : caught
-                ),
+                error,
+                handlerError,
+                classification: classifyAppInboxError(handlerError),
                 context
             });
         }
@@ -218,7 +255,7 @@ export class AppInboxHandlerExecutor {
             attemptTelemetry: attempt.attemptTelemetry,
             encodeResult: attempt.registration.encodeResult
         };
-        this.transactionWriter.begin(context);
+        this.transactionWriter.begin(context, attempt.deadline);
         return {
             command,
             context
@@ -247,10 +284,13 @@ export class AppInboxHandlerExecutor {
         });
     }
 
-    /** A retryable failure rethrows for redelivery; a typed rejection commits its terminal entry and is a value. */
+    /**
+     * An optimistic conflict is a retryable value and any other retryable failure rethrows, both for redelivery; a typed
+     * rejection commits its terminal entry and is a value.
+     */
     private async finishFailedExecution<Command, Result>(
         input: FailedAppInboxExecution<Command, Result>
-    ): Promise<ResourceInboxHandlerFinalized> {
+    ): Promise<ResourceInboxHandlerOutcome> {
         if (input.context) {
             const finalization = this.transactionWriter.read(input.context);
             if (
@@ -262,6 +302,13 @@ export class AppInboxHandlerExecutor {
         }
         if (input.classification.kind === 'retryable') {
             this.recordQueueRetryTiming(input);
+            if (isAppInboxRetryableConflict(input.handlerError)) {
+                return new ResourceInboxHandlerRetryableConflict(
+                    input.entry,
+                    input.classification.code,
+                    input.handlerError
+                );
+            }
             throw input.error;
         }
         const terminalContext = input.context ?? {
@@ -323,6 +370,33 @@ export class AppInboxHandlerExecutor {
             status: 'ok',
             durationMs: 0,
             error
+        });
+    }
+
+    private recordHandlerDeadlineExpired<Command, Result>(
+        input: AppInboxHandlerExecutor.Input<Command, Result>,
+        deadlineMs: number
+    ): void {
+        const { entry, attemptTelemetry } = input;
+        recordRallarTiming({
+            sink: this.timing,
+            event: {
+                component: 'app-inbox-handler',
+                operation: 'handler-deadline-expired',
+                serviceId: this.serviceId,
+                requestId: entry.key.resourceId,
+                details: {
+                    type: input.registration.type,
+                    topicId: entry.key.topicId,
+                    contextId: entry.key.contextId,
+                    resourceId: entry.key.resourceId,
+                    attempt: attemptTelemetry.attempt,
+                    reservationLeaseMs: attemptTelemetry.reservationLeaseMs,
+                    deadlineMs
+                }
+            },
+            status: 'error',
+            durationMs: deadlineMs
         });
     }
 

@@ -36,19 +36,17 @@ import {
 const LANE_RUNTIME_STATE_READS_PER_PRESENCE_CONNECT = 5;
 
 /**
- * Runtime-state reads the route's authorization performs before enqueue: one
- * session read that verifies the bearer credential against storage, no causal
- * revision read and no persisted capture; the lane reads the causal revision
- * and persists the ingress itself. The REST route's bearer lookup reads the
- * session as well; this read stays so a direct service caller gets the same
- * credential check.
+ * Runtime-state reads the route's authorization performs before enqueue: none.
+ * The route's bearer lookup already read and verified the session by its token
+ * digest and hands that session over; the lane reads the causal revision,
+ * persists the ingress and re-checks the session's liveness itself.
  */
-const ROUTE_RUNTIME_STATE_READS_PER_AUTHORIZATION = 1;
+const ROUTE_RUNTIME_STATE_READS_PER_AUTHORIZATION = 0;
 
 const GROUP_ID = 'authority-reuse-room';
 
 describe('group mutation lane authority reuse', () => {
-    it('authorizes a route mutation with one session read and nothing persisted', async () => {
+    it('authorizes a route mutation from the verified session without a read or a write', async () => {
         const runtimeRepository = new CountingRuntimeStateRepository();
         const harness = await createAuthorityHarness(['owner', 'alice'], { runtimeRepository });
         await createRoom(harness, GROUP_ID, 'Authority reuse room');

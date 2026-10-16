@@ -148,6 +148,24 @@ export type ResourceInboxHandlerFinalized =
     | ResourceInboxHandlerFinalizedSuccess
     | ResourceInboxHandlerFinalizedRejection;
 
+/**
+ * A handler's optimistic conflict that committed nothing: a value, not an operational failure. The queue releases the
+ * still-reserved entry on the retry path, with its attempt count and backoff, and logs the cause chain once.
+ */
+export class ResourceInboxHandlerRetryableConflict {
+    readonly entry: ResourceEntry;
+    readonly code: string;
+    readonly cause: Error;
+
+    constructor(entry: ResourceEntry, code: string, cause: Error) {
+        this.entry = entry;
+        this.code = code;
+        this.cause = cause;
+    }
+}
+
+export type ResourceInboxHandlerOutcome = ResourceInboxHandlerFinalized | ResourceInboxHandlerRetryableConflict;
+
 export interface ResourceInboxDequeuerInput {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
@@ -394,7 +412,8 @@ async function finalizeResourceInboxRecovery(
         dependencies.resilience.retryPolicy.maxAttempts,
         dependencies.nowEpochMs()
     );
-    await dependencies.options.onRetryExhaustionRecovery!(recovery);
+    const finalized = await dependencies.options.onRetryExhaustionRecovery!(recovery);
+    publishResourceInboxCompletion(dependencies.options, finalized);
     dependencies.options.onRetryExhaustionTelemetry?.(recovery);
 }
 
@@ -402,7 +421,10 @@ async function releaseResourceInboxSuccesses<V>(
     dependencies: ResourceInboxDequeueDependencies,
     successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
 ): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
-    const reserved = [...successes.values()].filter((success) => !isHandlerFinalized(success.computedValue));
+    const reserved = [...successes.values()].filter((success) =>
+        !isHandlerFinalized(success.computedValue) &&
+        !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
+    );
     const released = reserved.length === 0 ? new Map<Resource.Key, ResourceEntry>() : await dependencies.repository
         .releaseEntries(reserved.map((success) => ({
             entry: success.value.entry,
@@ -418,7 +440,7 @@ async function releaseResourceInboxSuccesses<V>(
         publishResourceInboxCompletion(dependencies.options, entry);
     }
     const releases = [...handlerFinalized, ...releasedByQueue];
-    const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
+    const result = await releaseResourceInboxConflicts(dependencies, successes);
     for (const { original, entry, classification, failure } of releases) {
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
@@ -431,6 +453,35 @@ async function releaseResourceInboxSuccesses<V>(
             value: { ...original.value, entry },
             computedValue: original.computedValue
         });
+    }
+    return result;
+}
+
+/** A conflict value follows the failure release of the entry it carries, so it retries or exhausts like a thrown one. */
+async function releaseResourceInboxConflicts<V>(
+    dependencies: ResourceInboxDequeueDependencies,
+    successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
+): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
+    const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
+    for (const success of successes.values()) {
+        const conflict = success.computedValue;
+        if (!(conflict instanceof ResourceInboxHandlerRetryableConflict)) {
+            continue;
+        }
+        console.info(
+            `Handler conflicted on dequeued key ${
+                toDequeuedKeyText(success.key)
+            } as ${conflict.code}; it is redelivered.`,
+            toErrorSummary(conflict.cause)
+        );
+        const released = await releaseResourceInboxFailure(dependencies, {
+            key: success.key,
+            value: success.value,
+            exception: new ResourceInboxHandlerEntryError(conflict.entry, conflict.cause)
+        });
+        if (released !== undefined) {
+            result.set(success.key, { key: success.key, value: released.value, computedValue: success.computedValue });
+        }
     }
     return result;
 }

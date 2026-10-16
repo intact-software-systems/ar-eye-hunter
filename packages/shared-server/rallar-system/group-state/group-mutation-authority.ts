@@ -22,7 +22,7 @@ import {
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
-import { constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
+import { hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
 import { toLifecycleMutationCommand } from './to-lifecycle-mutation-command.ts';
 import { toTransportMutationCommand } from './to-transport-mutation-command.ts';
@@ -36,17 +36,7 @@ export interface GroupMutationAuthorityDependencies {
     readonly readCausalRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | undefined>;
 }
 
-interface VerifiedGroupMutationAuthority {
-    readonly session: PersistedAuthSession;
-    readonly descriptor: GroupMutationDescriptor;
-}
-
-interface VerifyGroupMutationAuthorityInput {
-    readonly repository: Pick<AuthSessionRepository, 'findBySessionId'>;
-    readonly descriptor: GroupMutationDescriptor;
-    readonly authority: IssuedAuthSession;
-    readonly nowEpochMs: number;
-}
+const LIVE_SESSION_DENIAL = 'Authenticated session is missing, expired, revoked, or mismatched.';
 
 type ClaimedAuthSession = Pick<IssuedAuthSession, 'clientId' | 'sessionId' | 'issuedAtEpochMs' | 'expiresAtEpochMs'>;
 
@@ -153,21 +143,27 @@ async function captureAuthorizedGroupMutationIngress(
     };
 }
 
+/**
+ * The authority is the session the route's bearer lookup read and verified by
+ * its token digest; the lane re-checks its liveness at execution, through
+ * readAndVerifyLiveGroupMutationSession.
+ */
 export async function authorizeGroupMutation(
-    dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now'>,
+    dependencies: Pick<GroupMutationAuthorityDependencies, 'now'>,
     descriptor: GroupMutationDescriptor,
     authority: IssuedAuthSession
 ): Promise<AuthorizedGroupMutation> {
-    const verified = await verifyGroupMutationAuthority({
-        repository: dependencies.authSessionRepository,
-        descriptor,
-        authority,
-        nowEpochMs: dependencies.now()
+    if (authority.expiresAtEpochMs <= dependencies.now()) {
+        throw new GroupMutationAuthorizationError(LIVE_SESSION_DENIAL);
+    }
+    const trustedDescriptor = toTrustedMutationDescriptor(descriptor, {
+        principalId: authority.clientId,
+        sessionId: authority.sessionId
     });
-    assertAuthenticatedGroupMutationDescriptor(verified.descriptor);
+    assertAuthenticatedGroupMutationDescriptor(trustedDescriptor);
     return {
-        authorityProof: await createGroupMutationAuthorityProof(verified.session, verified.descriptor),
-        descriptor: verified.descriptor
+        authorityProof: await createGroupMutationAuthorityProof(authority, trustedDescriptor),
+        descriptor: trustedDescriptor
     };
 }
 
@@ -280,28 +276,6 @@ export function toDescriptorCommand(
     }
 }
 
-async function verifyGroupMutationAuthority(
-    input: VerifyGroupMutationAuthorityInput
-): Promise<VerifiedGroupMutationAuthority> {
-    const { authority, descriptor, nowEpochMs, repository } = input;
-    const session = await readLiveAuthSession(repository, authority, nowEpochMs);
-    if (
-        !(await constantTimeSecretEqual(
-            session.accessTokenDigest,
-            await authSessionProofSecret(authority)
-        ))
-    ) {
-        throw new GroupMutationAuthorizationError('Authenticated session credential is invalid.');
-    }
-    return {
-        session,
-        descriptor: toTrustedMutationDescriptor(descriptor, {
-            principalId: session.clientId,
-            sessionId: session.sessionId
-        })
-    };
-}
-
 async function readLiveAuthSession(
     repository: Pick<AuthSessionRepository, 'findBySessionId'>,
     claimed: ClaimedAuthSession,
@@ -316,9 +290,7 @@ async function readLiveAuthSession(
         session.expiresAtEpochMs !== claimed.expiresAtEpochMs ||
         session.expiresAtEpochMs <= nowEpochMs
     ) {
-        throw new GroupMutationAuthorizationError(
-            'Authenticated session is missing, expired, revoked, or mismatched.'
-        );
+        throw new GroupMutationAuthorizationError(LIVE_SESSION_DENIAL);
     }
     return session;
 }
@@ -379,7 +351,7 @@ function toTrustedMutationDescriptor(
 }
 
 async function createGroupMutationAuthorityProof(
-    session: IssuedAuthSession | PersistedAuthSession,
+    session: IssuedAuthSession,
     descriptor: GroupMutationDescriptor
 ): Promise<GroupMutationAuthorityProof> {
     return {

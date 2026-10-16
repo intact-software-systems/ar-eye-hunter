@@ -134,6 +134,19 @@ export class AppInboxIdempotencyConflictError extends Error {
     }
 }
 
+/** The attempt was abandoned at its deadline below the reservation lease; the entry follows the retry path. */
+export class AppInboxAttemptDeadlineExceededError extends Error {
+    readonly code = 'app-inbox-attempt-deadline-exceeded';
+
+    readonly key: Key;
+
+    constructor(key: Key) {
+        super('App inbox attempt did not settle before its deadline');
+        this.key = key;
+        this.name = 'AppInboxAttemptDeadlineExceededError';
+    }
+}
+
 export class AppInboxReservationConflictError extends Error {
     readonly code = 'app-inbox-reservation-conflict';
     readonly status = 409;

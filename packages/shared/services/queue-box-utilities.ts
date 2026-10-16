@@ -8,7 +8,7 @@ import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '.
 import {
     createDefaultResourceInboxDequeuer,
     type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalized
+    type ResourceInboxHandlerOutcome
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type {
@@ -39,7 +39,7 @@ export namespace QueueBoxUtilities {
         readonly onDequeuedDo: (
             entry: ResourceEntry,
             attemptTelemetry: ResourceInboxAttemptTelemetry
-        ) => Promise<void | ResourceInboxHandlerFinalized>;
+        ) => Promise<void | ResourceInboxHandlerOutcome>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
         /** The probe that preceded this pass; without one every lane is offered a reservation. */
@@ -76,7 +76,7 @@ export class QueueBoxUtilities {
         }
 
         let claimedCount = 0;
-        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalized | undefined>({
+        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
             newLaneClaimOrder,
