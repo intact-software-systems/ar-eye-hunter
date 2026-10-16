@@ -122,14 +122,14 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(held.started.map((message) => message.route.contextId)).toEqual(['shared', 'other-1', 'other-2', 'shared']);
     });
 
-    it('rejects the release of a row whose lease another owner took while its round ran, leaving the round to its leases', async () => {
+    it('rejects the release of a row whose lease another owner took while its round ran, and releases the rest at once', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
         const reader = createReader(queue);
         const held = holdHandlers(reader);
         const [stolen] = await enqueue(reader, contexts(K));
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         const pass = reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         await vi.waitFor(() => expect(held.started).toHaveLength(K));
@@ -137,16 +137,12 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${stolen!.key.resourceId}`;
         held.release();
 
-        // The round releases in one transaction, so the lost reservation rolls it back whole: the other owner keeps
-        // its claim, and the round's other rows stay leased until their own leases end and a timeout claim recovers them.
+        // The round's one release transaction conflicts, so each row releases alone: the other owner keeps its
+        // claim and the round's other rows complete now, not after their leases.
         await expect(pass).rejects.toThrow(/reservation/i);
         const rows = await Promise.all(contexts(K).map((_context, index) => queue.getItem(toKey(stolen!, index))));
         expect(rows[0]).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 2 } });
-        expect(rows.slice(1).map((row) => [row?.status, row?.dequeueAudit.attempts])).toEqual(
-            Array(K - 1).fill([EntityStatus.RESERVED, 1])
-        );
-        consoleError.mockRestore();
-        consoleWarn.mockRestore();
+        expect(rows.slice(1).map((row) => row?.status)).toEqual(Array(K - 1).fill(EntityStatus.COMPLETED));
     });
 
     it('starts no new round once a round tripped the breaker', async () => {

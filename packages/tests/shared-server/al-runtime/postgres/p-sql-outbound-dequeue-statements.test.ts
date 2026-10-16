@@ -11,11 +11,17 @@ import { createPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/pos
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundCommitBundle,
+    ALOutboundPlanner
+} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundMessageRuntime
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -24,7 +30,7 @@ import {
     OUTBOUND_TEST_SEND_PLANNER,
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
 import {
     createPSqlAdmissionTestStorage,
     type PSqlAdmissionTestStorage
@@ -56,9 +62,113 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(readKeys().filter((key) => key === toKeyAsString(row.key))).toEqual([]);
         expect(counts()).toEqual({ autocommit: 8, transactions: 5, inTransaction: 10 });
     });
+
+    // Before step 2g every dequeued row committed alone: ten admission transactions and ten sender versions.
+    it('commits the dequeued rows of one sender in one batch as one admission transaction and one version bump', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        await runOutboundWorkTask(runtime);
+        const rows = await enqueueRows(outbox, 10);
+        const writes = recordAdmissionWrites(admissionStore);
+
+        await runOutboundWorkTask(runtime);
+        await runOutboundWorkTask(runtime);
+
+        expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
+        expect(writes.dequeueCommits()).toBe(1);
+        expect(await readSenderVersion(storage)).toBe(1);
+    });
+
+    it('commits each row alone when two rows of the group write one supersedence track', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, outbox, admissionStore } = createDequeueLane(storage, SUPERSEDING_PLANNER);
+        await runOutboundWorkTask(runtime);
+        await enqueueRows(outbox, 2);
+        const writes = recordAdmissionWrites(admissionStore);
+
+        await runOutboundWorkTask(runtime);
+
+        // The group's one snapshot finds the shared write and writes nothing; then each row commits alone.
+        expect(writes.dequeueCommits()).toBe(3);
+        expect(await readSenderVersion(storage)).toBe(2);
+    });
+
+    it('conflicts the group on a claim that moved before its commit, then commits every other row alone', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        await runOutboundWorkTask(runtime);
+        const [moved, ...others] = await enqueueRows(outbox, 4);
+        const writes = recordAdmissionWrites(admissionStore, async () => {
+            // Another owner's claim after a lease expiry moves exactly the attempt columns of one row.
+            await storage.sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${moved!.key.resourceId}`;
+        });
+
+        await runOutboundWorkTask(runtime);
+        await runOutboundWorkTask(runtime);
+
+        expect(writes.dequeueCommits()).toBe(1 + 4);
+        expect(sent.map((message) => message.id.msgId).sort()).toEqual(others.map(toMsgId).sort());
+        expect(await readSenderVersion(storage)).toBe(3);
+    });
 });
 
-function createDequeueLane(storage: PSqlAdmissionTestStorage) {
+const NAMESPACE = 'dequeue-statements:outbound:admission';
+
+const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined),
+    supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
+});
+
+async function enqueueRows(outbox: QueueBoxResourceEntryRepository, count: number): Promise<ResourceEntry[]> {
+    const rows: ResourceEntry[] = [];
+    for (let index = 0; index < count; index += 1) {
+        const row = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(`dequeued-${index}`), 'outbox', Temporal.Now.instant());
+        await outbox.enqueue(row);
+        rows.push(row);
+    }
+    return rows;
+}
+
+function toMsgId(row: ResourceEntry): string {
+    return decodePersistedALMessage(row.resource).id.msgId;
+}
+
+async function readSenderVersion(storage: PSqlAdmissionTestStorage): Promise<number | undefined> {
+    const entry = await storage.repository.findEntry(NAMESPACE, `${NAMESPACE}:version:self`);
+    return entry === undefined ? undefined : (JSON.parse(entry.value) as { version: number; }).version;
+}
+
+/** Every admission commit that admits a dequeued row, alone or as a group, counted as it reaches the store. */
+function recordAdmissionWrites(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    beforeFirstDequeueCommit?: () => Promise<void>
+): { dequeueCommits(): number; } {
+    let dequeueCommits = 0;
+    const commitBundles = store.commitBundles.bind(store);
+    const commitBundle = store.commitBundle.bind(store);
+    const count = async (bundles: readonly ALOutboundCommitBundle<OutboundTestPayload>[]) => {
+        if (bundles.some((bundle) => bundle.canonicalEntry?.typeId === 'outbox')) {
+            if (dequeueCommits === 0) {
+                await beforeFirstDequeueCommit?.();
+            }
+            dequeueCommits += 1;
+        }
+    };
+    vi.spyOn(store, 'commitBundles').mockImplementation(async (bundles) => {
+        await count(bundles);
+        return await commitBundles(bundles);
+    });
+    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle, observation) => {
+        await count([bundle]);
+        return await commitBundle(bundle, observation);
+    });
+    return { dequeueCommits: () => dequeueCommits };
+}
+
+function createDequeueLane(
+    storage: PSqlAdmissionTestStorage,
+    planner: ALOutboundPlanner<OutboundTestPayload> = OUTBOUND_TEST_SEND_PLANNER
+) {
     const stores = createPSqlALOutboundRuntimeStores({
         repository: storage.repository,
         namespace: 'dequeue-statements',
@@ -79,14 +189,14 @@ function createDequeueLane(storage: PSqlAdmissionTestStorage) {
             nowMs: Date.now,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: OUTBOUND_TEST_SEND_PLANNER,
+            planOutgoingMessage: planner,
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage);
                 return { status: 'sent', submissionAttempted: true };
             }
         })
     );
-    return { runtime, sent, outbox: stores.workQueue };
+    return { runtime, sent, outbox: stores.workQueue, admissionStore: stores.admissionStore };
 }
 
 /** Every queue-row key read by key, one-key and batched reads alike. */

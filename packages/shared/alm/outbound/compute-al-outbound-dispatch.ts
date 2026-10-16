@@ -117,6 +117,7 @@ export function computeALOutboundDispatch<TPrepared>(
             : 'none',
         bundle: {
             pendingAdmission: options.pendingAdmission,
+            claimedCanonical: options.claimedOutboxEntry,
             senderId: read.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             canonicalEntry,

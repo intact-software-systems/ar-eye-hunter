@@ -1,6 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
@@ -20,9 +19,7 @@ import type {
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import type { ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
-import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
-import { readALOutboundDequeueWait } from './lane/read-al-outbound-dequeue-wait.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundMessageEffects {
@@ -31,9 +28,6 @@ export namespace ALOutboundMessageEffects {
         /** The store of the lane these effects run for, which is not always the owner's durable pair. */
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
-        readonly commitDispatchPlan: (
-            dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
-        ) => Promise<ALOutboundComputedDto<TPrepared>>;
         /** Aborts with the runtime, so an aborted signal is exactly a disposed runtime. */
         readonly sendSignal: AbortSignal;
         readonly settlements: ALOutboundSettlementEmitter;
@@ -48,7 +42,7 @@ export namespace ALOutboundMessageEffects {
     }
 }
 
-/** Runs the message-shaped durable effects: pending admission, dequeued admission, and prepared sends. */
+/** Runs the message-shaped durable effects: pending admission and prepared sends. */
 export class ALOutboundMessageEffects<TPrepared> {
     private readonly dependencies: ALOutboundMessageEffects.Dependencies<TPrepared>;
 
@@ -101,90 +95,6 @@ export class ALOutboundMessageEffects<TPrepared> {
             verdict: result.computed.verdict,
             trackedReceiptAlgo: result.computed.trackedReceiptAlgo
         });
-        return { status: 'completed' };
-    }
-
-    /**
-     * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
-     * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
-     * A typed `retry` (no current route for the row) is an expected outcome and charges nothing.
-     */
-    async admitDequeuedMessage(
-        effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence?: ALOutboundReceiptWorkEvidence
-    ): Promise<ALWorkAttemptResult> {
-        evidence?.recordStage('dequeue-gate');
-        const { resilience } = this.dependencies.runtime.dequeue;
-        if (resilience.isNotAllowedThroughToDequeue()) {
-            return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
-        }
-        const wait = await readALOutboundDequeueWait({
-            effect,
-            readAuthority: this.dependencies.runtime.readPendingAdmissionAuthority,
-            settlements: this.dependencies.settlements,
-            clock: this.dependencies.runtime.clock,
-            signal: this.dependencies.sendSignal
-        });
-        if (wait !== undefined) {
-            return wait;
-        }
-        try {
-            const outcome = await this.readDequeuedAdmissionOutcome(effect, evidence);
-            if (outcome.status !== 'retry') {
-                resilience.success();
-            }
-            return outcome;
-        }
-        catch (error) {
-            if (!(error instanceof Error && isNotReadyException(error))) {
-                resilience.failure();
-            }
-            throw error;
-        }
-    }
-
-    private async readDequeuedAdmissionOutcome(
-        effect: ALOutboundEffectSnapshot<TPrepared>,
-        evidence: ALOutboundReceiptWorkEvidence | undefined
-    ): Promise<ALWorkOutcome> {
-        const runtime = this.dependencies.runtime;
-        const msg = effect.canonicalMessage;
-        if (!msg) {
-            throw new NonRetryableException('Dequeued work has no message');
-        }
-        evidence?.recordStage('dequeue-authority');
-        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
-        evidence?.recordStage('dequeue-supersedence');
-        if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
-            return { status: 'completed' };
-        }
-        evidence?.recordStage('dequeue-commit');
-        const computed = await this.dependencies.commitDispatchPlan({
-            msg,
-            dequeueAuthority,
-            planner: runtime.planDequeuedMessage,
-            intent: 'dequeue',
-            phase: 'dequeue',
-            origin: 'drain',
-            options: {
-                observedOutboxEntry: effect.entry,
-                claimedOutboxEntry: effect.entry,
-                attemptIdentity: JSON.stringify([
-                    'queue',
-                    effect.attempts,
-                    effect.entry.dequeueAudit.startTs?.toString() ?? null
-                ])
-            }
-        });
-        evidence?.recordAdmission(computed.verdict.kind);
-        if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
-            return { status: 'retry' };
-        }
-        const [entry] = computed.entries;
-        if (computed.msg && entry) {
-            evidence?.recordStage('dequeue-after-admission');
-            await runtime.afterDequeueAdmission?.(computed.msg, entry);
-        }
         return { status: 'completed' };
     }
 

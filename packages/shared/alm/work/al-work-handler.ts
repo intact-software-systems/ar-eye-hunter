@@ -93,6 +93,16 @@ export interface ALWorkHandlerDependencies {
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
     ) => Promise<ALWorkAttemptResult>;
+    /**
+     * Starts the claims of a selection that run as one group, before the batch runs any claim: each one
+     * it takes maps to that claim's own attempt, which the batch awaits in its turn instead of calling
+     * `runClaim`. Absent, or a claim it leaves out, runs alone through `runClaim`.
+     */
+    readonly runClaimGroup?: (
+        claims: readonly ALWorkClaim[],
+        batchStartedAtMs: number,
+        deferObservation?: ALWorkObservationDeferral
+    ) => ReadonlyMap<ALWorkClaim, Promise<ALWorkAttemptResult>>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
     /**
      * Absent on the server lane and on the browser's memory lanes, which have no storage health
@@ -178,6 +188,11 @@ interface ALWorkClaimedRun {
     readonly selection: ALWorkReadySelection;
     readonly runStartedAtMs: number;
     readonly deferObservation: ALWorkObservationDeferral | undefined;
+}
+
+/** One claim's turn in the batch: the attempt its group already started, or none when it runs alone. */
+interface ALWorkClaimTurn extends ALWorkClaimedRun {
+    readonly attempt: Promise<ALWorkAttemptResult> | undefined;
 }
 
 /** What a running batch has accumulated: its outcome counts and the two phases the handler itself times. */
@@ -476,11 +491,14 @@ export class ALWorkHandler {
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
         const run = { selection, runStartedAtMs, deferObservation };
+        const grouped = this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
+        // A grouped attempt the batch never reaches, because disposal ended it, must not surface unhandled.
+        grouped?.forEach((attempt) => void attempt.catch(() => undefined));
         for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
             if (this.shutdown.signal.aborted) {
                 return undefined;
             }
-            const release = await this.runOne(claim, progress, run);
+            const release = await this.runOne(claim, progress, { ...run, attempt: grouped?.get(claim) });
             if (release === undefined) {
                 continue;
             }
@@ -550,13 +568,13 @@ export class ALWorkHandler {
     private async runOne(
         claim: ALWorkClaim,
         progress: ALWorkBatchProgress,
-        run: ALWorkClaimedRun
+        turn: ALWorkClaimTurn
     ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
         let result: ALWorkAttemptResult;
         try {
-            result = await runClaim(claim, run.runStartedAtMs, run.deferObservation);
+            result = await (turn.attempt ?? runClaim(claim, turn.runStartedAtMs, turn.deferObservation));
         }
         catch (error) {
             result = toALWorkFailureOutcome(toError(error));

@@ -34,3 +34,18 @@ export function computeALOutboundCommittedRows<TPrepared>(
     }
     return { dueByMs, writtenKeys };
 }
+
+/**
+ * What settled commits owe their owner's batch: nothing when none wrote work, and an undescribed commit when a
+ * member threw, since it ran after the members before it, whose writes may have landed.
+ */
+export function computeALOutboundSettledCommittedRows<TPrepared>(
+    namespace: string,
+    outcomes: readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]
+): ALWorkCommittedRows | undefined {
+    const results = outcomes.flatMap((outcome) => outcome.status === 'fulfilled' ? [outcome.value] : []);
+    if (results.length < outcomes.length) {
+        return AL_WORK_UNDESCRIBED_COMMIT;
+    }
+    return results.some(hasWrittenWork) ? computeALOutboundCommittedRows(namespace, results) : undefined;
+}

@@ -26,6 +26,7 @@ import {
     type ResourceInboxRetryPolicy
 } from '../ResourceInboxRetryPolicy.ts';
 import { isNotReadyException, NotReadyException } from './not-ready-exception.ts';
+import { releaseResourceInboxRound } from './release-resource-inbox-round.ts';
 import {
     computeResourceInboxAttempt,
     recordResourceInboxAttemptRelease,
@@ -375,11 +376,13 @@ async function releaseResourceInboxSuccesses<V>(
         !isResourceInboxHandlerFinalized(success.computedValue) &&
         !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
     );
-    const released = reserved.length === 0 ? new Map<Resource.Key, ResourceEntry>() : await dependencies.repository
-        .releaseEntries(reserved.map((success) => ({
+    const { released, lost } = await releaseResourceInboxRound(
+        dependencies.repository,
+        reserved.map((success) => ({
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-        })));
+        }))
+    );
     const handlerFinalized = [...successes.values()].flatMap((success) =>
         isResourceInboxHandlerFinalized(success.computedValue)
             ? [toHandlerFinalizedResourceInboxRelease(success, success.computedValue)]
@@ -403,6 +406,9 @@ async function releaseResourceInboxSuccesses<V>(
             value: { ...original.value, entry },
             computedValue: original.computedValue
         });
+    }
+    if (lost !== undefined) {
+        throw lost;
     }
     return result;
 }

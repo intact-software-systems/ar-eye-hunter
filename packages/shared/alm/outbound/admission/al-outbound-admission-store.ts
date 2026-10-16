@@ -122,8 +122,6 @@ export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly dequeueAuthority?: ALOutboundDequeueAuthority;
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
-    /** Present only for a dequeue: the canonical row as its claim returned it, which the commit fences instead of re-reading. */
-    readonly claimedCanonicalEntry?: ResourceEntry;
     readonly intent: ALOutboundComputeIntent;
     /** Present only for a dispatch that charges a repair budget: the read reports whether its sends are already committed. */
     readonly repairAttempt?: ALOutboundRepairAttemptIdentity;
@@ -281,6 +279,8 @@ export interface ALOutboundEffectSnapshot<TPrepared> {
 
 export interface ALOutboundCommitBundle<TPrepared> {
     readonly pendingAdmission?: ResourceEntry;
+    /** Present only for a dequeue: the canonical row as its claim returned it, which the commit fences instead of re-reading. */
+    readonly claimedCanonical?: ResourceEntry;
     readonly senderId: string;
     readonly expectedVersion?: number;
     readonly canonicalEntry?: ResourceEntry;
@@ -499,7 +499,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             const session = new ALOutboundDecisionReadSession(backendSession);
             const decision = await decide(await this.reads.readOutgoingMessage(session, input));
             const observation = decision.kind === 'commit' && hasALOutboundBundleWrites(decision.bundle)
-                ? await this.readCommitObservation(session, decision.bundle, input.claimedCanonicalEntry)
+                ? await this.readCommitObservation(session, decision.bundle)
                 : undefined;
             return { decision, observation };
         });
@@ -595,22 +595,20 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const observed = await this.backend.readWithin(async (session) => {
             const reads: ALOutboundCommitObservation<TPrepared>[] = [];
             for (const bundle of writing) {
-                reads.push(await this.readCommitObservation(session, bundle, undefined));
+                reads.push(await this.readCommitObservation(session, bundle));
             }
             return reads;
         });
         return await this.commitObserved(writing, observed, nowMs);
     }
 
-    /** `claimedCanonical` is the canonical row as the caller's claim returned it, when the caller dequeued it. */
     private async readCommitObservation(
         session: ALAdmissionReadSession,
-        bundle: ALOutboundCommitBundle<TPrepared>,
-        claimedCanonical: ResourceEntry | undefined
+        bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<ALOutboundCommitObservation<TPrepared>> {
         const [effects, canonicalWrites] = await Promise.all([
             this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
-            this.readCanonicalWrites(session, bundle, claimedCanonical)
+            this.readCanonicalWrites(session, bundle)
         ]);
         return { effects, canonicalWrites };
     }
@@ -656,8 +654,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     private async readCanonicalWrites(
         session: ALAdmissionReadSession,
-        bundle: ALOutboundCommitBundle<TPrepared>,
-        claimedCanonical: ResourceEntry | undefined
+        bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<readonly ALOutboundCanonicalFactWrite[]> {
         if (!bundle.canonicalEntry) {
             return [];
@@ -667,7 +664,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             queue: { getItem: (key) => session.readWork(key) },
             scope: this.canonicalScope,
             entry: bundle.canonicalEntry,
-            claimed: claimedCanonical,
+            claimed: bundle.claimedCanonical,
             creationExpiry: captured ??
                 captureALOutboundCreationExpiry(decodePersistedALMessageRow(bundle.canonicalEntry)),
             activatePendingCanonical: bundle.pendingAdmission !== undefined,
