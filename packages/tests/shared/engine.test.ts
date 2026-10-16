@@ -429,24 +429,37 @@ describe('engine', () => {
         }
     });
 
-    it('tells every wake listener that an external writer announced work, until it is excluded', async () => {
+    it('tells every wake listener of a written type that an external writer announced work, until it is excluded', async () => {
         const engine = new InboxOutboxEngine();
         onTestFinished(() => engine.stop());
         const announced: string[] = [];
-        engine.includeWakeListener('owner', () => announced.push('owner'));
+        engine.includeWakeListener('owner', new Set(['OWNED']), () => announced.push('owner'));
 
         // A stopped engine schedules nothing, but the announcement is still true.
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(new Set(['OWNED']));
         // An owner waking for its own progress reschedules and announces nothing, and so does start().
         engine.wake();
         engine.start();
         expect(announced).toEqual(['owner']);
 
         engine.excludeWakeListener('owner');
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(new Set(['OWNED']));
 
         expect(announced).toEqual(['owner']);
         await engine.stop();
+    });
+
+    it('tells only the listeners of the types an external writer wrote', () => {
+        const engine = new InboxOutboxEngine();
+        onTestFinished(() => engine.stop());
+        const announced: string[] = [];
+        engine.includeWakeListener('outbound', new Set(['AL_OUTBOUND', 'WS_OUTBOX']), () => announced.push('outbound'));
+        engine.includeWakeListener('inbound', new Set(['AL_INBOUND']), () => announced.push('inbound'));
+
+        engine.wakeAfterExternalWrite(new Set(['APP_INBOX', 'WS_OUTBOX']));
+        engine.wakeAfterExternalWrite(new Set(['APP_INBOX']));
+
+        expect(announced).toEqual(['outbound']);
     });
 
     it('keeps one throwing wake listener from stealing the wake from the others', () => {
@@ -454,13 +467,14 @@ describe('engine', () => {
         onTestFinished(() => engine.stop());
         const announced: string[] = [];
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        engine.includeWakeListener('first', () => announced.push('first'));
-        engine.includeWakeListener('throws', () => {
+        const owned = new Set(['OWNED']);
+        engine.includeWakeListener('first', owned, () => announced.push('first'));
+        engine.includeWakeListener('throws', owned, () => {
             throw new Error('listener refused the wake');
         });
-        engine.includeWakeListener('last', () => announced.push('last'));
+        engine.includeWakeListener('last', owned, () => announced.push('last'));
 
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(owned);
 
         // Every owner's remembered readiness is dropped, not just the ones ahead of the failure.
         expect(announced).toEqual(['first', 'last']);

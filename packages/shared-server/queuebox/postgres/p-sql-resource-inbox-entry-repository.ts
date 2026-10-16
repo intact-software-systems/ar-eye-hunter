@@ -8,7 +8,9 @@ import {
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
 import {
+    lockObservedResourceInboxEntry,
     replaceObservedResourceInboxEntry,
+    type ResourceInboxObservation,
     type ResourceInboxObservedReplacement
 } from './replace-observed-resource-inbox-entry.ts';
 import {
@@ -109,6 +111,11 @@ export class PSqlResourceInboxEntryRepository {
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
         return await this.writeObservedReplacement(computeResourceInboxObservedReplacement(expected, replacement));
+    }
+
+    /** Whether the row still holds the observation; a held row stays locked until the transaction ends. */
+    async lockObserved(observation: ResourceInboxObservation): Promise<boolean> {
+        return (await lockObservedResourceInboxEntry(this.sql, observation)).length === 1;
     }
 
     async writeObservedReplacement(computed: ResourceInboxObservedReplacement): Promise<ResourceEntry | null> {
@@ -253,6 +260,10 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.findByKey(key);
     }
 
+    async findByKeys(keys: readonly Key[]): Promise<readonly (ResourceEntry | undefined)[]> {
+        return await this.reader.findByKeys(keys);
+    }
+
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {
         return await this.reader.findAnyByKey(key);
     }
@@ -355,6 +366,10 @@ function hasReservedIdentity(
         materialized.key.resourceId === reserved.key.resourceId &&
         materialized.key.contextId === reserved.key.contextId &&
         materialized.typeId === reserved.typeId;
+}
+
+export function computeResourceInboxObservation(expected: ResourceEntry): ResourceInboxObservation {
+    return { expected: computeResourceInboxEntryInsertValues(expected), expectedRowId: toExpectedRowId(expected) };
 }
 
 export function computeResourceInboxObservedReplacement(

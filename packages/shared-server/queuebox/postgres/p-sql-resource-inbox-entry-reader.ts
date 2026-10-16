@@ -1,7 +1,8 @@
-import type {
-    EntityStatus,
-    Key,
-    ResourceEntry
+import {
+    toKeyAsString,
+    type EntityStatus,
+    type Key,
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
@@ -37,6 +38,31 @@ export class PSqlResourceInboxEntryReader {
         `;
 
         return rows.length === 0 ? null : toDomain(rows[0]);
+    }
+
+    /** The live row of each key, in key order: one statement however many keys. */
+    async findByKeys(keys: readonly Key[]): Promise<readonly (ResourceEntry | undefined)[]> {
+        const now = this.now();
+        const requested = keys.map((key) => ({
+            topicId: key.topicId,
+            resourceId: key.resourceId,
+            contextId: key.contextId
+        }));
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select resource_inbox.*
+            from jsonb_to_recordset(${requested}::jsonb)
+                as requested("topicId" text, "resourceId" text, "contextId" text)
+            join resource_inbox
+              on resource_inbox.ri_topic_id = requested."topicId"
+             and resource_inbox.ri_resource_id = requested."resourceId"
+             and resource_inbox.fk_ext_bank_id = requested."contextId"
+            where resource_inbox.expire_ts > ${now}
+        `;
+        const found = new Map(rows.map((row) => {
+            const entry = toDomain(row);
+            return [toKeyAsString(entry.key), entry];
+        }));
+        return keys.map((key) => found.get(toKeyAsString(key)));
     }
 
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {

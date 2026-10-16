@@ -86,7 +86,7 @@ const UNCLEAN_BATCHES: readonly UncleanBatchCase[] = [
         pageSize: 16,
         exhaustedRows: [],
         runClaim: async (_claim, scope) => {
-            scope.engine.wakeAfterExternalWrite();
+            scope.engine.wakeAfterExternalWrite(AL_TEST_TYPES);
             return { status: 'completed' };
         }
     },
@@ -511,7 +511,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
         await handler.ready();
         await engine.executeOnce();
 
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(AL_TEST_TYPES);
         gateNextProbe = true;
         const probing = engine.executeOnce();
         await vi.waitFor(() => expect(releaseProbe).toBeDefined());
@@ -557,7 +557,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
             await handler.ready();
             await engine.executeOnce();
 
-            engine.wakeAfterExternalWrite();
+            engine.wakeAfterExternalWrite(AL_TEST_TYPES);
             failNextProbe = true;
             await engine.executeOnce();
             await engine.executeOnce();

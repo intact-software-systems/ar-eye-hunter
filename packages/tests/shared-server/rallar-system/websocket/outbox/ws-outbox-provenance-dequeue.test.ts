@@ -213,7 +213,7 @@ describe('producer provenance through WS dequeue', () => {
                 throw new Error('Missing admitted row');
             }
             await fixture.stores.workQueue.replaceIfObserved(completed, { ...completed, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
-            fixture.engine.wakeAfterExternalWrite();
+            fixture.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(fixture.entry.key))?.status).toBe(EntityStatus.COMPLETED);
             expect(await fixture.service.readCapturedPolicy(fixture.message, fixture.entry)).toMatchObject({

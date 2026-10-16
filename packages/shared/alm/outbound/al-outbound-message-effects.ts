@@ -168,6 +168,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             origin: 'drain',
             options: {
                 observedOutboxEntry: effect.entry,
+                claimedOutboxEntry: effect.entry,
                 attemptIdentity: JSON.stringify([
                     'queue',
                     effect.attempts,

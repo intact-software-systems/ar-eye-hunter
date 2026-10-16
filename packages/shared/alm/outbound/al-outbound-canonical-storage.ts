@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -40,6 +40,8 @@ export interface ALOutboundCanonicalObservation {
 export interface ALOutboundCanonicalFactWrite {
     readonly entry: ResourceEntry;
     readonly expected: ResourceEntry | undefined;
+    /** Set when `expected` is the row as this caller's claim returned it, so the write fences that claim. */
+    readonly claimed: ResourceEntry | undefined;
     readonly replaceExisting: boolean;
 }
 
@@ -52,7 +54,7 @@ export async function readALOutboundCanonicalMessage(
         ? input.observedEntry
         : await input.queue.getItem(key);
     const reference = input.stored?.reference ?? (entry
-        ? toALOutboundMessageReference(input.scope, entry, decodePersistedALMessage(entry.resource))
+        ? toALOutboundMessageReference(input.scope, entry, decodePersistedALMessageRow(entry))
         : undefined);
     const identity = await input.queue.getItem(toALOutboundIdentityKey(key));
     if (reference !== undefined && reference.expiresAtMs <= input.nowMs()) {
@@ -114,6 +116,8 @@ export interface ALOutboundCanonicalWriteReadInput {
     readonly queue: Pick<QueueBoxResourceEntryRepository, 'getItem'>;
     readonly scope: string;
     readonly entry: ResourceEntry | undefined;
+    /** The canonical row as the caller's own claim returned it; it answers for that row instead of a read. */
+    readonly claimed: ResourceEntry | undefined;
     readonly creationExpiry: string;
     readonly activatePendingCanonical: boolean;
     readonly nowMs: () => number;
@@ -126,10 +130,13 @@ export async function readALOutboundCanonicalWrites(
     if (!entry) {
         return [];
     }
-    const expected = await queue.getItem(entry.key);
-    const reference = toALOutboundMessageReference(scope, entry, decodePersistedALMessage(entry.resource));
+    const claimed = input.claimed && isKeysEqual(input.claimed.key, entry.key) ? input.claimed : undefined;
+    const reference = toALOutboundMessageReference(scope, entry, decodePersistedALMessageRow(entry));
     const identity = toALOutboundIdentityEntry(reference, entry, creationExpiry);
-    const expectedIdentity = await queue.getItem(identity.key);
+    const [expected, expectedIdentity] = await Promise.all([
+        claimed ?? queue.getItem(entry.key),
+        queue.getItem(identity.key)
+    ]);
     const replacing = isALOutboundCanonicalReplacement(activatePendingCanonical, expected, entry);
     // R = D: an awaited getter may already have evicted the other fact at expiry.
     if (reference.expiresAtMs > input.nowMs()) {
@@ -158,27 +165,37 @@ export async function readALOutboundCanonicalWrites(
     return [{
         entry,
         expected,
+        claimed,
         replaceExisting: replacing ||
             (activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
                 entry.status === EntityStatus.NEW)
-    }, { entry: identity, expected: expectedIdentity, replaceExisting: false }];
+    }, { entry: identity, expected: expectedIdentity, claimed: undefined, replaceExisting: false }];
 }
 
-/** Uses the caller's admission transaction; both observations precede either buffered write. */
-export async function writeALOutboundCanonicalFacts(
+/** Re-reads every canonical fact slot inside the caller's admission write, all at once. */
+export async function readALOutboundCanonicalFactSlots(
+    tx: ALAdmissionWorkWriteContext,
+    writes: readonly ALOutboundCanonicalFactWrite[]
+): Promise<readonly (ResourceEntry | undefined)[]> {
+    return await Promise.all(
+        writes.map((write) =>
+            write.claimed === undefined ? tx.readWork(write.entry.key) : tx.readClaimedWork(write.claimed)
+        )
+    );
+}
+
+/** Uses the caller's admission transaction; `slots` are the re-reads of every write, before either buffered write. */
+export function writeALOutboundCanonicalFacts(
     tx: ALAdmissionWorkWriteContext,
     writes: readonly ALOutboundCanonicalFactWrite[],
+    slots: readonly (ResourceEntry | undefined)[],
     nowMs: () => number
-): Promise<'written' | 'expired'> {
-    const observed: (ResourceEntry | undefined)[] = [];
-    for (const write of writes) {
-        observed.push(await tx.readWork(write.entry.key));
-    }
+): 'written' | 'expired' {
     if (writes.some((write) => write.entry.audit.expiryTs.epochMilliseconds <= nowMs())) {
         return 'expired';
     }
     for (const [index, write] of writes.entries()) {
-        const current = observed[index];
+        const current = slots[index];
         if (
             current === undefined || write.expected === undefined
                 ? current !== write.expected
@@ -188,7 +205,7 @@ export async function writeALOutboundCanonicalFacts(
         }
     }
     for (const [index, write] of writes.entries()) {
-        if (!observed[index] || write.replaceExisting) {
+        if (!slots[index] || write.replaceExisting) {
             tx.writeWork(write.entry);
         }
     }

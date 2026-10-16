@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
@@ -339,7 +339,7 @@ async function sendRemoteQueueBoxOutboxEntry(
     entry: ResourceEntry,
     options: SendRemoteQueueBoxOutboxEntryDependencies
 ): Promise<void> {
-    const remoteMessage = decodePersistedALMessage(entry.resource);
+    const remoteMessage = decodePersistedALMessageRow(entry);
     let result: WsServerLiveSendResult;
     let awaited: ExpectedConnectionHolds.AudienceHold;
     try {
@@ -478,7 +478,7 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
         throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
     }
 
-    const message = decodePersistedALMessage(entry.resource);
+    const message = decodePersistedALMessageRow(entry);
     const expiresAtMs = resolveALMessageExpireAtMs(message);
     if (
         expiresAtMs === undefined || !Number.isSafeInteger(expiresAtMs) ||
@@ -522,7 +522,7 @@ async function resolveResourceEntryFromPubSubMessage(
             new TypeError('Live cluster canonical message is missing')
         );
     }
-    const canonical = decodePersistedALMessage(entry.resource);
+    const canonical = decodePersistedALMessageRow(entry);
     if (
         !isKeysEqual(entry.key, message.key) || entry.typeId !== message.typeId ||
         resolveALMessageExpireAtMs(canonical) !== message.expiresAtMs ||

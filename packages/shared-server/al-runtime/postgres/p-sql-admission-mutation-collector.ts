@@ -37,6 +37,14 @@ export type ALAdmissionMutation =
     }>;
 
 export namespace PSqlAdmissionMutationCollector {
+    export interface Dependencies {
+        /** Serves prefix lists; point reads go through `readEntry`. */
+        readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+        readonly readEntry: (key: string) => Promise<RuntimeStateEntry | undefined>;
+        readonly namespace: string;
+        readonly nowEpochMs: () => number;
+    }
+
     export interface Observation {
         readonly entry: RuntimeStateEntry | null;
         value: JsonWireValue | undefined;
@@ -49,17 +57,15 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
     private readonly observations = new Map<string, PSqlAdmissionMutationCollector.Observation>();
 
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    private readonly readEntry: (key: string) => Promise<RuntimeStateEntry | undefined>;
     private readonly namespace: string;
     private readonly nowEpochMs: () => number;
 
-    constructor(
-        repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        namespace: string,
-        nowEpochMs: () => number
-    ) {
-        this.repository = repository;
-        this.namespace = namespace;
-        this.nowEpochMs = nowEpochMs;
+    constructor(dependencies: PSqlAdmissionMutationCollector.Dependencies) {
+        this.repository = dependencies.repository;
+        this.readEntry = dependencies.readEntry;
+        this.namespace = dependencies.namespace;
+        this.nowEpochMs = dependencies.nowEpochMs;
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
@@ -170,7 +176,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         if (existing) {
             return existing;
         }
-        const entry = await this.repository.findEntry(this.namespace, key);
+        const entry = await this.readEntry(key);
         const observation = entry !== undefined
             ? toPSqlAdmissionObservation(entry, key, this.nowEpochMs())
             : {

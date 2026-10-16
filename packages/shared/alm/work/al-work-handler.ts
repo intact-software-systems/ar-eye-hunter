@@ -227,6 +227,7 @@ export class ALWorkHandler {
             // Only the server announces a write this engine did not make; another tab's commit reaches
             // the owner's lane as its own, and a row a reload wrote is found at the age bound.
             onExternalWake: () => this.readiness.forget('external-wake'),
+            externalWakeTypes: dependencies.port.workTypes,
             durableOwnership: dependencies.durableOwnership,
             takeOver: () => void this.ready().catch((error) => this.reportBatchFailure(toError(error)))
         });

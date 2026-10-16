@@ -76,6 +76,8 @@ export interface ClaimALWorkInput {
  * `ALWorkHandler.claimCommitted()` before it runs. Anyone else's write reaches the engine wake.
  */
 export interface ALWorkQueuePort {
+    /** The queue types of this owner's rows: an external write of any of them is a write to this owner. */
+    readonly workTypes: ReadonlySet<string>;
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
     readPage(input: ReadALWorkPageInput): Promise<ALWorkPage>;
     /**
@@ -108,6 +110,7 @@ export interface CreateALWorkQueuePortInput {
 export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWorkQueuePort {
     const { queue, workTypes } = input;
     return {
+        workTypes,
         retainIfAbsent: (entry) => queue.enqueueIfAbsent(entry),
         readPage: (pageInput) => readMergedALWorkPage(queue, workTypes, pageInput),
         readPages: (scanInputs) => readMergedALWorkPageScans(queue, workTypes, scanInputs),

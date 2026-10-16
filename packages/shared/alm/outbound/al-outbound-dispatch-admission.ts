@@ -4,7 +4,10 @@ import {
     isALFreezeOfMessage,
     resolveALFrozenMulticastAudience
 } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import {
+    decodePersistedALMessageRow,
+    toChangedALMessageRow
+} from '../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -530,6 +533,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             msg: dispatch.msg,
             planner: dispatch.planner,
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
+            claimedCanonicalEntry: dispatch.options.claimedOutboxEntry,
             dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent,
             repairAttempt: dispatch.options.repairBudget === undefined
@@ -551,11 +555,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             : this.dependencies.toOutboxEntry(read.msg);
         return {
             read,
-            outboxEntry: {
-                ...entry,
+            outboxEntry: toChangedALMessageRow(entry, {
                 key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
                     toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
-            },
+            }),
             dispatchAtMs,
             intent: dispatch.intent,
             phase: dispatch.phase,
@@ -698,7 +701,7 @@ export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, 
     const canonical = decodeALAdmissionValue(
         canonicalEntry.resource,
         JSON.stringify(canonicalEntry.key),
-        () => decodePersistedALMessage(canonicalEntry.resource)
+        () => decodePersistedALMessageRow(canonicalEntry)
     );
     return isALFreezeOfMessage(canonical, msg);
 }

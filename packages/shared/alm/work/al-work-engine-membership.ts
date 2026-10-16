@@ -10,7 +10,9 @@ export namespace ALWorkEngineMembership {
         readonly ownsQueueEngine: boolean;
         readonly workerId: string;
         readonly task: LoopsTaskDto;
+        /** Runs on every external write of one of `externalWakeTypes`. */
         readonly onExternalWake: () => void;
+        readonly externalWakeTypes: ReadonlySet<string>;
         /** Absent on a lane no other runtime drains: the task joins the engine at construction. */
         readonly durableOwnership: ALDurableWorkLaneOwnership | undefined;
         /** Runs once, when ownership turns true after construction: the new owner's bootstrap. */
@@ -78,7 +80,7 @@ export class ALWorkEngineMembership {
         const { queueEngine, workerId } = this.input;
         this.included = true;
         queueEngine.includeTask(workerId, this.input.task);
-        queueEngine.includeWakeListener(workerId, this.input.onExternalWake);
+        queueEngine.includeWakeListener(workerId, this.input.externalWakeTypes, this.input.onExternalWake);
     }
 
     private takeOver(): void {

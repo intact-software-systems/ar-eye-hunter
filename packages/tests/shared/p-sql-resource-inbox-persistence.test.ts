@@ -98,13 +98,13 @@ describe('PostgreSQL resource inbox persistence', () => {
         const capture = createResourceInboxQueryCapture();
         const repo = createPSqlResourceInboxRepository(capture.sql, () => new Date());
 
-        await expect(repo.reservations.readWorkPresence({
+        await expect(repo.reservations.readWorkPresences([{
             typeIds: new Set(['APP_INBOX']),
             maxAttempts: 2,
             reservationLeaseMs: 30_000,
             finalizationStaleAfterMs: 300_000,
             staleDueThresholdMs: 30_000
-        })).rejects.toThrow('Resource inbox work presence statement returned no row');
+        }])).rejects.toThrow('Resource inbox work presence statement returned no row');
 
         expect(capture.queries).toHaveLength(1);
         const query = capture.queries[0]!;

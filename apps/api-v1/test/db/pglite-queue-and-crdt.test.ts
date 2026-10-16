@@ -144,13 +144,13 @@ Deno.test(
             await inbox.entries.write(exhausted);
             await inbox.entries.write(exhaustedTimeout);
             const readPresence = async (typeId: string, maxAttempts: number) =>
-                await inbox.reservations.readWorkPresence({
+                (await inbox.reservations.readWorkPresences([{
                     typeIds: new Set([typeId]),
                     maxAttempts,
                     reservationLeaseMs: 1_000,
                     finalizationStaleAfterMs: 5 * 60_000,
                     staleDueThresholdMs: 30_000
-                });
+                }]))[0]!;
             assert.equal((await readPresence(exhausted.typeId, 2)).dueRetry, false);
             assert.equal((await readPresence(exhausted.typeId, 20)).dueRetry, true);
             assert.equal((await readPresence(exhaustedTimeout.typeId, 2)).timedOutReservation, false);
@@ -290,13 +290,13 @@ Deno.test(
             assert.equal((await inbox.entries.findByKey(active.key))?.key.resourceId, 'active-1');
             assert.equal(await inbox.entries.findByKey(expired.key), null);
             assert.equal(
-                (await inbox.reservations.readWorkPresence({
+                (await inbox.reservations.readWorkPresences([{
                     typeIds: new Set(['TYPE_A']),
                     maxAttempts: 20,
                     reservationLeaseMs: 1_000,
                     finalizationStaleAfterMs: 5 * 60_000,
                     staleDueThresholdMs: 30_000
-                })).newRow,
+                }]))[0]!.newRow,
                 true
             );
 

@@ -9,7 +9,7 @@ import {
 import type { ALAckPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
-    decodePersistedALMessage,
+    decodePersistedALMessageRow,
     decodePersistedALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -390,7 +390,7 @@ export class WsQueueBoxServerService {
                     WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
                     this.creationNow()
                 ),
-            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
             readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({

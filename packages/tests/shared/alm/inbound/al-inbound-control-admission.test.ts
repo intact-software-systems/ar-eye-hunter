@@ -189,6 +189,7 @@ function recordALInboundCommits(
                     await tx.remove(key);
                 },
                 readWork: (key) => tx.readWork(key),
+                readClaimedWork: (claimed) => tx.readClaimedWork(claimed),
                 writeWork: (entry) => {
                     commit.workKinds.push(decodeALInboundWorkEntry(entry, namespace).payload.kind);
                     tx.writeWork(entry);

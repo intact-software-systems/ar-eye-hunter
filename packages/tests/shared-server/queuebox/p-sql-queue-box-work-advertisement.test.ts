@@ -63,6 +63,23 @@ describe('PSqlQueueBox work advertisement', () => {
         expect(statements.every((statement) => statement.startsWith('select'))).toBe(true);
     });
 
+    it('answers the probes of several lanes issued together with one statement, each lane on its own options', async () => {
+        await seed({ resourceId: 'new-row', status: EntityStatus.NEW });
+        await seed({ resourceId: 'abandoned-outbox', typeId: EnqueuedType.APP_OUTBOX, status: EntityStatus.RESERVED, attempts: 1, startedAgoSeconds: 61 });
+        statements.length = 0;
+
+        const [inbox, outbox, outboxLongLease] = await Promise.all([
+            queue.readWorkAdvertisement(INBOX_TYPES, createWorkAdvertisementOptions()),
+            queue.readWorkAdvertisement(OUTBOX_TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 60_000 })),
+            queue.readWorkAdvertisement(OUTBOX_TYPES, createWorkAdvertisementOptions({ reservationLeaseMs: 120_000 }))
+        ]);
+
+        expect(inbox).toEqual({ ...NOTHING_ADVERTISED, NEW: true });
+        expect(outbox).toEqual({ ...NOTHING_ADVERTISED, TIMEOUT: true });
+        expect(outboxLongLease).toEqual(NOTHING_ADVERTISED);
+        expect(statements).toHaveLength(1);
+    });
+
     it('names the NEW, due RETRY and overdue FAIRNESS lanes from the rows that can be claimed now', async () => {
         await seed({ resourceId: 'new-row', status: EntityStatus.NEW });
         await seed({ resourceId: 'expired-new', status: EntityStatus.NEW, expired: true });

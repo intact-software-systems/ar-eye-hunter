@@ -514,6 +514,10 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
             : decodeStoredResourceEntry(stored);
     }
 
+    async readClaimedWork(claimed: ResourceEntry): Promise<ResourceEntry | undefined> {
+        return await this.readWork(claimed.key);
+    }
+
     writeWork(entry: ResourceEntry): void {
         const keyString = toKeyAsString(entry.key);
         if (!this.#workObservations.has(keyString) || this.#pendingWork.has(keyString)) {
