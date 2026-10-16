@@ -143,6 +143,7 @@ async function createConnectedScenario(groupId: string): Promise<ConnectedScenar
     await service.connectPresenceSession(SCOPE, groupId, `${groupId}-bob-session`, {
         principalId: 'bob',
         generationId: `${groupId}-bob-generation`,
+        connectionGenerationId: `${groupId}-bob-ws-generation`,
         actorPrincipalId: 'bob',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${groupId}-bob`

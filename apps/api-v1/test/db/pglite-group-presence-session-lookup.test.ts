@@ -76,6 +76,7 @@ function createPresenceSession(
         sessionId: input.sessionId,
         principalId: 'alice',
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         generationVersion: 2_000,
         connectedAtEpochMs: 2_000,
         lastHeartbeatAtEpochMs: 3_000,

@@ -1719,6 +1719,7 @@ function createGroupPresenceRecord(
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: snapshotVersion,
         status: 'active',
         connectedAtEpochMs: 1,

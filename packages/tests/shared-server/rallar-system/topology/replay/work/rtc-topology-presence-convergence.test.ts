@@ -296,6 +296,7 @@ class PresenceConvergenceFixture {
             principalId: 'C',
             actorPrincipalId: 'C',
             generationId: 'C-first',
+            connectionGenerationId: 'ws-C-first',
             requestId: 'depart-C'
         });
         const departure = await this.convergePresence('departure');
@@ -327,6 +328,7 @@ class PresenceConvergenceFixture {
             principalId: sessionId,
             actorPrincipalId: sessionId,
             generationId,
+            connectionGenerationId: `ws-${generationId}`,
             expiresAtEpochMs: this.now + 60_000,
             requestId: `connect-${generationId}`
         });

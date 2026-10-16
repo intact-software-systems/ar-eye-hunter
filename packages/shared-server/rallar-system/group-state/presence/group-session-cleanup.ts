@@ -7,13 +7,15 @@ export interface GroupSessionCleanupInput {
     readonly scope: StateScope;
     readonly authSession: Omit<IssuedAuthSession, 'accessToken'>;
     readonly principalId: string;
+    readonly connectionGenerationId: string;
     readonly disconnectedAtEpochMs: number;
 }
 
 /**
  * The connection facts were verified when the socket was authorised, and cleanup only closes that
  * connection's presence, so it needs no live auth session: a logout or an expired auth session
- * before the close still closes the rows.
+ * before the close still closes the rows. A row another socket of the same auth session took over
+ * carries that socket's generation and stays.
  */
 export async function readGroupSessionCleanupCandidates(
     repository: GroupStateRepository,
@@ -25,6 +27,7 @@ export async function readGroupSessionCleanupCandidates(
             session.workspaceId === input.scope.workspaceId &&
             session.principalId === input.principalId &&
             session.principalId === input.authSession.clientId &&
+            session.connectionGenerationId === input.connectionGenerationId &&
             session.disconnectedAtEpochMs === null &&
             session.connectedAtEpochMs <= input.disconnectedAtEpochMs &&
             session.lastHeartbeatAtEpochMs <= input.disconnectedAtEpochMs

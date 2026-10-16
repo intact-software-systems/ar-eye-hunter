@@ -822,6 +822,7 @@ function createGroupSnapshot(
             principalId,
             sessionId: `${principalId}-session`,
             generationId: `${principalId}-generation`,
+            connectionGenerationId: `${principalId}-ws-generation`,
             generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,

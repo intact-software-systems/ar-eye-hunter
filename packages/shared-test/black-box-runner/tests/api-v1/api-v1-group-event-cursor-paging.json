@@ -251,6 +251,7 @@
         },
         "body": {
           "generationId": "eventpaging-generation-{runId}",
+          "connectionGenerationId": "eventpaging-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -271,6 +272,7 @@
         },
         "body": {
           "generationId": "eventpaging-generation-{runId}",
+          "connectionGenerationId": "eventpaging-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

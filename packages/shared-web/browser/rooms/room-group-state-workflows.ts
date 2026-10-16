@@ -30,6 +30,7 @@ export interface CreateAndJoinStateGroupInput {
     readonly principalId: string;
     readonly sessionId: string;
     readonly generationId: string;
+    readonly connectionGenerationId: string;
     readonly scope?: StateScope;
     readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly requestedGroupId?: string;
@@ -41,6 +42,7 @@ export interface JoinStateGroupInput {
     readonly principalId: string;
     readonly sessionId: string;
     readonly generationId: string;
+    readonly connectionGenerationId: string;
     readonly scope?: StateScope;
     readonly policies?: CommandsOrchestratorPolicies<StateGroupWorkflowValue>;
     readonly intent?: RoomJoinGroupStateFields;
@@ -71,6 +73,7 @@ export async function createAndJoinStateGroup(
     const presenceRequest = toConnectRoomPresenceGroupStateRequest({
         principalId: input.principalId,
         generationId: input.generationId,
+        connectionGenerationId: input.connectionGenerationId,
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
@@ -117,6 +120,7 @@ export async function joinStateGroup(
     const presenceRequest = toConnectRoomPresenceGroupStateRequest({
         principalId: input.principalId,
         generationId: input.generationId,
+        connectionGenerationId: input.connectionGenerationId,
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });

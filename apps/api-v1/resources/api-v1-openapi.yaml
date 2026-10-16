@@ -5240,6 +5240,7 @@ components:
         - status
         - generationId
         - generationVersion
+        - connectionGenerationId
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
@@ -5279,6 +5280,9 @@ components:
           type: integer
           format: int64
           minimum: 1
+        connectionGenerationId:
+          type: string
+          description: WebSocket connection generation of the socket this presence belongs to.
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -5932,10 +5936,16 @@ components:
           type: string
     ConnectGroupPresenceSessionRequest:
       type: object
-      required: [generationId]
+      required: [generationId, connectionGenerationId]
       properties:
         generationId:
           type: string
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: |
+            WebSocket connection generation of the caller's socket, as its own session entry in the client
+            snapshot names it. The socket's close cleans only presence rows that carry its generation.
         connectedAtEpochMs:
           type: integer
           format: int64

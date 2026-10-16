@@ -160,6 +160,7 @@ interface RoomGroupStateMutationAuditFields {
 export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
     readonly principalId: string;
     readonly generationId: string;
+    readonly connectionGenerationId: string;
 }
 
 export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
@@ -362,6 +363,7 @@ export function toConnectRoomPresenceGroupStateRequest(
     return {
         principalId: input.principalId,
         generationId: input.generationId,
+        connectionGenerationId: input.connectionGenerationId,
         ...toActorRequest(input)
     };
 }

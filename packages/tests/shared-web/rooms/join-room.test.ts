@@ -2,7 +2,8 @@ import {
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
@@ -77,6 +78,7 @@ describe('room join operations', () => {
                 principalId: 'principal-1',
                 sessionId: 'session-1',
                 generationId: 'generation-session-1',
+                connectionGenerationId: 'ws-generation-session-1',
                 scope: undefined,
                 policies: { command: { signal, timeoutMs: 44 } },
                 intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
@@ -155,6 +157,18 @@ describe('room join operations', () => {
         expect(roomWorkflowMocks.operationLog).toEqual(['join:new-room']);
         expect(roomWorkflowMocks.leaveStateGroup).not.toHaveBeenCalled();
         expect(facade.rooms.current()).toBe(oldRoom);
+    });
+
+    it('refuses to connect presence before the own session names its socket generation', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const { findClientStateSnapshotByPrincipalId } = await import('@shared/repository/client-state-snapshots-repository.ts');
+        vi.mocked(findClientStateSnapshotByPrincipalId).mockReturnValueOnce(undefined);
+
+        await expect(createRallarFacade().rooms.join({ roomId: 'room-1', leaveCurrent: false })).rejects.toThrow(
+            'Cannot connect room presence: the WebSocket connection generation is not known yet.'
+        );
+
+        expect(roomWorkflowMocks.joinStateGroup).not.toHaveBeenCalled();
     });
 
     it('rejects mismatched roomId and roomRef before the workflow', async () => {

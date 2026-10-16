@@ -335,6 +335,7 @@ Deno.test(
                             request: {
                                 principalId: 'alice',
                                 generationId: `generation-${testCase.kind}`,
+                                connectionGenerationId: `ws-generation-${testCase.kind}`,
                                 connectedAtEpochMs: 10_000,
                                 lastHeartbeatAtEpochMs: 10_000,
                                 expiresAtEpochMs: 4_102_444_800_000,

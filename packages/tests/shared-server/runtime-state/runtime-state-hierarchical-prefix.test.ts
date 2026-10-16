@@ -175,6 +175,7 @@ function groupSession(groupId: string, sessionId: string): GroupPresenceSession 
         sessionId,
         principalId: 'alice',
         generationId: `${sessionId}-generation`,
+        connectionGenerationId: `${sessionId}-ws-generation`,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

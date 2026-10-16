@@ -127,6 +127,7 @@ async function connect(
     await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         principalId,
         generationId,
+        connectionGenerationId: `ws-${generationId}`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: nowEpochMs + 60_000,
         requestId: `connect-${groupId}-${principalId}-${generationId}`
@@ -142,6 +143,7 @@ async function disconnect(
 ): Promise<void> {
     await createService(runtime, nowEpochMs).disconnectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         generationId,
+        connectionGenerationId: `ws-${generationId}`,
         actorPrincipalId: principalId,
         disconnectedAtEpochMs: nowEpochMs,
         requestId: `disconnect-${groupId}-${principalId}-${generationId}`

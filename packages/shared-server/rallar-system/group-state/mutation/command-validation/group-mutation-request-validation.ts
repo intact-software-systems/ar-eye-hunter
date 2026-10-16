@@ -72,10 +72,13 @@ export function validateGroupPresenceMutationRequest(operation: PresenceOperatio
         'expiresAtEpochMs'
     ];
     const identityFields = ['requestId', 'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'principalId'];
+    const generationFields = operation === 'connectPresence'
+        ? ['generationId', 'connectionGenerationId']
+        : ['generationId'];
     const issues = [
-        ...validateGroupInputKeys(request, [...identityFields, 'generationId', ...timestampFields], label),
+        ...validateGroupInputKeys(request, [...identityFields, ...generationFields, ...timestampFields], label),
         ...validateGroupInputFields(request, [
-            { key: 'generationId', kind: 'string', required: true },
+            ...generationFields.map((key) => ({ key, kind: 'string' as const, required: true })),
             ...identityFields.map((key) => ({ key, kind: 'string' as const }))
         ], `Group ${operation}`)
     ];
@@ -210,6 +213,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
         ...MUTATION_REQUEST_KEYS,
         'principalId',
         'generationId',
+        'connectionGenerationId',
         'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'

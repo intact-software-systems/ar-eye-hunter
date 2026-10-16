@@ -341,6 +341,7 @@ function createGroupBody() {
 function connectGroupPresenceBody() {
     return {
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'session-1',

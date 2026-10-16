@@ -93,6 +93,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
                 request: {
                     principalId: harness.authority.clientId,
                     generationId: presenceGenerationId,
+                    connectionGenerationId: wsGenerationId,
                     connectedAtEpochMs: wsStartedAtEpochMs - 50,
                     lastHeartbeatAtEpochMs: wsStartedAtEpochMs - 50,
                     expiresAtEpochMs: FUTURE_MS,
@@ -176,6 +177,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
                 request: {
                     principalId: harness.authority.clientId,
                     generationId,
+                    connectionGenerationId: 'pglite-summary-ws-generation',
                     connectedAtEpochMs,
                     lastHeartbeatAtEpochMs: connectedAtEpochMs,
                     expiresAtEpochMs: FUTURE_MS,
@@ -268,6 +270,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
                 request: {
                     principalId: harness.authority.clientId,
                     generationId: presenceGenerationId,
+                    connectionGenerationId: wsGenerationId,
                     connectedAtEpochMs: presenceConnectedAtEpochMs,
                     lastHeartbeatAtEpochMs: presenceConnectedAtEpochMs,
                     expiresAtEpochMs: FUTURE_MS,
@@ -311,6 +314,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         const groupId = 'pglite-independent-presence';
         await createRoom(harness, groupId, sql);
         const wsStartedAtEpochMs = Date.now() - 500;
+        const wsGenerationId = 'pglite-lost-close-ws-generation';
         const presenceGenerationId = crypto.randomUUID();
         const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
@@ -324,6 +328,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
                 request: {
                     principalId: harness.authority.clientId,
                     generationId: presenceGenerationId,
+                    connectionGenerationId: wsGenerationId,
                     connectedAtEpochMs: wsStartedAtEpochMs - 50,
                     lastHeartbeatAtEpochMs: wsStartedAtEpochMs - 50,
                     expiresAtEpochMs: FUTURE_MS,
@@ -357,7 +362,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         await harness.group.enqueueGroupSessionCleanup({
             connection: toAuthorisedWsClientConnection({
                 authSession: harness.authority,
-                generationId: 'different-ws-generation',
+                generationId: wsGenerationId,
                 input: { ...SCOPE, connectedAtEpochMs: wsStartedAtEpochMs }
             }),
             disconnectedAtEpochMs: wsStartedAtEpochMs + 100,

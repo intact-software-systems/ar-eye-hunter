@@ -192,6 +192,7 @@ function createPresenceSession(
         sessionId,
         principalId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 2,

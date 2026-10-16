@@ -310,6 +310,7 @@ function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['ac
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: membershipVersion,
         status: 'active',
         connectedAtEpochMs: 1,

@@ -224,6 +224,21 @@ describe('AppInbox websocket close convergence', () => {
         expect(await activeGroupSessionCount(harness, 'revoked-session-room')).toBe(0);
     });
 
+    it('does not let an older socket\'s late cleanup close the presence its reconnected socket owns', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'reconnected-socket-room');
+        const socketA = closeFacts(harness.authSession, 'group-socket-a', 37);
+        const socketB = closeFacts(harness.authSession, 'group-socket-b', 38);
+        await connectGroupPresence(harness, 'reconnected-socket-room', socketA, groupPresenceFacts(socketA, 'presence-a', -50));
+        // Socket B joins the same group on the same auth session before socket A's close is processed.
+        await connectGroupPresence(harness, 'reconnected-socket-room', socketB, groupPresenceFacts(socketA, 'presence-b', -10));
+
+        expect(await enqueueGroupClose(harness.group, socketA)).toBe(1);
+        await processNext(harness.reader);
+
+        expect(await activeGroupSessionCount(harness, 'reconnected-socket-room')).toBe(1);
+    });
+
     it(
         'processes group cleanup before delayed presence connect ' + 'without orphan presence',
         async () => {
@@ -395,6 +410,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
             request: {
                 principalId: facts.authSession.clientId,
                 generationId: presence.generationId,
+                connectionGenerationId: facts.generationId,
                 connectedAtEpochMs: presence.connectedAtEpochMs,
                 lastHeartbeatAtEpochMs: presence.connectedAtEpochMs,
                 expiresAtEpochMs: presence.expiresAtEpochMs,
@@ -404,6 +420,18 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
             }
         }
     }, harness.authSession);
+}
+
+async function connectGroupPresence(
+    harness: AppInboxWsCloseHarness,
+    groupId: string,
+    facts: AuthorisedWsCloseFacts,
+    presence: EnqueueGroupConnectInput['presence']
+): Promise<void> {
+    const pending = enqueueGroupConnect({ harness, groupId, facts, presence });
+    await waitForQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_CONNECT);
+    await processNext(harness.reader);
+    expect((await pending).right).toBeDefined();
 }
 
 async function activeGroupSessionCount(

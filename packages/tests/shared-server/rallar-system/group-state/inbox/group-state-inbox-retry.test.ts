@@ -560,6 +560,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 sessionId: 'owner-session',
                 request: {
                     generationId: 'default-equivalence-generation',
+                    connectionGenerationId: 'default-equivalence-ws-generation',
                     principalId: 'owner',
                     actorPrincipalId: 'owner',
                     actorSessionId: 'owner-session',

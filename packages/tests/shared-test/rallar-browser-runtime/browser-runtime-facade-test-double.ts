@@ -582,6 +582,7 @@ export function toRoomRosterSession(
         // Hosted agents may all log in as one user, so by default the principal never tells two sessions apart.
         principalId: lease.principalId ?? 'client-1',
         generationId: `${sessionId}-generation`,
+        connectionGenerationId: `${sessionId}-ws-generation`,
         generationVersion: 1,
         connectedAtEpochMs: nowMs - 5_000,
         lastHeartbeatAtEpochMs: nowMs - 1_000,

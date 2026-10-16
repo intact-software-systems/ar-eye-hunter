@@ -323,6 +323,7 @@
         },
         "body": {
           "generationId": "adminsupport-generation-{runId}",
+          "connectionGenerationId": "adminsupport-connection-generation-{runId}",
           "principalId": "{subjectClientId}"
         }
       },

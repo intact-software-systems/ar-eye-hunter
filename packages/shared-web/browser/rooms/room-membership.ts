@@ -3,6 +3,7 @@ import type {
     RallarRoomInviteOptions,
     RallarRoomTargetInput
 } from './rallar-room-contracts.ts';
+import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupRole, GroupSnapshot } from './room-group-state-translation.ts';
 import {
     acceptStateGroupInvite,
@@ -62,6 +63,7 @@ export async function acceptRoomInvite(
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
                 generationId,
+                connectionGenerationId: requireOwnWsConnectionGenerationId(session),
                 scope,
                 policies
             })

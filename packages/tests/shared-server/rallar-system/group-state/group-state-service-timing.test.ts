@@ -81,6 +81,7 @@ describe('group-state service timing boundary', () => {
                     expiresAtEpochMs: 253_402_300_799_999
                 },
                 principalId: 'missing-owner',
+                connectionGenerationId: 'timing-ws-generation',
                 disconnectedAtEpochMs: 1_000
             })
         ).rejects.toThrow('Runtime state is unreadable');
@@ -158,6 +159,7 @@ async function invokeIngressCaptureOperations(runtime: ServiceTimingRuntime) {
                 expiresAtEpochMs: 253_402_300_799_999
             },
             principalId: 'owner',
+            connectionGenerationId: 'timing-ws-generation',
             disconnectedAtEpochMs: 1_000
         })
     ).resolves.toEqual([]);

@@ -158,6 +158,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-alice', {
             principalId: 'alice',
             generationId: 'presence-alice',
+            connectionGenerationId: 'ws-presence-alice',
             actorPrincipalId: 'alice',
             expiresAtEpochMs: nowEpochMs + 60_000,
             requestId: 'connect-alice'
@@ -165,6 +166,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-bob', {
             principalId: 'bob',
             generationId: 'presence-bob',
+            connectionGenerationId: 'ws-presence-bob',
             actorPrincipalId: 'bob',
             expiresAtEpochMs: nowEpochMs + 60_000,
             requestId: 'connect-bob'

@@ -105,10 +105,13 @@ vi.mock(import('@shared/api/auth.ts'), () => ({
     writeSession: vi.fn()
 }));
 
-vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), () => ({
-    findClientStateSnapshotByPrincipalId: vi.fn(),
-    getAllClientStateSnapshots: vi.fn(() => [])
-}));
+vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), async () => {
+    const { createOwnWsClientSnapshotFixture } = await import('../authoritative-group-fixtures.ts');
+    return {
+        findClientStateSnapshotByPrincipalId: vi.fn(() => createOwnWsClientSnapshotFixture(roomWorkflowMocks.session)),
+        getAllClientStateSnapshots: vi.fn(() => [])
+    };
+});
 
 vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => {
     const actual = await importOriginal();

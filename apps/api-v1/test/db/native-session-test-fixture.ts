@@ -200,7 +200,12 @@ export async function writeNativeGroupPresence(flow: NativeGroupSessionFlow): Pr
             scope,
             groupId: groupRef.groupId,
             sessionId: session.sessionId,
-            request: { requestId: `native-room-presence-${index}`, principalId: 'alice', generationId }
+            request: {
+                requestId: `native-room-presence-${index}`,
+                principalId: 'alice',
+                generationId,
+                connectionGenerationId: generationId
+            }
         }
     });
 }

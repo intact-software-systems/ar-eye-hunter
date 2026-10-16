@@ -121,6 +121,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
         path: mutationPath(`${API_BASE}/room-1/sessions/alice-session`),
         body: {
             generationId: 'generation',
+            connectionGenerationId: 'ws-generation',
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 1

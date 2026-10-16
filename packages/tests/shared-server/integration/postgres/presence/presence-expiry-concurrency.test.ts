@@ -808,6 +808,7 @@ describe('Postgres presence expiry concurrency', () => {
                     await setup.connectPresenceSession(scope, groupRef.groupId, `session-${index}`, {
                         principalId,
                         generationId: `generation-${index}`,
+                        connectionGenerationId: `ws-generation-${index}`,
                         connectedAtEpochMs: atEpochMs,
                         lastHeartbeatAtEpochMs: atEpochMs,
                         expiresAtEpochMs: atEpochMs + 60_000,

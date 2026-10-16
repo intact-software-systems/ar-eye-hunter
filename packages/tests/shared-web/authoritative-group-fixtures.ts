@@ -1,4 +1,4 @@
-import type { OverlayInfo } from '@shared/api/api-config.ts';
+import type { AuthSession, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientInstance, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -60,6 +60,7 @@ export function createActiveGroupPresenceSessionFixture(
         principalId: input.principalId,
         sessionId: input.sessionId,
         generationId: `generation-${input.sessionId}`,
+        connectionGenerationId: `ws-generation-${input.sessionId}`,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,
@@ -270,5 +271,17 @@ export function createActiveClientSessionFixture(
         expiresAtEpochMs: 60_000,
         disconnectedAtEpochMs: null,
         disconnectReason: null
+    };
+}
+
+/** The own client snapshot as the server's authorised connect leaves it: the session names its socket's generation. */
+export function createOwnWsClientSnapshotFixture(session: Pick<AuthSession, 'clientId' | 'sessionId'>): ClientSnapshot {
+    const scope = { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: session.clientId };
+    return {
+        ...createClientSnapshotFixture(scope),
+        activeSessions: [{
+            ...createActiveClientSessionFixture({ ...scope, clientInstanceId: session.clientId, sessionId: session.sessionId }),
+            generationId: `ws-generation-${session.sessionId}`
+        }]
     };
 }

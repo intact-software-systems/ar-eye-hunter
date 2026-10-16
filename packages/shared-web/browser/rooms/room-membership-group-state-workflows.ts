@@ -53,6 +53,7 @@ export interface RevokeStateGroupInviteWorkflowInput extends TargetRoomActorWork
 
 export interface AcceptStateGroupInviteWorkflowInput extends RoomActorWorkflowInput {
     readonly generationId: string;
+    readonly connectionGenerationId: string;
 }
 
 export interface RotateStateGroupJoinCodeWorkflowInput extends RoomActorWorkflowInput<GroupJoinCodeResponse> {
@@ -143,6 +144,7 @@ export async function acceptStateGroupInvite(
                     request: toConnectRoomPresenceGroupStateRequest({
                         principalId: input.actorPrincipalId,
                         generationId: input.generationId,
+                        connectionGenerationId: input.connectionGenerationId,
                         actorPrincipalId: input.actorPrincipalId,
                         actorSessionId: input.sessionId
                     }),

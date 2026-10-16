@@ -1388,6 +1388,7 @@ function createGroupSession(
         principalId,
         sessionId,
         generationId: overrides.generationId ?? `generation-${sessionId}`,
+        connectionGenerationId: overrides.generationId ?? `generation-${sessionId}`,
         generationVersion: overrides.generationVersion ?? connectedAtEpochMs,
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 20,

@@ -42,6 +42,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
             sessionId: 'alice-session',
             request: {
                 generationId: 'generation-connect',
+                connectionGenerationId: 'ws-generation-connect',
                 principalId: 'alice',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
@@ -116,6 +117,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
             ...commandBase,
             request: {
                 generationId: 'generation-connect',
+                connectionGenerationId: 'ws-generation-connect',
                 ...forgedActor,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: 1,
@@ -240,6 +242,7 @@ Deno.test(
         const responses = [
             await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
                 generationId: 'generation-connect',
+                connectionGenerationId: 'ws-generation-connect',
                 principalId: 'forged-principal',
                 actorPrincipalId: 'forged-actor',
                 actorSessionId: 'forged-session',
@@ -277,6 +280,24 @@ Deno.test(
         assert.deepEqual(enqueued, EXPECTED_PRESENCE_COMMANDS);
     }
 );
+
+Deno.test('a presence connect that names no WebSocket connection generation is rejected before it is enqueued', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
+
+    const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
+        generationId: 'generation-connect',
+        principalId: 'alice',
+        requestId: 'group-route-connect-without-connection-generation'
+    });
+
+    assert.equal(response.status, 400);
+    assert.match(
+        decodeApiMutationFailure(await response.json())?.message ?? '',
+        /connectionGenerationId must be a non-empty string/
+    );
+    assert.equal(enqueued.length, 0);
+});
 
 Deno.test('a presence heartbeat whose client aborts mid-body answers a typed client status, not 500', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -338,6 +359,7 @@ Deno.test('inactive group presence returns the current snapshot as a no-op', asy
 
     const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
         generationId: inactiveResult.generationId,
+        connectionGenerationId: 'ws-generation-connect',
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 2,
@@ -369,6 +391,7 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
 
     const response = await requestPresenceMutation(runtime.app, PRESENCE_CONNECT_ROUTE, {
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-connect',
         actorPrincipalId: 'forged-actor',
         actorSessionId: 'forged-session',
         connectedAtEpochMs: 1,
@@ -565,6 +588,7 @@ async function verifyValidPresenceRequests(
                     generationId: 'generation-1',
                     lastHeartbeatAtEpochMs: 1,
                     expiresAtEpochMs: 1,
+                    ...(testCase.method === 'PUT' ? { connectionGenerationId: 'ws-generation-1' } : {}),
                     ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {})
                 })
             }

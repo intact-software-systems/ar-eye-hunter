@@ -411,6 +411,33 @@
       }
     },
     {
+      "name": "captureAlphaFirstSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{alphaClientId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "alphaFirstSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{alphaSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "connectAlphaPresence",
       "type": "http",
       "connection": "api",
@@ -423,6 +450,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-{runId}",
+          "connectionGenerationId": "{alphaFirstSocketGenerationId}",
           "principalId": "{alphaClientId}"
         }
       },
@@ -448,6 +476,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-beta-{runId}",
+          "connectionGenerationId": "connection-generation-reconnect-beta-{runId}",
           "principalId": "{betaClientId}"
         }
       },
@@ -637,6 +666,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-second-{runId}",
+          "connectionGenerationId": "connection-generation-reconnect-alpha-second-{runId}",
           "principalId": "{alphaClientId}"
         }
       },

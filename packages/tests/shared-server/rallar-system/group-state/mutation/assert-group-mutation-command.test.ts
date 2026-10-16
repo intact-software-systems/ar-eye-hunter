@@ -119,6 +119,7 @@ describe('group mutation command validation', () => {
                         traceId: null,
                         principalId: 'alice',
                         generationId: 'presence-generation',
+                        connectionGenerationId: 'presence-ws-generation',
                         connectedAtEpochMs: null,
                         lastHeartbeatAtEpochMs: null,
                         expiresAtEpochMs: null

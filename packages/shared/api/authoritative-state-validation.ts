@@ -135,6 +135,7 @@ const GROUP_SESSION_KEYS = [
     'principalId',
     'generationId',
     'generationVersion',
+    'connectionGenerationId',
     'status',
     'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs',
@@ -554,7 +555,7 @@ export function validateAuthoritativeGroupSnapshot(
         const session = record(item, 'GroupSnapshot.session');
         exact(session, GROUP_SESSION_KEYS, 'GroupSnapshot.session');
         sameGroupRef(session, ref, 'GroupSnapshot.session');
-        for (const key of ['sessionId', 'principalId', 'generationId'] as const) {
+        for (const key of ['sessionId', 'principalId', 'generationId', 'connectionGenerationId'] as const) {
             nonEmptyString(session[key], `GroupSnapshot.session.${key}`);
         }
         const principalId = session.principalId;

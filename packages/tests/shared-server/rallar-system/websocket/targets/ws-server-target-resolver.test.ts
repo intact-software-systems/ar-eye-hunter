@@ -935,6 +935,7 @@ function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
             sessionId: member.sessionId,
             principalId: member.principalId,
             generationId: `${member.sessionId}-generation`,
+            connectionGenerationId: `${member.sessionId}-ws-generation`,
             generationVersion: 1,
             status: 'active',
             disconnectedAtEpochMs: null,

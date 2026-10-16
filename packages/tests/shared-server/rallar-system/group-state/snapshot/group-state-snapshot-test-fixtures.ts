@@ -120,6 +120,7 @@ function createSnapshotPresenceSessions(
         sessionId,
         principalId: `principal-${sessionId}`,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: snapshotVersion,

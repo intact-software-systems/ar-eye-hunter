@@ -202,6 +202,7 @@ function assertPresenceOperationInput(
 ): void {
     if (operation === 'connectPresence') {
         requireNonEmptyString(input.principalId, 'Group presence principalId');
+        requireNonEmptyString(input.connectionGenerationId, 'Group presence connectionGenerationId');
         assertNullableInteger(input, 'connectedAtEpochMs', true);
     }
     else {
@@ -379,6 +380,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         ...ACTOR_INPUT_KEYS,
         'principalId',
         'generationId',
+        'connectionGenerationId',
         'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'

@@ -448,6 +448,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     request: {
                         principalId: 'victim',
                         generationId: 'victim-generation',
+                        connectionGenerationId: 'victim-ws-generation',
                         connectedAtEpochMs: harness.nowEpochMs,
                         lastHeartbeatAtEpochMs: harness.nowEpochMs,
                         expiresAtEpochMs: harness.nowEpochMs + 60_000,

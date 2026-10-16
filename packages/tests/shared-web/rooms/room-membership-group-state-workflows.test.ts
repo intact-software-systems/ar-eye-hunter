@@ -93,7 +93,8 @@ describe('room membership group-state workflows', () => {
             groupId: 'group-1',
             actorPrincipalId: 'member-1',
             sessionId: 'member-session',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         });
 
         expect(fetchCalls).toEqual([
@@ -111,11 +112,12 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/member-session',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"member-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"member-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1",' +
                     '"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
                 body: {
                     principalId: 'member-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session'
                 }

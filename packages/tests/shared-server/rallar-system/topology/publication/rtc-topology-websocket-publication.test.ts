@@ -625,6 +625,7 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             sessionId,
             principalId: sessionId,
             generationId: `generation-${sessionId}`,
+            connectionGenerationId: `ws-generation-${sessionId}`,
             generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,

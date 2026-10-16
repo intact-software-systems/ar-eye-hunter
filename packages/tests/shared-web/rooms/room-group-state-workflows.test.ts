@@ -41,7 +41,8 @@ describe('room group-state workflows', () => {
             displayName: 'My Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         });
 
         expect(fetchCalls).toEqual([
@@ -68,11 +69,12 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/generated-room/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1",' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -89,6 +91,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             requestedGroupId: 'rallar',
             options: {
@@ -134,11 +137,12 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1",' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -160,6 +164,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -182,6 +187,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
         });
 
@@ -203,11 +209,12 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1",' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -224,6 +231,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 

@@ -297,6 +297,7 @@
         },
         "body": {
           "generationId": "stagereconnect-generation-{runId}",
+          "connectionGenerationId": "stagereconnect-connection-generation-{runId}",
           "principalId": "{alphaClientId}"
         }
       },
@@ -317,6 +318,7 @@
         },
         "body": {
           "generationId": "stagereconnect-generation-{runId}",
+          "connectionGenerationId": "stagereconnect-connection-generation-{runId}",
           "principalId": "{betaClientId}"
         }
       },

@@ -166,6 +166,7 @@
         },
         "body": {
           "generationId": "generation-hb-{runId}",
+          "connectionGenerationId": "connection-generation-hb-{runId}",
           "principalId": "{aliceClientId}",
           "lastHeartbeatAtEpochMs": 9007199254740991
         }
@@ -193,6 +194,7 @@
         },
         "body": {
           "generationId": "generation-conn-{runId}",
+          "connectionGenerationId": "connection-generation-conn-{runId}",
           "principalId": "{aliceClientId}",
           "connectedAtEpochMs": 9007199254740991
         }
@@ -220,6 +222,7 @@
         },
         "body": {
           "generationId": "generation-ok-{runId}",
+          "connectionGenerationId": "connection-generation-ok-{runId}",
           "principalId": "{aliceClientId}"
         }
       },

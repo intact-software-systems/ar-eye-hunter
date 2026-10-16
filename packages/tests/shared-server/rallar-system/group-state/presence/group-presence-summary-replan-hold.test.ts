@@ -174,6 +174,7 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
     await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-bob-session`, {
         principalId: 'bob',
         generationId: `${input.groupId}-bob-generation`,
+        connectionGenerationId: `${input.groupId}-bob-ws-generation`,
         actorPrincipalId: 'bob',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${input.groupId}-bob`

@@ -243,6 +243,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{carolClientId}"
         }
       },
@@ -263,6 +264,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{danClientId}"
         }
       },
@@ -716,6 +718,7 @@
         },
         "body": {
           "generationId": "generation-replacement-{runId}",
+          "connectionGenerationId": "connection-generation-replacement-{runId}",
           "principalId": "{carolClientId}"
         }
       },

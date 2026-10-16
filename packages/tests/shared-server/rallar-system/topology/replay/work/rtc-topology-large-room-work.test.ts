@@ -188,6 +188,7 @@ function createActiveSessions(principalIds: readonly string[]): GroupSnapshot['a
         principalId,
         sessionId: `session-${principalId}`,
         generationId: `generation-${principalId}`,
+        connectionGenerationId: `ws-generation-${principalId}`,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

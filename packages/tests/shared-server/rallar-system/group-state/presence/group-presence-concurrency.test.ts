@@ -21,12 +21,14 @@ describe('group presence concurrency', () => {
             createService(runtime, 2_000).connectPresenceSession(SCOPE, 'two-session-room', 'session-a', {
                 principalId: 'alice',
                 generationId: 'generation-a',
+                connectionGenerationId: 'ws-generation-a',
                 expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
                 requestId: 'connect-session-a'
             }),
             createService(runtime, 2_001).connectPresenceSession(SCOPE, 'two-session-room', 'session-b', {
                 principalId: 'alice',
                 generationId: 'generation-b',
+                connectionGenerationId: 'ws-generation-b',
                 expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
                 requestId: 'connect-session-b'
             })
@@ -109,6 +111,7 @@ describe('group presence concurrency', () => {
             {
                 principalId: 'alice',
                 generationId: 'presence-lane-generation',
+                connectionGenerationId: 'presence-lane-ws-generation',
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                 requestId: 'presence-lane-connect'
             }
@@ -132,6 +135,7 @@ describe('group presence concurrency', () => {
             'presence-lane-session',
             {
                 generationId: 'presence-lane-generation',
+                connectionGenerationId: 'presence-lane-ws-generation',
                 disconnectedAtEpochMs: nowEpochMs,
                 requestId: 'presence-lane-disconnect'
             }
@@ -157,6 +161,7 @@ describe('group presence concurrency', () => {
             const connects = [
                 {
                     generationId: 'generation-a',
+                    connectionGenerationId: 'ws-generation-a',
                     connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
                     expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
@@ -164,6 +169,7 @@ describe('group presence concurrency', () => {
                 },
                 {
                     generationId: 'generation-z',
+                    connectionGenerationId: 'ws-generation-z',
                     connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
                     expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
@@ -223,6 +229,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'alice',
                     generationId: 'generation-a',
+                    connectionGenerationId: 'ws-generation-a',
                     requestId: 'session-cap-a'
                 }
             ),
@@ -233,6 +240,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'alice',
                     generationId: 'generation-b',
+                    connectionGenerationId: 'ws-generation-b',
                     requestId: 'session-cap-b'
                 }
             )
@@ -283,6 +291,7 @@ describe('group presence concurrency', () => {
                     {
                         principalId: 'bob',
                         generationId: 'bob-generation-old',
+                        connectionGenerationId: 'bob-ws-generation-old',
                         actorPrincipalId: 'bob',
                         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                         requestId: `connect-old-${operation}-${order}`
@@ -382,6 +391,7 @@ describe('group presence concurrency', () => {
                 {
                     principalId: 'bob',
                     generationId: 'bob-generation-fresh',
+                    connectionGenerationId: 'bob-ws-generation-fresh',
                     actorPrincipalId: 'bob',
                     expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
                     requestId: `connect-fresh-${operation}-${order}`

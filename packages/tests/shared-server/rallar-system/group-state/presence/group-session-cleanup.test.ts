@@ -16,6 +16,7 @@ const AUTH_SESSION = {
     expiresAtEpochMs: 1_000_000
 } as const;
 const DISCONNECTED_AT_EPOCH_MS = 5_000;
+const CONNECTION_GENERATION_ID = 'ws-generation-1';
 
 describe('group session cleanup candidates', () => {
     it('reads the disconnecting session\'s presence rows by their key suffix, never the whole namespace', async () => {
@@ -40,7 +41,7 @@ describe('group session cleanup candidates', () => {
         ]);
     });
 
-    it('keeps only the principal\'s live rows in the disconnect scope that predate the disconnect', async () => {
+    it('keeps only the principal\'s live rows of the closing socket in the disconnect scope that predate the disconnect', async () => {
         const { groups } = createRuntime();
         await groups.putPresenceSession(session({ groupId: 'kept' }));
         await groups.putPresenceSession(session({ groupId: 'other-workspace', workspaceId: 'workspace-2' }));
@@ -49,6 +50,10 @@ describe('group session cleanup candidates', () => {
         await groups.putPresenceSession(session({ groupId: 'reconnected-later', connectedAtEpochMs: 6_000 }));
         await groups.putPresenceSession(session({ groupId: 'heartbeat-later', lastHeartbeatAtEpochMs: 6_000 }));
         await groups.putPresenceSession(session({ groupId: 'other-session', sessionId: 'session:alice=2' }));
+        // The same auth session's reconnected socket took this row over before the old socket's close arrived.
+        await groups.putPresenceSession(
+            session({ groupId: 'reconnected-socket', connectionGenerationId: 'ws-generation-2' })
+        );
 
         const candidates = await readCandidates(groups);
 
@@ -64,6 +69,7 @@ interface SessionInput {
     readonly connectedAtEpochMs?: number;
     readonly lastHeartbeatAtEpochMs?: number;
     readonly disconnectedAtEpochMs?: number;
+    readonly connectionGenerationId?: string;
 }
 
 function createRuntime() {
@@ -76,6 +82,7 @@ async function readCandidates(groups: GroupStateRepository): Promise<readonly Gr
         scope: SCOPE,
         authSession: AUTH_SESSION,
         principalId: AUTH_SESSION.clientId,
+        connectionGenerationId: CONNECTION_GENERATION_ID,
         disconnectedAtEpochMs: DISCONNECTED_AT_EPOCH_MS
     });
 }
@@ -89,6 +96,7 @@ function session(input: SessionInput): GroupPresenceSession {
         sessionId: input.sessionId ?? AUTH_SESSION.sessionId,
         principalId: input.principalId ?? AUTH_SESSION.clientId,
         generationId: 'generation-1',
+        connectionGenerationId: input.connectionGenerationId ?? CONNECTION_GENERATION_ID,
         generationVersion: connectedAtEpochMs,
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: input.lastHeartbeatAtEpochMs ?? Math.max(connectedAtEpochMs, 3_000),

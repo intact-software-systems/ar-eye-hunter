@@ -492,6 +492,7 @@ function createGroupSnapshot(groupRevision: number, presenceRevision: number): G
                 principalId: 'alice',
                 sessionId: 'session-alice',
                 generationId: 'generation-alice',
+                connectionGenerationId: 'ws-generation-alice',
                 generationVersion: 1,
                 status: 'active',
                 disconnectedAtEpochMs: null,

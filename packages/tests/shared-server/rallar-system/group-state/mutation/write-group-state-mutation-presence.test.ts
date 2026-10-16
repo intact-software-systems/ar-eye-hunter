@@ -50,6 +50,7 @@ describe('GroupStateService guarded presence batch', () => {
             {
                 principalId: 'alice',
                 generationId: 'generation-a',
+                connectionGenerationId: 'ws-generation-a',
                 expiresAtEpochMs: startedAtEpochMs + 20_000,
                 requestId: 'presence-update-connect'
             }
@@ -76,6 +77,7 @@ describe('GroupStateService guarded presence batch', () => {
             principalId: 'alice',
             generationId: 'generation-a',
             generationVersion: nowEpochMs,
+            connectionGenerationId: 'ws-generation-a',
             connectedAtEpochMs: nowEpochMs,
             lastHeartbeatAtEpochMs: nowEpochMs,
             expiresAtEpochMs: startedAtEpochMs + 20_000,
@@ -185,6 +187,7 @@ describe('GroupStateService guarded presence batch', () => {
         await groupRuntime.service.connectPresenceSession(SCOPE, ref.groupId, 'expiry-session', {
             principalId: 'alice',
             generationId: 'expiry-generation',
+            connectionGenerationId: 'expiry-ws-generation',
             connectedAtEpochMs: nowEpochMs,
             lastHeartbeatAtEpochMs: nowEpochMs,
             expiresAtEpochMs: nowEpochMs + 500,

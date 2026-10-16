@@ -12,6 +12,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createOwnWsClientSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
@@ -886,7 +887,7 @@ function resetDirectorTestDoubles(): void {
 }
 
 function resetDirectorRepositoryAndSessionDoubles(): void {
-    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.findClientStateSnapshotByPrincipalId.mockImplementation(() => createOwnWsClientSnapshotFixture(mocks.readSession() ?? mocks.ctx.session));
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     mockGroupRepositoryMissing();
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });

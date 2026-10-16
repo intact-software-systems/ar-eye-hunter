@@ -172,6 +172,7 @@ describe('convergent group and presence state', () => {
             await service.connectPresenceSession(SCOPE, groupId, sessionId, {
                 principalId: 'alice',
                 generationId,
+                connectionGenerationId: `ws-${generationId}`,
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 4_102_444_800_000,
@@ -209,6 +210,7 @@ describe('convergent group and presence state', () => {
                 })
                 : service.disconnectPresenceSession(SCOPE, groupId, sessionId, {
                     generationId,
+                    connectionGenerationId: `ws-${generationId}`,
                     disconnectedAtEpochMs: 2_000,
                     actorPrincipalId: 'alice',
                     actorSessionId: sessionId,

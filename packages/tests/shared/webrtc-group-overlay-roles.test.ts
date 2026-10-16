@@ -85,6 +85,7 @@ function createActiveSession(sessionId: string): GroupSnapshot['activeSessions']
         principalId: sessionId,
         sessionId,
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

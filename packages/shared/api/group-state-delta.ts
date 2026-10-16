@@ -114,6 +114,7 @@ const GROUP_SESSION_KEYS = [
     'principalId',
     'generationId',
     'generationVersion',
+    'connectionGenerationId',
     'status',
     'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs',
@@ -401,6 +402,7 @@ function validateDeltaSession(
     nonEmptyString(session.sessionId, `${label}.sessionId`);
     nonEmptyString(session.principalId, `${label}.principalId`);
     nonEmptyString(session.generationId, `${label}.generationId`);
+    nonEmptyString(session.connectionGenerationId, `${label}.connectionGenerationId`);
     positiveInteger(session.generationVersion, `${label}.generationVersion`);
     positiveInteger(session.connectedAtEpochMs, `${label}.connectedAtEpochMs`);
     positiveInteger(session.lastHeartbeatAtEpochMs, `${label}.lastHeartbeatAtEpochMs`);

@@ -382,6 +382,7 @@ async function runMeasuredPresenceConnect(
         request: {
             principalId: command.principalId,
             generationId: command.generationId,
+            connectionGenerationId: command.generationId,
             connectedAtEpochMs: command.timestamp,
             lastHeartbeatAtEpochMs: command.timestamp,
             expiresAtEpochMs: command.timestamp + 60_000,
