@@ -321,6 +321,17 @@ and zero superseded rejections in the setup window, and the four-arm gate's reco
 D260 records the deferred harness items. The six medium consolidation candidates other than the trailing flush
 (D256) stay open for their own slice.
 
+**As applied (PR #669).** D250–D254 and D257–D265 landed with two implementer takeovers after a model
+usage limit and three review-driven fix waves (proposal §3, §6); D255 is deferred and D256 revised. Measured
+(proposal §1.12): hosted 50 connect p50 54.9 → 37.0 s, readiness wait 24.0 → 10.0 s, traffic-ready 82 → 62 s,
+no superseded promotion; hosted 30 connect 28.3 → 20.6 s; the four-arm gate falsifies the adaptive RETRY quota and
+fixed RETRY two is the default (D239 closed); the cluster recipes that failed on the safety tick pass with the
+completion relay. Open after this step: the ticket consume in the connect item (D255, socket registration after
+the connect commit), the handler read phase's counter scope (D259), the route's second session read (D252), the
+ThrottledFlush migrations of the AL checkpoint writer and the artifact recorder, the remaining audit primitives
+(keyed rate limiter, serialized chain, sibling claim, JSON streaming, abort scope), the O(N) presence summary read
+per connect, sign-in PBKDF2 under the cap, and the Postgres medium-scale evidence for D261/D265 beyond CI.
+
 The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
 delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
 admission as a shared resilience primitive). A sweep of every V1c commit for generic mechanisms under

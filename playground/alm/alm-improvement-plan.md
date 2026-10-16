@@ -1730,9 +1730,11 @@ status prose to this document.
   row names step 2d; hosted 15, 30 and 50 pass through GitHub Free.
 - 2026-10-15 (V1c step 2d merged as `e623aa7`, 2e designed): decisions D233–D241 from the lane survey and the phase-timing
   capture (six lane items per player, the repeated authorization capture, the presence follow-on, no-op heartbeats, PBKDF2,
+  RTT submissions; the benefit gate recorded as an open item).
 - 2026-10-15 (V1c step 2e delivered on PR #668): decisions D242–D249 from the two local reruns, the review waves
   and the hosted 50 triage; the reuse rule (D246) in the code standard; hosted 30 and 50 pass through GitHub Free.
 - 2026-10-15 (V1c step 2e merged as `4f6a6fa`, 2f designed): decisions D250–D260 from the hosted 50 journals (the
   overlay acceptance, the lane's gaps, heartbeats in the window, the coalescing that never fires, typed rejections thrown)
   and the four-arm gate feasibility.
-  RTT submissions; the benefit gate recorded as an open item).
+- 2026-10-16 (V1c step 2f delivered on PR #669): decisions D261–D265 from the native receipts flake, the gate's verdict
+  and the engine review; D255 deferred, D256 revised; hosted 30 and 50 pass through GitHub Free.
