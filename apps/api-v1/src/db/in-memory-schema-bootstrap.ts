@@ -6,7 +6,7 @@ export interface ApiV1SchemaBootstrapConfiguration {
 }
 
 export type InMemorySqlSchemaClient = Readonly<{
-    exec(sql: string): Promise<unknown>;
+    exec(sql: string): Promise<object | void>;
 }>;
 
 export const API_V1_IN_MEMORY_SCHEMA_URL = new URL(
