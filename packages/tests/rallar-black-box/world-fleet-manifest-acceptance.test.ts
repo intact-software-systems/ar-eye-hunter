@@ -177,7 +177,7 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity, now creating the group under the default replanning, joining players only through their connect with 650 ms per participant for the hosted join lane, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for a layout stable at its exact revision, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
+    it('keeps the authored workload identity, now creating the group under the default replanning, joining players only through their connect with 650 ms per participant for the hosted join lane, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for a layout stable at its exact revision for a quiet window counted from its acceptance, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
         expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
@@ -194,7 +194,7 @@ describe('world-fleet native manifest acceptance', () => {
                 }
             }))
         };
-        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('996a0a9133d3757d3c27ffc026714abcda2462fe281c2f7a171c857021fbd87a');
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('a26e2a780a1c2bed9e42f10c2eb96703697eb8d4d9d5b5b0105eaa9ae5d87cb5');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);
