@@ -160,6 +160,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
+        appInboxNewLaneConcurrency: 1,
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         groupFormationRecomputeMaxWaitMs: 1_000,

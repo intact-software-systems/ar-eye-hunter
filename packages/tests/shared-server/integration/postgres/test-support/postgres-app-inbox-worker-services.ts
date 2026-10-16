@@ -189,6 +189,7 @@ function createPostgresAppInboxWorkerInbox(
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'adaptive-retry',
+        newLaneConcurrency: 1,
         onAttemptReleaseTelemetry: (event) =>
             trace.attempts.push({
                 resourceId: event.key.resourceId,

@@ -79,7 +79,7 @@ export async function createAuthorityHarness(
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const sessions = await provisionAuthoritySessions(principalIds, authSessions, nowEpochMs);
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const durableGroupStateService = createGroupStateService({

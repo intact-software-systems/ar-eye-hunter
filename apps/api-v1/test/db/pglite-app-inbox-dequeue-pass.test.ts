@@ -139,6 +139,7 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ database: sql });
     const inboxQueueReader = new InboxQueueReader(queueBox, {
         laneBudgetPolicy: 'adaptive-retry',
+        newLaneConcurrency: 1,
         completionNotifications,
         onRetryExhausted: finalizeAppInboxRetry,
         onRetryExhaustionRecovery: finalizeAppInboxRetry

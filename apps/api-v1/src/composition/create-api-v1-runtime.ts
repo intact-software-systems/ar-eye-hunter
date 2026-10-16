@@ -109,6 +109,7 @@ export interface CreateApiV1RuntimeInput {
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
+    readonly appInboxNewLaneConcurrency: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
     readonly groupFormationRecomputeMaxWaitMs: number;
@@ -293,6 +294,7 @@ function toMutationRuntimeInput(
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
+        appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
@@ -361,9 +363,7 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
-        inboundVolatileStores: relayedAckNotices === undefined
-            ? createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName)
-            : undefined,
+        inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,

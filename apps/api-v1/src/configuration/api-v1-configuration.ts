@@ -180,6 +180,8 @@ export interface ApiV1AppInboxCompletionWaitConfiguration {
 export interface ApiV1AppInboxConfiguration {
     readonly phaseTiming: boolean;
     readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
+    /** Distinct-context heads one NEW round claims and runs together (1 to `InboxQueueReader.NEW_CONTEXTS_PER_PASS`). */
+    readonly newLaneConcurrency: number;
     readonly completionWait: ApiV1AppInboxCompletionWaitConfiguration;
 }
 

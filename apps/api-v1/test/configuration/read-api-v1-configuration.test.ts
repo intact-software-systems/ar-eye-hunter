@@ -395,6 +395,25 @@ Deno.test('every committed profile serves due retries at the fixed two per pass 
     assert.equal(selected.appInbox.laneBudgetPolicy, 'adaptive-retry');
 });
 
+Deno.test('every committed profile runs four AppInbox context heads together unless the environment selects another bound (D296)', async () => {
+    for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
+        const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
+        assert.equal(configuration.appInbox.newLaneConcurrency, 4, profile);
+    }
+    const selected = await readApiV1Configuration(readerInput({
+        ...validConfigurationEnvironment('prod-in-memory'),
+        RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY: '1'
+    }));
+    assert.equal(selected.appInbox.newLaneConcurrency, 1);
+    for (const outOfRange of ['0', '9']) {
+        const error = await captureConfigurationError(readerInput({
+            ...validConfigurationEnvironment(),
+            RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY: outOfRange
+        }, 4));
+        assert.equal(error.issues.some((issue) => issue.path === 'appInbox.newLaneConcurrency'), true, outOfRange);
+    }
+});
+
 function readerInput(
     environmentValues: Record<string, string>,
     hardwareConcurrency = 4

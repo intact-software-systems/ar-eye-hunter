@@ -218,7 +218,7 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
-            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
             const outboxReader = new OutboxQueueReader(queue);
 
             const authority = {
@@ -453,7 +453,7 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
-            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
 
             const authority = {
                 clientId: 'alice',

@@ -113,7 +113,8 @@ function constructDefaultRallarServer(
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        livePublication: wsOptions.livePublication
+        livePublication: wsOptions.livePublication,
+        timing
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -205,6 +206,7 @@ function createConfiguredApiV1Runtime(
         }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
+        appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },

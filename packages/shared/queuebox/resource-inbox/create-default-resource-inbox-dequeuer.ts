@@ -231,6 +231,8 @@ function createResourceInboxFinalizationController<V>(
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
+        // A round that tripped the breaker releases what it claimed and starts no other round of the pass.
+        .onRoundAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
         .withWorkAdvertisement(input.workAdvertisement)

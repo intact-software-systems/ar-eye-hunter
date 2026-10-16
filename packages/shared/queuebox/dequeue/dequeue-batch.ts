@@ -1,3 +1,4 @@
+import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { Either, EitherCollectors } from '../../resilience/Either.ts';
 import { isNotReadyException } from '../resource-inbox/not-ready-exception.ts';
 import type { DequeueController } from './dequeue-controller.ts';
@@ -7,6 +8,8 @@ interface DequeueBatchInput<K, V, T> {
     readonly computer: (key: K, value: V) => Promise<T>;
     readonly log: Pick<Console, 'error'>;
     readonly purpose: 'processing' | 'finalization-recovery';
+    /** At most this many entries compute at once; the results keep the entries' order. */
+    readonly maxConcurrentComputes: number;
 }
 
 interface DequeueBatchRelease<K, V, T> {
@@ -21,23 +24,39 @@ interface DequeueBatchRelease<K, V, T> {
 }
 
 export async function computeDequeueBatch<K, V, T>(
-    { entries, computer, log, purpose }: DequeueBatchInput<K, V, T>
+    { entries, computer, log, purpose, maxConcurrentComputes }: DequeueBatchInput<K, V, T>
 ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
-    const computed = new Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>();
-    for (const [key, value] of entries) {
-        try {
-            computed.set(key, Either.ofRight({ key, value, computedValue: await computer(key, value) }));
-        }
-        catch (error) {
-            const exception = error instanceof Error ? error : new Error(String(error));
-            if (purpose === 'finalization-recovery' || !isNotReadyException(exception)) {
-                const operation = purpose === 'finalization-recovery' ? 'Finalization recovery' : 'Computer';
-                log.error(`${operation} failed on dequeued key ${toDequeuedKeyText(key)}.`, exception);
-            }
-            computed.set(key, Either.ofLeft({ key, value, exception }));
-        }
+    const admission = new BoundedConcurrencyAdmission({ maxConcurrent: maxConcurrentComputes });
+    const results = await Promise.all(
+        [...entries].map(([key, value]) =>
+            admission.admit(() => computeDequeueEntry({ key, value, computer, log, purpose }))
+        )
+    );
+    return new Map(results.map((result) => [result.fold((failure) => failure.key, (success) => success.key), result]));
+}
+
+interface DequeueEntryInput<K, V, T> {
+    readonly key: K;
+    readonly value: V;
+    readonly computer: (key: K, value: V) => Promise<T>;
+    readonly log: Pick<Console, 'error'>;
+    readonly purpose: DequeueBatchInput<K, V, T>['purpose'];
+}
+
+async function computeDequeueEntry<K, V, T>(
+    { key, value, computer, log, purpose }: DequeueEntryInput<K, V, T>
+): Promise<Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>> {
+    try {
+        return Either.ofRight({ key, value, computedValue: await computer(key, value) });
     }
-    return computed;
+    catch (error) {
+        const exception = error instanceof Error ? error : new Error(String(error));
+        if (purpose === 'finalization-recovery' || !isNotReadyException(exception)) {
+            const operation = purpose === 'finalization-recovery' ? 'Finalization recovery' : 'Computer';
+            log.error(`${operation} failed on dequeued key ${toDequeuedKeyText(key)}.`, exception);
+        }
+        return Either.ofLeft({ key, value, exception });
+    }
 }
 
 export async function releaseDequeueBatch<K, V, T>(

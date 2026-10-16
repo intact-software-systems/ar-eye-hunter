@@ -234,7 +234,10 @@ async function createCrdtWebSocketAuthorityFixture(
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(NOW));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: 1
+    });
     const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();

@@ -117,6 +117,7 @@ function createServerRuntime(
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: 1,
         completionNotifications
     });
     const client = createAppInboxClientRuntime({

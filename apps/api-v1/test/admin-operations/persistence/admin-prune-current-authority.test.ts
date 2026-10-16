@@ -19,7 +19,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;
@@ -84,7 +84,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
         let wakeCount = 0;

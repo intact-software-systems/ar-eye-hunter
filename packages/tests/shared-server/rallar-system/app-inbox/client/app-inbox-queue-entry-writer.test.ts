@@ -31,7 +31,7 @@ describe('AppInbox durable enqueue', () => {
             throw new Error('A supplied resource ID must not require another generated ID');
         }).mockReturnValueOnce('generated-command');
         const writer = new AppInboxQueueEntryWriter({
-            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }, creationNow),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }, creationNow),
             newResourceId,
             createMessage: createAppInboxQueueMessageFixture
         }, { serviceId: 'server', defaultTopicId: 'app-inbox.client-state' });
@@ -99,7 +99,7 @@ function createService(
         {
             createMessage: createAppInboxQueueMessageFixture,
             newResourceId: crypto.randomUUID.bind(crypto),
-            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' })
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 })
         },
         {
             serviceId: 'server-12345678',

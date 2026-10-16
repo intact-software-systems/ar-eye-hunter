@@ -39,7 +39,7 @@ describe('registered queue reader probes', () => {
         registerApplicationQueueReaderTasks({
             engine,
             nowEpochMs: Date.now,
-            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: Date.now }),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: Date.now }),
             outboxQueueReader: new OutboxQueueReader(queue),
             appInboxResilience: createQueueResilience(),
             appOutboxResilience: createQueueResilience()

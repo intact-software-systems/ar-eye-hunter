@@ -38,7 +38,7 @@ it(
     'processes expired client sessions through the inbox and publishes written mutations',
     async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const expiresAtEpochMs = Date.now() - 1_000;
@@ -84,7 +84,7 @@ it(
 
 it('durably enqueues each client expiry reconciliation tick', async () => {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const expiryCandidateReads: ClientExpiredSessionPageInput[] = [];
     const readExpiredSessionPage = async (input: ClientExpiredSessionPageInput) => {

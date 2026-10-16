@@ -29,7 +29,10 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 1
+        });
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
         const credentialIssuer = createHmacAuthCredentialIssuer(secret);
 
@@ -161,7 +164,10 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 1
+        });
 
         const user = {
             clientId: 'policy-client',
@@ -252,7 +258,10 @@ Deno.test(
             const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(databaseNowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+                laneBudgetPolicy: 'fixed-retry-two',
+                newLaneConcurrency: 1
+            });
 
             let authFactNowEpochMs = databaseNowEpochMs;
             const issuer = createHmacAuthCredentialIssuer(
