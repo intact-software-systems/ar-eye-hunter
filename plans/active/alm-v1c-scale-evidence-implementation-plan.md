@@ -311,7 +311,7 @@ traffic-ready 82 s against 113 s. Open after this step: the six medium consolida
 four-arm lane-policy gate (D239, now with executor counters), the join still waiting ≈9 s behind the hosted lane
 (the lane's remaining fixed cost and the per-player item count), and the RTT submission per round (D238).
 
-### Step 2f: the hosted lane's gaps and the overlay acceptance (this PR)
+### Step 2f: the hosted lane's gaps and the overlay acceptance (merged, #669)
 
 Step 2e is merged (#668 as `4f6a6fa`). The step 2e hosted 50 journals (proposal §4 step 2f) split the players'
 connect into 27.7 s behind the lane and 24.0 s waiting for the overlay acceptance, and the lane's 59 s window into
@@ -333,6 +333,28 @@ ThrottledFlush migrations of the AL checkpoint writer and the artifact recorder,
 per connect, sign-in PBKDF2 under the cap, the test-only awaiting methods on the client inbox service
 (`processAuthorisedWsClientConnect`, `processAuthorisedWsClientDisconnect`, `processExpiredSessions`), the double completion
 publish for a retry-exhausted entry, and the Postgres medium-scale evidence for D261/D265 beyond CI.
+
+### Step 2g: the API thread's per-player cost and the lane's fault tolerance (this PR)
+
+Step 2f is merged (#669 as `80749db`). Its hosted 50 journals (proposal §4 step 2g) show the lane 11 % busy in the
+connect window and the per-player cost in request time the server does not record (17.2 s of untimed gaps per
+player, 0.65 s × N), sign-in bound by 100 derivations, and formation held by an unbounded replan debounce. Decisions
+D266–D277 (proposal §3): measure preflights and event-loop lag before choosing that repair; one enqueue per auth
+intent; no second session read; the ticket consumed in the connect item with the socket registered after the
+commit; a handler deadline; one completion publish; no test-only entry points; principal-scoped teardown; a bounded
+replan wait; the recipes' quiet wait from the accepted layout; pre-registration in the hosted prepare job; typed
+conflicts. Each RED first, judged by the hosted 50 connect, sign-in, formation tail and traffic-ready medians, with
+15, 30 and 50 run locally first and then hosted in that order on one head.
+
+### Step 2h: the shared primitives and the V1c closure
+
+D278 lists what moves here: the consolidation primitives the step 2g survey ranked, the incremental presence
+summary, the handler read phase's counters and the cached snapshot body if the D266 measurement selects them. The
+closure needs maintainer rulings, recorded before the work: whether the hosted acceptance run keeps the server's
+timing logs on (they are always on since #668), whether the cohort-proportional setup allowances of D218, D221 and
+D229 replace the binding 5 s and 45 s figures in this plan, and how the state-write comparison judges V1c step 2
+(the balanced comparison has not run since step 1's 5.40 % result). Then the Postgres four-arm comparison or the
+adaptive arm's removal, the rewritten evidence section, and the plan's deletion.
 
 The review wave added D244 (heartbeat renewals sync to the principal's own sessions), D245 (coalesced
 delta slices and the browser's already-reached-revision disposition) and D246 (the bounded concurrency
