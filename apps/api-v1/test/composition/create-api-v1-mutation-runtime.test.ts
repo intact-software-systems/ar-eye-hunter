@@ -18,6 +18,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
+        groupFormationRecomputeMaxWaitMs: 1_000,
         adminClientIds: ['admin-1'],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {

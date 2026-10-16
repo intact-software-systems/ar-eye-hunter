@@ -177,15 +177,16 @@ that director.
 The replan window (product decision 31, `resolveTopologyReplanWindow`) is decided on the same
 consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` and replans no later
 than `maxReplanWaitMs` after the first change of a series; `auto` carries no policy window and keeps
-the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first
-opportunity after a change; `commanded` coalesces its commanded follow-ups under the policy window;
-a stage outside the policy and an unreadable policy keep the server window unbounded. The canonical
+the server's `topology.recompute.formationDebounceMs`, bounded by `topology.recompute.formationMaxWaitMs`
+(D274), so it replans on the first opportunity after a change and a stream of changes cannot defer it
+past that bound; `commanded` coalesces its commanded follow-ups under the policy window; a stage
+outside the policy and an unreadable policy keep that bounded server window. The canonical
 coalesced-work computation puts the series anchor (`windowOpenedAtEpochMs`) on every row, keeps it
 through each merge, and restarts it for a successor row or revived terminal row. Readers require
 that current shape directly; there is no predecessor-format decoder. A queued replan of a live
 planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
-when the change is queued. RTT refreshes are the machinery's own work and keep the server's
-unbounded window.
+when the change is queued. RTT refreshes are the machinery's own work and are queued directly as
+new rows, outside this window.
 
 The stage triggers (product decision 8, `establishment.planTrigger` and `connectTrigger`) ride the
 durable formation timer, the same epoch-fenced outbox entry the deadline and retry legs use, and only

@@ -14,7 +14,11 @@ import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
-import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
+import {
+    GROUP_STATE_ANY_SCOPE_STORAGE_KEY_PREFIX,
+    groupStateGroupStorageKey,
+    groupStateScopeStorageKey
+} from './aggregate/group-aggregate-storage-keys.ts';
 import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
@@ -35,7 +39,8 @@ import {
 } from './presence/group-presence-repository.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey
+    groupStatePresenceSessionStorageKey,
+    groupStatePresenceSessionStorageKeySuffix
 } from './presence/group-presence-storage-keys.ts';
 import {
     readGroupStateMutationExactEntries,
@@ -233,6 +238,31 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
             `${groupStateGroupStorageKey(ref)}:`
         );
         return stored.map((entry) => canonicalStoredAdmission(entry, ref));
+    }
+
+    async listPresenceSessionsForSessionIds(
+        sessionIds: readonly string[]
+    ): Promise<readonly GroupPresenceSession[]> {
+        if (sessionIds.length === 0) {
+            return [];
+        }
+        const selections = await this.repository.readRuntimeStateBatch(
+            [...new Set(sessionIds)].map((sessionId, index) => ({
+                selectorId: `session:${index}`,
+                kind: 'prefix-suffix',
+                namespace: SESSIONS_NAMESPACE,
+                keyPrefix: GROUP_STATE_ANY_SCOPE_STORAGE_KEY_PREFIX,
+                keySuffix: groupStatePresenceSessionStorageKeySuffix(sessionId)
+            }))
+        );
+        const sessions: GroupPresenceSession[] = [];
+        for (const entry of selections.flatMap((selection) => selection.entries)) {
+            const stored = await this.toLiveJsonEntryValue(SESSIONS_NAMESPACE, entry);
+            if (stored !== undefined) {
+                sessions.push(canonicalStoredSession(stored).value);
+            }
+        }
+        return sessions;
     }
 
     async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {

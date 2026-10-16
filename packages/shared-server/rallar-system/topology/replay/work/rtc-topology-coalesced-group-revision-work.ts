@@ -81,9 +81,7 @@ export function computeTopologyReplanDueAt(input: ComputeTopologyReplanDueAtInpu
         previous?.dueAtEpochMs ?? 0,
         input.requestedAtEpochMs + timing.window.debounceMs
     );
-    const bounded = timing.window.maxWaitMs === null
-        ? extended
-        : Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
+    const bounded = Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
     return Math.max(bounded, timing.replanNotBeforeEpochMs ?? 0);
 }
 
@@ -489,7 +487,7 @@ function assertCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevis
 function isValidTopologyReplanTiming(timing: TopologyReplanTiming): boolean {
     const { window } = timing;
     return isNonNegativeSafeInteger(window.debounceMs) &&
-        (window.maxWaitMs === null || isNonNegativeSafeInteger(window.maxWaitMs)) &&
+        isNonNegativeSafeInteger(window.maxWaitMs) &&
         (timing.replanNotBeforeEpochMs === null || isNonNegativeSafeInteger(timing.replanNotBeforeEpochMs));
 }
 

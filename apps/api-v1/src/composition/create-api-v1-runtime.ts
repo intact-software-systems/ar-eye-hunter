@@ -107,6 +107,7 @@ export interface CreateApiV1RuntimeInput {
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly topologyReplay: ApiV1TopologyReplayConfiguration;
@@ -283,6 +284,7 @@ function toMutationRuntimeInput(
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+        groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
         adminClientIds: input.adminClientIds,
         crdtPolicies: input.crdtPolicies,
         resilience: input.resilience

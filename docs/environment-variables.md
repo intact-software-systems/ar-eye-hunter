@@ -91,6 +91,7 @@ The exact non-secret override allowlist is:
   `RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH`,
   `RALLAR_RTC_TOPOLOGY_TREE_EXIT_WIDTH`,
   `RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`,
+  `RALLAR_RTC_TOPOLOGY_RECOMPUTE_MAX_WAIT_MS`,
   `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`,
   `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`,
   `RALLAR_RTC_TOPOLOGY_REPLAY`, `RALLAR_API_QUEUE_WORKERS`.
@@ -159,6 +160,7 @@ readers. The Deno Deploy preflight rejects `ENVIRONMENT` and
 | `RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT` | No       | `120`     | Group presence connect requests per principal per group per 60 seconds. Positive integer. Over-limit answers `429` with `Retry-After: 60`.                                                                                                                          |
 | `RALLAR_GROUP_PRESENCE_CONNECT_GROUP_RATE_LIMIT`     | No       | `1200`    | Group presence connect requests per group per 60 seconds across all principals. Positive integer. Over-limit answers `429` with `Retry-After: 60`.                                                                                                                  |
 | `RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`          | No       | `500`     | Debounce for coalesced group-revision topology recomputes. Non-negative integer; `0` makes coalesced work due immediately.                                                                                                                                          |
+| `RALLAR_RTC_TOPOLOGY_RECOMPUTE_MAX_WAIT_MS`          | No       | `2000`    | Bound on that debounce for the server window (`auto` replanning, a stage outside the policy, an unreadable policy), measured from the first pending change; a stream of changes cannot defer a recompute past it. Non-negative integer.                             |
 | `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS` | No       | `30000`   | Per-group interval floor between RTT-driven placement refinements: an accepted RTT report only enqueues a refinement replan when this interval has elapsed since the group's last one. Non-negative integer; `0` removes the floor.                                 |
 | `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`           | No       | `5`       | Vivaldi-delta threshold for RTT-driven refinement: predicted-RTT movement accumulates per group and a refinement replan is enqueued only once the accumulated movement reaches this many milliseconds. Non-negative integer; `0` refines per accepted report.       |
 | `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT`                   | No       | `5`       | Maximum per-session degree used by topology planning. Positive integer.                                                                                                                                                                                             |

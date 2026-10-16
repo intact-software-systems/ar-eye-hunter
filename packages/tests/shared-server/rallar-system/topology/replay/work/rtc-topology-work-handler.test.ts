@@ -104,6 +104,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const summaryWorker = new GroupPresenceSummaryWork({
             outboxQueueReader,
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => nowEpochMs,
             serviceId: 'summary-worker'

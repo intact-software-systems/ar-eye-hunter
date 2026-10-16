@@ -221,6 +221,7 @@ it('retains the restored room original until actual scoped presence authorizes i
         work: new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository,
             now: () => Date.now(),
             serviceId: 'reload-presence'

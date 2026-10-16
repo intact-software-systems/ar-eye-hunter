@@ -145,6 +145,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
+        groupFormationRecomputeMaxWaitMs: 1_000,
         databasePubSubMode: 'disabled',
         databaseNotification: null,
         topologyReplay: {

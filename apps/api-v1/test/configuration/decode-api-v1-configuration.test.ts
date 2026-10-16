@@ -264,6 +264,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['topology.planning.meshExitWidth', 0],
         ['topology.planning.treeExitWidth', 0],
         ['topology.recompute.formationDebounceMs', 0],
+        ['topology.recompute.formationMaxWaitMs', 0],
         ['topology.rttRefinement.minIntervalMs', 0],
         ['topology.rttRefinement.vivaldiDeltaThresholdMs', 0],
         ['topology.queueResilience.failureThreshold', 1],

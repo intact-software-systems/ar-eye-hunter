@@ -703,7 +703,7 @@ function createCoalescedTopologyWork(
         requestedAtEpochMs,
         expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
         timing: {
-            window: { debounceMs: 0, maxWaitMs: null },
+            window: { debounceMs: 0, maxWaitMs: 0 },
             replanNotBeforeEpochMs: null
         },
         senderId: 'server-1',

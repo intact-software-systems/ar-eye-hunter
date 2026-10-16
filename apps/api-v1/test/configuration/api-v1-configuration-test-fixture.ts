@@ -88,7 +88,8 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 treeExitWidth: 0
             },
             recompute: {
-                formationDebounceMs: 500
+                formationDebounceMs: 500,
+                formationMaxWaitMs: 2_000
             },
             rttRefinement: {
                 minIntervalMs: 30_000,

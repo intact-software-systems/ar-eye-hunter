@@ -208,6 +208,7 @@ function createConfiguredApiV1Runtime(
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
         groupFormationRecomputeDebounceMs: configuration.topology.recompute.formationDebounceMs,
+        groupFormationRecomputeMaxWaitMs: configuration.topology.recompute.formationMaxWaitMs,
         topologyReplay: configuration.topology.replay,
         topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,

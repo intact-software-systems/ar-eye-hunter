@@ -131,6 +131,7 @@ async function createCoalescingFixture(): Promise<CoalescingFixture> {
         runtimeRepository: repository,
         outboxQueueReader: new OutboxQueueReader(queue),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         serviceId: 'coalescing-api',
         now: () => now
     });

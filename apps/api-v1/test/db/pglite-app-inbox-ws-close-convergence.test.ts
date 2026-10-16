@@ -144,6 +144,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
             now: Date.now,
             outboxQueueReader: outboxReader,
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: harness.runtime,
             database: sql,
             serviceId: 'pglite-close-test'

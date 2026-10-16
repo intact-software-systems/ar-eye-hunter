@@ -277,6 +277,7 @@ Deno.test(
             const summaryWork = new GroupPresenceSummaryWork({
                 outboxQueueReader: outboxReader,
                 recomputeDebounceMs: 0,
+                recomputeMaxWaitMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
@@ -555,6 +556,7 @@ Deno.test(
                     new PSqlQueueBox(resourceInbox, Temporal.Now.instant)
                 ),
                 recomputeDebounceMs: 0,
+                recomputeMaxWaitMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-summary-fence',

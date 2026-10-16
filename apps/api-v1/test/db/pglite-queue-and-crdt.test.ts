@@ -75,7 +75,7 @@ function createInitialCoalescedTopologyWork(groupId: string): ComputedCoalescedA
         requestedAtEpochMs: 500,
         expireAtEpochMs: FUTURE_MS,
         timing: {
-            window: { debounceMs: 0, maxWaitMs: null },
+            window: { debounceMs: 0, maxWaitMs: 0 },
             replanNotBeforeEpochMs: null
         },
         senderId: 'rallar-server',
@@ -616,7 +616,7 @@ Deno.test(
                     groupSnapshot: snapshot,
                     requestedAtEpochMs: nowEpochMs,
                     expireAtEpochMs: FUTURE_MS,
-                    timing: { window: { debounceMs: 0, maxWaitMs: null }, replanNotBeforeEpochMs: null },
+                    timing: { window: { debounceMs: 0, maxWaitMs: 0 }, replanNotBeforeEpochMs: null },
                     senderId: 'fingerprint-gate-worker',
                     origin: 'automatic',
                     previousEntry

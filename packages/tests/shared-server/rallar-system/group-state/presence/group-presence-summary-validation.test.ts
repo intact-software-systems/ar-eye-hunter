@@ -60,6 +60,7 @@ describe('group presence summary validation', () => {
         const summaryWork = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'
@@ -137,6 +138,7 @@ describe('group presence summary validation', () => {
         const summaryWork = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'

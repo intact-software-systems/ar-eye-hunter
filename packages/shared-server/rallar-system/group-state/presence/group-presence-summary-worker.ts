@@ -62,6 +62,7 @@ export interface GroupPresenceSummaryWorkOptions {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly recomputeDebounceMs: number;
+    readonly recomputeMaxWaitMs: number;
     readonly database?: PSqlSql;
     readonly now: () => number;
     readonly serviceId: string;
@@ -176,6 +177,7 @@ export class GroupPresenceSummaryWork {
         return computeGroupPresenceSummaryWork(work, read, {
             serviceId: this.options.serviceId,
             recomputeDebounceMs: this.options.recomputeDebounceMs,
+            recomputeMaxWaitMs: this.options.recomputeMaxWaitMs,
             minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
         });
     }
@@ -192,6 +194,7 @@ export class GroupPresenceSummaryWork {
             options: {
                 serviceId: this.options.serviceId,
                 recomputeDebounceMs: this.options.recomputeDebounceMs,
+                recomputeMaxWaitMs: this.options.recomputeMaxWaitMs,
                 minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
             }
         });

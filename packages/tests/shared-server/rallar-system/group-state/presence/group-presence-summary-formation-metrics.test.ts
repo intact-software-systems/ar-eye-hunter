@@ -36,6 +36,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
@@ -78,6 +79,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
@@ -105,6 +107,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',

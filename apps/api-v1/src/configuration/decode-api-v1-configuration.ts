@@ -386,7 +386,8 @@ function decodeTopology(
             formationDebounceMs: decoder.integer(
                 'topology.recompute.formationDebounceMs',
                 0
-            )
+            ),
+            formationMaxWaitMs: decoder.integer('topology.recompute.formationMaxWaitMs', 0)
         },
         rttRefinement: {
             minIntervalMs: decoder.integer('topology.rttRefinement.minIntervalMs', 0),

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { RtcRttAppInboxCommand } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
@@ -8,6 +9,11 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
@@ -20,7 +26,92 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     const runtimeStateRepository = new FakeRuntimeStateRepository();
     const snapshot = createGroupSnapshot();
     const formationEvents: unknown[] = [];
-    const input: CreateApiV1TopologyServicesInput = {
+    const input = createServicesInput(runtimeStateRepository, snapshot, formationEvents);
+
+    const services = createApiV1TopologyServices(input);
+
+    assert.ok(services.rtcTopologyService instanceof RallarRtcTopologyService);
+    assert.ok(services.topologyQuery instanceof GroupTopologyConfigQueryService);
+    assert.ok(services.topologyPlanning instanceof GroupTopologyPlanningService);
+    assert.ok(services.topologyConfigRepository instanceof GroupTopologyConfigRepository);
+    assert.ok(services.groupStateRepository instanceof GroupStateRepository);
+    assert.ok(services.topologySnapshotRepository instanceof RtcTopologySnapshotRepository);
+    assert.ok(services.rttRepository instanceof RtcRttRepository);
+    assert.equal(services.topologyMutationOwners.configMutationService, services.topologyConfigMutation);
+    assert.equal(services.topologyMutationOwners.reconfigureMutation, services.topologyReconfigureMutation);
+    assert.equal(services.rtcRttMutationDependencies.repository, services.rttRepository);
+    assert.equal(services.rtcRttMutationDependencies.formationMetrics, input.groupFormationRttMutation);
+    assert.deepEqual(services.adminClientIds, ['admin']);
+    assert.deepEqual(services.readRtcTopologyMetrics(), {
+        ...services.rtcTopologyService.readMetrics(),
+        replay: { replayWakeCount: 2 }
+    });
+
+    await seedReportingPairGroup(services.groupStateRepository, snapshot);
+    assert.equal((await services.groupStateRepository.listAllPresenceSessions()).length, 2);
+    const policy = await services.rtcRttMutationDependencies.readPolicyInputs(createRttCommand());
+
+    // Candidates come from the durable repository, not the cached service: the
+    // stubbed cache snapshot has no active sessions, so a cache read here
+    // would judge the reporting pair dead.
+    assert.equal(policy.candidateGroups.length, 1);
+    assert.equal(policy.candidateGroups[0]!.group.groupId, 'group');
+    assert.deepEqual(
+        policy.candidateGroups[0]!.activeSessions.map((session) => session.sessionId).sort(),
+        ['session-from', 'session-to']
+    );
+    assert.equal(policy.overlaySnapshotsByGroupKey.size, 0);
+    assert.equal(policy.degreeLimit, 7);
+    assert.deepEqual(formationEvents, []);
+});
+
+Deno.test('RTT policy inputs read only the reporting pair\'s presence rows, whatever the number of unrelated groups', async () => {
+    const rowsReturned: number[] = [];
+    for (const unrelatedGroupCount of [0, 16]) {
+        const runtimeStateRepository = new RowCountingRuntimeStateRepository();
+        const snapshot = createGroupSnapshot();
+        const services = createApiV1TopologyServices(createServicesInput(runtimeStateRepository, snapshot, []));
+        await seedReportingPairGroup(services.groupStateRepository, snapshot);
+        for (let index = 0; index < unrelatedGroupCount; index += 1) {
+            await services.groupStateRepository.putPresenceSession({
+                ...createPresenceSession(`unrelated-session-${index}`, `unrelated-${index}`),
+                groupId: `unrelated-group-${index}`
+            });
+        }
+        runtimeStateRepository.rowsReturned = 0;
+
+        const policy = await services.rtcRttMutationDependencies.readPolicyInputs(createRttCommand());
+
+        assert.deepEqual(policy.candidateGroups.map((group) => group.group.groupId), ['group']);
+        rowsReturned.push(runtimeStateRepository.rowsReturned);
+    }
+    assert.equal(rowsReturned[1], rowsReturned[0]);
+});
+
+class RowCountingRuntimeStateRepository extends FakeRuntimeStateRepository {
+    rowsReturned = 0;
+
+    override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+        const entries = await super.findAllEntries(namespace);
+        this.rowsReturned += entries.length;
+        return entries;
+    }
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        this.rowsReturned += selections.reduce((total, selection) => total + selection.entries.length, 0);
+        return selections;
+    }
+}
+
+function createServicesInput(
+    runtimeStateRepository: FakeRuntimeStateRepository,
+    snapshot: GroupSnapshot,
+    formationEvents: unknown[]
+): CreateApiV1TopologyServicesInput {
+    return {
         pendingReplanReader: {
             findByKey: () => Promise.reject(new Error('pending replan not read by construction test'))
         },
@@ -46,34 +137,17 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         },
         nowEpochMs: () => NOW_EPOCH_MS
     };
+}
 
-    const services = createApiV1TopologyServices(input);
-
-    assert.ok(services.rtcTopologyService instanceof RallarRtcTopologyService);
-    assert.ok(services.topologyQuery instanceof GroupTopologyConfigQueryService);
-    assert.ok(services.topologyPlanning instanceof GroupTopologyPlanningService);
-    assert.ok(services.topologyConfigRepository instanceof GroupTopologyConfigRepository);
-    assert.ok(services.groupStateRepository instanceof GroupStateRepository);
-    assert.ok(services.topologySnapshotRepository instanceof RtcTopologySnapshotRepository);
-    assert.ok(services.rttRepository instanceof RtcRttRepository);
-    assert.equal(services.topologyMutationOwners.configMutationService, services.topologyConfigMutation);
-    assert.equal(services.topologyMutationOwners.reconfigureMutation, services.topologyReconfigureMutation);
-    assert.equal(services.rtcRttMutationDependencies.repository, services.rttRepository);
-    assert.equal(services.rtcRttMutationDependencies.formationMetrics, input.groupFormationRttMutation);
-    assert.deepEqual(services.adminClientIds, ['admin']);
-    assert.deepEqual(services.readRtcTopologyMetrics(), {
-        ...services.rtcTopologyService.readMetrics(),
-        replay: { replayWakeCount: 2 }
-    });
-
+async function seedReportingPairGroup(repository: GroupStateRepository, snapshot: GroupSnapshot): Promise<void> {
     const sessionFrom = createPresenceSession('session-from', 'alice');
     const sessionTo = createPresenceSession('session-to', 'bob');
-    await services.groupStateRepository.putGroup(snapshot.group);
-    await services.groupStateRepository.putMember(createActiveMember('alice'));
-    await services.groupStateRepository.putMember(createActiveMember('bob'));
-    await services.groupStateRepository.putPresenceSession(sessionFrom);
-    await services.groupStateRepository.putPresenceSession(sessionTo);
-    await services.groupStateRepository.insertPresenceSummary({
+    await repository.putGroup(snapshot.group);
+    await repository.putMember(createActiveMember('alice'));
+    await repository.putMember(createActiveMember('bob'));
+    await repository.putPresenceSession(sessionFrom);
+    await repository.putPresenceSession(sessionTo);
+    await repository.insertPresenceSummary({
         applicationId: 'app',
         workspaceId: 'workspace',
         groupId: 'group',
@@ -85,8 +159,10 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         activeSessionCount: 2,
         computedAtEpochMs: 1
     });
-    assert.equal((await services.groupStateRepository.listAllPresenceSessions()).length, 2);
-    const policy = await services.rtcRttMutationDependencies.readPolicyInputs({
+}
+
+function createRttCommand(): RtcRttAppInboxCommand {
+    return {
         actor: { principalId: 'alice', sessionId: 'session-from' },
         requestId: 'request-1',
         commandHash: `sha256:${'1'.repeat(64)}`,
@@ -99,21 +175,8 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
             createdAtEpochMs: NOW_EPOCH_MS,
             version: 1
         }
-    });
-
-    // Candidates come from the durable repository, not the cached service: the
-    // stubbed cache snapshot has no active sessions, so a cache read here
-    // would judge the reporting pair dead.
-    assert.equal(policy.candidateGroups.length, 1);
-    assert.equal(policy.candidateGroups[0]!.group.groupId, 'group');
-    assert.deepEqual(
-        policy.candidateGroups[0]!.activeSessions.map((session) => session.sessionId).sort(),
-        ['session-from', 'session-to']
-    );
-    assert.equal(policy.overlaySnapshotsByGroupKey.size, 0);
-    assert.equal(policy.degreeLimit, 7);
-    assert.deepEqual(formationEvents, []);
-});
+    };
+}
 
 function createActiveMember(principalId: string): GroupMember {
     const audit = {

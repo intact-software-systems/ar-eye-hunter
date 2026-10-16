@@ -395,7 +395,7 @@ Deno.test(
                 requestedAtEpochMs: nowEpochMs,
                 expireAtEpochMs: 4_102_444_800_000,
                 timing: {
-                    window: { debounceMs: 0, maxWaitMs: null },
+                    window: { debounceMs: 0, maxWaitMs: 0 },
                     replanNotBeforeEpochMs: null
                 },
                 senderId: 'pglite-removal-retry',

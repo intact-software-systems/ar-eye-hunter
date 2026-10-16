@@ -161,6 +161,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         runtimeRepository: scenario.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'

@@ -98,6 +98,8 @@ export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
     /** The server-wide replan window, the one every group coalesced through before per-group windows existed. */
     readonly recomputeDebounceMs: number;
+    /** The server-wide bound on that window, measured from the first pending change of a series. */
+    readonly recomputeMaxWaitMs: number;
     readonly minimumLayoutAgeMs: number;
 }
 
@@ -250,16 +252,23 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
 /** The replan window and the layout-age floor, from the policy facts the read consulted for this stage. */
 function toTopologyReplanTiming(
     policyFacts: TopologyReplanPolicyFacts,
-    options: Pick<ComputeGroupPresenceSummaryWorkOptions, 'recomputeDebounceMs' | 'minimumLayoutAgeMs'>
+    options: Pick<
+        ComputeGroupPresenceSummaryWorkOptions,
+        'recomputeDebounceMs' | 'recomputeMaxWaitMs' | 'minimumLayoutAgeMs'
+    >
 ): TopologyReplanTiming {
     if (!policyFacts.consulted) {
-        return { window: { debounceMs: options.recomputeDebounceMs, maxWaitMs: null }, replanNotBeforeEpochMs: null };
+        return {
+            window: { debounceMs: options.recomputeDebounceMs, maxWaitMs: options.recomputeMaxWaitMs },
+            replanNotBeforeEpochMs: null
+        };
     }
     const { plannedLayout } = policyFacts;
     return {
         window: resolveTopologyReplanWindow({
             lifecyclePolicy: policyFacts.lifecyclePolicy,
-            serverDebounceMs: options.recomputeDebounceMs
+            serverDebounceMs: options.recomputeDebounceMs,
+            serverMaxWaitMs: options.recomputeMaxWaitMs
         }),
         // Only a live planned layout ages; a removal tombstone carries the
         // group's last update, not a layout write.

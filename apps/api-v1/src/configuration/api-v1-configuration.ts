@@ -127,6 +127,7 @@ export interface ApiV1TopologyPlanningConfiguration {
 
 export interface ApiV1TopologyRecomputeConfiguration {
     readonly formationDebounceMs: number;
+    readonly formationMaxWaitMs: number;
 }
 
 export interface ApiV1TopologyRttRefinementConfiguration {

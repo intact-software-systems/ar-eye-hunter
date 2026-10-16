@@ -61,6 +61,7 @@ export async function createGroupDeltaProducer(sql?: PSqlSql): Promise<GroupDelt
         runtimeRepository: repository,
         outboxQueueReader: new OutboxQueueReader(queue),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         serviceId: 'producer-api',
         now: () => now
     });

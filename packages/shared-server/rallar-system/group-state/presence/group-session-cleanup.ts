@@ -28,11 +28,10 @@ export async function readGroupSessionCleanupCandidates(
         throw new TypeError('Group session cleanup authority is no longer valid');
     }
 
-    return (await repository.listAllPresenceSessions()).filter(
+    return (await repository.listPresenceSessionsForSessionIds([input.authSession.sessionId])).filter(
         (session) =>
             session.applicationId === input.scope.applicationId &&
             session.workspaceId === input.scope.workspaceId &&
-            session.sessionId === input.authSession.sessionId &&
             session.principalId === input.principalId &&
             session.disconnectedAtEpochMs === null &&
             session.connectedAtEpochMs <= input.disconnectedAtEpochMs &&

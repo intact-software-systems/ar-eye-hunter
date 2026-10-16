@@ -98,6 +98,7 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
@@ -166,6 +167,7 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
     readonly groupStateService: CachedGroupStateService;
     readonly resultReader: GroupStateRepository;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
 }
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
@@ -211,7 +213,8 @@ export function createApiV1MutationRuntime(
             ...stateDependencies,
             groupStateService,
             resultReader: resources.groupsRepository,
-            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs
+            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+            groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
@@ -353,6 +356,7 @@ function createGroupStateInboxServiceFactory(
             runtimeRepository: input.runtimeStateRepository,
             outboxQueueReader,
             recomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+            recomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
             database: input.database,
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,

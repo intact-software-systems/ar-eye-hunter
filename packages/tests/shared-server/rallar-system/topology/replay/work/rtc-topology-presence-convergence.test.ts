@@ -229,7 +229,8 @@ class PresenceConvergenceFixture {
         runtimeRepository: this.runtime,
         now: () => this.now,
         serviceId: 'presence-test',
-        recomputeDebounceMs: 0
+        recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0
     });
     readonly planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: async (ref) => await this.repository.readSnapshot(ref),
