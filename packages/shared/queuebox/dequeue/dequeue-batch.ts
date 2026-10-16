@@ -1,5 +1,6 @@
 import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import { Either, EitherCollectors } from '../../resilience/Either.ts';
+import { toError } from '../../resilience/to-error.ts';
 import { isNotReadyException } from '../resource-inbox/not-ready-exception.ts';
 import type { DequeueController } from './dequeue-controller.ts';
 
@@ -10,7 +11,11 @@ interface DequeueBatchInput<K, V, T> {
     readonly purpose: 'processing' | 'finalization-recovery';
     /** At most this many entries compute at once; the results keep the entries' order. */
     readonly maxConcurrentComputes: number;
-    /** Entries of one key compute one after another, in the entries' order; an entry without one is free. */
+    /**
+     * Keys are colon-separated paths. An entry computes after every earlier entry whose key equals its own or is a
+     * path prefix of it, or has its key as one: a scope-wide key orders against every key inside that scope. An
+     * entry without a key is free.
+     */
     readonly toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 }
 
@@ -31,22 +36,28 @@ export async function computeDequeueBatch<K, V, T>(
     { entries, computer, log, purpose, maxConcurrentComputes, toExclusionKey }: DequeueBatchInput<K, V, T>
 ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
     const admission = new BoundedConcurrencyAdmission({ maxConcurrent: maxConcurrentComputes });
-    const lastByExclusionKey = new Map<string, Promise<DequeueBatchEntryResult<K, V, T>>>();
+    const keyed: { readonly exclusionKey: string; readonly result: Promise<DequeueBatchEntryResult<K, V, T>>; }[] = [];
     const results = await Promise.all(
         [...entries].map(([key, value]) => {
             const exclusionKey = toExclusionKey?.(key, value);
-            const previous = exclusionKey === undefined ? undefined : lastByExclusionKey.get(exclusionKey);
-            // An entry waits for its key's previous entry before it takes a slot, so a waiting one holds none.
-            const result = (previous ?? Promise.resolve()).then(() =>
+            const previous = exclusionKey === undefined
+                ? []
+                : keyed.filter((earlier) => isOverlappingExclusionKey(earlier.exclusionKey, exclusionKey));
+            // An entry waits for the entries it is ordered behind before it takes a slot, so a waiting one holds none.
+            const result = Promise.all(previous.map((earlier) => earlier.result)).then(() =>
                 admission.admit(() => computeDequeueEntry({ key, value, computer, log, purpose }))
             );
             if (exclusionKey !== undefined) {
-                lastByExclusionKey.set(exclusionKey, result);
+                keyed.push({ exclusionKey, result });
             }
             return result;
         })
     );
     return new Map(results.map((result) => [result.fold((failure) => failure.key, (success) => success.key), result]));
+}
+
+function isOverlappingExclusionKey(left: string, right: string): boolean {
+    return left === right || left.startsWith(`${right}:`) || right.startsWith(`${left}:`);
 }
 
 interface DequeueEntryInput<K, V, T> {
@@ -73,18 +84,19 @@ async function computeDequeueEntry<K, V, T>(
     }
 }
 
+/**
+ * A success release that throws, such as one that lost a reservation after releasing the round's other rows, still
+ * lets the round's failures release: its error is held as a value and rethrown once they are.
+ */
 export async function releaseDequeueBatch<K, V, T>(
     computed: Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>,
     release: DequeueBatchRelease<K, V, T>
 ): Promise<void> {
     const { rightByKey: successes, leftByKey: failures } = EitherCollectors.toMapFoldBoth(computed);
-    if (successes.size > 0) {
-        const released = await release.successReleaser(successes);
-        for (const [key, result] of released) {
-            computed.set(key, Either.ofRight(result));
-        }
-    }
-    if (successes.size > 0 || failures.size === 0) {
+    const successFailure = successes.size === 0
+        ? undefined
+        : await releaseDequeueSuccesses(computed, successes, release);
+    if (successFailure === undefined && (successes.size > 0 || failures.size === 0)) {
         release.onCompleted?.(EitherCollectors.toMapFoldRights(computed));
     }
     if (failures.size > 0) {
@@ -93,6 +105,26 @@ export async function releaseDequeueBatch<K, V, T>(
             computed.set(key, Either.ofLeft(result));
         }
         release.onFailed?.(EitherCollectors.toMapFoldLefts(computed));
+    }
+    if (successFailure !== undefined) {
+        throw successFailure;
+    }
+}
+
+async function releaseDequeueSuccesses<K, V, T>(
+    computed: Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>,
+    successes: Map<K, DequeueController.Success<K, V, T>>,
+    release: DequeueBatchRelease<K, V, T>
+): Promise<Error | undefined> {
+    try {
+        const released = await release.successReleaser(successes);
+        for (const [key, result] of released) {
+            computed.set(key, Either.ofRight(result));
+        }
+        return undefined;
+    }
+    catch (error) {
+        return toError(error);
     }
 }
 

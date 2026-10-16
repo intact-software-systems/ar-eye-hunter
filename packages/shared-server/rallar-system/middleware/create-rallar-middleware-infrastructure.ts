@@ -22,7 +22,6 @@ import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-su
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
 import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
-import { resolveStateSyncOutboxCoalescing } from '../state-sync/resolve-state-sync-outbox-coalescing.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -171,7 +170,6 @@ function createMiddlewareWsQueueBoxServer(
         keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox,
-        resolveOutboxCoalescing: resolveStateSyncOutboxCoalescing,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
         outboundDiagnostics: options.wsOutboundDiagnostics,
         outboundSettlements: options.wsOutboundSettlements,

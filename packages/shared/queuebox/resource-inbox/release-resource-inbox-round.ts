@@ -1,9 +1,15 @@
+import { BoundedConcurrencyAdmission } from '../../resilience/bounded-concurrency-admission.ts';
 import {
     ResourceInboxLostReservationError,
     type DequeueResourceEntryRepository,
     type ResourceInboxRelease
 } from '../queue-box-types.ts';
 import type * as Resource from '../ResourceEntry.ts';
+
+/** How many rows of a lost round release at once, each in its own transaction, against a pool of five. */
+export const RESOURCE_INBOX_EACH_ALONE_RELEASE_CONCURRENCY = 2;
+
+export type ResourceInboxRoundReleaser = Pick<DequeueResourceEntryRepository, 'releaseEntries'>;
 
 export interface ResourceInboxRoundRelease {
     readonly released: ReadonlyMap<Resource.Key, Resource.ResourceEntry>;
@@ -16,7 +22,7 @@ export interface ResourceInboxRoundRelease {
  * releases alone: the lost one rejects and the rest complete now instead of waiting out their leases.
  */
 export async function releaseResourceInboxRound(
-    repository: DequeueResourceEntryRepository,
+    repository: ResourceInboxRoundReleaser,
     releases: readonly ResourceInboxRelease[]
 ): Promise<ResourceInboxRoundRelease> {
     if (releases.length === 0) {
@@ -34,10 +40,13 @@ export async function releaseResourceInboxRound(
 }
 
 async function releaseResourceInboxEachAlone(
-    repository: DequeueResourceEntryRepository,
+    repository: ResourceInboxRoundReleaser,
     releases: readonly ResourceInboxRelease[]
 ): Promise<ResourceInboxRoundRelease> {
-    const outcomes = await Promise.allSettled(releases.map((release) => repository.releaseEntries([release])));
+    const releasing = new BoundedConcurrencyAdmission({ maxConcurrent: RESOURCE_INBOX_EACH_ALONE_RELEASE_CONCURRENCY });
+    const outcomes = await Promise.allSettled(
+        releases.map((release) => releasing.admit(() => repository.releaseEntries([release])))
+    );
     const failures = outcomes.flatMap((outcome) => outcome.status === 'rejected' ? [outcome.reason] : []);
     const unexpected = failures.find((reason) => !(reason instanceof ResourceInboxLostReservationError));
     if (unexpected !== undefined) {

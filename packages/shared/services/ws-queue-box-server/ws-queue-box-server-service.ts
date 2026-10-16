@@ -44,7 +44,6 @@ import {
     createALOutboundReceiptWorkEvidence,
     toALOutboundReceiptFacts
 } from '../../alm/outbound/lane/al-outbound-receipt-observation.ts';
-import type { ALOutboundDequeueCoalescer } from '../../alm/outbound/lane/claim-al-outbound-work.ts';
 import { ALWorkBatchObservations } from '../../alm/work/al-work-batch-observations.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
@@ -139,8 +138,6 @@ export namespace WsQueueBoxServerService {
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
         readonly receiptObserver?: WsQueueBoxServerReceiptObserver;
         readonly dequeueResilience?: ResourceInboxResilience;
-        /** Which queued outbox rows a newer queued row makes redundant; absent, every row is sent as queued. */
-        readonly resolveOutboxCoalescing?: ALOutboundDequeueCoalescer;
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly authorizeInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
@@ -190,7 +187,6 @@ export namespace WsQueueBoxServerService {
         readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
-        readonly resolveOutboxCoalescing: ALOutboundDequeueCoalescer | undefined;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
@@ -399,7 +395,6 @@ export class WsQueueBoxServerService {
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
             readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
-            resolveDequeueCoalescing: dependencies.resolveOutboxCoalescing,
             planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
@@ -910,7 +905,6 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             queueEngine: input.queueEngine
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
-        resolveOutboxCoalescing: input.resolveOutboxCoalescing,
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,

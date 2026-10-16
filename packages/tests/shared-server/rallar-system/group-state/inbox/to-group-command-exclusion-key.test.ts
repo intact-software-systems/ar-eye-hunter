@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateScopeStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createAppInboxQueueMessageFixture } from '../../app-inbox/test-support/create-app-inbox-queue-message-fixture.ts';
@@ -50,6 +53,30 @@ describe('toGroupCommandExclusionKey', () => {
         });
 
         expect(toGroupCommandExclusionKey(publication)).toBe(groupStateGroupStorageKey(GROUP_ONE));
+    });
+
+    // A disconnect's cleanup writes the presence of every group of its session, which only its compute reads.
+    it('keys a session cleanup by its scope, which excludes every group command of that scope', () => {
+        const cleanup = toEntry({
+            type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+            topicId: 'app-inbox.group-state',
+            resourceId: 'cleanup-1',
+            contextId: 'session-bob',
+            data: { connection: { scope: SCOPE, sessionId: 'session-bob' }, disconnectedAtEpochMs: 1, reason: 'closed' }
+        });
+
+        expect(toGroupCommandExclusionKey(cleanup)).toBe(groupStateScopeStorageKey(SCOPE));
+        expect(groupStateGroupStorageKey(GROUP_ONE).startsWith(`${groupStateScopeStorageKey(SCOPE)}:`)).toBe(true);
+    });
+
+    it('leaves a command unkeyed when its group cannot form a storage key', () => {
+        expect(toGroupCommandExclusionKey(toEntry({
+            type: AppInboxType.GROUP_JOIN,
+            topicId: AppInboxType.GROUP_JOIN,
+            resourceId: 'join-4',
+            contextId: 'caller=alice',
+            data: { scope: SCOPE, groupId: '\uD800', request: {} }
+        }))).toBeUndefined();
     });
 
     it('leaves commands that name no existing group unkeyed', () => {

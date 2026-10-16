@@ -18,9 +18,26 @@ export function toErrorSummary(error: Error): ErrorSummary {
     return toErrorSummaryAbove(error, new Set());
 }
 
-/** The summary on one line, for a log whose console would print an object argument across several lines. */
+export const TO_ERROR_SUMMARY_LINE_MAX_LENGTH = 2_000;
+
+/**
+ * The summary on one line, for a log whose console would print an object argument across several lines. It never
+ * throws: a property that cannot be serialized leaves only the name and message, and a long line is cut short.
+ */
 export function toErrorSummaryLine(error: Error): string {
-    return JSON.stringify(toErrorSummary(error), (_key, value) => typeof value === 'bigint' ? value.toString() : value);
+    let line: string;
+    try {
+        line = JSON.stringify(
+            toErrorSummary(error),
+            (_key, value) => typeof value === 'bigint' ? value.toString() : value
+        );
+    }
+    catch {
+        line = `${error.name}: ${error.message}`;
+    }
+    return line.length <= TO_ERROR_SUMMARY_LINE_MAX_LENGTH
+        ? line
+        : `${line.slice(0, TO_ERROR_SUMMARY_LINE_MAX_LENGTH - 1)}…`;
 }
 
 function toErrorSummaryAbove(error: Error, seen: Set<Error>): ErrorSummary {

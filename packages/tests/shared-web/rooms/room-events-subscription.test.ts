@@ -23,6 +23,28 @@ installFakeBroadcastChannelPerTest();
 describe('room event subscriptions', () => {
     beforeEach(resetRoomEventTestRuntime);
 
+    // Step 2g D300 (reverted) completed an older queued delta unsent when a newer one of the room was queued, so its
+    // event never reached `rooms.onEvent`. Every delta row carries its own event and each must be dispatched.
+    it('delivers the event of every delta in a run of one room, in order', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const events: string[] = [];
+        facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+        facade.rooms.onEvent((event) => {
+            events.push(event.eventId);
+        }, { roomId: 'room-1', eventTypes: ['member-joined', 'member-left'] });
+        await facade.connect();
+
+        await dispatchRoomWsMessage(
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' }))
+        );
+        await dispatchRoomWsMessage(
+            toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-2', eventType: 'member-left' }))
+        );
+
+        expect(events).toEqual(['event-1', 'event-2']);
+    });
+
     it('delivers one matching WS event without emitting a room state change', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

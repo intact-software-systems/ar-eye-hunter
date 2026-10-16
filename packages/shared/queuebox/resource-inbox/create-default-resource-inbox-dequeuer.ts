@@ -146,7 +146,7 @@ export interface DequeueResourceEntryOptions {
      * Entries of one round that would only conflict on one shared row: they compute one after another instead of
      * together. Absent, every entry of a round computes concurrently up to the lane's budget.
      */
-    readonly toComputeExclusionKey?: (entry: ResourceEntry) => string | undefined;
+    readonly toComputeExclusionKey?: (key: Resource.Key, attempt: ResourceInboxAttempt) => string | undefined;
     readonly jitterUnit?: () => number;
     readonly nowEpochMs?: () => number;
     readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
@@ -239,7 +239,7 @@ function createResourceInboxFinalizationController<V>(
         .withInboxTypesToDequeue(input.typesToDequeue)
         // A round that tripped the breaker releases what it claimed and starts no other round of the pass.
         .onRoundAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
-        .withComputeExclusion(toResourceInboxExclusion(dependencies.options.toComputeExclusionKey))
+        .withComputeExclusion(dependencies.options.toComputeExclusionKey)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
         .withWorkAdvertisement(input.workAdvertisement)
@@ -257,14 +257,6 @@ function createResourceInboxFinalizationController<V>(
                 }
                 : undefined
         );
-}
-
-function toResourceInboxExclusion(
-    toComputeExclusionKey: DequeueResourceEntryOptions['toComputeExclusionKey']
-): ((key: Resource.Key, attempt: ResourceInboxAttempt) => string | undefined) | undefined {
-    return toComputeExclusionKey === undefined
-        ? undefined
-        : (_key, attempt) => toComputeExclusionKey(attempt.entry);
 }
 
 async function reserveResourceInboxAttempts(

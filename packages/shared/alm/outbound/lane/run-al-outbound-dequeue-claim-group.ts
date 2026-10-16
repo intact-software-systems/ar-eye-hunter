@@ -9,8 +9,6 @@ export namespace ALOutboundDequeueClaimGroup {
     export interface Input<TPrepared> {
         /** The selection's dequeued rows, in claim order. */
         readonly claims: readonly ALWorkClaim[];
-        /** Rows a newer row of the same batch supersedes: they complete unsent. */
-        readonly superseded: ReadonlySet<ALWorkClaim>;
         /** What `runOutboundClaim` runs before a dequeued row's admission, here for every row at once. */
         readonly readWork: (claim: ALWorkClaim) => ALOutboundEffectSnapshot<TPrepared>;
         readonly hasReachedDeadline: (claim: ALWorkClaim) => boolean;
@@ -67,9 +65,6 @@ function startDequeueClaim<TPrepared>(
     input: ALOutboundDequeueClaimGroup.Input<TPrepared>,
     claim: ALWorkClaim
 ): ALOutboundDequeueStart<TPrepared> {
-    if (input.superseded.has(claim)) {
-        return { kind: 'settled', member: undefined, attempt: Promise.resolve({ status: 'completed' }) };
-    }
     let work: ALOutboundEffectSnapshot<TPrepared>;
     try {
         work = input.readWork(claim);

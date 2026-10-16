@@ -122,6 +122,35 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         expect(held.started.map((message) => message.route.contextId)).toEqual(['shared', 'other-1', 'other-2', 'shared']);
     });
 
+    it('computes a head whose exclusion key is a path prefix of another head\'s key after it, in round order', async () => {
+        const queue = new InMemoryQueueBox();
+        const keyByRow = new Map([['row-0', 'scope-a:group-1'], ['row-1', 'scope-a'], ['row-2', 'scope-a:group-2'], ['row-3', 'scope-b']]);
+        const reader = new InboxQueueReader(queue, {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: K,
+            toComputeExclusionKey: (key) => keyByRow.get(key.resourceId)
+        });
+        const spans: { row: string; startedAt: number; finishedAt: number; }[] = [];
+        let tick = 0;
+        reader.onInboxMessageDo(TYPE, {
+            onMessage: async (_message, entry) => {
+                const startedAt = tick++;
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                spans.push({ row: entry.key.resourceId, startedAt, finishedAt: tick++ });
+            }
+        });
+        await enqueue(reader, contexts(4));
+
+        expect(await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience())).toBe(4);
+
+        const span = (row: string) => spans.find((candidate) => candidate.row === row)!;
+        // The scope-wide row waits for the group row before it, and the later group row waits for it.
+        expect(span('row-1').startedAt).toBeGreaterThan(span('row-0').finishedAt);
+        expect(span('row-2').startedAt).toBeGreaterThan(span('row-1').finishedAt);
+        // Another scope runs beside them.
+        expect(span('row-3').startedAt).toBeLessThan(span('row-0').finishedAt);
+    });
+
     it('rejects the release of a row whose lease another owner took while its round ran, and releases the rest at once', async () => {
         const { sql } = await createPSqlAdmissionTestStorage();
         const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
@@ -143,6 +172,40 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const rows = await Promise.all(contexts(K).map((_context, index) => queue.getItem(toKey(stolen!, index))));
         expect(rows[0]).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 2 } });
         expect(rows.slice(1).map((row) => row?.status)).toEqual(Array(K - 1).fill(EntityStatus.COMPLETED));
+    });
+
+    it('still releases a failed row for retry when the same round lost another row\'s reservation', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql, () => new Date()), Temporal.Now.instant);
+        const reader = createReader(queue);
+        const [stolen, failing] = await enqueue(reader, contexts(K));
+        const released = Promise.withResolvers<void>();
+        let started = 0;
+        reader.onInboxMessageDo(TYPE, {
+            onMessage: async (_message, entry) => {
+                started += 1;
+                await released.promise;
+                if (entry.key.resourceId === failing!.key.resourceId) {
+                    throw new Error('handler failed');
+                }
+            }
+        });
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const pass = reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        await vi.waitFor(() => expect(started).toBe(K));
+        await sql`update resource_inbox set ri_attempts = ri_attempts + 1 where ri_resource_id = ${stolen!.key.resourceId}`;
+        released.resolve();
+
+        // The lost reservation surfaces once the round's failure is released too, never instead of it.
+        await expect(pass).rejects.toThrow(/reservation/i);
+        const rows = await Promise.all(contexts(K).map((_context, index) => queue.getItem(toKey(stolen!, index))));
+        expect(rows.map((row) => row?.status)).toEqual([
+            EntityStatus.RESERVED,
+            EntityStatus.RETRY,
+            ...Array(K - 2).fill(EntityStatus.COMPLETED)
+        ]);
     });
 
     it('starts no new round once a round tripped the breaker', async () => {
@@ -207,7 +270,7 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         const reader = new InboxQueueReader(queue, {
             laneBudgetPolicy: 'fixed-retry-two',
             newLaneConcurrency: K,
-            toComputeExclusionKey: (entry) => sharedGroupRows.has(entry.key.resourceId) ? 'group-shared' : `group-${entry.key.resourceId}`
+            toComputeExclusionKey: (key) => sharedGroupRows.has(key.resourceId) ? 'group-shared' : `group-${key.resourceId}`
         });
         const revisionByGroup = new Map<string, number>();
         let conflicts = 0;

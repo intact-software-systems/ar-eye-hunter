@@ -80,8 +80,9 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
     });
 
     // A server's pool has five connections: a batch whose rows read at once held all of them and starved the
-    // AppInbox and the presence summary on the same server (the medium-scale gate's late presence on CI).
-    it('reads the dequeued rows of one batch one at a time, so the batch holds at most one connection for its reads', async () => {
+    // AppInbox and the presence summary on the same server, while reading strictly one row at a time gave up the
+    // shared statements of rows read in one turn (D287). Two at a time keeps both.
+    it('reads the dequeued rows of one batch two at a time and shares the statements of rows read together', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
         await runOutboundWorkTask(runtime);
@@ -99,12 +100,15 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
                 inFlight -= 1;
             }
         });
+        const counts = countPGliteStatements(storage.sql.raw);
 
         await runOutboundWorkTask(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
-        expect(maxInFlight).toBe(1);
+        expect(maxInFlight).toBe(2);
+        // One at a time cost 62 autocommit statements here.
+        expect(counts()).toEqual({ autocommit: 57, transactions: 6, inTransaction: 74 });
     });
 
     it('commits each row alone when two rows of the group write one supersedence track', async () => {

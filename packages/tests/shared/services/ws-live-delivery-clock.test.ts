@@ -132,7 +132,6 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
             nowMs: () => fixture.clock.nowMs()
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
-        resolveOutboxCoalescing: undefined,
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
         inboundDiagnostics: undefined,

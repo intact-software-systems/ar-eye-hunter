@@ -1,5 +1,6 @@
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
+import { BoundedConcurrencyAdmission } from '../../../resilience/bounded-concurrency-admission.ts';
 import type { ALWorkAttemptResult } from '../../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
 import type {
@@ -11,6 +12,9 @@ import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../a
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import { readALOutboundDequeueWait } from './read-al-outbound-dequeue-wait.ts';
+
+/** How many rows of one dequeued batch read at once, against the server's pool of five connections. */
+export const AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY = 2;
 
 export namespace ALOutboundDequeuedAdmission {
     export interface Dependencies<TPrepared> {
@@ -54,23 +58,21 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
      * The dequeued rows of one batch: each passes its gate and reads its decision surface, the rows of one
      * sender commit under one fence (each alone when they cannot share it), then each row's after-admission
      * effect runs in row order. Every row keeps its own attempt and its own breaker charge, exactly as alone.
-     * The rows read one after another: a batch reading at once holds the server's whole small pool.
+     * The rows read two at a time: a batch reading at once holds the server's whole small pool, and one at a time
+     * would give up the shared statements of reads issued in one turn.
      */
     admitDequeuedMessages(
         members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
     ): readonly Promise<ALWorkAttemptResult>[] {
-        const fronts: Promise<ALWorkAttemptResult | undefined>[] = [];
-        const reads: Promise<ALOutboundDequeuedRead<TPrepared> | undefined>[] = [];
-        let previousRead: Promise<void> = Promise.resolve();
-        for (const member of members) {
-            const front = previousRead.then(() => this.readDequeuedFront(member));
-            const read = front.then((settled) =>
-                settled === undefined ? this.readDequeuedDispatch(member.effect, member.evidence) : undefined
-            );
-            fronts.push(front);
-            reads.push(read);
-            previousRead = read.then(() => undefined, () => undefined);
-        }
+        const reading = new BoundedConcurrencyAdmission({ maxConcurrent: AL_OUTBOUND_DEQUEUED_READ_CONCURRENCY });
+        const fronts = members.map((member) => reading.admit(() => this.readDequeuedFront(member)));
+        const reads = members.map((member, index) =>
+            fronts[index]!.then((settled) =>
+                settled === undefined
+                    ? reading.admit(() => this.readDequeuedDispatch(member.effect, member.evidence))
+                    : undefined
+            )
+        );
         const commits = this.commitDequeuedDispatches(reads);
         let previous: Promise<void> = Promise.resolve();
         return members.map((member, index) => {

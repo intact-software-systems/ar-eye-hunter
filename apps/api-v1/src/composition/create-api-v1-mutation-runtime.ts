@@ -478,7 +478,7 @@ function createAppInboxDequeueOptions(
     return {
         laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         newLaneConcurrency: input.appInboxNewLaneConcurrency,
-        toComputeExclusionKey: toGroupCommandExclusionKey,
+        toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,
