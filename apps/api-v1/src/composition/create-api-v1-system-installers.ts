@@ -5,6 +5,7 @@ import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/i
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { computeActivationStatusClockEntry } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import {
     installTopologyAppOutbox,
@@ -36,6 +37,7 @@ export interface CreateApiV1SystemInstallersInput {
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly livePublication: RallarServerWsRouterOptions['livePublication'];
+    readonly timing: RallarTimingSink;
 }
 
 /** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
@@ -61,7 +63,12 @@ function installApiV1SystemTopics(
     }
 
     installTopologyAppOutbox(createTopologyAppOutboxOptions(input, runtime));
-    installRtcSignalingWsTopic(runtime.wsQBoxServerService, input.livePublication, input.nowEpochMs);
+    installRtcSignalingWsTopic({
+        service: runtime.wsQBoxServerService,
+        publication: input.livePublication,
+        nowEpochMs: input.nowEpochMs,
+        timing: input.timing
+    });
     installRtcRttSystemTopic(runtime.wsQBoxServerService, {
         enqueueMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)
     });

@@ -78,24 +78,59 @@ describe('the WS server relay lane', () => {
             .toBeUndefined();
     });
 
-    it('refuses an instance-local memory lane beside acknowledgements relayed to other instances', () => {
-        const fixture = createRallarMiddlewareTestRuntime({ resilience: createResilience() });
+    it('beside other instances, still admits and relays a relay-only RTC signal in memory, issuing no SQL statement', async () => {
+        const server = await createRelayServer(CLUSTER);
+        const warmup = signalingMessage('offer-0');
+        await server.sender.receive(JSON.stringify(warmup));
+        await expect.poll(() => server.receiver.sent).toEqual([JSON.stringify(warmup)]);
+        const signal = signalingMessage('offer-1');
+        const before = server.statements();
 
-        expect(() =>
-            createRallarMiddleware({
-                ...fixture.options,
-                inboundVolatileStores: createVolatileALInboundRuntimeStores({ namespace: 'relay-lane' }, undefined),
-                relayedAckNotices: {
-                    transport: { publish: async () => undefined, subscribe: async () => undefined },
-                    channel: 'relayed-acks',
-                    publisherId: 'server-a'
-                }
-            })
-        ).toThrow(/relaying acknowledgements to other instances/);
+        await server.sender.receive(JSON.stringify(signal));
+
+        await expect.poll(() => server.receiver.sent).toEqual([JSON.stringify(warmup), JSON.stringify(signal)]);
+        expect(server.statements() - before).toBe(0);
+        expect(await server.durable.admissionStore.readDeliverySurface(toReference(signal), Date.now()))
+            .toBeUndefined();
+    });
+
+    it('beside other instances, keeps a signal too large for an inline notice in the shared store', async () => {
+        const server = await createRelayServer(CLUSTER);
+        const signal = signalingMessage('offer-1', 'v=0\r\n'.repeat(2_000));
+
+        await server.sender.receive(JSON.stringify(signal));
+
+        await expect.poll(() => server.receiver.sent).toEqual([JSON.stringify(signal)]);
+        expect(await server.durable.admissionStore.readDeliverySurface(toReference(signal), Date.now()))
+            .toMatchObject({ msg: { id: { msgId: signal.id.msgId } } });
+        expect(await server.volatile.admissionStore.readDeliverySurface(toReference(signal), Date.now()))
+            .toBeUndefined();
+    });
+
+    it('beside other instances, keeps an acknowledged volatile message in the shared store', async () => {
+        const server = await createRelayServer(CLUSTER);
+        const message = acknowledgedMessage();
+
+        await server.sender.receive(JSON.stringify(message));
+
+        await expect.poll(async () => await server.durable.admissionStore.readDeliverySurface(toReference(message), Date.now())).toMatchObject({
+            msg: { id: { msgId: message.id.msgId } }
+        });
+        expect(await server.volatile.admissionStore.readDeliverySurface(toReference(message), Date.now()))
+            .toBeUndefined();
     });
 });
 
-async function createRelayServer(): Promise<RelayServer> {
+/** The notice channel that makes a server relay acknowledgements to other instances. */
+const CLUSTER: CreateRallarMiddlewareOptions['relayedAckNotices'] = {
+    transport: { publish: async () => undefined, subscribe: async () => undefined },
+    channel: 'relayed-acks',
+    publisherId: 'server-a'
+};
+
+async function createRelayServer(
+    relayedAckNotices: CreateRallarMiddlewareOptions['relayedAckNotices'] = undefined
+): Promise<RelayServer> {
     const storage = await createPSqlAdmissionTestStorage();
     const statements = countPGliteStatements(storage.sql.raw);
     const durable = createPSqlALInboundRuntimeStores({
@@ -119,9 +154,15 @@ async function createRelayServer(): Promise<RelayServer> {
                 ? { scope: SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
                 : undefined,
         inboundStores: durable,
-        inboundVolatileStores: volatile
+        inboundVolatileStores: volatile,
+        relayedAckNotices
     });
-    installRtcSignalingWsTopic(runtime.wsQBoxServerService, undefined, Date.now);
+    installRtcSignalingWsTopic({
+        service: runtime.wsQBoxServerService,
+        publication: undefined,
+        nowEpochMs: Date.now,
+        timing: undefined
+    });
     onTestFinished(() => runtime.wsQBoxServerService.dispose());
     return { runtime, durable, volatile, sender, receiver, statements };
 }
@@ -178,7 +219,7 @@ function toReference(message: ALMessage): { readonly senderId: string; readonly 
     return { senderId: message.id.senderId, msgId: message.id.msgId };
 }
 
-function signalingMessage(offerId: string): ALMessage {
+function signalingMessage(offerId: string, sdp = 'sdp'): ALMessage {
     return newALUnicastMessage(
         'sender',
         newALEventRoute(AppTopics.rtcSignaling, 'receiver', 'offer'),
@@ -193,7 +234,7 @@ function signalingMessage(offerId: string): ALMessage {
             token: 'fixture-ticket',
             signalType: 'Offer',
             offerId,
-            payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
+            payload: { description: { type: 'offer', sdp }, candidate: null }
         }
     );
 }
@@ -204,5 +245,14 @@ function durableMessage(): ALMessage {
             text: 'kept'
         }),
         qos: { durability: { algo: 'local-inbox' } }
+    };
+}
+
+function acknowledgedMessage(): ALMessage {
+    return {
+        ...newALUnicastMessage('sender', newALEventRoute('app.notes', 'receiver', 'note'), 'receiver', 'notes.v1', {
+            text: 'acknowledged'
+        }),
+        delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };
 }

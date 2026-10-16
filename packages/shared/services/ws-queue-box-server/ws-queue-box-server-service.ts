@@ -130,6 +130,8 @@ export namespace WsQueueBoxServerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
+        /** Absent on a single instance: every volatile message then stays in `inboundVolatileStores`. */
+        readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
@@ -182,6 +184,7 @@ export namespace WsQueueBoxServerService {
         readonly targetResolver: WsServerTargetResolver;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
+        readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
@@ -436,6 +439,7 @@ export class WsQueueBoxServerService {
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.inboundDelivery.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.inboundDelivery.hasInboxConsumer(message),
+            keepsVolatileMessageInMemory: dependencies.keepsVolatileMessageInMemory,
             dispatchInboxEntry: (entry, plan, source) => this.inboundDelivery.dispatchInboxEntry(entry, plan, source),
             sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
@@ -893,6 +897,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, creationNow())
         }),
+        keepsVolatileMessageInMemory: input.keepsVolatileMessageInMemory,
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             canonicalQueue: input.outbox,

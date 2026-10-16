@@ -15,6 +15,7 @@ import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-co
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
@@ -60,7 +61,6 @@ export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
 ): RallarMiddlewareInfrastructure {
-    assertSharedInboundStoreAcrossInstances(options);
     initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
@@ -167,6 +167,7 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,
+        keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
@@ -180,18 +181,6 @@ function createMiddlewareWsQueueBoxServer(
             : undefined,
         forwardsRoomScopedMessages: false
     });
-}
-
-/**
- * Another instance proves a relayed acknowledgement's sender against the message's admission, and reads an oversized
- * live notice's message, from the shared inbound store: a memory pair would hide both from it.
- */
-function assertSharedInboundStoreAcrossInstances(options: CreateRallarMiddlewareOptions): void {
-    if (options.inboundVolatileStores !== undefined && options.relayedAckNotices !== undefined) {
-        throw new TypeError(
-            'A WS server relaying acknowledgements to other instances admits every message to its shared inbound store.'
-        );
-    }
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(
