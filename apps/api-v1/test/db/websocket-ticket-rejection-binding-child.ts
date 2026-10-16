@@ -10,7 +10,6 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { authTicketDigestKey } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -93,6 +92,8 @@ async function createTicketRejectionFixture(sql: PGliteSql): Promise<TicketRejec
     registerWsRoutes(app, {
         socketServer: new JsonWebSocketServer(),
         appClientInboxService: client,
+        readWsConnectTicket: async (ticketDigest) =>
+            (await sessions.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
         readWsConnectSession: (sessionId) => sessions.findBySessionId(sessionId),
         upgradeWebSocket: () => {
             upgrades.push(1);
@@ -134,7 +135,7 @@ async function verifyTicketRejection(
         assert.equal(fixture.upgrades.length, 0);
         assert.deepEqual(await fixture.runtime.findAllEntries('auth-sessions:ws-tickets'), before);
         assert.equal(fixture.runtime.ticketReads.get(authTicketDigestKey(ticketDigest)), 1);
-        await verifyDurableRejection(fixture.sql);
+        await verifyNothingQueued(fixture.sql);
         const rendered = Deno.inspect(loggedCalls, { depth: Infinity });
         assert.match(rendered, /RequestAuthFailure/u);
         assert.match(rendered, /sessionId: "stored-session"/u);
@@ -167,21 +168,12 @@ async function requestUpgrade(fixture: TicketRejectionFixture, ticket: string): 
     return await response;
 }
 
-/** The rejection is the connect's typed durable result: completed, no client state, and no credential in it. */
-async function verifyDurableRejection(sql: PGliteSql): Promise<void> {
-    const rows = await sql<{ ris_status: string; ris_resource: JsonWireValue; }[]>`
-        select ris_status, ris_resource from resource_inbox_results order by ris_resource_id
+/** A ticket the route can already refuse never reaches the session's lane or writes client state. */
+async function verifyNothingQueued(sql: PGliteSql): Promise<void> {
+    const [queued] = await sql<{ count: string | number; }[]>`
+        select count(*) as count from resource_inbox where ri_type_id = 'APP_INBOX'
     `;
-    const latest = rows.map((row) => ({
-        status: row.ris_status,
-        resource: typeof row.ris_resource === 'string' ? JSON.parse(row.ris_resource) : row.ris_resource
-    })).filter((row) => row.resource?.status === 'ticket-rejected');
-    assert.ok(latest.length > 0);
-    for (const row of latest) {
-        assert.equal(row.status, 'COMPLETED');
-        assert.deepEqual(Object.keys(row.resource).toSorted(), ['generationId', 'sessionId', 'status']);
-        assert.equal(row.resource.sessionId, SESSION.sessionId);
-    }
+    assert.equal(Number(queued?.count), 0);
     const [clientRows] = await sql<{ count: string | number; }[]>`
         select count(*) as count from runtime_state_store where store_namespace like 'client-state%'
     `;

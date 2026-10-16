@@ -2,13 +2,17 @@ import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-oper
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 import { decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 
 export interface ExactStandaloneCommandIdsInput {
     readonly type: AppInboxType;
-    readonly data: unknown;
-    readonly authority: unknown;
+    readonly data: JsonWireValue;
+    readonly authority: JsonWireValue | undefined;
     readonly defaultCommandId: string;
 }
 
@@ -17,7 +21,7 @@ export function readExactStandaloneCommandIds(
 ): readonly string[] {
     const { type, data, authority, defaultCommandId } = input;
     if (type.startsWith('AUTH_')) {
-        const intent = decodeAuthMutationIntent(data as JsonWireValue);
+        const intent = decodeAuthMutationIntent(data);
         if (intent.kind !== authKind(type)) {
             throw new TypeError('auth command kind differs from type');
         }
@@ -53,7 +57,7 @@ export function readExactStandaloneCommandIds(
     return [defaultCommandId];
 }
 
-export function readTopologyReconfigureCommand(authority: unknown) {
+export function readTopologyReconfigureCommand(authority: JsonWireValue | undefined) {
     const durable = readRecord(authority, 'topology reconfigure authority');
     const command = readExactRecord(
         durable.command,
@@ -69,7 +73,7 @@ export function readTopologyReconfigureCommand(authority: unknown) {
     };
 }
 
-export function readGroupSessionCleanupCommand(data: unknown) {
+export function readGroupSessionCleanupCommand(data: JsonWireValue) {
     const cleanup = readExactRecord(
         data,
         ['connection', 'disconnectedAtEpochMs', 'reason'],
@@ -157,7 +161,7 @@ export function clientPayloadKeys(type: AppInboxType): readonly string[] {
     return ['scope', 'principalId', 'clientInstanceId', 'sessionId', 'request'];
 }
 
-export function readScope(value: unknown) {
+export function readScope(value: JsonWireValue | undefined) {
     const scope = readExactRecord(value, ['applicationId', 'workspaceId'], 'client scope');
     return {
         applicationId: readString(scope.applicationId, 'applicationId'),
@@ -165,7 +169,7 @@ export function readScope(value: unknown) {
     };
 }
 
-export function readGroupRef(value: unknown) {
+export function readGroupRef(value: JsonWireValue | undefined) {
     const ref = readExactRecord(value, ['applicationId', 'workspaceId', 'groupId'], 'group ref');
     return {
         applicationId: readString(ref.applicationId, 'applicationId'),
@@ -175,10 +179,10 @@ export function readGroupRef(value: unknown) {
 }
 
 export function readExactRecord(
-    value: unknown,
+    value: JsonWireValue | undefined,
     keys: readonly string[],
     label: string
-): Record<string, unknown> {
+): JsonWireObject {
     const candidate = readRecord(value, label);
     if (JSON.stringify(Object.keys(candidate).toSorted()) !== JSON.stringify([...keys].toSorted())) {
         throw new TypeError(`${label} keys are invalid`);
@@ -186,14 +190,18 @@ export function readExactRecord(
     return candidate;
 }
 
-export function readRecord(value: unknown, label: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+export function readRecord(value: JsonWireValue | undefined, label: string): JsonWireObject {
+    if (!isJsonWireObject(value)) {
         throw new TypeError(`${label} is invalid`);
     }
-    return value as Record<string, unknown>;
+    return value;
 }
 
-export function readString(value: unknown, label: string): string {
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function readString(value: JsonWireValue | undefined, label: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} is invalid`);
     }
@@ -216,7 +224,7 @@ function authKind(type: AppInboxType): string {
     return kind;
 }
 
-function readRtcRttRequestId(value: unknown): string {
+function readRtcRttRequestId(value: JsonWireValue): string {
     const command = readExactRecord(
         value,
         ['actor', 'requestId', 'commandHash', 'mutationCommandHash', 'capturedAtEpochMs', 'rtt'],

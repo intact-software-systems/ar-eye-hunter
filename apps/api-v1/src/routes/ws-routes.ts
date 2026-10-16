@@ -1,6 +1,7 @@
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { PersistedWebSocketTicket } from '@shared-server/rallar-system/auth/persistence/persisted-auth-ticket.ts';
 import { type RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
     AppClientInboxService
@@ -14,6 +15,7 @@ import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-sys
 import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import {
@@ -22,12 +24,16 @@ import {
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { RequestAuthFailure, toAuthErrorResponse } from '../services/request-auth-service.ts';
 
+/** Longer than the connect's completion wait plus a handshake: a socket that neither opens nor closes stops holding rows. */
+const EXPECTED_CONNECTION_TTL_MS = 120_000;
+
 export interface RegisterWsRoutesInput {
     readonly socketServer: JsonWebSocketServer;
     readonly appClientInboxService: Pick<
         AppClientInboxService,
         'writeAuthorisedWsClientConnect' | 'enqueueAuthorisedWsClientDisconnect'
     >;
+    readonly readWsConnectTicket: (ticketDigest: string) => Promise<PersistedWebSocketTicket | undefined>;
     readonly readWsConnectSession: (sessionId: string) => Promise<PersistedAuthSession | undefined>;
     readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
     readonly nowEpochMs: () => number;
@@ -36,7 +42,7 @@ export interface RegisterWsRoutesInput {
 interface AuthorisedWsConnect {
     readonly enqueue: ToAuthorisedWsClientConnectEnqueueInput;
     readonly generation: JsonWebSocketServer.ConnectionGeneration;
-    readonly expected: JsonWebSocketServer.ExpectedConnection;
+    readonly expected: ExpectedConnectionHolds.Expectation;
 }
 
 export function registerWsRoutes(app: Hono, input: RegisterWsRoutesInput): void {
@@ -57,42 +63,67 @@ async function upgradeAuthorisedWebSocket(
     const sessionId = context.req.param('sessionId');
     const requestUrl = new URL(context.req.url);
     const ticket = requestUrl.searchParams.get('ticket');
-    const session = ticket ? await input.readWsConnectSession(sessionId) : undefined;
-    if (!ticket || session?.sessionId !== sessionId) {
+    const ticketDigest = ticket ? await hashAuthSecret(ticket) : undefined;
+    const session = ticketDigest ? await readTicketedWsSession(input, { sessionId, ticketDigest }) : undefined;
+    if (!ticketDigest || session === undefined) {
         return toWsTicketRejectionResponse(context, { sessionId, generationId: null });
     }
-    const connect = await toAuthorisedWsConnect(input, {
+    const connect = createAuthorisedWsConnect(input, {
         session,
-        ticket,
+        ticketDigest,
         requestUrl,
         userAgent: context.req.header('user-agent')
     });
-    input.socketServer.expectConnection(connect.expected);
+    input.socketServer.expectedConnections.expect(connect.expected);
     const written = await writeAuthorisedWsConnect(input, connect);
     if (written?.right?.status === 'ok') {
         return await registerAuthorisedWebSocket(context, input, connect);
     }
-    input.socketServer.releaseExpectedConnection(connect.expected);
-    return await toUnwrittenConnectResponse(context, input, { connect, written });
+    input.socketServer.expectedConnections.release(connect.expected);
+    return await writeUnwrittenConnectResponse(context, input, { connect, written });
 }
 
-interface ToAuthorisedWsConnectInput {
+interface TicketedWsSessionRead {
+    readonly sessionId: string;
+    readonly ticketDigest: string;
+}
+
+/**
+ * Session ids are visible to every room peer, so only a live ticket bound to the path's session reaches the
+ * session read and the session's lane; the connect's guarded delete still decides whether the ticket is spent.
+ */
+async function readTicketedWsSession(
+    input: RegisterWsRoutesInput,
+    request: TicketedWsSessionRead
+): Promise<PersistedAuthSession | undefined> {
+    const ticket = await input.readWsConnectTicket(request.ticketDigest);
+    if (
+        ticket === undefined || ticket.sessionId !== request.sessionId ||
+        ticket.expiresAtEpochMs <= input.nowEpochMs()
+    ) {
+        return undefined;
+    }
+    const session = await input.readWsConnectSession(request.sessionId);
+    return session?.sessionId === ticket.sessionId && session.clientId === ticket.clientId ? session : undefined;
+}
+
+interface CreateAuthorisedWsConnectInput {
     readonly session: PersistedAuthSession;
-    readonly ticket: string;
+    readonly ticketDigest: string;
     readonly requestUrl: URL;
     readonly userAgent: string | undefined;
 }
 
-async function toAuthorisedWsConnect(
+function createAuthorisedWsConnect(
     input: RegisterWsRoutesInput,
-    request: ToAuthorisedWsConnectInput
-): Promise<AuthorisedWsConnect> {
+    request: CreateAuthorisedWsConnectInput
+): AuthorisedWsConnect {
     const generation = input.socketServer.mintConnectionGeneration({ observedAtEpochMs: input.nowEpochMs() });
     return {
         enqueue: {
             authSession: request.session,
             generationId: generation.generationId,
-            ticketDigest: await hashAuthSecret(request.ticket),
+            ticketDigest: request.ticketDigest,
             input: toAuthorisedWsClientInput(
                 request.requestUrl,
                 request.userAgent,
@@ -100,7 +131,11 @@ async function toAuthorisedWsConnect(
             )
         },
         generation,
-        expected: { id: request.session.sessionId, generationId: generation.generationId }
+        expected: {
+            id: request.session.sessionId,
+            generationId: generation.generationId,
+            expiresAtEpochMs: generation.generationStartedAtEpochMs + EXPECTED_CONNECTION_TTL_MS
+        }
     };
 }
 
@@ -122,6 +157,9 @@ async function registerAuthorisedWebSocket(
     input: RegisterWsRoutesInput,
     connect: AuthorisedWsConnect
 ): Promise<Response> {
+    if (context.req.raw.signal.aborted) {
+        return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
+    }
     try {
         const upgraded = input.upgradeWebSocket(context.req.raw);
         rememberAuthorisedWsConnection(
@@ -136,10 +174,24 @@ async function registerAuthorisedWebSocket(
     }
     catch (error) {
         console.error('WebSocket upgrade failed after its connect committed', error);
-        input.socketServer.releaseExpectedConnection(connect.expected);
-        await enqueueGenerationDisconnect(input, connect, 'websocket-upgrade-failed');
-        return context.json({ error: 'WebSocket setup failed' }, 500);
+        return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-failed' });
     }
+}
+
+interface ClosedGeneration {
+    readonly connect: AuthorisedWsConnect;
+    readonly reason: string;
+}
+
+/** A committed connect whose socket never registers costs its disconnect, never a lingering session. */
+async function writeClosedGenerationResponse(
+    context: Context,
+    input: RegisterWsRoutesInput,
+    { connect, reason }: ClosedGeneration
+): Promise<Response> {
+    input.socketServer.expectedConnections.release(connect.expected);
+    await enqueueGenerationDisconnect(input, connect, reason);
+    return context.json({ error: 'WebSocket setup failed' }, 500);
 }
 
 interface UnwrittenConnect {
@@ -148,7 +200,7 @@ interface UnwrittenConnect {
 }
 
 /** A connect whose outcome the route did not see may still commit, so its generation is closed behind it. */
-async function toUnwrittenConnectResponse(
+async function writeUnwrittenConnectResponse(
     context: Context,
     input: RegisterWsRoutesInput,
     { connect, written }: UnwrittenConnect

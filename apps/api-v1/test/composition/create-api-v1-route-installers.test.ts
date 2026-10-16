@@ -64,6 +64,7 @@ Deno.test('route installers mount representative API and websocket behavior in o
 
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
     requireApiAuthSession: rejectUnauthenticated,
+    readWsConnectTicket: rejectUnusedOperation,
     readWsConnectSession: rejectUnusedOperation,
     upgradeWebSocket: () => {
         throw new Error('route dependency not used');

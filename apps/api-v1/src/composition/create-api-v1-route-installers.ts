@@ -8,6 +8,7 @@ import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-syst
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { PersistedWebSocketTicket } from '@shared-server/rallar-system/auth/persistence/persisted-auth-ticket.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
@@ -106,6 +107,10 @@ export interface ApiV1RouteInstallerOperations<Runtime extends ApiV1RouteInstall
         request: ApiV1RouteAuthRequest,
         repository: Runtime['authSessionRepository']
     ) => Promise<IssuedAuthSession>;
+    readonly readWsConnectTicket: (
+        ticketDigest: string,
+        repository: Runtime['authSessionRepository']
+    ) => Promise<PersistedWebSocketTicket | undefined>;
     readonly readWsConnectSession: (
         sessionId: string,
         repository: Runtime['authSessionRepository']
@@ -193,6 +198,8 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             socketServer: input.runtime.wsQBoxServerService.socket,
             appClientInboxService: input.runtime.appClientInboxService,
+            readWsConnectTicket: (ticketDigest) =>
+                operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
             readWsConnectSession: (sessionId) =>
                 operations.readWsConnectSession(sessionId, input.runtime.authSessionRepository),
             upgradeWebSocket: operations.upgradeWebSocket,
@@ -298,6 +305,8 @@ function createApiV1AdministrationRouteInstallers<
 
 const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {
     requireApiAuthSession,
+    readWsConnectTicket: async (ticketDigest, repository) =>
+        (await repository.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
     readWsConnectSession: (sessionId, repository) => repository.findBySessionId(sessionId),
     upgradeWebSocket: (request) => Deno.upgradeWebSocket(request)
 };

@@ -57,6 +57,7 @@ import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerCapturedSendInput } from './scope/to-ws-queue-box-server-captured-send-input.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -413,7 +414,10 @@ export class WsQueueBoxServerService {
                     sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
-            afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
+            afterDequeueAdmission: async (message, entry) => {
+                await this.clusterPublication.writeDequeuedRow(message, entry);
+                await this.deferUnpublishedRowToAwaitedRecipients(message, entry);
+            },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: (message, request) =>
@@ -720,6 +724,33 @@ export class WsQueueBoxServerService {
 
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
         return this.liveDelivery.sendToTargetsWithResult(input);
+    }
+
+    /**
+     * Without a cluster publisher the prepared sends reach only sockets already open, so a session whose upgrade
+     * committed here but has not opened is held for (D269); with one, the publisher's local send holds instead.
+     */
+    private async deferUnpublishedRowToAwaitedRecipients(message: ALMessage, entry: ResourceEntry): Promise<void> {
+        if (this.clusterPublication.hasPublisher() || !this.socket.expectedConnections.hasExpectations()) {
+            return;
+        }
+        const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry);
+        const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
+            expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+            send: (sessionId) =>
+                this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+                    message,
+                    key: entry.key,
+                    policy: { ...policy, admittedAudience: [sessionId] },
+                    eligibleSessionIds: undefined
+                }))
+        });
+        if (awaited.evictedCount > 0) {
+            console.warn('WS outbox hold evicted older rows for awaited sessions', {
+                messageId: message.id.msgId,
+                evictedCount: awaited.evictedCount
+            });
+        }
     }
 
     private async sendPreparedMessage(

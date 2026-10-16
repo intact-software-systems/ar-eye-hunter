@@ -45,9 +45,12 @@ for (
         ['publisher', 'before-delivery'],
         ['remote', 'before-delivery'],
         ['publisher', 'after-commit'],
-        ['remote', 'after-commit']
+        ['remote', 'after-commit'],
+        ['unbridged', 'before-delivery'],
+        ['unbridged', 'after-commit']
     ] as const
 ) {
+    // `unbridged`: RALLAR_DB_PUBSUB=disabled installs no cluster bridge; the dequeuing server's own sends deliver.
     Deno.test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
         await withPGliteSql(async (sql) => {
             const recipient: SnapshotRecipient = {
@@ -68,12 +71,16 @@ for (
                 registerRecipientConnection(recipientSocket, recipient, native);
             }
             else {
-                recipientSocket.expectConnection({ id: recipient.sessionId, generationId: 'generation' });
+                recipientSocket.expectedConnections.expect({
+                    id: recipient.sessionId,
+                    generationId: 'generation',
+                    expiresAtEpochMs: recipient.now + 60_000
+                });
             }
             const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
             const publisherEngine = new InboxOutboxEngine();
             const remoteEngine = new InboxOutboxEngine();
-            const publisherSocket = placement === 'publisher' ? recipientSocket : new JsonWebSocketServer();
+            const publisherSocket = placement === 'remote' ? new JsonWebSocketServer() : recipientSocket;
             const remoteSocket = placement === 'remote' ? recipientSocket : new JsonWebSocketServer();
             const publisher = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
@@ -97,7 +104,8 @@ for (
             const bridge = new SnapshotBridge();
             let bodyFailure: Error | undefined;
             try {
-                for (const [service, socket, id] of [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const) {
+                const bridged = placement === 'unbridged' ? [] : [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const;
+                for (const [service, socket, id] of bridged) {
                     await installQueueBoxPubSubBridge({
                         wsQBoxServerService: service,
                         bridge,
@@ -113,7 +121,7 @@ for (
                     await new Promise((resolve) => setTimeout(resolve, 10));
                 }
                 assert.equal((await stores.workQueue.getItem(entry.key))?.status, EntityStatus.COMPLETED);
-                assert.equal(bridge.published.length, 1);
+                assert.equal(bridge.published.length, placement === 'unbridged' ? 0 : 1);
                 if (registration === 'after-commit') {
                     assert.equal(native.sent.length, 0);
                     registerRecipientConnection(recipientSocket, recipient, native);

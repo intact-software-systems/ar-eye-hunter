@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 
-Deno.test('a rejected websocket ticket is a typed connect result, answered 401 without credentials in the logs', async () => {
+Deno.test('an unusable websocket ticket is answered 401 before any lane work, without credentials in the logs', async () => {
     const output = await new Deno.Command(Deno.execPath(), {
         args: [
             'run',

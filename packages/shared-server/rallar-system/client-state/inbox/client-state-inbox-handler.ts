@@ -168,6 +168,10 @@ export class ClientStateInboxHandler {
     ): Promise<AuthorisedWsClientMutationResult> {
         switch (computed.outcome) {
             case 'ticket-rejected':
+                console.warn('Authorised WebSocket connect rejected its ticket', {
+                    ...computed.durableResult,
+                    issues: computed.issues
+                });
                 return await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
                     computed.completion,

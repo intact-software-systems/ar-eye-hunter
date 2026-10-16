@@ -258,6 +258,57 @@
       }
     },
     {
+      "name": "upsertInstanceAfterTheReplay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{replayClientId}/instances/{replayClientId}/requests/bb-ws-ticket-replay-instance-0006-{runId}",
+        "headers": {
+          "Authorization": "{replayAuthHeader}",
+          "x-client-id": "{replayClientId}"
+        },
+        "body": {
+          "status": "active",
+          "platform": "server",
+          "deviceLabel": "WS ticket replay",
+          "appVersion": "black-box-{runId}",
+          "capabilities": [
+            "http",
+            "ws"
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{replayClientId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "liveSocketStillReceivesAfterTheReplay",
+      "type": "ws.wait",
+      "connection": "wsLive",
+      "expect": {
+        "connection": "wsLive",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [
+          {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "issueFreshWebSocketTicket",
       "type": "http",
       "connection": "api",

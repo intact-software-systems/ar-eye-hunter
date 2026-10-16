@@ -97,18 +97,22 @@ export type AuthorisedWsConnectOperationComputed =
         & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
         & { ticketConsumption: AuthWsTicketConsumption; }
     >
-    | Readonly<{
-        outcome: 'inactive';
-        ticketConsumption: AuthWsTicketConsumption;
-        durableResult: InactiveAuthorisedWsSessionResult;
-        completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
-    }>
-    | Readonly<{
-        outcome: 'ticket-rejected';
-        issues: readonly AuthWsTicketConsumptionIssue[];
-        durableResult: TicketRejectedAuthorisedWsSessionResult;
-        completion: AppInboxCompletionComputed<TicketRejectedAuthorisedWsSessionResult>;
-    }>;
+    | InactiveAuthorisedWsConnectComputed
+    | TicketRejectedAuthorisedWsConnectComputed;
+
+export interface InactiveAuthorisedWsConnectComputed {
+    readonly outcome: 'inactive';
+    readonly ticketConsumption: AuthWsTicketConsumption;
+    readonly durableResult: InactiveAuthorisedWsSessionResult;
+    readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
+}
+
+export interface TicketRejectedAuthorisedWsConnectComputed {
+    readonly outcome: 'ticket-rejected';
+    readonly issues: readonly AuthWsTicketConsumptionIssue[];
+    readonly durableResult: TicketRejectedAuthorisedWsSessionResult;
+    readonly completion: AppInboxCompletionComputed<TicketRejectedAuthorisedWsSessionResult>;
+}
 
 export interface MissingSessionDisconnectComputed {
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
@@ -294,7 +298,7 @@ export function computeAuthorisedWsConnectOperation(
 function computeTicketRejectedConnect(
     input: ComputeAuthorisedWsConnectOperationInput,
     issues: readonly AuthWsTicketConsumptionIssue[]
-): Extract<AuthorisedWsConnectOperationComputed, { outcome: 'ticket-rejected'; }> {
+): TicketRejectedAuthorisedWsConnectComputed {
     const durableResult = {
         status: 'ticket-rejected',
         sessionId: input.connection.authSession.sessionId,
@@ -311,7 +315,7 @@ function computeTicketRejectedConnect(
 function computeInactiveConnect(
     input: ComputeAuthorisedWsConnectOperationInput,
     ticketConsumption: AuthWsTicketConsumption
-): Extract<AuthorisedWsConnectOperationComputed, { outcome: 'inactive'; }> {
+): InactiveAuthorisedWsConnectComputed {
     const durableResult = {
         status: 'inactive',
         sessionId: input.connection.authSession.sessionId,
