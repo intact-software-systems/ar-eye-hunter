@@ -6,6 +6,7 @@ import type { WebSocketServerMessageContext } from '@shared/services/queue-messa
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
+import { toError } from '@shared/resilience/to-error.ts';
 import { recordRallarTiming, type RallarTimingSink } from '../observability/timing.ts';
 import { encodeLiveWsNotice } from '../queue-pubsub/live-ws-notice.ts';
 import type { RallarServerWsRouterOptions } from '../websocket/router/rallar-server-ws-router-contracts.ts';
@@ -109,7 +110,7 @@ async function relayRtcSignalingMessage(relay: RelayRtcSignalingMessageInput): P
         recordRtcSignalingRelayTiming(attempt, 'cluster-notice', undefined);
     }
     catch (error) {
-        recordRtcSignalingRelayTiming(attempt, 'cluster-notice', error);
+        recordRtcSignalingRelayTiming(attempt, 'cluster-notice', toError(error));
         throw error;
     }
 }
@@ -140,7 +141,7 @@ async function publishRtcSignalingNotice(input: PublishRtcSignalingNoticeInput):
 function recordRtcSignalingRelayTiming(
     attempt: RtcSignalingRelayAttempt,
     operation: RtcSignalingRelayOperation,
-    error: unknown
+    error: Error | undefined
 ): void {
     const { relay, sent } = attempt;
     recordRallarTiming({
