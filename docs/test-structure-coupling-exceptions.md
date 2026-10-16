@@ -4497,6 +4497,36 @@ moved or changed test.
         "requiredConstraint": "Report a rejected re-admission once through the sink; never warn per message.",
         "failureRationale": "The after-refresh path previously warned separately; a silent or duplicated report hides authority refresh failures."
       }
+    },
+    {
+      "id": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion relayed over the pub/sub bridge wakes the waiters of the other instance and is never accepted again by the instance that published it.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back",
+      "coverageRelation": "The test connects two completion relay owners through an in-memory notice transport, publishes from the handler side and spies on each side's local acceptance.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion notice subscriber's local acceptance callback",
+        "observableEffect": "The waiter on the other instance wakes; the publishing instance's own acceptance is not invoked for its notice.",
+        "requiredConstraint": "The publisher's acceptance callback is invoked zero times for a notice it published.",
+        "failureRationale": "A publisher that takes its own notice back wakes its local waiters twice and, if it relayed again, would loop notices between instances; the woken waiter alone cannot show it."
+      }
+    },
+    {
+      "id": "app-inbox-completion-notice-publication-failure-reported-once",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion notice whose publication fails is dropped with one warning, never thrown into the committing handler; the waiter keeps its safety tick.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick",
+      "coverageRelation": "The test builds the relay over a transport whose publish rejects, calls the relay and captures the console warning adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion relay's console warning adapter",
+        "observableEffect": "One failed publication produces one operator-visible warning and no exception in the caller.",
+        "requiredConstraint": "Report each failed completion publication exactly once and never throw from the relay call.",
+        "failureRationale": "A missing warning hides a broken pub/sub bridge (remote waiters silently fall back to the tick); repeated warnings flood the log under a sustained outage."
+      }
     }
   ],
   "entries": [
@@ -9933,6 +9963,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent warn call, beside the single admission-outcome diagnostic after the refresh, proves the re-admission rejection is reported through the sink and not the console.",
       "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-12a09d81ef2b31cc",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero calls on the publisher's acceptance callback prove the notice is not taken back; the woken waiter on the other instance is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back"
+    },
+    {
+      "id": "test-structure-coupling-62c673d537d6bcf6",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-publication-failure-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured warning proves a failed publication is reported once; that the relay call does not throw is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick"
     }
   ]
 }
