@@ -1,5 +1,5 @@
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
-import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { WriteThroughObservableLatestRepository } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,

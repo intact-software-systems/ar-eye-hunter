@@ -71,7 +71,10 @@ export function createAlmScaleSetupCommands(
     ];
 }
 
-/** Only the director writes the group: a player's room join admits it to the open group. */
+/**
+ * Only the director writes the group: a player's room join admits it to the open group. Its capacity is the cohort,
+ * the director and every player, so the join that completes the roster replans at once (D288).
+ */
 function createDirectorEnsureGroupCommands(
     input: AlmScaleRecipeInput,
     prefix: string
@@ -81,6 +84,7 @@ function createDirectorEnsureGroupCommands(
         requestPrefix: prefix,
         group: input.group,
         actor: '{auth.clientId}',
+        maxMembers: input.participantCount,
         timeoutMs: computeGroupRequestTimeoutMs(input)
     });
 }

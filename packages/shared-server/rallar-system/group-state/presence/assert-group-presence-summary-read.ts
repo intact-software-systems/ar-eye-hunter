@@ -24,6 +24,16 @@ import {
 } from '../persistence/validate-persisted-group.ts';
 import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
 
+/**
+ * A read whose rows contradict each other: within one consistent snapshot this is stored state no
+ * write leaves behind, reported as a value so the queue retries it within its attempt budget (D295).
+ */
+export interface GroupPresenceSummaryReadInconsistency {
+    readonly code: 'group-presence-summary-roster-inconsistent' | 'group-presence-summary-admission-inconsistent';
+    readonly message: string;
+}
+
+/** The per-record shape of the read; the facts across its rows are `validateGroupPresenceSummaryReadConsistency`'s. */
 export function assertGroupPresenceSummaryRead(
     ref: GroupRef,
     read: GroupPresenceSummaryRead
@@ -56,6 +66,16 @@ export function assertGroupPresenceSummaryRead(
     }
 }
 
+/** The facts that span the read's rows: the group's roster counters and each admission's stored session. */
+export function validateGroupPresenceSummaryReadConsistency(
+    read: GroupPresenceSummaryRead
+): readonly GroupPresenceSummaryReadInconsistency[] {
+    return [
+        ...validateGroupPresenceSummaryRoster(read),
+        ...validateGroupPresenceSummaryAdmissionSessions(read)
+    ];
+}
+
 function assertGroupPresenceSummaryCollections(
     ref: GroupRef,
     read: GroupPresenceSummaryRead
@@ -73,8 +93,7 @@ function assertGroupPresenceSummaryCollections(
     }
     assertGroupPresenceSummaryMembers(ref, read);
     assertGroupPresenceSummaryAdmissions(ref, read.admissions);
-    const sessionsById = assertGroupPresenceSummarySessions(ref, read.presenceSessions);
-    assertGroupPresenceSummaryAdmissionSessions(read.admissions, sessionsById);
+    assertGroupPresenceSummarySessions(ref, read.presenceSessions);
 }
 
 function assertGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {
@@ -91,17 +110,23 @@ function assertGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSum
         }
         memberIds.add(stored.value.principalId);
     }
+}
+
+function validateGroupPresenceSummaryRoster(
+    read: GroupPresenceSummaryRead
+): readonly GroupPresenceSummaryReadInconsistency[] {
     const activeMembers = read.members
         .map(({ value }) => value)
         .filter((member) => member.status === 'active');
     const activeOwners = activeMembers.filter((member) => member.role === 'owner');
-    if (
-        read.group.value.activeMemberCount !== activeMembers.length ||
-        activeOwners.length !== 1 ||
-        activeOwners[0]?.principalId !== read.group.value.ownerPrincipalId
-    ) {
-        throw new TypeError('Group presence summary roster facts are inconsistent');
-    }
+    return read.group.value.activeMemberCount === activeMembers.length &&
+            activeOwners.length === 1 &&
+            activeOwners[0]?.principalId === read.group.value.ownerPrincipalId
+        ? []
+        : [{
+            code: 'group-presence-summary-roster-inconsistent',
+            message: 'Group presence summary roster facts are inconsistent'
+        }];
 }
 
 function assertGroupPresenceSummaryAdmissions(
@@ -134,7 +159,7 @@ function assertGroupPresenceSummaryAdmissions(
 function assertGroupPresenceSummarySessions(
     ref: GroupRef,
     presenceSessions: GroupPresenceSummaryRead['presenceSessions']
-): Map<string, GroupPresenceSession> {
+): void {
     const sessionsById = new Map<string, GroupPresenceSession>();
     for (const stored of presenceSessions) {
         validateGroupStateRuntimeEntry(
@@ -148,27 +173,27 @@ function assertGroupPresenceSummarySessions(
         }
         sessionsById.set(stored.value.sessionId, stored.value);
     }
-    return sessionsById;
 }
 
-function assertGroupPresenceSummaryAdmissionSessions(
-    admissions: GroupPresenceSummaryRead['admissions'],
-    sessionsById: ReadonlyMap<string, GroupPresenceSession>
-): void {
-    for (const stored of admissions) {
-        for (const admitted of stored.value.admittedSessions) {
+function validateGroupPresenceSummaryAdmissionSessions(
+    read: GroupPresenceSummaryRead
+): readonly GroupPresenceSummaryReadInconsistency[] {
+    const sessionsById = new Map(read.presenceSessions.map(({ value }) => [value.sessionId, value]));
+    const differing = read.admissions.some((stored) =>
+        stored.value.admittedSessions.some((admitted) => {
             const session = sessionsById.get(admitted.sessionId);
-            if (!session) {
-                continue;
-            }
-            if (
+            return session !== undefined && (
                 session.principalId !== stored.value.principalId ||
                 session.generationId !== admitted.generationId ||
                 session.generationVersion !== admitted.generationVersion ||
                 session.connectedAtEpochMs !== admitted.connectedAtEpochMs
-            ) {
-                throw new TypeError('Group presence summary admission differs from stored generation');
-            }
-        }
-    }
+            );
+        })
+    );
+    return differing
+        ? [{
+            code: 'group-presence-summary-admission-inconsistent',
+            message: 'Group presence summary admission differs from stored generation'
+        }]
+        : [];
 }

@@ -11,6 +11,7 @@ import {
     type GroupPresenceSummaryWorkData
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
@@ -41,7 +42,11 @@ import {
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
-import { assertGroupPresenceSummaryRead } from './assert-group-presence-summary-read.ts';
+import {
+    assertGroupPresenceSummaryRead,
+    validateGroupPresenceSummaryReadConsistency,
+    type GroupPresenceSummaryReadInconsistency
+} from './assert-group-presence-summary-read.ts';
 import {
     computeGroupPresenceSummaryCoalescedWrite,
     validateGroupPresenceSummaryCoalescedWrite,
@@ -97,27 +102,42 @@ export class GroupPresenceSummaryWork {
         this.now = options.now;
     }
 
-    /** One read of the group serves every item of the same group; the items differ only in their reservation. */
+    /**
+     * One read of the group serves every item of the same group; the items differ only in their
+     * reservation. Rows that contradict each other come back as a typed inconsistency (D295).
+     */
     public async read(
         items: readonly GroupPresenceSummaryWorkItem[],
         nowEpochMs: number
-    ): Promise<readonly GroupPresenceSummaryWorkRead[]> {
+    ): Promise<Either<GroupPresenceSummaryReadInconsistency, readonly GroupPresenceSummaryWorkRead[]>> {
         const first = requireSameGroup(items);
         const ref = first.work.aggregateRef;
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
-        const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
-            repository.findGroupEntry(ref),
-            repository.listMemberEntries(ref),
-            repository.listPresenceAdmissionEntries(ref),
-            repository.listPresenceSessionEntries(ref),
-            repository.findPresenceSummaryEntry(ref),
+        const [stored, coalescedTopologyEntry] = await Promise.all([
+            repository.readPresenceSummaryEntries(ref),
             this.readCoalescedTopologyEntry(ref)
         ]);
-        if (!group) {
+        if (stored.status === 'concurrent-change') {
+            return Either.ofLeft({
+                code: 'group-presence-summary-roster-inconsistent',
+                message: 'Group presence summary rows changed while they were read'
+            });
+        }
+        if (!stored.group) {
             throw new TypeError(`Group not found for presence summary: ${ref.groupId}`);
         }
-        const presence = { group, members, admissions, presenceSessions, current: current ?? null };
+        const presence = {
+            group: stored.group,
+            members: stored.members,
+            admissions: stored.admissions,
+            presenceSessions: stored.presenceSessions,
+            current: stored.current ?? null
+        };
         assertGroupPresenceSummaryRead(ref, presence);
+        const inconsistency = validateGroupPresenceSummaryReadConsistency(presence)[0];
+        if (inconsistency !== undefined) {
+            return Either.ofLeft(inconsistency);
+        }
         const coalescedEvents = items.map((item) => item.work.event);
         const topologyReplanPolicyFacts = await this.readTopologyReplanPolicyFacts(
             first.work,
@@ -125,7 +145,7 @@ export class GroupPresenceSummaryWork {
             coalescedTopologyEntry,
             nowEpochMs
         );
-        return items.map((item) => ({
+        return Either.ofRight(items.map((item) => ({
             nowEpochMs,
             reservation: {
                 key: { ...item.reservation.key },
@@ -135,10 +155,9 @@ export class GroupPresenceSummaryWork {
             coalescedEvents,
             coalescedTopologyEntry,
             topologyReplanPolicyFacts
-        }));
+        })));
     }
 
-    /** The policy and planned slot are read only when the enqueue gate will consult them; the gate depends on the group alone. */
     private async readTopologyReplanPolicyFacts(
         work: GroupPresenceSummaryWorkData,
         group: GroupPresenceSummaryWorkRead['presence']['group']['value'],
@@ -258,10 +277,16 @@ export class GroupPresenceSummaryWork {
         items: readonly GroupPresenceSummaryWorkItem[]
     ): Promise<void> {
         const workCount = { coalescedWorkCount: items.length };
-        const reads = await timeRallarAsync(
+        const read = await timeRallarAsync(
             this.options.timing,
             this.toPhaseTimingEvent(primary, 'read', workCount),
             async () => await this.read(items, this.now())
+        );
+        const reads = read.fold(
+            (inconsistency) => {
+                throw new GroupPresenceSummaryReadInconsistencyError(inconsistency);
+            },
+            (value) => value
         );
         const computeStartedAtMs = nowMs();
         const expansions = items.map((item, index) => this.expand(item.work, reads[index]!));
@@ -410,6 +435,17 @@ export class GroupPresenceSummaryWork {
         catch {
             // Metrics recording must not affect the committed queue work.
         }
+    }
+}
+
+/** The queue boundary's form of an inconsistent read: a failed attempt the queue retries within its budget. */
+class GroupPresenceSummaryReadInconsistencyError extends Error {
+    readonly code: GroupPresenceSummaryReadInconsistency['code'];
+
+    constructor(inconsistency: GroupPresenceSummaryReadInconsistency) {
+        super(inconsistency.message);
+        this.name = 'GroupPresenceSummaryReadInconsistencyError';
+        this.code = inconsistency.code;
     }
 }
 

@@ -224,13 +224,25 @@ describe('ALM scale recipes', () => {
         );
     });
 
+    it.each([15, 30, 50] as const)(
+        'creates the %i-member scale group under the default replanning with the cohort as its capacity, so its last join replans at once (D288)',
+        (participantCount) => {
+            const scale = createAlmScaleRecipes({ participantCount, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
+
+            expect(ensureGroup).toMatchObject({
+                request: {
+                    method: 'POST',
+                    body: { groupId: 'scale-room', displayName: 'scale-room', kind: 'room', joinMode: 'open', maxMembers: participantCount }
+                }
+            });
+        }
+    );
+
     it('creates the scale group under the default replanning, one plan after the join stream, because hosted acceptances of capped-debounce plans queued behind the joins', () => {
         const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
         const ensureGroup = flattenCommands(scale.recipes[0].commands).find((command) => command.commandId === 'alm-scale-director-ensure-group');
 
-        expect(ensureGroup).toMatchObject({
-            request: { method: 'POST', body: { groupId: 'scale-room', displayName: 'scale-room', kind: 'room', joinMode: 'open' } }
-        });
         expect(ensureGroup?.kind === 'http.request' ? ensureGroup.request.body : undefined).not.toHaveProperty('lifecyclePolicy');
     });
 

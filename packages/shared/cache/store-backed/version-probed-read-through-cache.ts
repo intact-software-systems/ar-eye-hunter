@@ -1,4 +1,4 @@
-import { LatestRepository } from './LatestRepository.ts';
+import { LatestRepository } from '../LatestRepository.ts';
 
 /** What the cheap probe tells about the stored value without reading it. */
 export interface VersionProbe {

@@ -1,5 +1,8 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { VersionProbedReadThroughCache, type VersionProbe } from '@shared/cache/version-probed-read-through-cache.ts';
+import {
+    VersionProbedReadThroughCache,
+    type VersionProbe
+} from '@shared/cache/store-backed/version-probed-read-through-cache.ts';
 
 import type {
     RuntimeStateReadBatchVersion,

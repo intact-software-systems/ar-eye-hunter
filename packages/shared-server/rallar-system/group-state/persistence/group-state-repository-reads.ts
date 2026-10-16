@@ -9,6 +9,7 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
@@ -43,6 +44,18 @@ import {
     type GroupStateMutationExactReadInput,
     type GroupStateMutationExactReadResult
 } from './read-exact-group-state-mutation.ts';
+
+/** A presence summary's stored rows, read as one consistent snapshot; a changed row comes back as `concurrent-change`. */
+export type GroupPresenceSummaryStoredRead =
+    | Readonly<{ status: 'concurrent-change'; }>
+    | Readonly<{
+        status: 'stable';
+        group: RuntimeStateEntryValue<Group> | undefined;
+        members: readonly RuntimeStateEntryValue<GroupMember>[];
+        admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
+        presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
+        current: RuntimeStateEntryValue<GroupPresenceSummary> | undefined;
+    }>;
 
 export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async readMutationExactEntries(
@@ -263,6 +276,46 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
     async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {
         const stored = await this.listJsonEntryValues(SESSIONS_NAMESPACE);
         return stored.map((entry) => canonicalStoredSession(entry).value);
+    }
+
+    /**
+     * The group, its members, admissions, sessions and current summary in one batch read, so the
+     * rows come from one database snapshot rather than one statement each (D295).
+     */
+    async readPresenceSummaryEntries(ref: GroupRef): Promise<GroupPresenceSummaryStoredRead> {
+        const groupKey = groupStateGroupStorageKey(ref);
+        const childPrefix = `${groupKey}:`;
+        const selectors = [
+            { selectorId: 'group', kind: 'key', namespace: GROUPS_NAMESPACE, key: groupKey },
+            { selectorId: 'members', kind: 'prefix', namespace: MEMBERS_NAMESPACE, keyPrefix: childPrefix },
+            {
+                selectorId: 'admissions',
+                kind: 'prefix',
+                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+                keyPrefix: childPrefix
+            },
+            { selectorId: 'sessions', kind: 'prefix', namespace: SESSIONS_NAMESPACE, keyPrefix: childPrefix },
+            { selectorId: 'summary', kind: 'key', namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey }
+        ] as const;
+        const resolved = await resolveRuntimeStateReadBatchLiveValues(
+            selectors,
+            await this.repository.readRuntimeStateBatch(selectors),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        );
+        if (resolved.status === 'changed') {
+            return { status: 'concurrent-change' };
+        }
+        const [group, members, admissions, sessions, summary] = resolved.selections;
+        const storedGroup = group?.entries[0];
+        const storedSummary = summary?.entries[0];
+        return {
+            status: 'stable',
+            group: storedGroup === undefined ? undefined : canonicalStoredGroup(storedGroup, ref),
+            members: (members?.entries ?? []).map((entry) => canonicalStoredMember(entry, ref)),
+            admissions: (admissions?.entries ?? []).map((entry) => canonicalStoredAdmission(entry, ref)),
+            presenceSessions: (sessions?.entries ?? []).map((entry) => canonicalStoredSession(entry, ref)),
+            current: storedSummary === undefined ? undefined : canonicalStoredSummary(storedSummary, ref)
+        };
     }
 
     override async findPresenceSummaryEntry(

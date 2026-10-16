@@ -1538,7 +1538,8 @@
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
                 "kind": "room",
-                "joinMode": "open"
+                "joinMode": "open",
+                "maxMembers": 6
               }
             },
             "response": {

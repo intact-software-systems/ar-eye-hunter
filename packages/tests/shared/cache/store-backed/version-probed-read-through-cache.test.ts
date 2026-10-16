@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { VersionProbedReadThroughCache } from '@shared/cache/version-probed-read-through-cache.ts';
+import { VersionProbedReadThroughCache } from '@shared/cache/store-backed/version-probed-read-through-cache.ts';
 
 interface StoredDocument {
     readonly version: string;

@@ -177,7 +177,7 @@ describe('world-fleet native manifest acceptance', () => {
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, incomplete)).toThrow();
         expect(() => expectWorldFleetGroupAssertions(nativeManifest, dishonest)).toThrow();
     });
-    it('keeps the authored workload identity, now creating the group under the default replanning, joining players only through their connect with 650 ms per participant for the hosted join lane, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for an accepted layout stable at its exact revision for a quiet window counted from when the page held it, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
+    it('keeps the authored workload identity, now creating the group under the default replanning with the cohort as its capacity, joining players only through their connect with 650 ms per participant for the hosted join lane, reading the ready status under the group-request allowance from the state-synced room store, appointing the director before the players connect, holding setup-complete for an accepted layout stable at its exact revision for a quiet window counted from when the page held it, allowing group joins per member and signing both roles in under the setup allowance, with the ALM diagnostic stream off', () => {
         const connectCommands = authored.recipes.flatMap((selection) => selection.recipe?.commands.filter((command) => command.kind === 'rtc.connect') ?? []);
         expect(connectCommands.map((command) => command.rallar?.almDiagnostics)).toEqual([false, false]);
         const workload = {
@@ -194,7 +194,7 @@ describe('world-fleet native manifest acceptance', () => {
                 }
             }))
         };
-        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('4b2eafa9d7925bd8bf7d20ec054567c2fd16c924b50f5fd72904400a6e14127a');
+        expect(createHash('sha256').update(JSON.stringify(workload)).digest('hex')).toBe('145bdbc8dd26baab7b99b4c4a37003a336c3d933da653e218b63a1dea79ff826');
         expect(authored.rtcCaptureMode).toBeUndefined();
         expect(authored.targetPolicy.expectedParticipantCount).toBe(15);
         expect(authored.groupAssertions).toHaveLength(231);
