@@ -1,6 +1,10 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
-import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import type {
+    RuntimeStateReadBatchSelector,
+    RuntimeStateReadBatchVersion,
+    RuntimeStateReadBatchVersionReader
+} from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -30,9 +34,37 @@ export async function readGroupStateAuthorityBatch(
         entry: RuntimeStateEntry
     ) => Promise<RuntimeStateEntryValue<JsonWireValue> | undefined>
 ): Promise<GroupStateAuthorityBatchRead> {
+    const selectors = toGroupStateAuthoritySelectors(ref);
+    const resolved = await resolveRuntimeStateReadBatchLiveValues(
+        selectors,
+        await repository.readRuntimeStateBatch(selectors),
+        toLiveEntryValue
+    );
+    if (resolved.status === 'changed') {
+        return { status: 'concurrent-change' };
+    }
+    const [group, members, summary, sessions] = resolved.selections;
+    return {
+        status: 'stable',
+        group: group.entries[0],
+        members: members.entries,
+        summary: summary.entries[0],
+        sessions: sessions.entries
+    };
+}
+
+/** The version of exactly the rows `readGroupStateAuthorityBatch` reads, without their values (D289). */
+export async function readGroupStateAuthorityVersion(
+    reader: RuntimeStateReadBatchVersionReader,
+    ref: GroupRef
+): Promise<RuntimeStateReadBatchVersion | undefined> {
+    return await reader.readRuntimeStateBatchVersion(toGroupStateAuthoritySelectors(ref));
+}
+
+function toGroupStateAuthoritySelectors(ref: GroupRef): readonly RuntimeStateReadBatchSelector[] {
     const groupKey = groupStateGroupStorageKey(ref);
     const childPrefix = `${groupKey}:`;
-    const selectors: readonly RuntimeStateReadBatchSelector[] = [
+    return [
         {
             selectorId: 'group',
             kind: 'key',
@@ -58,20 +90,4 @@ export async function readGroupStateAuthorityBatch(
             keyPrefix: childPrefix
         }
     ];
-    const resolved = await resolveRuntimeStateReadBatchLiveValues(
-        selectors,
-        await repository.readRuntimeStateBatch(selectors),
-        toLiveEntryValue
-    );
-    if (resolved.status === 'changed') {
-        return { status: 'concurrent-change' };
-    }
-    const [group, members, summary, sessions] = resolved.selections;
-    return {
-        status: 'stable',
-        group: group.entries[0],
-        members: members.entries,
-        summary: summary.entries[0],
-        sessions: sessions.entries
-    };
 }

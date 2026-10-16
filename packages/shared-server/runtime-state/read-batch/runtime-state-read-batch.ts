@@ -40,3 +40,16 @@ export interface RuntimeStateReadBatchSelection {
     readonly selectorId: string;
     readonly entries: readonly RuntimeStateEntry[];
 }
+
+/** The identity of every row version a batch selects, and the distinct instants those rows expire at. */
+export interface RuntimeStateReadBatchVersion {
+    readonly version: string;
+    readonly expireAtEpochMs: readonly number[];
+}
+
+/** A store that can tell the version of a batch's selected rows without reading their values. */
+export interface RuntimeStateReadBatchVersionReader {
+    readRuntimeStateBatchVersion(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<RuntimeStateReadBatchVersion | undefined>;
+}

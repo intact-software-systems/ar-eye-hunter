@@ -311,8 +311,7 @@ async function planTopologyWorkPublication(
     const authority = await topologyManagement.planning.readTopologyPlanningAuthority({
         groupRef,
         requestOptions: {},
-        knownGroup: groupSnapshot,
-        snapshotSelection: 'prefer-current'
+        knownGroup: groupSnapshot
     });
     const topology = requirePlannedTopology(
         computeGroupTopologyFromAuthority(authority, undefined, {
@@ -630,8 +629,7 @@ export async function createPGliteRemovalPlanningScenario(
     const authority = await service.planning.readTopologyPlanningAuthority({
         groupRef,
         requestOptions: {},
-        knownGroup: staleTerminal,
-        snapshotSelection: 'prefer-current'
+        knownGroup: staleTerminal
     });
     assert.deepEqual(authority.group, durable);
     return { authority, previous, service };

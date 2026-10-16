@@ -19,7 +19,7 @@ type GlobalEnv = Readonly<{
 }>;
 
 describe('Postgres runtime-state read batches', () => {
-    postgresIt('returns exact, prefix, and missing selections in one packed row', async () => {
+    postgresIt('returns exact, prefix, and missing selections as one driver row per selected entry (D289)', async () => {
         const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
         const namespace = `read-batch-${crypto.randomUUID()}`;
         const seed = new PSqlRuntimeStateRepository(sql);
@@ -51,8 +51,15 @@ describe('Postgres runtime-state read batches', () => {
                 selectorId: 'exact',
                 keys: ['exact']
             }]);
-            expect(selections[2].entries[0].value).toBe('exact-value');
-            expect(driverRowCounts).toEqual([1]);
+            expect(selections[2].entries[0]).toEqual({
+                key: 'exact',
+                value: 'exact-value',
+                expireAtTimestamp: FUTURE_MS,
+                updatedTimestamp: expect.any(String),
+                revision: 0
+            });
+            expect(Number.isFinite(Date.parse(selections[2].entries[0].updatedTimestamp))).toBe(true);
+            expect(driverRowCounts).toEqual([3]);
         }
         finally {
             await sql`

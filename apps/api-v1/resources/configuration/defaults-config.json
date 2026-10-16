@@ -82,7 +82,7 @@
     },
     "recompute": {
       "formationDebounceMs": 500,
-      "formationMaxWaitMs": 2000
+      "formationMaxWaitMs": 4500
     },
     "rttRefinement": {
       "minIntervalMs": 30000,

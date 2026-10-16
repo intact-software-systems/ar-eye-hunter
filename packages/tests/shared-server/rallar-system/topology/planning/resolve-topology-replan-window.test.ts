@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveTopologyReplanWindow } from '@shared-server/rallar-system/topology/planning/resolve-topology-replan-window.ts';
+import {
+    resolveTopologyExpectedMemberCount,
+    resolveTopologyReplanWindow
+} from '@shared-server/rallar-system/topology/planning/resolve-topology-replan-window.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 
 const SERVER_DEBOUNCE_MS = 250;
@@ -54,5 +57,38 @@ describe('resolveTopologyReplanWindow', () => {
             serverDebounceMs: SERVER_DEBOUNCE_MS,
             serverMaxWaitMs: SERVER_MAX_WAIT_MS
         })).toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: SERVER_MAX_WAIT_MS });
+    });
+});
+
+describe('resolveTopologyExpectedMemberCount', () => {
+    function createPolicyUntil(untilMemberCount: number | null) {
+        const policy = createDefaultGroupLifecyclePolicy();
+        return { ...policy, admission: { ...policy.admission, untilMemberCount } };
+    }
+
+    it('expects the group\'s capacity when no policy was read', () => {
+        expect(resolveTopologyExpectedMemberCount({ maxMembers: 50 }, null)).toBe(50);
+    });
+
+    it('expects whichever of the capacity and the admission limit closes first', () => {
+        expect(resolveTopologyExpectedMemberCount(
+            { maxMembers: 50 },
+            { status: 'present', policy: createPolicyUntil(30) }
+        )).toBe(30);
+        expect(resolveTopologyExpectedMemberCount(
+            { maxMembers: 20 },
+            { status: 'present', policy: createPolicyUntil(30) }
+        )).toBe(20);
+        expect(resolveTopologyExpectedMemberCount(
+            { maxMembers: null },
+            { status: 'present', policy: createPolicyUntil(30) }
+        )).toBe(30);
+    });
+
+    it('expects no count from an unbounded group, an absent policy or an unreadable one', () => {
+        expect(resolveTopologyExpectedMemberCount({ maxMembers: null }, null)).toBeNull();
+        expect(resolveTopologyExpectedMemberCount({ maxMembers: null }, { status: 'absent' })).toBeNull();
+        expect(resolveTopologyExpectedMemberCount({ maxMembers: null }, { status: 'corrupt', reason: 'not json' }))
+            .toBeNull();
     });
 });

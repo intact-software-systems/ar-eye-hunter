@@ -18,6 +18,7 @@ import {
     type GroupLifecyclePolicyRead
 } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyRttRefreshWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
@@ -26,7 +27,6 @@ import {
     petitionAwaitingGroupConnectTriggers,
     type GroupFormationAutomationPort
 } from './create-group-connect-trigger-work-handler.ts';
-import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
 export interface FormationCriterionPort {
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
@@ -46,7 +46,7 @@ export interface DeferredCriterionPetitionDependencies {
 }
 
 export interface DeferredCriterionPetitioner {
-    request(work: PersistedRtcTopologyWork, read: RtcTopologyMutationRead): Promise<void>;
+    request(work: RtcTopologyRttRefreshWork, read: RtcTopologyMutationRead): Promise<void>;
 }
 
 /**
@@ -198,7 +198,7 @@ export function createDeferredCriterionPetitioner(
 
 class DeferredFormationCriterionPetitioner implements DeferredCriterionPetitioner {
     private readonly lastPetitionAtByGroupKey = new Map<string, number>();
-    private readonly trailingByGroupKey = new Map<string, PersistedRtcTopologyWork>();
+    private readonly trailingByGroupKey = new Map<string, RtcTopologyRttRefreshWork>();
     private readonly dependencies: DeferredCriterionPetitionDependencies;
     private readonly criterion: FormationCriterionPort;
 
@@ -211,14 +211,13 @@ class DeferredFormationCriterionPetitioner implements DeferredCriterionPetitione
     }
 
     private async petition(
-        work: PersistedRtcTopologyWork,
+        work: RtcTopologyRttRefreshWork,
         planned: RallarOverlayTopologySnapshot
     ): Promise<void> {
         const authority = await this.dependencies.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupSnapshot.group,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: 'prefer-current'
+            knownGroup: work.groupSnapshot
         });
         await petitionFormationCriterion(this.dependencies, authority, planned);
     }
@@ -248,7 +247,7 @@ class DeferredFormationCriterionPetitioner implements DeferredCriterionPetitione
         }
     }
 
-    async request(work: PersistedRtcTopologyWork, read: RtcTopologyMutationRead): Promise<void> {
+    async request(work: RtcTopologyRttRefreshWork, read: RtcTopologyMutationRead): Promise<void> {
         if (
             !consumesFormationDeadlineAt(work.groupSnapshot.group.lifecycleState) ||
             read.snapshot === null ||

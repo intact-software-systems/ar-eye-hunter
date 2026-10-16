@@ -185,7 +185,10 @@ coalesced-work computation puts the series anchor (`windowOpenedAtEpochMs`) on e
 through each merge, and restarts it for a successor row or revived terminal row. Readers require
 that current shape directly; there is no predecessor-format decoder. A queued replan of a live
 planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
-when the change is queued. RTT refreshes are the machinery's own work and are queued directly as
+when the change is queued. The change that brings the present members up to the group's expected
+member count — its `maxMembers`, or the consulted policy's `admission.untilMemberCount` when that
+closes first — is due at once, and its series carries the `expected-members-arrived` reason so later
+changes of that series no longer extend it (D288); the server's default bound is 4 500 ms. RTT refreshes are the machinery's own work and are queued directly as
 new rows, outside this window.
 
 The stage triggers (product decision 8, `establishment.planTrigger` and `connectTrigger`) ride the

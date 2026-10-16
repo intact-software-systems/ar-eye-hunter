@@ -129,11 +129,7 @@ export class GroupTopologyPlanningService {
             input.knownGroup
         );
         const group = input.knownGroup
-            ? selectGroupTopologyPlanningSnapshot(
-                input.knownGroup,
-                currentGroup,
-                input.snapshotSelection
-            )
+            ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup)
             : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
         const [config, rttMeasurements, replanning] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
@@ -160,8 +156,7 @@ export class GroupTopologyPlanningService {
     ): Promise<MeasuredGroupTopologyPlan> {
         const authority = await this.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group,
-            snapshotSelection: 'prefer-current'
+            knownGroup: group
         });
         // The machinery's own reconcile sweep: automatic by definition.
         const startedAtMs = this.readDurationNowMs();

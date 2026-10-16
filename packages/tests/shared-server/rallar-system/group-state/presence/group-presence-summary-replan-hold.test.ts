@@ -40,6 +40,8 @@ interface HoldScenario {
     /** Passed once the group expires, for the inactive case; the summary runs at BASE_EPOCH_MS + 1 000. */
     readonly expiresAtEpochMs?: number;
     readonly plannedLayout: 'active' | 'absent' | 'corrupt';
+    /** A capacity the seeded roster fills, with the owner's session connected too; absent leaves the group unbounded. */
+    readonly fullAtMaxMembers?: number;
 }
 
 interface ServerReplanWindow {
@@ -105,7 +107,7 @@ describe('group presence summary replan hold', () => {
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'reconfigure',
             origin: 'commanded',
             previousEntry: null
@@ -135,7 +137,7 @@ describe('group presence summary replan hold', () => {
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS - 3_000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-            timing: { window: { debounceMs: 4_500, maxWaitMs: 60_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 4_500, maxWaitMs: 60_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'summary-worker',
             origin: 'automatic',
             previousEntry: null
@@ -150,6 +152,29 @@ describe('group presence summary replan hold', () => {
         expect(merged.topologyReplan.work.expectedEntry?.key).toEqual(pendingHead.entryWrite.entry.key);
         expect(merged.topologyReplan.work.entryWrite.entry.status).toBe(EntityStatus.NEW);
         expect(merged.topologyReplan.work.entryWrite.entry.dequeueAudit.nextTs).toBeUndefined();
+    });
+
+    it.each(
+        [
+            ['makes the replan due at once when the present members fill the group\'s capacity', 2, EntityStatus.NEW],
+            ['keeps the debounce while the group has no expected member count', undefined, EntityStatus.RETRY]
+        ] as const
+    )('%s (D288)', async (name, fullAtMaxMembers, status) => {
+        const seeded = await seedScenario({
+            groupId: `expected-count-${fullAtMaxMembers ?? 'unbounded'}`,
+            policy: resolveGroupLifecyclePolicyPreset('optimistic'),
+            lifecycleState: 'active',
+            plannedLayout: 'absent',
+            ...(fullAtMaxMembers === undefined ? {} : { fullAtMaxMembers })
+        });
+
+        const computed = await readComputedSummary(seeded, SERVER_WINDOW);
+
+        if (computed.topologyReplan.decision !== 'enqueue') {
+            throw new Error(`Expected the auto group to enqueue its replan: ${name}`);
+        }
+        expect(computed.snapshot.onlineMemberCount).toBe(fullAtMaxMembers ?? 1);
+        expect(computed.topologyReplan.work.entryWrite.entry.status).toBe(status);
     });
 });
 
@@ -179,6 +204,16 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${input.groupId}-bob`
     });
+    if (input.fullAtMaxMembers !== undefined) {
+        await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-alice-session`, {
+            principalId: 'alice',
+            generationId: `${input.groupId}-alice-generation`,
+            connectionGenerationId: `${input.groupId}-alice-ws-generation`,
+            actorPrincipalId: 'alice',
+            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+            requestId: `connect-${input.groupId}-alice`
+        });
+    }
     const repository = createTestGroupStateRepository(runtime);
     const stored = await repository.findGroupEntry(ref);
     if (!stored) {
@@ -190,10 +225,11 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
         ...stored.value,
         lifecycleState: input.lifecycleState,
         acceptedLayoutIdentity: PLANNED_IDENTITY,
-        expiresAtEpochMs: input.expiresAtEpochMs ?? stored.value.expiresAtEpochMs
+        expiresAtEpochMs: input.expiresAtEpochMs ?? stored.value.expiresAtEpochMs,
+        maxMembers: input.fullAtMaxMembers ?? stored.value.maxMembers
     });
     await seedPlannedLayout(runtime, ref, input.plannedLayout);
-    const event = (await repository.listEvents(ref)).find(
+    const event = (await repository.listEvents(ref)).findLast(
         (candidate: GroupEvent) => candidate.eventType === 'session-connected'
     );
     if (!event) {

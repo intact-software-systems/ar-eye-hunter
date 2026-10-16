@@ -1,5 +1,6 @@
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { Group } from '@shared/api/group-types.ts';
 
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
@@ -40,6 +41,36 @@ export function resolveTopologyReplanWindow(input: ResolveTopologyReplanWindowIn
             return toPolicyWindow(createDefaultGroupLifecyclePolicy(), serverWindow);
         case 'present':
             return toPolicyWindow(input.lifecyclePolicy.policy, serverWindow);
+    }
+}
+
+/**
+ * D288: the member count after which the group expects no further arrival, so
+ * a replan need not wait for more — the group's capacity or the read policy's
+ * admission limit, whichever closes first; null when neither bounds the
+ * roster. The policy is read only in the stage that follows the replanning
+ * policy, so other stages pass null and expect only the capacity.
+ */
+export function resolveTopologyExpectedMemberCount(
+    group: Pick<Group, 'maxMembers'>,
+    lifecyclePolicy: GroupLifecyclePolicyRead | null
+): number | null {
+    const admissionLimit = toAdmissionMemberLimit(lifecyclePolicy);
+    if (group.maxMembers === null) {
+        return admissionLimit;
+    }
+    return admissionLimit === null ? group.maxMembers : Math.min(group.maxMembers, admissionLimit);
+}
+
+function toAdmissionMemberLimit(lifecyclePolicy: GroupLifecyclePolicyRead | null): number | null {
+    switch (lifecyclePolicy?.status) {
+        case undefined:
+        case 'corrupt':
+            return null;
+        case 'absent':
+            return createDefaultGroupLifecyclePolicy().admission.untilMemberCount;
+        case 'present':
+            return lifecyclePolicy.policy.admission.untilMemberCount;
     }
 }
 

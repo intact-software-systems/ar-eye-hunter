@@ -95,7 +95,8 @@ export async function createAuthorityHarness(
     const groupStateService = options.snapshotCache
         ? createCachedGroupStateService({
             durable: durableGroupStateService,
-            cache: options.snapshotCache
+            cache: options.snapshotCache,
+            current: durableGroupStateService
         })
         : durableGroupStateService;
     return {

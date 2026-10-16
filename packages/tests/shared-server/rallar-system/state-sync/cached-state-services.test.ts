@@ -26,13 +26,14 @@ describe('cached state services', () => {
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
-            }
+            },
+            current: durable
         });
 
         expect('createGroup' in service).toBe(false);
     });
 
-    it('reads current group authority durably without caching an equal-revision projection', async () => {
+    it('reads current group authority from its current reader without the read-through cache', async () => {
         const revisioned = createGroupSnapshot(4, []);
         const durable = {
             ...createGroupStateServiceFixture(),
@@ -46,7 +47,8 @@ describe('cached state services', () => {
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
-            }
+            },
+            current: durable
         });
 
         const result = await service.readCurrentSnapshot(revisioned.group);
@@ -61,7 +63,8 @@ describe('cached state services', () => {
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: rejectUnexpectedCacheAccess
-            }
+            },
+            current: durable
         });
 
         expect('connectPresenceSession' in service).toBe(false);
@@ -75,14 +78,16 @@ describe('cached state services', () => {
             'Group',
             snapshot.group.snapshotVersion
         );
+        const durable = createGroupStateServiceFixture();
         const service = createCachedGroupStateService({
-            durable: createGroupStateServiceFixture(),
+            durable,
             cache: {
                 findOrLoadByRef: rejectUnexpectedCacheAccess,
                 observe: () => {
                     throw conflict;
                 }
-            }
+            },
+            current: durable
         });
 
         await expect(service.observeSnapshot(snapshot)).rejects.toBe(conflict);

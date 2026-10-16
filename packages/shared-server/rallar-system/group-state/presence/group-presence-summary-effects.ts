@@ -4,6 +4,7 @@ import type {
     GroupEvent,
     GroupMember,
     GroupPresenceSession,
+    GroupPresenceSummary,
     GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
@@ -32,7 +33,10 @@ import {
     type TopologyReplanPolicyFacts,
     type TopologyWorkOrigin
 } from '../../topology/planning/resolve-topology-plan-action.ts';
-import { resolveTopologyReplanWindow } from '../../topology/planning/resolve-topology-replan-window.ts';
+import {
+    resolveTopologyExpectedMemberCount,
+    resolveTopologyReplanWindow
+} from '../../topology/planning/resolve-topology-replan-window.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     type TopologyReplanTiming
@@ -241,7 +245,7 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
             groupSnapshot: snapshot,
             requestedAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            timing: toTopologyReplanTiming(read.topologyReplanPolicyFacts, options),
+            timing: toTopologyReplanTiming({ read, snapshot, options }),
             senderId: options.serviceId,
             origin: toTopologyReplanOrigin(work),
             previousEntry: read.coalescedTopologyEntry
@@ -249,18 +253,29 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
     };
 }
 
-/** The replan window and the layout-age floor, from the policy facts the read consulted for this stage. */
-function toTopologyReplanTiming(
-    policyFacts: TopologyReplanPolicyFacts,
-    options: Pick<
+interface ToTopologyReplanTimingInput {
+    readonly read: GroupPresenceSummaryWorkRead;
+    readonly snapshot: GroupSnapshot;
+    readonly options: Pick<
         ComputeGroupPresenceSummaryWorkOptions,
         'recomputeDebounceMs' | 'recomputeMaxWaitMs' | 'minimumLayoutAgeMs'
-    >
-): TopologyReplanTiming {
+    >;
+}
+
+/** The replan window, the layout-age floor and the expected-member arrival, from the facts the read consulted for this stage. */
+function toTopologyReplanTiming(input: ToTopologyReplanTimingInput): TopologyReplanTiming {
+    const { read, snapshot, options } = input;
+    const policyFacts = read.topologyReplanPolicyFacts;
+    const expectedMembersArrived = computeExpectedMembersArrived(
+        snapshot,
+        read.presence.current?.value ?? null,
+        resolveTopologyExpectedMemberCount(snapshot.group, policyFacts.consulted ? policyFacts.lifecyclePolicy : null)
+    );
     if (!policyFacts.consulted) {
         return {
             window: { debounceMs: options.recomputeDebounceMs, maxWaitMs: options.recomputeMaxWaitMs },
-            replanNotBeforeEpochMs: null
+            replanNotBeforeEpochMs: null,
+            expectedMembersArrived
         };
     }
     const { plannedLayout } = policyFacts;
@@ -274,8 +289,25 @@ function toTopologyReplanTiming(
         // group's last update, not a layout write.
         replanNotBeforeEpochMs: plannedLayout?.state === 'active'
             ? plannedLayout.updatedAtEpochMs + options.minimumLayoutAgeMs
-            : null
+            : null,
+        expectedMembersArrived
     };
+}
+
+/** Whether this summary brings the present members up to the expected count from below it (D288). */
+function computeExpectedMembersArrived(
+    snapshot: GroupSnapshot,
+    previousSummary: GroupPresenceSummary | null,
+    expectedMemberCount: number | null
+): boolean {
+    if (expectedMemberCount === null || snapshot.onlineMemberCount < expectedMemberCount) {
+        return false;
+    }
+    const previouslyPresent = new Set(previousSummary?.activePrincipalIds ?? []);
+    const previousOnlineMemberCount =
+        snapshot.members.filter((member) => member.status === 'active' && previouslyPresent.has(member.principalId))
+            .length;
+    return previousOnlineMemberCount < expectedMemberCount;
 }
 
 export function validateGroupPresenceSummaryComputedWork(

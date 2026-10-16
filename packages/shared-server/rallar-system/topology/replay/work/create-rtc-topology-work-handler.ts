@@ -36,7 +36,8 @@ import {
 import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
 import {
     readRtcTopologyWorkEnvelope,
-    toRtcTopologyExecutionId
+    toRtcTopologyExecutionId,
+    toRtcTopologyWorkGroupRef
 } from './rtc-topology-work-codec.ts';
 import {
     computeRtcTopologyReservationFinish,
@@ -127,7 +128,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     );
     const workId = toRtcTopologyExecutionId(workEnvelope);
     const mutationRead = await options.executionRepository.readTopologyMutation(
-        workEnvelope.data.groupSnapshot.group,
+        toRtcTopologyWorkGroupRef(workEnvelope.data),
         workId
     );
     if (mutationRead.publicationClaim) {
@@ -145,7 +146,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     const accepted = claimRttRefinementSkip(attempt);
     if (accepted !== null) {
         await writeSkippedRttRefinement({ options, entry, sourceWorkId: workId, reservationFinish, accepted });
-        await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
+        await deferredCriterionPetitioner?.request(accepted.work, mutationRead);
         return;
     }
     const computationInput = await readRtcTopologyWorkComputationInput({
@@ -182,21 +183,20 @@ async function readRtcTopologyWorkComputationInput(
     const { options, facts, mutationRead, entry, reservationFinish } = input;
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
-    const membershipDeltaWork = work.kind === 'group-revision';
+    const groupRef = toRtcTopologyWorkGroupRef(work);
     const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
+        // A membership change plans from the group's current stored state, which is at or past
+        // the revision that asked (D290); an RTT refresh still carries the snapshot it measured.
         options.topologyPlanning.readTopologyPlanningAuthority({
-            groupRef: work.groupSnapshot.group,
+            groupRef,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
+            ...(work.kind === 'rtt-refresh' ? { knownGroup: work.groupSnapshot } : {})
         }),
         readTopologyPromotion({
             publication: options.topologyPublication,
-            groupRef: work.groupSnapshot.group
+            groupRef
         }),
-        options.executionRepository.readTopologyInputFingerprint(
-            work.groupSnapshot.group
-        )
+        options.executionRepository.readTopologyInputFingerprint(groupRef)
     ]);
     return {
         facts,
@@ -303,7 +303,7 @@ async function readLoadedRtcTopologyWork(
  */
 function claimRttRefinementSkip(
     input: RtcTopologyWorkAttemptInput
-): AcceptedRtcTopologyWork | null {
+): Extract<AcceptedRtcTopologyWork, { decision: 'skipped-rtt-refinement'; }> | null {
     const work = input.facts.workEnvelope.data;
     if (
         work.kind !== 'rtt-refresh' ||

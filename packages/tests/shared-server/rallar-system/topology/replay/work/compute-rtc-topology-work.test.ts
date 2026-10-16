@@ -36,7 +36,7 @@ describe('RTC topology group-revision work', () => {
         const queued = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: appointed.group,
             expireAtEpochMs: 10_000,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'topology-service',
             origin: 'automatic',
             groupSnapshot: appointed,

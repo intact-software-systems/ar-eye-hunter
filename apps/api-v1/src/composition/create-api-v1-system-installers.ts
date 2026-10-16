@@ -96,7 +96,7 @@ function createTopologyAppOutboxOptions(
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
         formationAutomation: {
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
-            readGroup: async (ref) => (await topology.groupStateRepository.readSnapshot(ref))?.group ?? null,
+            readGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
             readPlanned: async (ref) => await topology.topologySnapshotRepository.findSnapshot(ref) ?? null,
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueFormationAutomationCommand(command, atEpochMs),
@@ -142,11 +142,9 @@ function createTopologyAppOutboxOptions(
         topologyPublication: {
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             // Durable, never the snapshot cache: the mint gate's stage and
-            // accepted-identity facts must not lag a cross-server write.
-            findCurrentGroup: async (ref) => {
-                const snapshot = await topology.groupStateRepository.readSnapshot(ref);
-                return snapshot?.group ?? null;
-            },
+            // accepted-identity facts must not lag a cross-server write. They
+            // live on the group row, so only that row is read (D289).
+            findCurrentGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
         }

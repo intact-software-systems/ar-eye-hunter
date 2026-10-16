@@ -251,8 +251,7 @@ Deno.test(
                 }
             });
             const authority = await service.planning.readTopologyPlanningAuthority({
-                groupRef,
-                snapshotSelection: 'prefer-current'
+                groupRef
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
@@ -282,8 +281,7 @@ Deno.test(
             };
             assert.equal(await rttRepository.putMeasurementIfNewer(reportingRtt), true);
             const mixedAuthority = await service.planning.readTopologyPlanningAuthority({
-                groupRef,
-                snapshotSelection: 'prefer-current'
+                groupRef
             });
             assert.deepEqual(mixedAuthority.rttMeasurements, [storedRtt, reportingRtt]);
 
@@ -396,7 +394,8 @@ Deno.test(
                 expireAtEpochMs: 4_102_444_800_000,
                 timing: {
                     window: { debounceMs: 0, maxWaitMs: 0 },
-                    replanNotBeforeEpochMs: null
+                    replanNotBeforeEpochMs: null,
+                    expectedMembersArrived: false
                 },
                 senderId: 'pglite-removal-retry',
                 origin: 'automatic',

@@ -5,13 +5,11 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcTopologyKindHysteresisWidths } from '../runtime/rallar-rtc-topology-service.ts';
 import type { GroupTopologyReplanningRead } from './resolve-topology-plan-action.ts';
 
-export type GroupTopologyPlanningSnapshotSelection = 'prefer-current' | 'preserve-known-revision';
-
 export interface ReadGroupTopologyPlanningAuthorityInput {
     readonly groupRef: GroupRef;
     readonly requestOptions?: GroupTopologyConfigPatch;
+    /** A snapshot the caller already holds; the current stored one replaces it unless the store lags it. */
     readonly knownGroup?: GroupSnapshot;
-    readonly snapshotSelection: GroupTopologyPlanningSnapshotSelection;
 }
 
 export interface GroupTopologyPlanningAuthority {

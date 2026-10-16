@@ -354,7 +354,7 @@ class PresenceConvergenceFixture {
             origin,
             requestedAtEpochMs: this.now - 2_000,
             expireAtEpochMs: this.now + 60_000,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'presence-test',
             previousEntry: await this.queue.getItem(toCoalescedGroupRevisionKey(REF)) ?? null
         });

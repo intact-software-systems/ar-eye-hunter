@@ -17,9 +17,11 @@ import {
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type {
     RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
+    RuntimeStateReadBatchSelector,
+    RuntimeStateReadBatchVersion,
+    RuntimeStateReadBatchVersionReader
 } from '../read-batch/runtime-state-read-batch.ts';
-import { readRuntimeStateBatch } from './read-runtime-state-batch.ts';
+import { readRuntimeStateBatch, readRuntimeStateBatchVersion } from './read-runtime-state-batch.ts';
 import {
     decodeRuntimeStateRevision,
     decodeRuntimeStateRow,
@@ -46,7 +48,10 @@ export function createTransactionBoundPSqlRuntimeStateRepository(
 }
 
 export class PSqlRuntimeStateRepository
-    implements RuntimeStateGuardedBatchTransactionalRepositoryLike, RuntimeStateGuardedBatchTransaction {
+    implements
+        RuntimeStateGuardedBatchTransactionalRepositoryLike,
+        RuntimeStateGuardedBatchTransaction,
+        RuntimeStateReadBatchVersionReader {
     private readonly sqlState: RuntimeStateSqlState;
 
     public readonly sql: PSqlSql;
@@ -63,6 +68,12 @@ export class PSqlRuntimeStateRepository
         selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]> {
         return await readRuntimeStateBatch(this.sql, selectors);
+    }
+
+    async readRuntimeStateBatchVersion(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<RuntimeStateReadBatchVersion | undefined> {
+        return await readRuntimeStateBatchVersion(this.sql, selectors);
     }
 
     async begin<T>(

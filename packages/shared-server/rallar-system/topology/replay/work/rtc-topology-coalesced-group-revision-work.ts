@@ -10,10 +10,11 @@ import {
     isPreserveOnlyCanonicalGroupTopologyConfigPatch,
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
-import type {
-    GroupRef,
-    GroupSnapshot,
-    GroupStateCausalRevision
+import {
+    toCanonicalGroupRef,
+    type GroupRef,
+    type GroupSnapshot,
+    type GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import {
     EntityStatus,
@@ -49,7 +50,12 @@ export interface TopologyReplanTiming {
      * layout is ageing.
      */
     readonly replanNotBeforeEpochMs: number | null;
+    /** This change brings the present members to the group's expected member count, so no arrival is left to coalesce (D288). */
+    readonly expectedMembersArrived: boolean;
 }
+
+/** The coalescing reason a series carries once its expected members have arrived; its due time no longer extends (D288). */
+export const TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON = 'expected-members-arrived';
 
 export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly aggregateRef: GroupRef;
@@ -65,24 +71,37 @@ export interface RtcTopologyCoalescedGroupRevisionInput {
 export interface ComputeTopologyReplanDueAtInput {
     readonly requestedAtEpochMs: number;
     /** The queued row this change extends; null for the first change of a series. */
-    readonly previous: Pick<CoalescedAppOutboxWorkMetadata, 'windowOpenedAtEpochMs' | 'dueAtEpochMs'> | null;
+    readonly previous:
+        | Pick<CoalescedAppOutboxWorkMetadata, 'windowOpenedAtEpochMs' | 'dueAtEpochMs' | 'reasons'>
+        | null;
     readonly timing: TopologyReplanTiming;
 }
 
 /**
  * The extending window keeps its coalescing benefit but cannot defer a replan
- * past the series' maximum wait (product decision 31); the layout-age floor
- * is applied last because it is short.
+ * past the series' maximum wait (product decision 31). The change that brings
+ * the expected members in is due at once, and later changes of that series no
+ * longer extend it (D288). The layout-age floor is applied last because it is
+ * short.
  */
 export function computeTopologyReplanDueAt(input: ComputeTopologyReplanDueAtInput): number {
+    return Math.max(computeTopologyReplanWindowDueAt(input), input.timing.replanNotBeforeEpochMs ?? 0);
+}
+
+function computeTopologyReplanWindowDueAt(input: ComputeTopologyReplanDueAtInput): number {
     const { timing, previous } = input;
+    if (timing.expectedMembersArrived) {
+        return Math.min(input.requestedAtEpochMs, previous?.dueAtEpochMs ?? input.requestedAtEpochMs);
+    }
+    if (previous?.reasons.includes(TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON)) {
+        return previous.dueAtEpochMs;
+    }
     const windowOpenedAtEpochMs = previous?.windowOpenedAtEpochMs ?? input.requestedAtEpochMs;
     const extended = Math.max(
         previous?.dueAtEpochMs ?? 0,
         input.requestedAtEpochMs + timing.window.debounceMs
     );
-    const bounded = Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
-    return Math.max(bounded, timing.replanNotBeforeEpochMs ?? 0);
+    return Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
 }
 
 export function toRtcTopologyCoalescedGroupRevisionResourceId(overlayId: string): string {
@@ -134,7 +153,7 @@ function toFreshCoalescedGroupRevisionData(
     return {
         kind: 'group-revision',
         overlayId,
-        groupSnapshot: input.groupSnapshot,
+        groupRef: toCanonicalGroupRef(input.aggregateRef),
         sourceGroupStateCausalRevision: readGroupCausalRevision(input.groupSnapshot),
         requestedAtEpochMs: input.requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
@@ -149,7 +168,9 @@ function toFreshCoalescedGroupRevisionData(
                 previous: null,
                 timing: input.timing
             }),
-            reasons: ['group-revision']
+            reasons: input.timing.expectedMembersArrived
+                ? ['group-revision', TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON]
+                : ['group-revision']
         }
     };
 }
@@ -283,7 +304,6 @@ export function mergeRtcTopologyGroupRevisionWork(
     const selected = order === 'dominated' ? existing : incoming;
     return {
         ...incoming,
-        groupSnapshot: selected.groupSnapshot,
         sourceGroupStateCausalRevision: selected.sourceGroupStateCausalRevision,
         requestedAtEpochMs: Math.max(existing.requestedAtEpochMs, incoming.requestedAtEpochMs),
         origin: existing.origin === 'commanded' || incoming.origin === 'commanded'
@@ -449,7 +469,7 @@ function toCoalescedGroupRevisionMessage(
         senderId: createdBy,
         data
     };
-    const causalRevision = readGroupCausalRevision(data.groupSnapshot);
+    const causalRevision = data.sourceGroupStateCausalRevision;
     return {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -504,6 +524,7 @@ function isValidTopologyReplanTiming(timing: TopologyReplanTiming): boolean {
     const { window } = timing;
     return isNonNegativeSafeInteger(window.debounceMs) &&
         isNonNegativeSafeInteger(window.maxWaitMs) &&
+        typeof timing.expectedMembersArrived === 'boolean' &&
         (timing.replanNotBeforeEpochMs === null || isNonNegativeSafeInteger(timing.replanNotBeforeEpochMs));
 }
 

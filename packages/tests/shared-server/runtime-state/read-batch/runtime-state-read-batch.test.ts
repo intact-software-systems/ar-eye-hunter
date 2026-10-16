@@ -214,21 +214,10 @@ describe('runtime-state read batches', () => {
         }
     });
 
-    it('uses one fixed parameterized SELECT and returns one packed driver row', async () => {
+    it('uses one fixed parameterized SELECT and returns one driver row per selected entry (D289)', async () => {
         const memberEntry = { ...ENTRY, key: 'app=app:ws=workspace:group=room:member=alice' };
         const captured: CapturedQuery[] = [];
-        const sql = captureSql(captured, [{
-            selections: [{
-                selectorId: 'group',
-                entries: [toDriverEntry(ENTRY)]
-            }, {
-                selectorId: 'members',
-                entries: []
-            }, {
-                selectorId: 'principal-members',
-                entries: [toDriverEntry(memberEntry)]
-            }]
-        }]);
+        const sql = captureSql(captured, [toDriverRow(1, ENTRY), toDriverRow(3, memberEntry)]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
         await expect(repository.readRuntimeStateBatch([...SELECTORS, PRINCIPAL_MEMBERS])).resolves
@@ -258,7 +247,8 @@ describe('runtime-state read batches', () => {
             'char_length(suffix_entry.store_key) >= char_length(selector.key_prefix) + char_length(selector.key_suffix)'
         );
         expect(query.source).not.toMatch(/\blike\b|\bsimilar\b|~/iu);
-        expect(query.source).toMatch(/jsonb_agg/iu);
+        expect(query.source).not.toMatch(/jsonb_agg/iu);
+        expect(query.values.filter((value) => typeof value === 'boolean')).toEqual([true, true]);
         expect(query.source).not.toMatch(/for\s+update|pg_advisory|lock\s+table/iu);
         for (
             const secret of [
@@ -270,7 +260,7 @@ describe('runtime-state read batches', () => {
         ) {
             expect(query.source).not.toContain(secret);
         }
-        expect(query.values).toEqual([[
+        expect(query.values.find(Array.isArray)).toEqual([
             {
                 selectorId: 'group',
                 kind: 'key',
@@ -304,12 +294,12 @@ describe('runtime-state read batches', () => {
                 reversedSuffix: null,
                 reversedSuffixEnd: null
             }
-        ]]);
+        ]);
     });
 
     it('binds a suffix selector as the range of its reversed key', async () => {
         const captured: CapturedQuery[] = [];
-        const sql = captureSql(captured, [{ selections: [{ selectorId: 'session', entries: [] }] }]);
+        const sql = captureSql(captured, []);
 
         await new PSqlRuntimeStateRepository(sql).readRuntimeStateBatch([{
             selectorId: 'session',
@@ -319,7 +309,7 @@ describe('runtime-state read batches', () => {
         }]);
 
         expect(captured[0].source).toContain('reverse(reversed_entry.store_key) collate "C" >= selector.reversed_suffix');
-        expect(captured[0].values).toEqual([[{
+        expect(captured[0].values.find(Array.isArray)).toEqual([{
             selectorId: 'session',
             kind: 'suffix',
             namespace: 'group-state:sessions',
@@ -329,15 +319,19 @@ describe('runtime-state read batches', () => {
             prefixEnd: null,
             reversedSuffix: 'bA3%a=noisses:',
             reversedSuffixEnd: 'bA3%a=noisses;'
-        }]]);
+        }]);
     });
 });
 
-function toDriverEntry(entry: RuntimeStateEntry): PSqlRows[number] {
+function toDriverRow(selectorOrdinal: number, entry: RuntimeStateEntry): PSqlRows[number] {
     return {
-        ...entry,
-        expireAtTimestamp: String(entry.expireAtTimestamp),
-        revision: String(entry.revision)
+        selector_ordinal: selectorOrdinal,
+        store_key: entry.key,
+        store_value: entry.value,
+        expire_at_timestamp: String(entry.expireAtTimestamp),
+        updated_timestamp: entry.updatedTimestamp,
+        revision: String(entry.revision),
+        row_version: null
     };
 }
 

@@ -469,19 +469,21 @@ describe('createGroupRoomWsAuthorizer', () => {
             }, stored.entry.revision)
         ).toMatchObject({ status: 'applied' });
 
+        const durableService = createGroupStateService({
+            runtimeRepository,
+            groupStateEventStore: runtimeRepository.groupStateEventStore,
+            authSessionRepository: new AuthSessionRepository(runtimeRepository),
+            serviceId: 'ws-room-authorizer-test',
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
+        });
         const currentService = createCachedGroupStateService({
-            durable: createGroupStateService({
-                runtimeRepository,
-                groupStateEventStore: runtimeRepository.groupStateEventStore,
-                authSessionRepository: new AuthSessionRepository(runtimeRepository),
-                serviceId: 'ws-room-authorizer-test',
-                readPlannedLayoutRow: async () => null,
-                readAcceptedLayoutRow: async () => null
-            }),
+            durable: durableService,
             cache: {
                 findOrLoadByRef: (ref, options) => readThroughCache.findOrLoadByRef(ref, options),
                 observe: (snapshot) => readThroughCache.observe(snapshot)
-            }
+            },
+            current: durableService
         });
         const authorizer = createTestGroupRoomWsAuthorizer({
             readGroupSnapshot: (ref) => currentService.readCurrentSnapshot(ref)

@@ -89,7 +89,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
             },
             recompute: {
                 formationDebounceMs: 500,
-                formationMaxWaitMs: 2_000
+                formationMaxWaitMs: 4_500
             },
             rttRefinement: {
                 minIntervalMs: 30_000,

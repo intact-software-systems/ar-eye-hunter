@@ -19,6 +19,7 @@ import {
     isChangeGatedGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
     readPendingTopologyReplan,
+    TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON,
     toRtcTopologyCoalescedGroupRevisionResourceId,
     type TopologyReplanTiming
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
@@ -30,6 +31,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -55,7 +57,7 @@ const SERVER_MAX_WAIT_MS = 2_000;
 
 /** The server window alone: the server maximum wait, no layout ageing. */
 function createServerTopologyReplanTiming(debounceMs: number): TopologyReplanTiming {
-    return { window: { debounceMs, maxWaitMs: SERVER_MAX_WAIT_MS }, replanNotBeforeEpochMs: null };
+    return { window: { debounceMs, maxWaitMs: SERVER_MAX_WAIT_MS }, replanNotBeforeEpochMs: null, expectedMembersArrived: false };
 }
 
 describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
@@ -283,7 +285,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         expect(isCanonicalRtcTopologyWorkEntry(revived.entryWrite.entry)).toBe(true);
     });
 
-    it('keeps the newer predecessor snapshot when the incoming revision is older', () => {
+    it('keeps the newer predecessor revision when the incoming revision is older', () => {
         const newer = createCoalescedData(createGroupSnapshot(4, 6), BASE_EPOCH_MS + 100);
         const older = createCoalescedData(createGroupSnapshot(4, 5), BASE_EPOCH_MS + 300);
 
@@ -293,7 +295,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 6
         });
-        expect(merged.groupSnapshot).toEqual(newer.groupSnapshot);
+        expect(merged.groupRef).toEqual(GROUP_REF);
         expect(merged.requestedAtEpochMs).toBe(BASE_EPOCH_MS + 300);
         expect(merged[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs).toBe(
             BASE_EPOCH_MS + 300 + DEBOUNCE_MS
@@ -439,7 +441,7 @@ function createCoalescedData(
     return {
         kind: 'group-revision',
         overlayId: OVERLAY_ID,
-        groupSnapshot,
+        groupRef: GROUP_REF,
         sourceGroupStateCausalRevision: groupSnapshot.causalRevision,
         requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
@@ -687,7 +689,8 @@ describe('readPendingTopologyReplan', () => {
 describe('computeTopologyReplanDueAt', () => {
     const timing: TopologyReplanTiming = {
         window: { debounceMs: 500, maxWaitMs: 2_000 },
-        replanNotBeforeEpochMs: null
+        replanNotBeforeEpochMs: null,
+        expectedMembersArrived: false
     };
 
     it('extends the window with each change until the series reaches its maximum wait', () => {
@@ -696,13 +699,13 @@ describe('computeTopologyReplanDueAt', () => {
         expect(first).toBe(opened + 500);
         const extended = computeTopologyReplanDueAt({
             requestedAtEpochMs: opened + 400,
-            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: first },
+            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: first, reasons: ['group-revision'] },
             timing
         });
         expect(extended).toBe(opened + 900);
         const bounded = computeTopologyReplanDueAt({
             requestedAtEpochMs: opened + 1_900,
-            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: extended },
+            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: extended, reasons: ['group-revision'] },
             timing
         });
         expect(bounded).toBe(opened + 2_000);
@@ -712,7 +715,7 @@ describe('computeTopologyReplanDueAt', () => {
         const opened = BASE_EPOCH_MS;
         expect(computeTopologyReplanDueAt({
             requestedAtEpochMs: opened + 2_500,
-            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: opened + 2_000 },
+            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: opened + 2_000, reasons: ['group-revision'] },
             timing: { ...timing, replanNotBeforeEpochMs: opened + 3_400 }
         })).toBe(opened + 3_400);
     });
@@ -736,7 +739,7 @@ describe('the auto replan window under continuous change (D274)', () => {
     });
 
     it('keeps a failed recompute\'s retry backoff when an auto merge reaches the maximum wait', () => {
-        const timing: TopologyReplanTiming = { window: autoWindow, replanNotBeforeEpochMs: null };
+        const timing: TopologyReplanTiming = { window: autoWindow, replanNotBeforeEpochMs: null, expectedMembersArrived: false };
         const first = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
             groupSnapshot: createGroupSnapshot(4, 3),
@@ -773,10 +776,103 @@ describe('the auto replan window under continuous change (D274)', () => {
     });
 });
 
+describe('the replan at the expected member count (D288)', () => {
+    const window: TopologyReplanWindow = { debounceMs: DEBOUNCE_MS, maxWaitMs: 4_500 };
+    const arrivals: ArrivalStream = {
+        memberCount: 50,
+        arrivalIntervalMs: 650,
+        sessionDelayMs: 325,
+        trailingRevisionsMs: 6_000
+    };
+    const reachedAtEpochMs = (arrivals.memberCount - 1) * arrivals.arrivalIntervalMs + arrivals.sessionDelayMs;
+
+    it('publishes the last member\'s layout within the layout-age floor of the 50th arrival 650 ms apart', () => {
+        const runs = simulateArrivalReplanRuns(window, arrivals);
+        const lastLayout = runs.find((run) => run.ranAtEpochMs >= reachedAtEpochMs);
+
+        // Without the arrival rule the presence revisions after the 50th arrival keep extending the
+        // series to its 4.5 s bound; the 2 s bound published fifteen layouts up to the same point.
+        expect(runs.filter((run) => run.ranAtEpochMs <= reachedAtEpochMs + GROUP_MINIMUM_LAYOUT_AGE_MS).length)
+            .toBeLessThanOrEqual(8);
+        expect((lastLayout?.ranAtEpochMs ?? Number.POSITIVE_INFINITY) - reachedAtEpochMs)
+            .toBeLessThanOrEqual(GROUP_MINIMUM_LAYOUT_AGE_MS);
+    });
+
+    it('publishes the last member\'s layout at the arrival itself when no layout is ageing', () => {
+        const runs = simulateArrivalReplanRuns(window, { ...arrivals, arrivalIntervalMs: 600 });
+
+        expect(runs.map((run) => run.ranAtEpochMs)).toContain(49 * 600 + arrivals.sessionDelayMs);
+    });
+
+    it('makes the change that brings the expected members in due at once', () => {
+        const opened = BASE_EPOCH_MS;
+        expect(computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 300,
+            previous: { windowOpenedAtEpochMs: opened, dueAtEpochMs: opened + 500, reasons: ['group-revision'] },
+            timing: { window, replanNotBeforeEpochMs: null, expectedMembersArrived: true }
+        })).toBe(opened + 300);
+    });
+
+    it('keeps a later change of that series at the due time the arrival set', () => {
+        const opened = BASE_EPOCH_MS;
+        expect(computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 300,
+            previous: {
+                windowOpenedAtEpochMs: opened,
+                dueAtEpochMs: opened + 200,
+                reasons: ['group-revision', TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON]
+            },
+            timing: { window, replanNotBeforeEpochMs: null, expectedMembersArrived: false }
+        })).toBe(opened + 200);
+    });
+
+    it('still floors a due-at-once replan at the planned layout\'s minimum age', () => {
+        const opened = BASE_EPOCH_MS;
+        expect(computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 300,
+            previous: null,
+            timing: { window, replanNotBeforeEpochMs: opened + 800, expectedMembersArrived: true }
+        })).toBe(opened + 800);
+    });
+
+    it('carries the arrival through merges of the coalesced row', () => {
+        const timing: TopologyReplanTiming = { window, replanNotBeforeEpochMs: null, expectedMembersArrived: false };
+        const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing: { ...timing, expectedMembersArrived: true },
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry: null
+        });
+        const merged = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 4),
+            requestedAtEpochMs: BASE_EPOCH_MS + 100,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing,
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry: first.entryWrite.entry
+        });
+
+        expect(first.entryWrite.entry.status).toBe(EntityStatus.NEW);
+        expect(readPersistedGroupRevisionEnvelope(merged.entryWrite.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({
+                dueAtEpochMs: BASE_EPOCH_MS,
+                reasons: ['group-revision', TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON]
+            });
+        expect(merged.entryWrite.entry.status).toBe(EntityStatus.NEW);
+    });
+});
+
 describe('the series anchor on coalesced rows', () => {
     const bounded: TopologyReplanTiming = {
         window: { debounceMs: DEBOUNCE_MS, maxWaitMs: 1_200 },
-        replanNotBeforeEpochMs: null
+        replanNotBeforeEpochMs: null,
+        expectedMembersArrived: false
     };
 
     function createReplan(requestedAtEpochMs: number, previousEntry: ResourceEntry | null) {
@@ -850,6 +946,7 @@ interface ReplanRun {
 interface PendingReplan {
     readonly windowOpenedAtEpochMs: number;
     readonly dueAtEpochMs: number;
+    readonly reasons: readonly string[];
 }
 
 interface ReplanStream {
@@ -870,8 +967,9 @@ function simulateReplanRuns(window: TopologyReplanWindow, stream: ReplanStream):
             dueAtEpochMs: computeTopologyReplanDueAt({
                 requestedAtEpochMs: nowEpochMs,
                 previous: pending,
-                timing: { window, replanNotBeforeEpochMs: null }
-            })
+                timing: { window, replanNotBeforeEpochMs: null, expectedMembersArrived: false }
+            }),
+            reasons: ['group-revision']
         };
         if (merged.dueAtEpochMs <= nowEpochMs) {
             runs.push({ firstPendingAtEpochMs: merged.windowOpenedAtEpochMs, ranAtEpochMs: nowEpochMs });
@@ -882,4 +980,91 @@ function simulateReplanRuns(window: TopologyReplanWindow, stream: ReplanStream):
         }
     }
     return runs;
+}
+
+interface ArrivalStream {
+    readonly memberCount: number;
+    readonly arrivalIntervalMs: number;
+    /** A member counts as present when its session connects, this long after its join revision. */
+    readonly sessionDelayMs: number;
+    /** How long presence revisions keep arriving every 325 ms once every member is present. */
+    readonly trailingRevisionsMs: number;
+}
+
+interface ArrivalRevision {
+    readonly atEpochMs: number;
+    readonly presentMemberCount: number;
+}
+
+/**
+ * A fake clock over the arrival revisions: a pending replan whose due time passes before the next
+ * revision is claimed at that due time, and a published layout ages for the minimum layout age.
+ */
+function simulateArrivalReplanRuns(window: TopologyReplanWindow, stream: ArrivalStream): readonly ReplanRun[] {
+    const runs: ReplanRun[] = [];
+    let pending: PendingReplan | null = null;
+    let previousPresentMemberCount = 0;
+    for (const revision of toArrivalRevisions(stream)) {
+        if (pending !== null && pending.dueAtEpochMs <= revision.atEpochMs) {
+            runs.push({ firstPendingAtEpochMs: pending.windowOpenedAtEpochMs, ranAtEpochMs: pending.dueAtEpochMs });
+            pending = null;
+        }
+        const lastRun = runs.at(-1);
+        pending = toMergedArrivalReplan({
+            window,
+            previous: pending,
+            atEpochMs: revision.atEpochMs,
+            replanNotBeforeEpochMs: lastRun === undefined ? null : lastRun.ranAtEpochMs + GROUP_MINIMUM_LAYOUT_AGE_MS,
+            expectedMembersArrived: revision.presentMemberCount >= stream.memberCount &&
+                previousPresentMemberCount < stream.memberCount
+        });
+        previousPresentMemberCount = revision.presentMemberCount;
+    }
+    if (pending !== null) {
+        runs.push({ firstPendingAtEpochMs: pending.windowOpenedAtEpochMs, ranAtEpochMs: pending.dueAtEpochMs });
+    }
+    return runs;
+}
+
+interface MergeArrivalReplanInput {
+    readonly window: TopologyReplanWindow;
+    readonly previous: PendingReplan | null;
+    readonly atEpochMs: number;
+    readonly replanNotBeforeEpochMs: number | null;
+    readonly expectedMembersArrived: boolean;
+}
+
+function toMergedArrivalReplan(input: MergeArrivalReplanInput): PendingReplan {
+    const { previous, expectedMembersArrived } = input;
+    return {
+        windowOpenedAtEpochMs: previous?.windowOpenedAtEpochMs ?? input.atEpochMs,
+        dueAtEpochMs: computeTopologyReplanDueAt({
+            requestedAtEpochMs: input.atEpochMs,
+            previous,
+            timing: {
+                window: input.window,
+                replanNotBeforeEpochMs: input.replanNotBeforeEpochMs,
+                expectedMembersArrived
+            }
+        }),
+        reasons: expectedMembersArrived
+            ? [TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON]
+            : previous?.reasons ?? ['group-revision']
+    };
+}
+
+function toArrivalRevisions(stream: ArrivalStream): readonly ArrivalRevision[] {
+    const arrivals = Array.from({ length: stream.memberCount }, (_, index) => {
+        const joinedAtEpochMs = index * stream.arrivalIntervalMs;
+        return [
+            { atEpochMs: joinedAtEpochMs, presentMemberCount: index },
+            { atEpochMs: joinedAtEpochMs + stream.sessionDelayMs, presentMemberCount: index + 1 }
+        ];
+    }).flat();
+    const reachedAtEpochMs = arrivals.at(-1)?.atEpochMs ?? 0;
+    const trailing = Array.from(
+        { length: Math.floor(stream.trailingRevisionsMs / 325) },
+        (_, index) => ({ atEpochMs: reachedAtEpochMs + (index + 1) * 325, presentMemberCount: stream.memberCount })
+    );
+    return [...arrivals, ...trailing];
 }

@@ -17,7 +17,7 @@ import { createWsServerTargetResolver } from '@shared-server/rallar-system/webso
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type AuditStamp, type GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     AppTopics,
     CircuitBreakerPolicy,
@@ -219,7 +219,8 @@ describe('RTC topology websocket publication', () => {
             contextId: expect.stringContaining('group=room-1'),
             senderId: expect.any(String),
             data: {
-                groupSnapshot: group,
+                groupRef: toCanonicalGroupRef(group.group),
+                sourceGroupStateCausalRevision: group.causalRevision,
                 requestOptions: {},
                 publish: true
             }

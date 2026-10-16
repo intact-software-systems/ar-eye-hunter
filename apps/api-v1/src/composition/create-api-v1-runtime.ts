@@ -314,7 +314,7 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
         createApiStateSnapshotReadSelectors({
             clientDurable: mutation.clientsRepository,
             clientCache: mutation.clientSnapshotCache,
-            groupDurable: mutation.groupsRepository,
+            groupDurable: mutation.groupCurrentSnapshotCache,
             groupCache: mutation.groupSnapshotCache
         }, timing),
     requireRuntime: requireApiV1Runtime

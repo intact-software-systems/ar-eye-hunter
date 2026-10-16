@@ -129,6 +129,15 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
     }
 });
 
+Deno.test('the committed defaults bound a coalesced topology replan at 4.5 s after a 500 ms debounce (D288)', async () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.defaultsSource = await readJsonResource('defaults-config.json');
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.deepEqual(configuration.topology.recompute, { formationDebounceMs: 500, formationMaxWaitMs: 4_500 });
+});
+
 Deno.test('Metered ICE uses the mandatory default region when no override is provided', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = {

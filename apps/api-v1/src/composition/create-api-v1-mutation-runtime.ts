@@ -39,6 +39,7 @@ import {
     createCachedGroupStateService,
     type CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import type {
     CreateRallarMiddlewareOptions,
@@ -81,6 +82,9 @@ import {
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
 
+/** Groups whose current snapshot this server keeps between unchanged revisions (D289). */
+const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 512;
+
 export interface ApiV1MutationRuntimeResilience {
     readonly inbox: ResourceInboxResilience;
     readonly outbox: ResourceInboxResilience;
@@ -120,6 +124,7 @@ export interface ApiV1MutationRuntime {
     readonly groupsRepository: GroupStateRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly groupStateService: CachedGroupStateService;
     readonly appInboxDequeueOptions: InboxQueueReader.Options;
@@ -160,6 +165,7 @@ interface ApiV1MutationResources {
     readonly groupStateEventStore: PSqlGroupStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
@@ -206,6 +212,7 @@ export function createApiV1MutationRuntime(
         groupsRepository: resources.groupsRepository,
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
+        groupCurrentSnapshotCache: resources.groupCurrentSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics,
         groupStateService,
         appInboxDequeueOptions,
@@ -260,7 +267,8 @@ function createMutationGroupStateService(
                     : null;
             }
         }),
-        cache: resources.groupSnapshotCache
+        cache: resources.groupSnapshotCache,
+        current: resources.groupCurrentSnapshotCache
     });
 }
 
@@ -288,6 +296,12 @@ function createApiV1MutationResources(
         groupStateEventStore,
         clientSnapshotCache: new ClientStateSnapshotReadThroughCache({ clientsRepository }),
         groupSnapshotCache: new GroupStateSnapshotReadThroughCache({ groupsRepository }),
+        groupCurrentSnapshotCache: new GroupStateCurrentSnapshotCache({
+            durable: groupsRepository,
+            versionReader: runtimeStateRepository,
+            nowEpochMs,
+            maxEntries: GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES
+        }),
         groupFormationMetrics: createGroupFormationMetricsRecorder()
     };
 }
