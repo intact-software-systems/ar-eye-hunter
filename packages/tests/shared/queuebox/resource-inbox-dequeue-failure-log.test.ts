@@ -106,20 +106,20 @@ describe('ResourceInbox dequeue failure log', () => {
         expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.FAILED);
     });
 
-    it('releases a handler conflict value for redelivery on the retry path, logged once without stack frames', async () => {
+    it('releases a handler conflict value for redelivery on the retry path, logged once as one line without stack frames', async () => {
         // A pinned clock keeps the released retry from falling due later in the same pass on a slow runner.
         const pinnedNow = Temporal.Now.instant();
         const queue = new InMemoryQueueBox(new Map(), () => pinnedNow);
         const enqueued = toResourceEntry('write-conflict', { value: 3 });
         await queue.enqueue(enqueued);
         const errorLines: string[] = [];
-        const conflictLines: string[] = [];
+        const conflictCalls: (readonly string[])[] = [];
         vi.spyOn(console, 'error').mockImplementation((message: string) => {
             errorLines.push(message);
         });
-        vi.spyOn(console, 'info').mockImplementation((message: string, summary: object) => {
-            if (message.includes('conflicted')) {
-                conflictLines.push(`${message} ${JSON.stringify(summary)}`);
+        vi.spyOn(console, 'info').mockImplementation((...logged: string[]) => {
+            if (String(logged[0]).includes('conflicted')) {
+                conflictCalls.push(logged);
             }
         });
 
@@ -135,10 +135,16 @@ describe('ResourceInbox dequeue failure log', () => {
         );
 
         expect(errorLines).toEqual([]);
-        expect(conflictLines).toHaveLength(1);
-        expect(conflictLines[0]).toContain(enqueued.key.resourceId);
-        expect(conflictLines[0]).toContain('runtime-state-write-conflict');
-        expect(conflictLines[0]).not.toMatch(/\n\s+at /u);
+        // A console object argument prints as a multi-line dump on Deno, so the summary travels inside the one string.
+        expect(conflictCalls).toHaveLength(1);
+        const [line, ...rest] = conflictCalls[0]!;
+        expect(rest).toEqual([]);
+        expect(typeof line).toBe('string');
+        expect(line).not.toContain('\n');
+        expect(line).toContain(enqueued.key.resourceId);
+        expect(line).toContain('runtime-state-write-conflict');
+        expect(line).toContain('RuntimeStateWriteConflictError');
+        expect(line).toContain('Runtime state conditional write conflict');
         expect(failures.size).toBe(0);
         expect(releases).toEqual([expect.objectContaining({
             key: enqueued.key,

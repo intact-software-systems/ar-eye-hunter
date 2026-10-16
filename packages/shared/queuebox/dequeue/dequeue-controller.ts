@@ -59,6 +59,7 @@ export class DequeueController<K, V, T> {
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
     private typesToDequeue: () => Set<string> = () => new Set<string>();
     private admitsRound: (types: Set<string>) => boolean = () => true;
+    private toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
@@ -117,6 +118,12 @@ export class DequeueController<K, V, T> {
 
     withReturnDequeuedEntries(returnDequeuedEntries: boolean): this {
         this.returnDequeuedEntries = returnDequeuedEntries;
+        return this;
+    }
+
+    /** Rows of one round with one exclusion key compute one after another; the round's other rows still run together. */
+    withComputeExclusion(toExclusionKey: ((key: K, value: V) => string | undefined) | undefined): this {
+        this.toExclusionKey = toExclusionKey;
         return this;
     }
 
@@ -262,7 +269,8 @@ export class DequeueController<K, V, T> {
             computer: this.finalizationComputer,
             log: this.log,
             purpose: 'finalization-recovery',
-            maxConcurrentComputes: 1
+            maxConcurrentComputes: 1,
+            toExclusionKey: undefined
         });
         return this.returnDequeuedEntries ? finalized : new Map();
     }
@@ -317,7 +325,8 @@ export class DequeueController<K, V, T> {
             computer,
             log: this.log,
             purpose: 'processing',
-            maxConcurrentComputes
+            maxConcurrentComputes,
+            toExclusionKey: this.toExclusionKey
         });
         await releaseDequeueBatch(computed, {
             successReleaser: requireNonNull(this.successReleaser),

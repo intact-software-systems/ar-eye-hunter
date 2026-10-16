@@ -182,6 +182,7 @@ class ReceiptOwnerFixture {
                 }
             }),
             dequeueResilience: createDefaultALOutboundDequeueResilience(),
+            resolveOutboxCoalescing: undefined,
             receiptObserver: this.observe,
             readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {

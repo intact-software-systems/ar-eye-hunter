@@ -54,6 +54,7 @@ import {
 import type { ALOutboundReceiptWorkEvidence } from './lane/al-outbound-receipt-observation.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
+import type { ALOutboundDequeueCoalescer } from './lane/claim-al-outbound-work.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -493,6 +494,8 @@ export namespace ALOutboundMessageRuntime {
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
         readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
+        /** Absent, queued foreign rows are sent in queue order, each one; present, a superseded row is never sent. */
+        readonly resolveDequeueCoalescing?: ALOutboundDequeueCoalescer;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;

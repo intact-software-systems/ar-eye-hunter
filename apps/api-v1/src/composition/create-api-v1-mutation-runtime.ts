@@ -28,6 +28,7 @@ import {
 import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
     GroupPolicyCapacityConfig
@@ -477,6 +478,7 @@ function createAppInboxDequeueOptions(
     return {
         laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
         newLaneConcurrency: input.appInboxNewLaneConcurrency,
+        toComputeExclusionKey: toGroupCommandExclusionKey,
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,

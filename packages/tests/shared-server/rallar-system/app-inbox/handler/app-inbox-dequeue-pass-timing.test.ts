@@ -64,7 +64,9 @@ describe('AppInboxDequeuePassTiming', () => {
                     statements: 4,
                     executorWaitMs: 4,
                     lanesProbed: 'NEW,RETRY,FAIRNESS',
-                    claimedInPass: 2
+                    claimedInPass: 2,
+                    passWallMs: 8,
+                    handlersMs: 5
                 }
             }),
             expect.objectContaining({ requestId: 'second', durationMs: 4, details: expect.objectContaining({ selectedLane: 'RETRY', statements: 4 }) })
@@ -89,7 +91,13 @@ describe('AppInboxDequeuePassTiming', () => {
             expect.objectContaining({
                 requestId: 'only',
                 durationMs: 3,
-                details: expect.objectContaining({ statements: 3, lanesProbed: '', claimedInPass: 1 })
+                details: expect.objectContaining({
+                    statements: 3,
+                    lanesProbed: '',
+                    claimedInPass: 1,
+                    passWallMs: 3,
+                    handlersMs: 1
+                })
             })
         ]);
     });
@@ -127,10 +135,39 @@ describe('AppInboxDequeuePassTiming', () => {
                     statements: 2,
                     executorWaitMs: 2,
                     lanesProbed: 'NEW',
-                    claimedInPass: 1
+                    claimedInPass: 1,
+                    passWallMs: 3,
+                    handlersMs: 2
                 }
             })
         ]);
+    });
+
+    // Before step 2g D302 the pass subtracted the sum of concurrent handler spans, so concurrent heads reported negative cost.
+    it('attributes concurrent handlers by the union of their spans, so the pass cost outside them is never negative', () => {
+        const executor = createSimulatedExecutor();
+        const first = createAttempt('first', Reservator.NEW);
+        const second = createAttempt('second', Reservator.NEW);
+
+        executor.observer.onPassStarted();
+        executor.run(1);
+        executor.observer.onHandlerStarted(first);
+        executor.run(2);
+        executor.observer.onHandlerStarted(second);
+        executor.run(3);
+        executor.observer.onHandlerFinished(first);
+        executor.run(1);
+        executor.observer.onHandlerFinished(second);
+        executor.run(1);
+        executor.observer.onPassFinished();
+
+        expect(executor.timing.map(({ requestId, durationMs, details }) => ({ requestId, durationMs, details }))).toEqual(
+            ['first', 'second'].map((requestId) => ({
+                requestId,
+                durationMs: 2,
+                details: expect.objectContaining({ statements: 2, executorWaitMs: 2, passWallMs: 8, handlersMs: 6 })
+            }))
+        );
     });
 
     it('reports nothing for a pass that claimed nothing', () => {

@@ -54,15 +54,23 @@ export class ALOutboundDequeuedAdmission<TPrepared> {
      * The dequeued rows of one batch: each passes its gate and reads its decision surface, the rows of one
      * sender commit under one fence (each alone when they cannot share it), then each row's after-admission
      * effect runs in row order. Every row keeps its own attempt and its own breaker charge, exactly as alone.
+     * The rows read one after another: a batch reading at once holds the server's whole small pool.
      */
     admitDequeuedMessages(
         members: readonly ALOutboundDequeuedAdmission.Member<TPrepared>[]
     ): readonly Promise<ALWorkAttemptResult>[] {
-        const fronts = members.map((member) => this.readDequeuedFront(member));
-        const reads = members.map(async (member, index) => {
-            const front = await fronts[index]!;
-            return front === undefined ? await this.readDequeuedDispatch(member.effect, member.evidence) : undefined;
-        });
+        const fronts: Promise<ALWorkAttemptResult | undefined>[] = [];
+        const reads: Promise<ALOutboundDequeuedRead<TPrepared> | undefined>[] = [];
+        let previousRead: Promise<void> = Promise.resolve();
+        for (const member of members) {
+            const front = previousRead.then(() => this.readDequeuedFront(member));
+            const read = front.then((settled) =>
+                settled === undefined ? this.readDequeuedDispatch(member.effect, member.evidence) : undefined
+            );
+            fronts.push(front);
+            reads.push(read);
+            previousRead = read.then(() => undefined, () => undefined);
+        }
         const commits = this.commitDequeuedDispatches(reads);
         let previous: Promise<void> = Promise.resolve();
         return members.map((member, index) => {

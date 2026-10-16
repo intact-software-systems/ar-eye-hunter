@@ -198,6 +198,50 @@ describe('the AppInbox NEW lane with concurrent context heads', () => {
         // which serves them in turn, so no retry conflicts again.
         expect(conflicts).toBe(2 * (K - 1));
     });
+
+    // Before step 2g D301, joins to one group from different callers ran as concurrent heads and all but one
+    // conflicted on the group revision (27 of 50 joins on the hosted 50 at K = 4).
+    it('computes the heads of one exclusion key one after another while heads of other keys run concurrently', async () => {
+        const queue = new InMemoryQueueBox();
+        const sharedGroupRows = new Set(Array.from({ length: 8 }, (_value, index) => `row-${2 * index}`));
+        const reader = new InboxQueueReader(queue, {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: K,
+            toComputeExclusionKey: (entry) => sharedGroupRows.has(entry.key.resourceId) ? 'group-shared' : `group-${entry.key.resourceId}`
+        });
+        const revisionByGroup = new Map<string, number>();
+        let conflicts = 0;
+        let inFlight = 0;
+        let maxInFlight = 0;
+        reader.onInboxMessageDo(TYPE, {
+            onMessage: async (_message, entry) => {
+                const group = sharedGroupRows.has(entry.key.resourceId) ? 'group-shared' : entry.key.resourceId;
+                const observed = revisionByGroup.get(group) ?? 0;
+                inFlight += 1;
+                maxInFlight = Math.max(maxInFlight, inFlight);
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                inFlight -= 1;
+                if ((revisionByGroup.get(group) ?? 0) !== observed) {
+                    conflicts += 1;
+                    return new ResourceInboxHandlerRetryableConflict(entry, 'group-revision-changed', new Error('conflict'));
+                }
+                revisionByGroup.set(group, observed + 1);
+                return undefined;
+            }
+        });
+        // The shared group's eight joins interleave with eight rows of eight other groups, each from its own context.
+        const entries = await enqueue(reader, contexts(16));
+
+        for (let pass = 0; pass < 10 && (revisionByGroup.get('group-shared') ?? 0) < 8; pass += 1) {
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        }
+
+        expect(conflicts).toBe(0);
+        expect(revisionByGroup.get('group-shared')).toBe(8);
+        expect(maxInFlight).toBeGreaterThan(1);
+        expect((await Promise.all(entries.map((entry) => queue.getItem(entry.key)))).map((row) => row?.status))
+            .toEqual(Array(16).fill(EntityStatus.COMPLETED));
+    });
 });
 
 function createReader(queue: QueueBoxResourceEntryRepository): InboxQueueReader {

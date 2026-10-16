@@ -48,6 +48,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
             Pick<
                 ALOutboundMessageRuntime.Dependencies<TPrepared>,
                 | 'planDequeuedMessage'
+                | 'resolveDequeueCoalescing'
                 | 'afterDequeueAdmission'
                 | 'planRepairMessage'
                 | 'hopPeerIds'
@@ -92,6 +93,7 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         dequeue: dependencies.dequeue ??
             { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
+        resolveDequeueCoalescing: dependencies.resolveDequeueCoalescing,
         afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
         hopPeerIds: dependencies.hopPeerIds,

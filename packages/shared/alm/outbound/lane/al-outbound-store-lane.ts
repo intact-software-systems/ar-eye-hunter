@@ -66,6 +66,7 @@ import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
+import { claimALOutboundWork } from './claim-al-outbound-work.ts';
 import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-committed-rows.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
 import {
@@ -119,6 +120,8 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private readonly takeOverSubscription: Unsubscribe | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
+    /** The current batch's claims that a newer claim of the same batch supersedes. */
+    private supersededClaims: ReadonlySet<ALWorkClaim> = new Set();
     private disposed = false;
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
@@ -325,14 +328,23 @@ export class ALOutboundStoreLane<TPrepared> {
         return verdict.kind === 'admitted' && !durable ? { ...verdict, durable: false } : verdict;
     }
 
-    /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
+    /**
+     * The outbound owner reserves straight from the queue and observes no row's wait. Where the runtime coalesces
+     * foreign rows, one page read first claims each superseded row with the row that supersedes it.
+     */
     private async selectOutboundWork(
         port: ALWorkQueuePort,
         pageSize: number
     ): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
         const startedAtMs = this.readNowMs();
-        const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
+        const { claims, superseded } = await claimALOutboundWork({
+            port,
+            pageSize,
+            dequeueTypes: this.input.dequeueTypes,
+            resolveCoalescing: this.input.runtime.resolveDequeueCoalescing
+        });
+        this.supersededClaims = superseded;
         return {
             claims,
             nextReadyAtMs: undefined,
@@ -403,6 +415,7 @@ export class ALOutboundStoreLane<TPrepared> {
     ): ReadonlyMap<ALWorkClaim, Promise<ALWorkAttemptResult>> {
         return runALOutboundDequeueClaimGroup<TPrepared>({
             claims: claims.filter((claim) => this.input.dequeueTypes.has(claim.entry.typeId)),
+            superseded: this.supersededClaims,
             readWork: (claim) => toALOutboundDequeueWork(claim.entry, this.input.runtime.readMessageFromEntry),
             hasReachedDeadline: (claim) => this.hasReachedDeadline(claim.entry),
             createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),

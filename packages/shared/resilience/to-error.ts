@@ -18,6 +18,11 @@ export function toErrorSummary(error: Error): ErrorSummary {
     return toErrorSummaryAbove(error, new Set());
 }
 
+/** The summary on one line, for a log whose console would print an object argument across several lines. */
+export function toErrorSummaryLine(error: Error): string {
+    return JSON.stringify(toErrorSummary(error), (_key, value) => typeof value === 'bigint' ? value.toString() : value);
+}
+
 function toErrorSummaryAbove(error: Error, seen: Set<Error>): ErrorSummary {
     if (seen.has(error)) {
         return { name: error.name, message: error.message, properties: {}, cause: null };

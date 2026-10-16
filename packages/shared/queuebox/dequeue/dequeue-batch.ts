@@ -10,7 +10,11 @@ interface DequeueBatchInput<K, V, T> {
     readonly purpose: 'processing' | 'finalization-recovery';
     /** At most this many entries compute at once; the results keep the entries' order. */
     readonly maxConcurrentComputes: number;
+    /** Entries of one key compute one after another, in the entries' order; an entry without one is free. */
+    readonly toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 }
+
+type DequeueBatchEntryResult<K, V, T> = Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>;
 
 interface DequeueBatchRelease<K, V, T> {
     readonly successReleaser: (
@@ -24,13 +28,23 @@ interface DequeueBatchRelease<K, V, T> {
 }
 
 export async function computeDequeueBatch<K, V, T>(
-    { entries, computer, log, purpose, maxConcurrentComputes }: DequeueBatchInput<K, V, T>
+    { entries, computer, log, purpose, maxConcurrentComputes, toExclusionKey }: DequeueBatchInput<K, V, T>
 ): Promise<Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>> {
     const admission = new BoundedConcurrencyAdmission({ maxConcurrent: maxConcurrentComputes });
+    const lastByExclusionKey = new Map<string, Promise<DequeueBatchEntryResult<K, V, T>>>();
     const results = await Promise.all(
-        [...entries].map(([key, value]) =>
-            admission.admit(() => computeDequeueEntry({ key, value, computer, log, purpose }))
-        )
+        [...entries].map(([key, value]) => {
+            const exclusionKey = toExclusionKey?.(key, value);
+            const previous = exclusionKey === undefined ? undefined : lastByExclusionKey.get(exclusionKey);
+            // An entry waits for its key's previous entry before it takes a slot, so a waiting one holds none.
+            const result = (previous ?? Promise.resolve()).then(() =>
+                admission.admit(() => computeDequeueEntry({ key, value, computer, log, purpose }))
+            );
+            if (exclusionKey !== undefined) {
+                lastByExclusionKey.set(exclusionKey, result);
+            }
+            return result;
+        })
     );
     return new Map(results.map((result) => [result.fold((failure) => failure.key, (success) => success.key), result]));
 }

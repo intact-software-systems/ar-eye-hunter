@@ -79,6 +79,34 @@ describe('the PostgreSQL outbound lane on a dequeued row', () => {
         expect(await readSenderVersion(storage)).toBe(1);
     });
 
+    // A server's pool has five connections: a batch whose rows read at once held all of them and starved the
+    // AppInbox and the presence summary on the same server (the medium-scale gate's late presence on CI).
+    it('reads the dequeued rows of one batch one at a time, so the batch holds at most one connection for its reads', async () => {
+        const storage = await createPSqlAdmissionTestStorage();
+        const { runtime, sent, outbox, admissionStore } = createDequeueLane(storage);
+        await runOutboundWorkTask(runtime);
+        const rows = await enqueueRows(outbox, 10);
+        let inFlight = 0;
+        let maxInFlight = 0;
+        const isMessageSuperseded = admissionStore.isMessageSuperseded.bind(admissionStore);
+        vi.spyOn(admissionStore, 'isMessageSuperseded').mockImplementation(async (msg) => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            try {
+                return await isMessageSuperseded(msg);
+            }
+            finally {
+                inFlight -= 1;
+            }
+        });
+
+        await runOutboundWorkTask(runtime);
+        await runOutboundWorkTask(runtime);
+
+        expect(sent.map((message) => message.id.msgId).sort()).toEqual(rows.map(toMsgId).sort());
+        expect(maxInFlight).toBe(1);
+    });
+
     it('commits each row alone when two rows of the group write one supersedence track', async () => {
         const storage = await createPSqlAdmissionTestStorage();
         const { runtime, outbox, admissionStore } = createDequeueLane(storage, SUPERSEDING_PLANNER);
