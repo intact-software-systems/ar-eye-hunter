@@ -26,18 +26,16 @@ export function validateWaitControlCommand(command: RallarBlackBoxTestRecord): r
         ...(command.absent === undefined || command.absent === true
             ? []
             : [toControlCommandIssue('wait.absent must be true when present.')]),
-        ...validateWaitTimeoutFrom(command.timeoutFrom),
+        ...validateWaitTimeoutFrom(command),
         ...validateAllowedFields(match, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, WAIT_MATCH_PATH),
         ...validateWaitMatchFields(match)
     ];
 }
 
-function validateWaitTimeoutFrom(timeoutFrom: unknown): readonly ControlCommandIssue[] {
-    if (timeoutFrom === undefined) {
-        return [];
-    }
+function validateWaitTimeoutFrom(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const timeoutFrom = command.timeoutFrom;
     if (typeof timeoutFrom !== 'string') {
-        return [toControlCommandIssue('wait.timeoutFrom must be a string.')];
+        return validateStringField(command, 'timeoutFrom', 'wait');
     }
     return new RegExp(WAIT_TIMEOUT_FROM_PATTERN_SOURCE).test(timeoutFrom)
         ? []
@@ -64,12 +62,13 @@ function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly Cont
             validateStringField(match, key, WAIT_MATCH_PATH)
         ),
         ...validateBooleanField(match, 'exists', WAIT_MATCH_PATH),
-        ...validateWaitPayloadFields(match.payloadFields),
+        ...validateWaitPayloadFields(match),
         ...validateIntegerField({ record: match, key: 'sinceEpochMs', path: WAIT_MATCH_PATH, minimum: 0 })
     ];
 }
 
-function validateWaitPayloadFields(payloadFields: unknown): readonly ControlCommandIssue[] {
+function validateWaitPayloadFields(match: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const payloadFields = match.payloadFields;
     if (payloadFields === undefined) {
         return [];
     }
