@@ -384,54 +384,59 @@ export function createPagedSnapshotReceiver(receive: (message: ALMessage) => Pro
         if (!isStateSnapshotTopic(message.payload.typeId)) {
             return receive(message);
         }
-        const payload = decodeFixtureRecord(JSON.parse(message.payload.resource));
-        const topology = message.payload.typeId === AppTopics.overlayTopology;
-        const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
-        const identity = decodeFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
-        const scope = {
-            kind: principal ? 'principal' as const : 'group' as const,
-            applicationId: String(identity.applicationId),
-            workspaceId: String(identity.workspaceId),
-            resourceId: String(identity[principal ? 'principalId' : 'groupId'])
-        };
-        const causal = principal ? undefined : decodeFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
-        const revision = topology
-            ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
-            : principal
-            ? `revision=${payload.stateRevision}`
-            : `group=${causal!.groupRevision};presence=${causal!.presenceRevision}`;
-        const targets = message.targets?.mode === 'unicast'
-            ? message.targets
-            : principal
-            ? {
-                mode: 'broadcast' as const,
-                scope: 'principal' as const,
-                principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
-            }
-            : {
-                mode: 'broadcast' as const,
-                scope: 'room' as const,
-                groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId }
-            };
-        const pages = computeStateSnapshotPages({
-            scope,
-            revision,
-            resource: message.payload.resource,
-            envelope: {
-                id: message.id,
-                route: message.route,
-                targets,
-                delivery: { reliability: 'best-effort', ack: 'none' },
-                constraints: { expiresAtMs: message.id.ts + 60_000 },
-                audit: { createdBy: message.id.senderId, createdTs: message.id.ts }
-            }
-        }).fold((issue) => {
-            throw new TypeError(issue.message);
-        }, (messages) => messages);
-        for (const page of pages) {
+        for (const page of toSnapshotPageMessages(message)) {
             await receive(page);
         }
     };
+}
+
+/** The page envelopes the fake server sends for one snapshot-topic message. */
+export function toSnapshotPageMessages(message: ALMessage): readonly ALMessage[] {
+    const payload = decodeFixtureRecord(JSON.parse(message.payload.resource));
+    const topology = message.payload.typeId === AppTopics.overlayTopology;
+    const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
+    const identity = decodeFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
+    const scope = {
+        kind: principal ? 'principal' as const : 'group' as const,
+        applicationId: String(identity.applicationId),
+        workspaceId: String(identity.workspaceId),
+        resourceId: String(identity[principal ? 'principalId' : 'groupId'])
+    };
+    const causal = principal ? undefined : decodeFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
+    const revision = topology
+        ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
+        : principal
+        ? `revision=${payload.stateRevision}`
+        : `group=${causal!.groupRevision};presence=${causal!.presenceRevision}`;
+    const targets = message.targets?.mode === 'unicast'
+        ? message.targets
+        : principal
+        ? {
+            mode: 'broadcast' as const,
+            scope: 'principal' as const,
+            principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
+        }
+        : {
+            mode: 'broadcast' as const,
+            scope: 'room' as const,
+            groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId }
+        };
+    const pages = computeStateSnapshotPages({
+        scope,
+        revision,
+        resource: message.payload.resource,
+        envelope: {
+            id: message.id,
+            route: message.route,
+            targets,
+            delivery: { reliability: 'best-effort', ack: 'none' },
+            constraints: { expiresAtMs: message.id.ts + 60_000 },
+            audit: { createdBy: message.id.senderId, createdTs: message.id.ts }
+        }
+    }).fold((issue) => {
+        throw new TypeError(issue.message);
+    }, (messages) => messages);
+    return pages;
 }
 
 function decodeFixtureRecord(value: unknown): ApiJsonObject {

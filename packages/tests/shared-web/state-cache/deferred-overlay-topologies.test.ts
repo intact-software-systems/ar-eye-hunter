@@ -35,6 +35,7 @@ import {
     createPagedSnapshotReceiver,
     createTopologySnapshot,
     createWebRtcGroupManager,
+    toSnapshotPageMessages,
     withGroupCausalRevision
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
@@ -111,6 +112,43 @@ describe('browser overlay adoption deferred until the own session is in the cach
 
         expect(findPlannedOverlayById(layout.overlayId)).toMatchObject({ provenance: 'server', overlayVersion: 2 });
         expect(readOverlayAdoptionDiagnostics().membershipDeferredAdoptedCount).toBe(1);
+    });
+
+    it('assembles a layout transfer that a same-session room refresh interrupts', async () => {
+        const browser = installBrowser();
+        const layout = largeTopology(groupAt({ groupRevision: 33, presenceRevision: 17 }, OTHERS));
+        const [first, ...rest] = toSnapshotPageMessages(topologyMessage(layout, 'topology-v2'));
+        expect(rest.length).toBeGreaterThan(0);
+
+        await browser.receivePage(first);
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: browser.manager,
+            clientData: CLIENT,
+            clientSnapshots: [],
+            groupSnapshots: [groupAt({ groupRevision: 33, presenceRevision: 17 }, [...OTHERS, 'session-a'])],
+            options: { groupFormation: { bootstrapDegree: 3 } }
+        });
+        for (const page of rest) {
+            await browser.receivePage(page);
+        }
+
+        expect(findPlannedOverlayById(layout.overlayId)).toMatchObject({ provenance: 'server', overlayVersion: 2 });
+    });
+
+    it('cancels a layout transfer when the lifecycle is installed for a new connection', async () => {
+        const first = installBrowser();
+        const layout = largeTopology(groupAt({ groupRevision: 33, presenceRevision: 17 }, OTHERS));
+        const [opening, ...rest] = toSnapshotPageMessages(topologyMessage(layout, 'topology-v2'));
+        await first.receivePage(opening);
+
+        const second = installBrowser();
+        for (const page of rest) {
+            await second.receivePage(page);
+        }
+        await second.hydrate([groupAt({ groupRevision: 33, presenceRevision: 17 }, [...OTHERS, 'session-a'])]);
+
+        expect(findPlannedOverlayById(layout.overlayId)?.provenance).toBe('bootstrap');
+        expect(readOverlayAdoptionDiagnostics().membershipIneligibleDeferredCount).toBe(0);
     });
 
     it('adopts the layout for a late joiner whose join snapshot predates its own presence', async () => {
@@ -290,16 +328,19 @@ describe('browser overlay adoption deferred until the own session is in the cach
 interface InstalledBrowser {
     readonly manager: ReturnType<typeof createWebRtcGroupManager>;
     receive(message: ALMessage): Promise<void>;
+    receivePage(page: ALMessage): Promise<void>;
     hydrate(groupSnapshots: readonly GroupSnapshot[]): Promise<void>;
 }
 
 function installBrowser(): InstalledBrowser {
     const manager = createWebRtcGroupManager();
     let receive: ((message: ALMessage) => Promise<void>) | undefined;
+    let receivePage: ((page: ALMessage) => Promise<void>) | undefined;
     browserStateCacheLifecycle.initialise({
         inbox: {
             onAllInboxMessagesDo: vi.fn((callback: { onMessage: (message: ALMessage) => Promise<void>; }) => {
                 receive = createPagedSnapshotReceiver(callback.onMessage);
+                receivePage = callback.onMessage;
             })
         },
         webRtcGroupManager: manager,
@@ -310,6 +351,9 @@ function installBrowser(): InstalledBrowser {
         receive: async (message) => {
             await receive!(message);
         },
+        receivePage: async (page) => {
+            await receivePage!(page);
+        },
         hydrate: async (groupSnapshots) => {
             await browserStateCacheLifecycle.hydrate({
                 webRtcGroupManager: manager,
@@ -318,6 +362,23 @@ function installBrowser(): InstalledBrowser {
                 groupSnapshots
             });
         }
+    };
+}
+
+/** A connected path over enough sessions that its transfer spans several pages. */
+function largeTopology(group: GroupSnapshot): RallarOverlayTopologySnapshot {
+    const layout = createTopologySnapshot(group, { groupRevision: 33, presenceRevision: 17 }, 2);
+    const sessionIds = [
+        'session-a',
+        'session-b',
+        ...Array.from({ length: 1_000 }, (_, index) => `session-extra-${String(index).padStart(6, '0')}`)
+    ];
+    return {
+        ...layout,
+        activeSessionIds: sessionIds,
+        nextHopsBySessionId: Object.fromEntries(
+            sessionIds.map((sessionId, index) => [sessionId, [sessionIds[index - 1], sessionIds[index + 1]].filter((peer) => peer !== undefined)])
+        )
     };
 }
 

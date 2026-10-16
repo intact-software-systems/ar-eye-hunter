@@ -206,9 +206,9 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             return;
         }
 
-        this.cancelSnapshotAssemblies();
-        // Held layouts belong to the session and scope, not to the observer options a room refresh may change.
+        // Transfers in flight and held layouts belong to the connection, not to the observer options a room refresh may change.
         if (this.#observerContext === undefined || !isSameObserverConnection(this.#observerContext, next)) {
+            this.cancelSnapshotAssemblies();
             this.#deferredOverlayTopologies.clear();
         }
         this.#observersUnsubscribe?.();
