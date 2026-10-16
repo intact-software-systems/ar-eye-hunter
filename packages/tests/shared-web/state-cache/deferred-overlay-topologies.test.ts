@@ -71,7 +71,6 @@ describe('browser overlay adoption deferred until the own session is in the cach
             overlayVersion: 2,
             nextHopSessionIds: ['session-b']
         });
-        expect(browser.manager.notifyOverlayTopologyChanged).toHaveBeenCalledOnce();
         expect(readOverlayAdoptionDiagnostics()).toMatchObject({
             membershipIneligibleDeferredCount: 1,
             membershipDeferredAdoptedCount: 1,

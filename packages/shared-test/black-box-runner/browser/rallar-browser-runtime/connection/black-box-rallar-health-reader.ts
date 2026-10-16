@@ -1,5 +1,5 @@
 import type { RallarRealtimeLaneHealth } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcDiagnostics } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcDiagnostics, RallarRtcDiagnosticsOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
@@ -94,7 +94,7 @@ export class BlackBoxRallarHealthReader {
         if (read.input.includeRtcDiagnostics === true) {
             try {
                 rtcDiagnostics = await this.#rallar.rtc.diagnostics(
-                    rtcLaneId ? { laneIds: [rtcLaneId] } : undefined
+                    toRtcDiagnosticsOptions(rtcLaneId, read.input.rtcDiagnosticsPeerIds)
                 );
             }
             catch (caught) {
@@ -126,5 +126,18 @@ export class BlackBoxRallarHealthReader {
             director: read.director,
             ...(read.formation !== undefined ? { formation: read.formation } : {})
         };
+    };
+}
+
+function toRtcDiagnosticsOptions(
+    laneId: string | undefined,
+    peerIds: readonly string[] | undefined
+): RallarRtcDiagnosticsOptions | undefined {
+    if (laneId === undefined && peerIds === undefined) {
+        return undefined;
+    }
+    return {
+        ...(laneId === undefined ? {} : { laneIds: [laneId] }),
+        ...(peerIds === undefined ? {} : { peerIds })
     };
 }

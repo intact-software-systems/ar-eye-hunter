@@ -82,6 +82,13 @@ describe('browser Rallar runtime bridge', () => {
         const bridge = createSpaBrowserRallarRuntime();
         expect(await bridge.health({ connection: 'aliceRtc' })).toEqual({ includeRtcDiagnostics: false });
         expect(await bridge.health({ includeRtcDiagnostics: true })).toEqual({ includeRtcDiagnostics: true });
+        expect(await bridge.health({ includeRtcDiagnostics: true, rtcDiagnosticsPeerIds: [] })).toEqual({
+            includeRtcDiagnostics: true,
+            rtcDiagnosticsPeerIds: []
+        });
+        expect(await bridge.health({ includeRtcDiagnostics: true, rtcDiagnosticsPeerIds: [1] })).toEqual({
+            includeRtcDiagnostics: true
+        });
     });
 
     it('validates connection configuration before calling the native runtime', async () => {

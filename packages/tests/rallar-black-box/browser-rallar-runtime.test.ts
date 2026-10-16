@@ -1146,6 +1146,39 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ).toBe(true);
     });
 
+    it('records the overlay adoption counters, read without per-peer stats, when readiness times out', async () => {
+        const overlayAdoption = { membershipIneligibleDeferredCount: 2, membershipDeferredAdoptedCount: 0 };
+        const health = vi.fn(async (input?: { readonly includeRtcDiagnostics?: boolean; }) => ({
+            rtcStatus: { readyPeerIds: [] },
+            ...(input?.includeRtcDiagnostics === true ? { rtcDiagnostics: { peerCount: 0, peers: [], overlayAdoption } } : {})
+        }));
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true, rtcStatus: { readyPeerIds: [] } })),
+                send: vi.fn(),
+                refreshRoom: vi.fn(async () => undefined),
+                close: vi.fn(),
+                health
+            }
+        });
+
+        await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-ready-timeout',
+            connection: 'rtc',
+            readiness: { minReadyPeers: 1, timeoutMs: 5, intervalMs: 1 }
+        });
+
+        const timeout = toRallarBlackBoxDiagnostics(runtime.state()).find(
+            (event) => event.topic === 'rallar.bb.rtc.readiness_timeout'
+        );
+        expect(timeout?.payload).toMatchObject({ overlayAdoption });
+        const diagnosticReads = health.mock.calls.filter(([input]) => input?.includeRtcDiagnostics === true);
+        expect(diagnosticReads).toEqual([[{ includeRtcDiagnostics: true, rtcDiagnosticsPeerIds: [] }]]);
+    });
+
     it('fails realtime send commands when the browser runtime resolves no peers', async () => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
