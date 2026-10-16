@@ -74,7 +74,7 @@ function toRuntimeStateReadBatchSuffixSelector(
             selectorId,
             kind: selector.kind,
             namespace,
-            keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
+            keySuffix: requireSuffixRangeBound(requireNonEmptyString(selector.keySuffix, `${label} key suffix`), label)
         };
     }
     requireExactKeys(
@@ -89,6 +89,19 @@ function toRuntimeStateReadBatchSuffixSelector(
         keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`),
         keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
     };
+}
+
+/**
+ * The reversed suffix ends with the suffix's first character, and its exclusive range end increments
+ * that last UTF-16 unit; a surrogate there could become a lone surrogate, so the first character
+ * must lie in the Basic Multilingual Plane.
+ */
+function requireSuffixRangeBound(keySuffix: string, label: string): string {
+    const firstUnit = keySuffix.charCodeAt(0);
+    if (firstUnit >= 0xd800 && firstUnit <= 0xdfff) {
+        throw invalidReadBatch(`${label} key suffix must start with a Basic Multilingual Plane character`);
+    }
+    return keySuffix;
 }
 
 function requireDenseArray(

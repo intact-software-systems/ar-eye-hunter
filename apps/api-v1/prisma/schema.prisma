@@ -37,7 +37,6 @@ model runtime_state_store {
   @@id([store_namespace, store_key], map: "runtime_state_store_pk")
   @@index([expire_at_ts], map: "runtime_state_store_expire_at_ix")
   @@index([store_namespace, expire_at_ts], map: "runtime_state_store_namespace_expire_at_ix")
-  @@index([store_namespace], map: "runtime_state_store_namespace_ix")
 }
 
 model rtc_topology_delivery_stream {

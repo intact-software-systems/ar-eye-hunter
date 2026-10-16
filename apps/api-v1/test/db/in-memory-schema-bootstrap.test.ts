@@ -1,6 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
 import assert from 'node:assert/strict';
-import { applyApiV1InMemorySchema, bootstrapApiV1InMemorySchemaIfNeeded, readApiV1InMemorySchemaSql } from '../../src/db/in-memory-schema-bootstrap.ts';
+import {
+    applyApiV1InMemorySchema,
+    applyApiV1PGliteSchemaUpgrade,
+    bootstrapApiV1InMemorySchemaIfNeeded,
+    readApiV1InMemorySchemaSql
+} from '../../src/db/in-memory-schema-bootstrap.ts';
 
 Deno.test('in-memory schema applies idempotently and creates expected tables/indexes', async () => {
     const db = new PGlite();
@@ -82,13 +87,22 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
                 'runtime_state_store_expire_at_ix',
                 'runtime_state_store_namespace_key_c_ix',
                 'runtime_state_store_namespace_expire_at_ix',
-                'runtime_state_store_namespace_ix',
                 'runtime_state_store_namespace_reversed_key_c_ix',
                 'runtime_state_store_pk'
             ]
         ) {
             assert.ok(indexNames.has(indexName), `missing index ${indexName}`);
         }
+        assert.deepEqual(
+            indexes.rows.filter((row) => row.indexdef.includes(' ON public.runtime_state_store ')).map((row) => row.indexname),
+            [
+                'runtime_state_store_expire_at_ix',
+                'runtime_state_store_namespace_expire_at_ix',
+                'runtime_state_store_namespace_key_c_ix',
+                'runtime_state_store_namespace_reversed_key_c_ix',
+                'runtime_state_store_pk'
+            ]
+        );
         assert.match(
             indexes.rows.find((row) => row.indexname === 'runtime_state_store_namespace_key_c_ix')
                 ?.indexdef ?? '',
@@ -267,6 +281,33 @@ Deno.test('runtime-state prefix ranges use the composite C-collated index', asyn
             plan.rows.map((row) => row['QUERY PLAN']).join('\n'),
             /Index Scan using runtime_state_store_namespace_key_c_ix/
         );
+    }
+    finally {
+        await db.close();
+    }
+});
+
+Deno.test('a PGlite directory from the older schema swaps the namespace index for the reversed-key index on upgrade', async () => {
+    const db = new PGlite();
+    try {
+        await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
+        await db.exec(`DROP INDEX runtime_state_store_namespace_reversed_key_c_ix;
+            CREATE INDEX runtime_state_store_namespace_ix ON runtime_state_store (store_namespace);`);
+
+        await applyApiV1PGliteSchemaUpgrade(db);
+
+        const indexes = await db.query<{ indexname: string; }>(
+            `select indexname from pg_indexes
+             where schemaname = 'public' and tablename = 'runtime_state_store'
+             order by indexname`
+        );
+        assert.deepEqual(indexes.rows.map((row) => row.indexname), [
+            'runtime_state_store_expire_at_ix',
+            'runtime_state_store_namespace_expire_at_ix',
+            'runtime_state_store_namespace_key_c_ix',
+            'runtime_state_store_namespace_reversed_key_c_ix',
+            'runtime_state_store_pk'
+        ]);
     }
     finally {
         await db.close();

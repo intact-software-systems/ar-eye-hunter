@@ -80,7 +80,13 @@ describe('runtime-state read batches', () => {
         ['empty prefix-suffix suffix', [{ ...PRINCIPAL_MEMBERS, keySuffix: '' }]],
         ['prefix-suffix without a suffix', [{ ...SELECTORS[1], kind: 'prefix-suffix' }]],
         ['prefix selector carrying a suffix', [{ ...SELECTORS[1], keySuffix: ':member=alice' }]],
-        ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]]
+        ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]],
+        ['empty suffix', [{ selectorId: 'tail', kind: 'suffix', namespace: 'group-state:sessions', keySuffix: '' }]],
+        [
+            'suffix that starts outside the BMP',
+            [{ selectorId: 'tail', kind: 'suffix', namespace: 'group-state:sessions', keySuffix: '\u{10FFFF}:x' }]
+        ],
+        ['suffix selector carrying a prefix', [{ ...PRINCIPAL_MEMBERS, kind: 'suffix' }]]
     ])('rejects %s', (_label, input) => {
         expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
