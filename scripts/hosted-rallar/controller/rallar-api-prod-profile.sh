@@ -5,6 +5,7 @@ source "${RALLAR_API_PROD_PROFILE_DIR}/rallar-apt-sources.sh"
 
 RALLAR_API_DATABASE_ROLE="rallar"
 RALLAR_API_DATABASE_NAME="rallar_api_v1"
+RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-v1.store-failure}"
 RALLAR_API_DATABASE_URL_PATTERN="^postgres://${RALLAR_API_DATABASE_ROLE}:([0-9a-f]{64})@127\.0\.0\.1:5432/${RALLAR_API_DATABASE_NAME}$"
 
 install_rallar_api_postgres_server() {
@@ -65,6 +66,14 @@ write_rallar_api_postgres_sql() {
 	(cd / && runuser -u postgres -- psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -d postgres)
 }
 
+# The mark outlives a killed rollout, so the API never starts on a dropped or half-migrated store.
+write_rallar_api_store_failure() {
+	local stage="$1"
+	local message="The ${stage} of the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} failed at $(date -u +%Y-%m-%dT%H:%M:%SZ); rallar-api-v1 stays stopped until 08-rollout-controller.sh succeeds."
+	printf '%s\n' "${message}" >"${RALLAR_API_STORE_FAILURE_FILE}"
+	echo "::error::${message}" >&2
+}
+
 reset_rallar_api_postgres_store() {
 	local checkout_dir="$1"
 	local database_url="$2"
@@ -76,19 +85,28 @@ reset_rallar_api_postgres_store() {
 	local password="${BASH_REMATCH[1]}"
 
 	echo "==> Wiping the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME}"
-	write_rallar_api_postgres_sql <<EOF_SQL
+	printf 'The wipe of the API-v1 Postgres store %s has not finished.\n' "${RALLAR_API_DATABASE_NAME}" >"${RALLAR_API_STORE_FAILURE_FILE}"
+	if ! write_rallar_api_postgres_sql <<EOF_SQL
 SELECT 'CREATE ROLE ${RALLAR_API_DATABASE_ROLE} LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${RALLAR_API_DATABASE_ROLE}')\gexec
 ALTER ROLE ${RALLAR_API_DATABASE_ROLE} WITH LOGIN PASSWORD '${password}';
 DROP DATABASE IF EXISTS ${RALLAR_API_DATABASE_NAME} WITH (FORCE);
 CREATE DATABASE ${RALLAR_API_DATABASE_NAME} OWNER ${RALLAR_API_DATABASE_ROLE};
 EOF_SQL
+	then
+		write_rallar_api_store_failure wipe
+		return 1
+	fi
 
 	echo "==> Applying API-v1 Prisma migrations"
-	(
+	if ! (
 		cd / &&
 			DATABASE_URL="${database_url}" runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task \
 				--config "${checkout_dir}/apps/api-v1/deno.json" prisma migrate deploy
-	)
+	); then
+		write_rallar_api_store_failure migrations
+		return 1
+	fi
+	rm -f -- "${RALLAR_API_STORE_FAILURE_FILE}"
 }
 
 rallar_api_prod_profile_self_test() {

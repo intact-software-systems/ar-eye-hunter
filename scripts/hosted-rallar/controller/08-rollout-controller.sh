@@ -274,6 +274,28 @@ write_api_prod_profile_environment() {
 		"$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")"
 }
 
+stopped_services=0
+
+restart_stopped_services_on_error() {
+	local exit_code="$?"
+	if [[ "${stopped_services}" == "1" ]]; then
+		echo
+		echo "Rollout failed after services were stopped. Attempting to start controller services again." >&2
+		if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
+			echo "::error::rallar-api-v1 stays stopped: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")" >&2
+		else
+			systemctl start rallar-api-v1.service || true
+		fi
+		systemctl start rallar-black-box-control.service || true
+		if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
+			systemctl start caddy.service || true
+		else
+			systemctl reload caddy.service || systemctl restart caddy.service || true
+		fi
+	fi
+	exit "${exit_code}"
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -300,6 +322,10 @@ run_rollout_self_test() {
 	write-api-timing-environment)
 		write_api_timing_environment
 		echo "wroteApiTimingEnvironment=true"
+		;;
+	restart-after-failure)
+		stopped_services=1
+		restart_stopped_services_on_error
 		;;
 	write-api-prod-environment)
 		write_api_prod_profile_environment
@@ -509,23 +535,6 @@ if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
 fi
 
 previous_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
-stopped_services=0
-
-restart_stopped_services_on_error() {
-	local exit_code="$?"
-	if [[ "${stopped_services}" == "1" ]]; then
-		echo
-		echo "Rollout failed after services were stopped. Attempting to start controller services again." >&2
-		systemctl start rallar-api-v1.service || true
-		systemctl start rallar-black-box-control.service || true
-		if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
-			systemctl start caddy.service || true
-		else
-			systemctl reload caddy.service || systemctl restart caddy.service || true
-		fi
-	fi
-	exit "${exit_code}"
-}
 
 echo "==> Controlled rollout from ${previous_revision} to ${RALLAR_REPO_REF}"
 echo "Checkout: ${RALLAR_CHECKOUT_DIR}"

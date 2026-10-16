@@ -26,6 +26,7 @@ const runuserStub = [
     '#!/usr/bin/env bash',
     'printf "runuser %s database_url_env=%s\\n" "$*" "${DATABASE_URL:-}" >> "$STUB_LOG"',
     'if [[ "$4" == psql ]]; then cat >> "$STUB_LOG"; fi',
+    'if [[ -n "${STUB_FAIL_ON:-}" && "$*" == *"${STUB_FAIL_ON}"* ]]; then exit 1; fi',
     ''
 ].join('\n');
 
@@ -112,6 +113,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
             environment: {
                 RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
                 RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_STORE_FAILURE_FILE: path.join(stubDirectory, 'api-v1.store-failure'),
                 RALLAR_CHECKOUT_DIR: checkoutDir
             }
         });
@@ -237,5 +239,94 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(stdout).toContain(`RALLAR_API_CONFIGURATION_PROFILE=${profile}`);
         expect(stdout.includes('WARNING:')).toBe(warns);
         expect(await readStubLog(stubDirectory)).toContain('systemctl status postgresql.service --no-pager');
+    });
+
+    it.for([
+        { stage: 'wipe', failOn: 'psql' },
+        { stage: 'migrations', failOn: 'prisma migrate deploy' }
+    ])('marks the store unusable with an ::error:: when the $stage fails', async ({ stage, failOn }, context) => {
+        const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        await writeFile(envFile, `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n`);
+        const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
+
+        await expect(runScript(context, {
+            scriptPath: helperScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_STORE_FAILURE_FILE: failureFile,
+                RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout'),
+                STUB_FAIL_ON: failOn
+            }
+        })).rejects.toMatchObject({ stderr: expect.stringMatching(new RegExp(`^::error::.*${stage}`, 'mu')) });
+        expect(await readFile(failureFile, 'utf8')).toContain(stage);
+    });
+
+    it('clears the unusable-store mark once the wipe and migrations succeed', async (context) => {
+        const stubDirectory = await createStubDirectory(context, { runuser: runuserStub });
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        await writeFile(envFile, `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n`);
+        const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
+        await writeFile(failureFile, 'The migrations of the API-v1 Postgres store failed.\n');
+
+        await runScript(context, {
+            scriptPath: helperScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_API_PROD_PROFILE_SELF_TEST: 'reset-store',
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_API_STORE_FAILURE_FILE: failureFile,
+                RALLAR_CHECKOUT_DIR: path.join(stubDirectory, 'checkout')
+            }
+        });
+
+        await expect(stat(failureFile)).rejects.toThrow();
+    });
+
+    it.for([
+        { storeFailed: true, startsApi: false },
+        { storeFailed: false, startsApi: true }
+    ])('the rollout error handler starts the API again only on a usable store (store failed: $storeFailed)', async ({ storeFailed, startsApi }, context) => {
+        const stubDirectory = await createStubDirectory(context, { systemctl: recordingStub });
+        const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
+        if (storeFailed) {
+            await writeFile(failureFile, 'The migrations of the API-v1 Postgres store failed.\n');
+        }
+
+        const { stderr } = await runScript(context, {
+            scriptPath: rolloutScriptPath,
+            stubDirectory,
+            environment: {
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'restart-after-failure',
+                RALLAR_API_STORE_FAILURE_FILE: failureFile
+            }
+        });
+
+        const calls = (await readStubLog(stubDirectory)).trim().split('\n');
+        expect(calls.includes('systemctl start rallar-api-v1.service')).toBe(startsApi);
+        expect(calls).toContain('systemctl start rallar-black-box-control.service');
+        expect(stderr.includes('::error::')).toBe(storeFailed);
+    });
+
+    it('reports an unusable store in the status', async (context) => {
+        const stubDirectory = await createStubDirectory(context, {
+            systemctl: recordingStub,
+            journalctl: recordingStub,
+            free: recordingStub
+        });
+        const envFile = path.join(stubDirectory, 'api-v1.env');
+        await writeFile(envFile, 'RALLAR_API_CONFIGURATION_PROFILE=prod\n');
+        const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
+        await writeFile(failureFile, 'The migrations of the API-v1 Postgres store failed.\n');
+
+        const { stdout } = await runScript(context, {
+            scriptPath: statusScriptPath,
+            stubDirectory,
+            environment: { RALLAR_API_ENV_FILE: envFile, RALLAR_API_STORE_FAILURE_FILE: failureFile }
+        });
+
+        expect(stdout).toContain('ERROR: The migrations of the API-v1 Postgres store failed.');
     });
 });

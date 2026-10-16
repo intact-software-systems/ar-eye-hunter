@@ -206,7 +206,11 @@ The script uses `git pull --ff-only`; it does not force-reset the checkout. If
 the VM checkout has local changes, it aborts before changing the running
 version. If the update, dependency install, cache warmup, or SPA build fails,
 the services remain running on the previous process. If failure happens after
-the services are stopped, the script attempts to start them again.
+the services are stopped, the script attempts to start them again, except
+API-v1 after a failed database wipe or migration: the script reports it as an
+`::error::`, writes `/etc/rallar/api-v1.store-failure` (shown by
+`07-status-controller.sh`), and leaves `rallar-api-v1.service` stopped until a
+rollout succeeds.
 
 Override the branch/ref:
 

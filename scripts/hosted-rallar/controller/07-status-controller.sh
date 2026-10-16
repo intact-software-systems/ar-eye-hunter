@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 RALLAR_API_ENV_FILE="${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}"
+RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-v1.store-failure}"
 
 echo "==> Service status"
 systemctl status rallar-api-v1.service --no-pager || true
@@ -21,6 +22,10 @@ elif [[ "${api_profile}" == "prod" ]]; then
 	echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; every rollout wipes the store."
 else
 	echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
+fi
+
+if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
+	echo "ERROR: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")"
 fi
 
 echo
