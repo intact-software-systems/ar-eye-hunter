@@ -25,8 +25,9 @@ import {
 } from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import { DeferredOverlayTopologies } from './deferred-overlay-topologies.ts';
 import { isGroupHeartbeatSnapshotRenewal } from './group-heartbeat-snapshot-adoption.ts';
-import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
+import { adoptDeferredOverlayTopology, dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {
     acceptClientStateSnapshots,
     acceptGroupStateSnapshotsOrRecompute,
@@ -100,6 +101,7 @@ export namespace BrowserStateCacheLifecycle {
 
 export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePort {
     readonly #snapshotAssembly = new StateSnapshotAssembly();
+    readonly #deferredOverlayTopologies = new DeferredOverlayTopologies();
 
     cancelSnapshotAssemblies(): void {
         this.#snapshotAssembly.clear();
@@ -160,7 +162,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                     snapshot,
                     scope,
                     sessionId: myOwnClientData.sessionId,
-                    webRtcGroupManager
+                    webRtcGroupManager,
+                    deferredTopologies: this.#deferredOverlayTopologies
                 });
             }
         });
@@ -198,20 +201,18 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     private installStateRepositoryObservers(
         next: BrowserStateCacheLifecycle.ObserverContext
     ): void {
-        const { webRtcGroupManager, scope, sessionId, bootstrapOverlayPolicy } = next;
+        const { webRtcGroupManager, scope, sessionId } = next;
         if (this.hasMatchingObserverContext(next)) {
             return;
         }
 
         this.cancelSnapshotAssemblies();
+        this.#deferredOverlayTopologies.clear();
         this.#observersUnsubscribe?.();
         this.#observerContext = next;
 
         const unsubscribeClient = this.observeClientStateChanges(webRtcGroupManager);
-        const unsubscribeGroup = this.observeGroupStateChanges(
-            webRtcGroupManager,
-            bootstrapOverlayPolicy
-        );
+        const unsubscribeGroup = this.observeGroupStateChanges(next);
 
         this.#observersUnsubscribe = () => {
             unsubscribeClient();
@@ -260,10 +261,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         });
     }
 
-    private observeGroupStateChanges(
-        webRtcGroupManager: BrowserStateCacheLifecycle.RtcGroupPort,
-        bootstrapOverlayPolicy: BootstrapOverlayPolicy
-    ): () => void {
+    private observeGroupStateChanges(context: BrowserStateCacheLifecycle.ObserverContext): () => void {
+        const { webRtcGroupManager, sessionId, bootstrapOverlayPolicy } = context;
         return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
             const snapshot = change.snapshot ?? change.previous;
             if (
@@ -282,6 +281,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
 
             return this.trackStateRepositoryObserverTask((async () => {
                 if (change.kind === ObservableValueEventType.Deleted) {
+                    this.#deferredOverlayTopologies.discard(snapshot.group);
                     await acceptGroupSnapshotRemoval(snapshot, webRtcGroupManager);
                 }
                 else {
@@ -290,6 +290,12 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                         webRtcGroupManager,
                         bootstrapOverlayPolicy
                     );
+                    await adoptDeferredOverlayTopology({
+                        groupRef: snapshot.group,
+                        sessionId,
+                        webRtcGroupManager,
+                        deferredTopologies: this.#deferredOverlayTopologies
+                    });
                 }
                 await this.notifyStateCacheChange({ clients: [], groups: [snapshot] });
             })());

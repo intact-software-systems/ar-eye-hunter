@@ -4,6 +4,8 @@ export type OverlayAdoptionOutcome =
     | 'equal'
     | 'dominated-dropped'
     | 'membership-ineligible-dropped'
+    | 'membership-ineligible-deferred'
+    | 'membership-deferred-adopted'
     | 'incomparable-conflict'
     | 'server-superseded-bootstrap'
     | 'bootstrap-dropped-over-server';
@@ -22,24 +24,34 @@ export interface RallarOverlayAdoptionDiagnostics {
     readonly adoptedCount: number;
     readonly equalCount: number;
     readonly dominatedDroppedCount: number;
+    readonly membershipIneligibleDroppedCount: number;
+    readonly membershipIneligibleDeferredCount: number;
+    readonly membershipDeferredAdoptedCount: number;
     readonly incomparableConflictCount: number;
     readonly serverSupersededBootstrapCount: number;
     readonly bootstrapDroppedOverServerCount: number;
 }
 
-interface MutableOverlayAdoptionDiagnostics {
-    initialSetCount: number;
-    adoptedCount: number;
-    equalCount: number;
-    dominatedDroppedCount: number;
-    incomparableConflictCount: number;
-    serverSupersededBootstrapCount: number;
-    bootstrapDroppedOverServerCount: number;
-}
+type MutableOverlayAdoptionDiagnostics = {
+    -readonly [Counter in keyof RallarOverlayAdoptionDiagnostics]: number;
+};
+
+const OVERLAY_ADOPTION_OUTCOME_COUNTERS = {
+    'initial-set': 'initialSetCount',
+    adopted: 'adoptedCount',
+    equal: 'equalCount',
+    'dominated-dropped': 'dominatedDroppedCount',
+    'membership-ineligible-dropped': 'membershipIneligibleDroppedCount',
+    'membership-ineligible-deferred': 'membershipIneligibleDeferredCount',
+    'membership-deferred-adopted': 'membershipDeferredAdoptedCount',
+    'incomparable-conflict': 'incomparableConflictCount',
+    'server-superseded-bootstrap': 'serverSupersededBootstrapCount',
+    'bootstrap-dropped-over-server': 'bootstrapDroppedOverServerCount'
+} as const satisfies Record<OverlayAdoptionOutcome, keyof RallarOverlayAdoptionDiagnostics>;
 
 // One process-wide sink and counter object keep the adoption surface additive and opt-in.
 let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
-const adoptionCounters: MutableOverlayAdoptionDiagnostics = emptyOverlayAdoptionDiagnostics();
+const adoptionCounters: MutableOverlayAdoptionDiagnostics = createEmptyOverlayAdoptionDiagnostics();
 
 export function setOverlayAdoptionDiagnosticsSink(
     sink: OverlayAdoptionDiagnosticsSink | undefined
@@ -52,15 +64,18 @@ export function readOverlayAdoptionDiagnostics(): RallarOverlayAdoptionDiagnosti
 }
 
 export function resetOverlayAdoptionDiagnostics(): void {
-    Object.assign(adoptionCounters, emptyOverlayAdoptionDiagnostics());
+    Object.assign(adoptionCounters, createEmptyOverlayAdoptionDiagnostics());
 }
 
-function emptyOverlayAdoptionDiagnostics(): MutableOverlayAdoptionDiagnostics {
+function createEmptyOverlayAdoptionDiagnostics(): MutableOverlayAdoptionDiagnostics {
     return {
         initialSetCount: 0,
         adoptedCount: 0,
         equalCount: 0,
         dominatedDroppedCount: 0,
+        membershipIneligibleDroppedCount: 0,
+        membershipIneligibleDeferredCount: 0,
+        membershipDeferredAdoptedCount: 0,
         incomparableConflictCount: 0,
         serverSupersededBootstrapCount: 0,
         bootstrapDroppedOverServerCount: 0
@@ -71,32 +86,7 @@ export function emitOverlayAdoption(
     overlayId: string,
     outcome: OverlayAdoptionOutcome
 ): void {
-    if (outcome === 'membership-ineligible-dropped') {
-        // Membership eligibility is a routing/lifecycle admission decision, not
-        // a repository adoption aggregate. Slice 8a emits the sink event but
-        // adds no public diagnostics-facade counter for this outcome.
-    }
-    else if (outcome === 'initial-set') {
-        adoptionCounters.initialSetCount += 1;
-    }
-    else if (outcome === 'adopted') {
-        adoptionCounters.adoptedCount += 1;
-    }
-    else if (outcome === 'equal') {
-        adoptionCounters.equalCount += 1;
-    }
-    else if (outcome === 'dominated-dropped') {
-        adoptionCounters.dominatedDroppedCount += 1;
-    }
-    else if (outcome === 'server-superseded-bootstrap') {
-        adoptionCounters.serverSupersededBootstrapCount += 1;
-    }
-    else if (outcome === 'bootstrap-dropped-over-server') {
-        adoptionCounters.bootstrapDroppedOverServerCount += 1;
-    }
-    else {
-        adoptionCounters.incomparableConflictCount += 1;
-    }
+    adoptionCounters[OVERLAY_ADOPTION_OUTCOME_COUNTERS[outcome]] += 1;
     try {
         adoptionDiagnosticsSink?.({ overlayId, outcome });
     }
