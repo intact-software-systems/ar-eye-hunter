@@ -50,7 +50,10 @@ import type {
 } from '../configuration/api-v1-configuration.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
-import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
+import {
+    API_V1_LIVE_WS_NOTICE_CHANNEL,
+    createApiV1LiveWsNoticeTransport
+} from '../db/api-v1-live-ws-notice-transport.ts';
 import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
 import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
@@ -338,7 +341,6 @@ function createSharedMiddleware(
     const relayedAckNotices = createApiV1RelayedAckNotices({
         mode: input.databasePubSubMode,
         notification: input.databaseNotification,
-        channel: input.queuePubSubChannel,
         publisherId: input.queuePubSubPublisherId
     });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
@@ -476,7 +478,7 @@ function createApiV1LiveWsNoticeSubscriber(
             localBus: input.queuePubSubLocalBus,
             nowMs: input.nowEpochMs
         }),
-        channel: input.queuePubSubChannel,
+        channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
         publisherId: input.queuePubSubPublisherId,
         nowMs: input.nowEpochMs,
         filterEligibleRecipientSessionIds: (candidateSessionIds, notice) =>

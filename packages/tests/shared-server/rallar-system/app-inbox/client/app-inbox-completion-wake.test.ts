@@ -217,6 +217,41 @@ describe('AppInbox local completion wait', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
+    it.each(['local', 'relayed'] as const)(
+        'wakes the waiter of a server with a pub/sub relay on a %s completion, before any timed re-read',
+        async (origin) => {
+            vi.useFakeTimers();
+            const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+            const notifications = ResourceInboxCompletionNotifications.createDefault((identity) => relayed.push(identity));
+            const events: RallarTimingEvent[] = [];
+            let status: EntityStatus = EntityStatus.NEW;
+            const waiter = createWaiter({
+                notifications,
+                phaseTiming: true,
+                events,
+                waitMaxElapsedMsecs: 10_000,
+                readStatus: async () => ({ status, attempts: 1 })
+            });
+            const pending = waiter.waitForResult(enqueue, key, (value) => value);
+            await vi.advanceTimersByTimeAsync(400);
+
+            status = EntityStatus.COMPLETED;
+            if (origin === 'local') {
+                notifications.publish(key, 'awaitable');
+            }
+            else {
+                notifications.acceptRelayed(key);
+            }
+            await vi.advanceTimersByTimeAsync(0);
+
+            // A waiter in this process takes the wake itself, so the relay to other servers stays silent.
+            expect((await pending).right).toEqual({ accepted: true });
+            expect(events.filter((event) => event.operation === 'wait-poll').map((event) => event.details?.queueObservation))
+                .toEqual(['NEW', 'COMPLETED']);
+            expect(relayed).toEqual([]);
+        }
+    );
+
     it('catches a lost wake on the one-second safety tick', async () => {
         vi.useFakeTimers();
         const notifications = new ObservedCompletionNotifications();

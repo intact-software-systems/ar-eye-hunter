@@ -8,6 +8,9 @@ import {
     type LocalQueuePubSubBus
 } from './local-queue-pubsub-bridge.ts';
 
+/** Its own channel: only QueueBox outbox keys travel here, so its listener parses nothing else. */
+export const API_V1_QUEUE_BOX_KEY_CHANNEL = 'ws-channel';
+
 export interface CreateApiV1QueuePubSubBridgeInput {
     readonly mode: ApiV1DatabaseConfiguration['pubSub'];
     readonly publisherId: string;

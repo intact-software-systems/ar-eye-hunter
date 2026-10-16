@@ -33,12 +33,6 @@ import {
     captureALOutboundCreationExpiry,
     type ALOutboundMessageReference
 } from '../al-outbound-canonical-message.ts';
-import {
-    readALOutboundCanonicalFactSlots,
-    readALOutboundCanonicalWrites,
-    writeALOutboundCanonicalFacts,
-    type ALOutboundCanonicalFactWrite
-} from '../al-outbound-canonical-storage.ts';
 import type {
     ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
@@ -70,6 +64,12 @@ import {
 } from './al-outbound-admission-mutations.ts';
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
 import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import {
+    readALOutboundCanonicalFactSlots,
+    readALOutboundCanonicalWrites,
+    writeALOutboundCanonicalFacts,
+    type ALOutboundCanonicalFactWrite
+} from './al-outbound-canonical-fact-writes.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -698,7 +698,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 ]);
                 if (
                     this.hasExpiredWork(candidates) ||
-                    writeALOutboundCanonicalFacts(tx, canonicalWrites, canonicalSlots, this.nowMs) === 'expired'
+                    writeALOutboundCanonicalFacts(tx, canonicalSlots, this.nowMs) === 'expired'
                 ) {
                     return 'expired';
                 }

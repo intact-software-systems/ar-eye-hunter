@@ -14,6 +14,7 @@ import type { ApiV1Configuration } from '../configuration/api-v1-configuration.t
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
+import { API_V1_QUEUE_BOX_KEY_CHANNEL } from '../db/api-v1-queue-pubsub-bridge.ts';
 import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import { createApiV1MiddlewareResilience } from '../middleware-resilience.ts';
 import {
@@ -189,7 +190,7 @@ function createConfiguredApiV1Runtime(
         serviceId: myServerId,
         publisherStreamId: myRtcTopologyStreamId,
         queuePubSubPublisherId: myPublisherId,
-        queuePubSubChannel: 'ws-channel',
+        queuePubSubChannel: API_V1_QUEUE_BOX_KEY_CHANNEL,
         queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'default-qbox-server',
         authCredentialSecret: configuration.authentication.credentialSecret,

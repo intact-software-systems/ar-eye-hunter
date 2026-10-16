@@ -14,13 +14,13 @@ import {
     captureALOutboundPolicy,
     type ALOutboundCapturedPolicy
 } from './admission/al-outbound-admission-validation.ts';
-import { toALOutboundMessageReference, type ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     readALOutboundCanonicalFactSlots,
     readALOutboundCanonicalWrites,
     writeALOutboundCanonicalFacts,
     type ALOutboundCanonicalFactWrite
-} from './al-outbound-canonical-storage.ts';
+} from './admission/al-outbound-canonical-fact-writes.ts';
+import { toALOutboundMessageReference, type ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     computeALOutboundWorkEntry,
     decodeALOutboundWorkEntry,
@@ -161,8 +161,7 @@ export async function retainALOutboundPendingAdmission<TPrepared>(
     const writes = [...facts, { entry, expected, claimed: undefined, replaceExisting: false }];
     try {
         const result = await backend.write(
-            async (tx) =>
-                writeALOutboundCanonicalFacts(tx, writes, await readALOutboundCanonicalFactSlots(tx, writes), nowMs),
+            async (tx) => writeALOutboundCanonicalFacts(tx, await readALOutboundCanonicalFactSlots(tx, writes), nowMs),
             input.payload.message.expiresAtMs
         );
         return result === 'expired' ? 'expired' : 'pending';

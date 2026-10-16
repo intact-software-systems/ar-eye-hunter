@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     toResourceInboxReservationOptions,
     type ResourceInboxContextClaim,
@@ -20,6 +19,11 @@ import { Either } from '@shared/resilience/Either.ts';
 import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
+import {
+    readResourceInboxWorkPresences,
+    type ResourceInboxWorkPresence,
+    type ResourceInboxWorkPresenceRead
+} from './read-resource-inbox-work-presences.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
 import {
@@ -58,32 +62,6 @@ export namespace PSqlResourceInboxReservationRepository {
         readonly createdAt: string;
         readonly rowId: bigint;
     }
-
-    export interface WorkPresenceRead {
-        readonly typeIds: ReadonlySet<string>;
-        readonly maxAttempts: number;
-        readonly reservationLeaseMs: number;
-        readonly finalizationStaleAfterMs: number;
-        readonly staleDueThresholdMs: number;
-    }
-
-    /** Whether each lane's selector would find a row now; one statement answers all five. */
-    export interface WorkPresence {
-        readonly newRow: boolean;
-        readonly dueRetry: boolean;
-        readonly overdueRetry: boolean;
-        readonly timedOutReservation: boolean;
-        readonly staleExhaustedReservation: boolean;
-    }
-}
-
-interface WorkPresenceRow {
-    readonly read_ordinal: number;
-    readonly has_new: boolean;
-    readonly has_due_retry: boolean;
-    readonly has_overdue_retry: boolean;
-    readonly has_timed_out_reservation: boolean;
-    readonly has_stale_exhausted_reservation: boolean;
 }
 
 /** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
@@ -94,14 +72,6 @@ interface ClaimedResourceInboxRow extends ResourceInboxRow {
     readonly selected_end_ts: string | null;
     readonly selected_next_ts: string | null;
 }
-
-const NO_WORK_PRESENCE: PSqlResourceInboxReservationRepository.WorkPresence = {
-    newRow: false,
-    dueRetry: false,
-    overdueRetry: false,
-    timedOutReservation: false,
-    staleExhaustedReservation: false
-};
 
 export class PSqlResourceInboxReservationRepository {
     private readonly sql: PSqlSql;
@@ -314,80 +284,11 @@ export class PSqlResourceInboxReservationRepository {
         return rowsToMap(rows);
     }
 
-    /**
-     * The caller validated the durations with its work advertisement options. Exhaustion recovery is
-     * an AppInbox lane; other types never advertise it. However many reads, one statement answers
-     * them all, each read on its own types and durations, in the order given.
-     */
+    /** Every read's lane presence, in the order given, from one statement. */
     async readWorkPresences(
-        reads: readonly PSqlResourceInboxReservationRepository.WorkPresenceRead[]
-    ): Promise<readonly PSqlResourceInboxReservationRepository.WorkPresence[]> {
-        const probed = reads.flatMap((read, ordinal) => read.typeIds.size === 0 ? [] : [{ read, ordinal }]);
-        if (probed.length === 0) {
-            return reads.map(() => NO_WORK_PRESENCE);
-        }
-        const selects = probed.map(({ read, ordinal }, index) =>
-            index === 0 ? this.toWorkPresenceSelect(read, ordinal) : PSqlFragment.of`
-                union all ${this.toWorkPresenceSelect(read, ordinal)}`
-        );
-        const statement = selects.reduce((joined, select) => PSqlFragment.of`${joined}${select}`);
-        const rows = await this.sql<WorkPresenceRow[]>(...statement.toStatement());
-        const presenceByOrdinal = new Map(rows.map((row) => [Number(row.read_ordinal), toWorkPresence(row)]));
-        return reads.map((read, ordinal) => {
-            const presence = read.typeIds.size === 0 ? NO_WORK_PRESENCE : presenceByOrdinal.get(ordinal);
-            if (presence === undefined) {
-                throw new Error('Resource inbox work presence statement returned no row for a read');
-            }
-            return presence;
-        });
-    }
-
-    private toWorkPresenceSelect(
-        read: PSqlResourceInboxReservationRepository.WorkPresenceRead,
-        ordinal: number
-    ): PSqlFragment {
-        const { typeIds, maxAttempts, reservationLeaseMs, finalizationStaleAfterMs, staleDueThresholdMs } = read;
-        const finalizationTypeId = typeIds.has(EnqueuedType.APP_INBOX) ? EnqueuedType.APP_INBOX : null;
-        return PSqlFragment.of`
-            select
-                ${ordinal}::int as read_ordinal,
-                exists(select 1 from resource_inbox
-                    where ri_type_id in ${this.sql([...typeIds])}
-                      and ri_status = ${EntityStatus.NEW}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts < ${maxAttempts}
-                      and start_ts is null
-                      and (next_ts is null or next_ts <= (now() at time zone 'UTC'))) as has_new,
-                exists(select 1 from resource_inbox
-                    where ri_type_id in ${this.sql([...typeIds])}
-                      and ri_status = ${EntityStatus.RETRY}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts < ${maxAttempts}
-                      and next_ts <= (now() at time zone 'UTC')) as has_due_retry,
-                exists(select 1 from resource_inbox
-                    where ri_type_id in ${this.sql([...typeIds])}
-                      and ri_status = ${EntityStatus.RETRY}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts < ${maxAttempts}
-                      and next_ts <= (now() - (${staleDueThresholdMs} * interval '1 millisecond')) at time zone 'UTC'
-                ) as has_overdue_retry,
-                exists(select 1 from resource_inbox
-                    where ri_type_id in ${this.sql([...typeIds])}
-                      and ri_status = ${EntityStatus.RESERVED}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts < ${maxAttempts}
-                      and start_ts is not null
-                      and start_ts < (now() - (${reservationLeaseMs} * interval '1 millisecond')) at time zone 'UTC'
-                ) as has_timed_out_reservation,
-                exists(select 1 from resource_inbox
-                    where ri_type_id = ${finalizationTypeId}
-                      and ri_status = ${EntityStatus.RESERVED}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts >= ${maxAttempts}
-                      and ri_attempts < ${Number.MAX_SAFE_INTEGER}
-                      and start_ts is not null
-                      and start_ts <= (now() - (${finalizationStaleAfterMs} * interval '1 millisecond')) at time zone 'UTC'
-                ) as has_stale_exhausted_reservation`;
+        reads: readonly ResourceInboxWorkPresenceRead[]
+    ): Promise<readonly ResourceInboxWorkPresence[]> {
+        return await readResourceInboxWorkPresences(this.sql, reads);
     }
 
     async startProcessingEntity(
@@ -547,14 +448,4 @@ function toContextHeadPredicate(
               and head.fk_ext_bank_id <> all(${[...contextClaim.excludedContextIds]}::varchar[])
             order by head.fk_ext_bank_id, head.next_ts asc nulls first, head.ri_row_id asc
         )`;
-}
-
-function toWorkPresence(row: WorkPresenceRow): PSqlResourceInboxReservationRepository.WorkPresence {
-    return {
-        newRow: row.has_new,
-        dueRetry: row.has_due_retry,
-        overdueRetry: row.has_overdue_retry,
-        timedOutReservation: row.has_timed_out_reservation,
-        staleExhaustedReservation: row.has_stale_exhausted_reservation
-    };
 }
