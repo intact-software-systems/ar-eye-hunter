@@ -362,6 +362,15 @@ conflicts. Each RED first, judged by the hosted 50 connect, sign-in, formation t
 Postgres by maintainer ruling and D287–D290 cut the statements, decodes and bytes per outbox row, per replan and per
 group read; the connect and traffic-ready targets are judged after those, on the Postgres-backed hosted lane.
 
+**As applied (PR #670).** D266–D305 landed with three review waves and two implementer follow-ups; D286, D279–D281,
+D284 and D285 are maintainer rulings, D293 needed no change and D300 was reverted (proposal §3, §6). Measured
+(proposal §1.13): on the hosted lane, now on Postgres, the players' connect p50 is 17.1 s (37.0 s on step 2f),
+sign-in 4.1 s, traffic-ready 35.4 s from run creation (62.9 s) and one signalling hop 74 ms; the uninstrumented
+hosted 15, 30 and 50 pass in order on the final head. Open after this step: the end of formation (the promotion's
+row waits behind the outbox backlog; a merged delta that carries every event replaces D300), the group-created gate
+behind the slowest sign-in, the disconnect audience projection (D291), the unread rate adjuster (D298), the handler
+read phase's counters, and the V1c closure below.
+
 ### Step 2h: the shared primitives and the V1c closure
 
 D278 lists what moves here: the consolidation primitives the step 2g survey ranked, the incremental presence

@@ -1780,3 +1780,5 @@ status prose to this document.
   and the engine review; D255 deferred, D256 revised; hosted 30 and 50 pass through GitHub Free.
 - 2026-10-16 (V1c step 2f merged as `80749db`, 2g designed): decisions D266–D278 from the step 2f hosted journals
   (the per-player cost outside the lane, the replan debounce, sign-in derivations) and the lane survey.
+- 2026-10-17 (V1c step 2g delivered on PR #670): decisions D266–D305; the hosted lane on Postgres (ruling D286), the lane's
+  concurrency and fault tolerance, the outbox and read costs, local-first signalling and two browser layout races; D300 reverted.
