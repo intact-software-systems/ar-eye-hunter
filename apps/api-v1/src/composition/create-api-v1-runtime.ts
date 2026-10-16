@@ -363,7 +363,9 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
-        inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
+        inboundVolatileStores: relayedAckNotices === undefined
+            ? createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName)
+            : undefined,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,

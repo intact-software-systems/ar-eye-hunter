@@ -113,8 +113,7 @@ function constructDefaultRallarServer(
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        livePublication: wsOptions.livePublication,
-        timing
+        livePublication: wsOptions.livePublication
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
