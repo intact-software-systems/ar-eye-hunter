@@ -121,7 +121,10 @@ function toAuthorisedWsClientConnectResourceId(
         .join(':');
 }
 
-/** A principal's connects and disconnects share it, so a disconnect is served after its own connect. */
+/**
+ * A principal's connects and disconnects share it, so a disconnect is not claimed while its own connect is still NEW;
+ * it can run while that connect is reserved on another server or waits to retry.
+ */
 function toClientAppInboxContextId(scope: StateScope, principalId: string): string {
     return [scope.applicationId, scope.workspaceId, principalId].map(encodeURIComponent).join(':');
 }

@@ -8,6 +8,7 @@ import {
     type JsonWireObject,
     type JsonWireValue
 } from '../protocol/json-wire-identity.ts';
+import { hasExactNoticeWireKeys, isNonEmptyNoticeWireString, isNoticeWireRecord } from './is-notice-wire-record.ts';
 import { MAX_LIVE_WS_NOTICE_BYTES } from './live-ws-notice.ts';
 
 const RELAYED_ACK_NOTICE_KEYS = ['kind', 'version', 'channel', 'publisherId', 'message'] as const;
@@ -115,15 +116,7 @@ function isRelayedAckNoticeRecord(
 ): wire is
     & JsonWireObject
     & Readonly<{ channel: string; publisherId: string; message: JsonWireValue; }> {
-    if (!isJsonWireRecord(wire)) {
-        return false;
-    }
-    return Object.keys(wire).length === RELAYED_ACK_NOTICE_KEYS.length &&
-        RELAYED_ACK_NOTICE_KEYS.every((key) => Object.hasOwn(wire, key)) &&
+    return isNoticeWireRecord(wire) && hasExactNoticeWireKeys(wire, RELAYED_ACK_NOTICE_KEYS) &&
         wire.kind === 'relayed-ack' && wire.version === 1 && typeof wire.channel === 'string' &&
-        typeof wire.publisherId === 'string' && wire.publisherId.length > 0;
-}
-
-function isJsonWireRecord(value: JsonWireValue): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+        isNonEmptyNoticeWireString(wire.publisherId);
 }

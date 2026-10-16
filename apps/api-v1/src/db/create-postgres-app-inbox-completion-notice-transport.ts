@@ -3,10 +3,10 @@ import {
     type AppInboxCompletionNoticeChannel,
     type AppInboxCompletionNoticeTransport
 } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
-import { MAX_LIVE_WS_NOTICE_BYTES } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
+import { createPostgresNoticeTransport } from './create-postgres-notice-transport.ts';
 
 /** Its own channel, so the WS notice subscribers never parse a completion notice. */
 export const API_V1_APP_INBOX_COMPLETION_CHANNEL = 'app-inbox-completion';
@@ -37,32 +37,5 @@ export function createApiV1AppInboxCompletionNotices(
 export function createPostgresAppInboxCompletionNoticeTransport(
     notification: ApiV1DatabaseNotificationPort
 ): AppInboxCompletionNoticeTransport {
-    return {
-        publish: async (notice) => {
-            await notification.notify(notice.channel, notice);
-        },
-        subscribe: async (channel, onNotice) => {
-            await notification.listen(channel, async (payload) => {
-                const notice = readAppInboxCompletionNotice(payload, channel);
-                if (notice) {
-                    await onNotice(notice);
-                }
-            });
-        }
-    };
-}
-
-function readAppInboxCompletionNotice(
-    payload: string,
-    channel: string
-): ReturnType<typeof decodeAppInboxCompletionNotice> {
-    if (new TextEncoder().encode(payload).length >= MAX_LIVE_WS_NOTICE_BYTES) {
-        return undefined;
-    }
-    try {
-        return decodeAppInboxCompletionNotice(JSON.parse(payload), channel);
-    }
-    catch {
-        return undefined;
-    }
+    return createPostgresNoticeTransport({ notification, decode: decodeAppInboxCompletionNotice });
 }

@@ -324,9 +324,9 @@ describe('handler-finalized ResourceInbox success', () => {
         const completion = completionNotifications.subscribe(enqueued.key);
         const announced: string[] = [];
         const publish = completionNotifications.publish.bind(completionNotifications);
-        completionNotifications.publish = (key) => {
+        completionNotifications.publish = (key, awaitability) => {
             announced.push(key.resourceId);
-            publish(key);
+            publish(key, awaitability);
         };
         let committed: ResourceEntry | undefined;
 
@@ -342,7 +342,7 @@ describe('handler-finalized ResourceInbox success', () => {
             .dequeueForCompute(async (_key, attempt) => {
                 committed = { ...attempt.entry, status: EntityStatus.COMPLETED };
                 expect(await queue.replaceIfObserved(attempt.entry, committed)).not.toBeNull();
-                completionNotifications.publish(committed.key);
+                completionNotifications.publish(committed.key, 'awaitable');
                 return new ResourceInboxHandlerFinalizedSuccess(committed);
             });
 

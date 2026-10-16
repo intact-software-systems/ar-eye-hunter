@@ -37,6 +37,12 @@ import {
 import type { ResourceInboxCompletionNotifications } from './resource-inbox-completion-notifications.ts';
 import { ResourceInboxResilience } from './resource-inbox-resilience.ts';
 
+const RESOURCE_INBOX_COMPLETION_STATUSES: ReadonlySet<EntityStatus> = new Set([
+    EntityStatus.COMPLETED,
+    EntityStatus.FAILED,
+    EntityStatus.NON_RETRYABLE
+]);
+
 export class NonRetryableException extends Error {
     constructor(message?: string) {
         super(message);
@@ -158,6 +164,8 @@ export interface ResourceInboxDequeuerInput {
 
 export interface DequeueResourceEntryOptions {
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
+    /** Whether a caller can wait for a released entry's completion; absent, every completion is awaitable. */
+    readonly toCompletionAwaitability?: (entry: ResourceEntry) => ResourceInboxCompletionNotifications.Awaitability;
     /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
     readonly isRetryableConflict?: (error: Error) => boolean;
     readonly jitterUnit?: () => number;
@@ -407,7 +415,7 @@ async function releaseResourceInboxSuccesses<V>(
     );
     const releasedByQueue = [...released].map(([key, entry]) => toReleasedResourceInboxSuccess(key, entry, successes));
     for (const { entry } of releasedByQueue) {
-        publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
+        publishResourceInboxCompletion(dependencies.options, entry);
     }
     const releases = [...handlerFinalized, ...releasedByQueue];
     const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
@@ -474,7 +482,7 @@ async function releaseResourceInboxFailure(
     if (!isKeysEqual(failure.key, entry.key)) {
         throw new Error(`Missing failure dto for key: ${String(failure.key)}`);
     }
-    publishResourceInboxCompletion(dependencies.options.completionNotifications, entry);
+    publishResourceInboxCompletion(dependencies.options, entry);
     recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
         attempt: original.value,
         released: entry,
@@ -623,15 +631,12 @@ function toRetryExhaustionRecovery(
     };
 }
 
-function publishResourceInboxCompletion(
-    completionNotifications: ResourceInboxCompletionNotifications | undefined,
-    entry: ResourceEntry
-): void {
-    if (
-        entry.status === EntityStatus.COMPLETED || entry.status === EntityStatus.FAILED ||
-        entry.status === EntityStatus.NON_RETRYABLE
-    ) {
-        completionNotifications?.publish(entry.key);
+function publishResourceInboxCompletion(options: DequeueResourceEntryOptions, entry: ResourceEntry): void {
+    if (RESOURCE_INBOX_COMPLETION_STATUSES.has(entry.status)) {
+        options.completionNotifications?.publish(
+            entry.key,
+            options.toCompletionAwaitability?.(entry) ?? 'awaitable'
+        );
     }
 }
 

@@ -36,9 +36,9 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const published: string[] = [];
         const publish = completionNotifications.publish.bind(completionNotifications);
-        completionNotifications.publish = (key) => {
+        completionNotifications.publish = (key, awaitability) => {
             published.push(key.resourceId);
-            publish(key);
+            publish(key, awaitability);
         };
         const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
         let handlerCommittedAt: number | undefined;

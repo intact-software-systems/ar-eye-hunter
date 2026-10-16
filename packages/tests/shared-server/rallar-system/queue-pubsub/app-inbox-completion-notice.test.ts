@@ -35,7 +35,7 @@ describe('AppInbox completion notices', () => {
         const subscription = owner.subscribe(KEY);
         const woken = subscription.wait(60_000);
 
-        handler.publish(KEY);
+        handler.publish(KEY, 'awaitable');
         await woken;
 
         expect(transport.published).toEqual([{

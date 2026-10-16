@@ -1,6 +1,7 @@
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { hasExactNoticeWireKeys, isNonEmptyNoticeWireString, isNoticeWireRecord } from './is-notice-wire-record.ts';
 import { MAX_LIVE_WS_NOTICE_BYTES } from './live-ws-notice.ts';
 
 const APP_INBOX_COMPLETION_NOTICE_KEYS = ['kind', 'version', 'channel', 'publisherId', 'key'] as const;
@@ -96,14 +97,14 @@ export function decodeAppInboxCompletionNotice(
     catch {
         return undefined;
     }
-    if (!isExactRecord(wire, APP_INBOX_COMPLETION_NOTICE_KEYS)) {
+    if (!isNoticeWireRecord(wire) || !hasExactNoticeWireKeys(wire, APP_INBOX_COMPLETION_NOTICE_KEYS)) {
         return undefined;
     }
     const key = wire.key;
     if (
-        !isExactRecord(key, APP_INBOX_COMPLETION_KEY_KEYS) ||
+        !isNoticeWireRecord(key) || !hasExactNoticeWireKeys(key, APP_INBOX_COMPLETION_KEY_KEYS) ||
         wire.kind !== 'app-inbox-completion' || wire.version !== 1 || wire.channel !== expectedChannel ||
-        !isNonEmptyString(wire.publisherId) || typeof key.topicId !== 'string' ||
+        !isNonEmptyNoticeWireString(wire.publisherId) || typeof key.topicId !== 'string' ||
         typeof key.resourceId !== 'string' || (key.contextId !== null && typeof key.contextId !== 'string')
     ) {
         return undefined;
@@ -120,13 +121,4 @@ export function decodeAppInboxCompletionNotice(
 
 function isWithinNoticeLimit(notice: AppInboxCompletionNotice): boolean {
     return new TextEncoder().encode(JSON.stringify(notice)).length < MAX_LIVE_WS_NOTICE_BYTES;
-}
-
-function isExactRecord(value: JsonWireValue, keys: readonly string[]): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value) &&
-        Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
-}
-
-function isNonEmptyString(value: JsonWireValue): value is string {
-    return typeof value === 'string' && value.length > 0;
 }

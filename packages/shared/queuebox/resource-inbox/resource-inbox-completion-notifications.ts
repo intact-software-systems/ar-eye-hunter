@@ -15,6 +15,9 @@ export namespace ResourceInboxCompletionNotifications {
 
     /** Carries a completion no waiter in this process observed to the other processes sharing the queue. */
     export type Relay = (identity: Identity) => void;
+
+    /** Whether any caller can wait for the completion; a fire-and-forget one has no waiter in another process. */
+    export type Awaitability = 'awaitable' | 'fire-and-forget';
 }
 
 interface ResourceInboxCompletionWait {
@@ -53,9 +56,15 @@ export class ResourceInboxCompletionNotifications {
         return subscription;
     }
 
-    /** A completion committed here; one with no local waiter may be awaited by another process, so it is relayed. */
-    publish(key: ResourceInboxCompletionNotifications.Identity): void {
-        if (!this.notifyLocal(key)) {
+    /**
+     * A completion committed here; an awaitable one with no local waiter may be awaited by another process, so it is
+     * relayed. A duplicate request waiting on a second instance while a local waiter exists reads on its safety tick.
+     */
+    publish(
+        key: ResourceInboxCompletionNotifications.Identity,
+        awaitability: ResourceInboxCompletionNotifications.Awaitability
+    ): void {
+        if (!this.notifyLocal(key) && awaitability === 'awaitable') {
             this.relay?.(key);
         }
     }

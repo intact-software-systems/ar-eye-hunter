@@ -11,6 +11,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-command-identity.ts';
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
@@ -110,7 +111,8 @@ function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions
         options.inbox,
         {
             ...options.appInboxDequeueOptions,
-            isRetryableConflict: isAppInboxRetryableConflict
+            isRetryableConflict: isAppInboxRetryableConflict,
+            toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
         }
     );
     installDequeuePassTiming(inboxQueueReader, options.appInboxDequeuePassTiming);

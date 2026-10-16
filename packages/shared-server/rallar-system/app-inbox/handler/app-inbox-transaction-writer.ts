@@ -8,8 +8,10 @@ import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
 import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
+import { toAppInboxEntryCompletionAwaitability } from '../app-inbox-command-identity.ts';
 import {
     AppInboxReservationConflictError,
+    toAppInboxCompletionAwaitability,
     type AppInboxExecutionMetadata
 } from '../app-inbox-contracts.ts';
 import { toAppInboxAttemptTimingDetails } from './app-inbox-attempt-timing.ts';
@@ -113,7 +115,10 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             await runInPSqlTransaction(transactionScope, async (transaction) => {
                 await writeAppInboxCompletion(transaction, computed);
             }));
-        this.completionNotifications?.publish(computed.finalizedEntry.key);
+        this.completionNotifications?.publish(
+            computed.finalizedEntry.key,
+            toAppInboxEntryCompletionAwaitability(attempt.entry)
+        );
     }
 
     private async writeFinalizedMutation<DurableResult>(
@@ -130,7 +135,10 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             state: 'transaction-finalized',
             entry: computed.finalizedEntry
         });
-        this.completionNotifications?.publish(computed.finalizedEntry.key);
+        this.completionNotifications?.publish(
+            computed.finalizedEntry.key,
+            toAppInboxCompletionAwaitability(context.enqueue.type)
+        );
     }
 
     private ensurePending(context: AppInboxExecutionMetadata): void {

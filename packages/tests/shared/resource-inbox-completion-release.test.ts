@@ -126,4 +126,48 @@ describe('ResourceInbox post-release completion hints', () => {
             expect(vi.getTimerCount()).toBe(0);
         }
     );
+
+    it.each(
+        [
+            { awaitability: undefined, isRelayed: true },
+            { awaitability: 'awaitable', isRelayed: true },
+            { awaitability: 'fire-and-forget', isRelayed: false }
+        ] as const
+    )('relays a released completion nobody here awaits only when it is $awaitability', async ({ awaitability, isRelayed }) => {
+        const queue = new InMemoryQueueBox();
+        const entry = toResourceEntry('waiting', {});
+        await queue.enqueue(entry);
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const duration = Temporal.Duration.from({ seconds: 10 });
+        const controller = createDefaultResourceInboxDequeuer({
+            repository: {
+                isAnyEntryToLock: async () => true,
+                reserveEntries: async (request) => request.statusIds.has('NEW') ? await queue.reserveEntries(request) : new Map(),
+                reserveTimeoutEntries: async () => new Map(),
+                reserveOverdueRetryEntries: async () => new Map(),
+                reserveRetryExhaustionFinalizations: async () => new Map(),
+                releaseEntries: (releases) => queue.releaseEntries(releases)
+            },
+            typesToDequeue: () => new Set(['waiting']),
+            newLaneClaimOrder: 'queue',
+            maxToReserve: () => 1,
+            maxNumToDequeue: 1,
+            resilience: ResourceInboxResilience.createDefault({
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+                initialRate: 2,
+                maxRate: 10,
+                concurrencyIncreaseStep: 1,
+                concurrencyReduceStep: 1
+            }),
+            options: {
+                completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key)),
+                toCompletionAwaitability: awaitability === undefined ? undefined : () => awaitability
+            }
+        });
+
+        await controller.dequeueForCompute(async () => entry.key);
+
+        expect((await queue.getItem(entry.key))?.status).toBe('COMPLETED');
+        expect(relayed).toEqual(isRelayed ? [entry.key] : []);
+    });
 });
