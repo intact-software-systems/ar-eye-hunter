@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
@@ -144,7 +145,8 @@ function createAppInboxIdempotencyHarness(): AppInboxIdempotencyHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database)
+                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+                wsTickets: new AuthSessionRepository(runtimeRepository)
             },
             {
                 serviceId: 'server-12345678'

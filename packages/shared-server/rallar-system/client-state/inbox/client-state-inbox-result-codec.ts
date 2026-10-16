@@ -13,7 +13,29 @@ export interface InactiveAuthorisedWsSessionResult {
     readonly generationId: string;
 }
 
-export type AuthorisedWsClientMutationResult = ClientStateWritten | InactiveAuthorisedWsSessionResult;
+/** The upgrade's ticket was consumed, expired, unknown or bound to another session: the route answers 401. */
+export interface TicketRejectedAuthorisedWsSessionResult {
+    readonly status: 'ticket-rejected';
+    readonly sessionId: string;
+    readonly generationId: string;
+}
+
+export type AuthorisedWsClientMutationResult =
+    | ClientStateWritten
+    | InactiveAuthorisedWsSessionResult
+    | TicketRejectedAuthorisedWsSessionResult;
+
+export function decodeAuthorisedWsClientMutationResult(value: JsonWireValue): AuthorisedWsClientMutationResult {
+    const result = requireJsonWireRecord(value, 'Authorised WebSocket client result');
+    if (result.status !== 'inactive' && result.status !== 'ticket-rejected') {
+        return decodeClientStateWritten(value);
+    }
+    requireExactKeys(result, ['status', 'sessionId', 'generationId'], 'Authorised WebSocket client result');
+    if (typeof result.sessionId !== 'string' || typeof result.generationId !== 'string') {
+        throw new TypeError('Authorised WebSocket client result identity is invalid');
+    }
+    return { status: result.status, sessionId: result.sessionId, generationId: result.generationId };
+}
 
 export function decodeClientStateWritten(value: JsonWireValue): ClientStateWritten {
     const written = requireJsonWireRecord(value, 'Client state result');

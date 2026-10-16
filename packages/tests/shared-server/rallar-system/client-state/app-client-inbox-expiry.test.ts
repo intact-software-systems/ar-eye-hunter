@@ -22,6 +22,7 @@ import {
     createClientExpiryTestIssuedAuthority,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { decodeExpiredClientSessionsTestResult } from './client-inbox-test-result-decoding.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
@@ -53,7 +54,8 @@ it(
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: clientStateService
+                clientStateService: clientStateService,
+                wsTickets: createEmptyWsTicketReader()
             },
             {
                 serviceId: 'server-12345678'
@@ -95,7 +97,8 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
+            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage },
+            wsTickets: createEmptyWsTicketReader()
         },
         {
             serviceId: 'server-12345678'

@@ -236,6 +236,78 @@ describe('JsonWebSocketServer', () => {
         expect(lifecycle).toEqual(['close:session-1:false', 'close:session-1:true']);
     });
 
+    it('holds sends for an expected connection until its generation opens, then runs them in order', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const generation = server.mintConnectionGeneration();
+        const sent: string[] = [];
+        server.expectConnection({ id: 'session-1', generationId: generation.generationId });
+
+        expect(server.isAwaitingConnection('session-1')).toBe(true);
+        expect(server.isAwaitingConnection('session-2')).toBe(false);
+        expect(server.deferUntilConnectionSettles('session-1', () => sent.push('first'))).toBe(true);
+        expect(server.deferUntilConnectionSettles('session-1', () => sent.push('second'))).toBe(true);
+        expect(server.deferUntilConnectionSettles('session-2', () => sent.push('unexpected'))).toBe(false);
+
+        const socket = new TestWebSocket('session-1');
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        expect(sent).toEqual([]);
+        expect(server.isAwaitingConnection('session-1')).toBe(true);
+
+        socket.open();
+
+        expect(sent).toEqual(['first', 'second']);
+        expect(server.isAwaitingConnection('session-1')).toBe(false);
+        expect(server.deferUntilConnectionSettles('session-1', () => sent.push('late'))).toBe(false);
+    });
+
+    it('settles an expected connection that is released or closes before it opens', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const rejected = server.mintConnectionGeneration();
+        const closing = server.mintConnectionGeneration();
+        const settled: string[] = [];
+        server.expectConnection({ id: 'session-1', generationId: rejected.generationId });
+        server.expectConnection({ id: 'session-1', generationId: closing.generationId });
+        server.deferUntilConnectionSettles('session-1', () => settled.push('held'));
+
+        // One generation still expected keeps the held sends for it.
+        server.releaseExpectedConnection({ id: 'session-1', generationId: rejected.generationId });
+        expect(settled).toEqual([]);
+        expect(server.isAwaitingConnection('session-1')).toBe(true);
+
+        const socket = new TestWebSocket('session-1');
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...closing }));
+        socket.disconnect(1006, 'client-gone');
+
+        expect(settled).toEqual(['held']);
+        expect(server.isAwaitingConnection('session-1')).toBe(false);
+    });
+
+    it('bounds the sends held for one expected connection', () => {
+        const server = new JsonWebSocketServer();
+        server.expectConnection({ id: 'session-1', generationId: 'generation-1' });
+        const accepted = Array.from(
+            { length: JsonWebSocketServer.MAX_DEFERRED_SENDS_PER_CONNECTION + 1 },
+            () => server.deferUntilConnectionSettles('session-1', () => {})
+        );
+
+        expect(accepted.filter(Boolean)).toHaveLength(JsonWebSocketServer.MAX_DEFERRED_SENDS_PER_CONNECTION);
+        expect(accepted.at(-1)).toBe(false);
+    });
+
+    it('mints a strictly monotonic generation start before any socket exists', () => {
+        const server = new JsonWebSocketServer();
+        const first = server.mintConnectionGeneration({ observedAtEpochMs: 100 });
+        const second = server.mintConnectionGeneration({ observedAtEpochMs: 99 });
+
+        expect(first.generationStartedAtEpochMs).toBe(100);
+        expect(second.generationStartedAtEpochMs).toBe(101);
+        expect(first.generationId).not.toBe(second.generationId);
+    });
+
     it('can close a live connection by id for auth logout', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
 

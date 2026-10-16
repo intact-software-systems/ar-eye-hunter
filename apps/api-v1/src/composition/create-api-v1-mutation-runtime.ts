@@ -408,7 +408,8 @@ function createAppClientInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                clientStateService: clientStateService
+                clientStateService: clientStateService,
+                wsTickets: input.authSessionRepository
             },
             {
                 serviceId: input.serviceId,

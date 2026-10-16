@@ -108,15 +108,6 @@ async function readAuthMutationCommand(
                 }
             };
         }
-        case 'consume-ws-ticket':
-            return {
-                version: 1,
-                kind: intent.kind,
-                requestId: intent.requestId,
-                capturedAtEpochMs,
-                ticketDigest: intent.ticketDigest,
-                expectedSessionId: intent.expectedSessionId
-            };
         case 'issue-agent-tickets': {
             const tickets = [];
             for (const agentId of intent.agentIds) {

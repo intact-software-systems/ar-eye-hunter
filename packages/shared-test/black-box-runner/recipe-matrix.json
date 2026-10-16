@@ -2257,6 +2257,29 @@
       "description": "No-browser API-v1 presence lease bounding: group and client sessions reject far-future connect/heartbeat timestamps while normal connects still succeed."
     },
     {
+      "id": "api-v1-ws-ticket-replay",
+      "recipe": "tests/api-v1/api-v1-ws-ticket-replay.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-ws-ticket-replay",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 WebSocket ticket replay: the connect consumes its ticket, the live socket receives its own connect snapshot after registration, a replayed ticket is refused with 401 before any upgrade, and a fresh ticket still upgrades."
+    },
+    {
       "id": "api-v1-cross-application-ws-isolation",
       "recipe": "tests/api-v1/api-v1-cross-application-ws-isolation.json",
       "category": "api-v1-black-box",

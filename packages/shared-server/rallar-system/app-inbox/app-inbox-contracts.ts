@@ -9,7 +9,6 @@ export const AppInboxType = {
     AUTH_SESSION_ISSUE: 'AUTH_SESSION_ISSUE',
     AUTH_SESSION_LOGOUT: 'AUTH_SESSION_LOGOUT',
     AUTH_WS_TICKET_ISSUE: 'AUTH_WS_TICKET_ISSUE',
-    AUTH_WS_TICKET_CONSUME: 'AUTH_WS_TICKET_CONSUME',
     AUTH_AGENT_SESSION_TICKETS_ISSUE: 'AUTH_AGENT_SESSION_TICKETS_ISSUE',
     AUTH_AGENT_SESSION_TICKET_CONSUME: 'AUTH_AGENT_SESSION_TICKET_CONSUME',
     CLIENT_PRINCIPAL_UPSERT: 'CLIENT_PRINCIPAL_UPSERT',
@@ -71,7 +70,6 @@ export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
 /** Enqueued by no request path that waits for the result, so no instance can hold a waiter for its completion. */
 const FIRE_AND_FORGET_APP_INBOX_TYPES: ReadonlySet<AppInboxType> = new Set([
-    AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
     AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
     AppInboxType.CLIENT_EXPIRED_SESSIONS,
     AppInboxType.GROUP_PRESENCE_EXPIRE,

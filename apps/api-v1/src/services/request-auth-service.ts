@@ -4,11 +4,9 @@ import {
     readApiAuthCredentialProof,
     RequestAuthFailure,
     requireApiAuthSession as requireSharedApiAuthSession,
-    requireWsAuthSession as requireSharedWsAuthSession,
     toAuthErrorResponse,
     toAuthSession
 } from '@shared-server/http/request-auth-service.ts';
-import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 export {
     authenticationRequired,
@@ -26,15 +24,4 @@ export async function requireApiAuthSession(
     repository: AuthSessionRepository
 ) {
     return await requireSharedApiAuthSession(req, repository);
-}
-
-export async function requireWsAuthSession(
-    input: {
-        sessionId: string;
-        ticket?: string;
-    },
-    appAuthInbox: AppAuthInboxService,
-    facts: Readonly<{ requestId: string; }>
-) {
-    return await requireSharedWsAuthSession(input, appAuthInbox, facts);
 }

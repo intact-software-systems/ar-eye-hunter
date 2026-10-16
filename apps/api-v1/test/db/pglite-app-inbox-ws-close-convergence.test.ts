@@ -41,7 +41,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
             input: { ...SCOPE, connectedAtEpochMs, expiresAtEpochMs: FUTURE_MS }
         } as const;
         const pause = pauseNextPGliteLifecycleRead(harness.clientState);
-        const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect(connectInput);
+        const connectEntry = await harness.startAuthorisedWsConnect(connectInput);
         const staleConnect = processNext(harness.reader);
         await pause.reached;
 
@@ -223,7 +223,7 @@ Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect r
             input: { ...SCOPE, connectedAtEpochMs, expiresAtEpochMs: FUTURE_MS }
         } as const;
 
-        const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect(connectInput);
+        const connectEntry = await harness.startAuthorisedWsConnect(connectInput);
         await delay(sql, connectEntry.key);
         await harness.client.enqueueAuthorisedWsClientDisconnect({
             connection: toAuthorisedWsClientConnection(connectInput),

@@ -37,6 +37,7 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox authentication', () => {
@@ -155,7 +156,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -222,7 +224,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -288,7 +291,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -377,7 +381,8 @@ describe('AppClientInbox authentication', () => {
                     runtimeRepository,
                     clientStateEventStore: new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
-                })
+                }),
+                wsTickets: new AuthSessionRepository(runtimeRepository)
             },
             {
                 serviceId: 'server-12345678'
@@ -500,7 +505,8 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
                 runtimeRepository,
                 clientStateEventStore: new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
-            })
+            }),
+            wsTickets: new AuthSessionRepository(runtimeRepository)
         },
         { serviceId: 'server-12345678' }
     );

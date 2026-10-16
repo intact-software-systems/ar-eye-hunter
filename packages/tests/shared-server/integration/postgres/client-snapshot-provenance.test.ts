@@ -19,8 +19,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
-import { readCompletedAppInboxResult } from '../../rallar-system/app-inbox/test-support/read-completed-app-inbox-result.ts';
-import { decodeAuthorisedWsClientTestResult } from '../../rallar-system/client-state/client-inbox-test-result-decoding.ts';
+import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -89,17 +88,13 @@ describe('Postgres client snapshot provenance transaction', () => {
                     trace: createPostgresAppInboxWorkerTrace()
                 });
                 await runtime.authSessions.putSession(authSession);
-                const connectEntry = await runtime.client.enqueueAuthorisedWsClientConnect({
-                    authSession,
-                    generationId: 'proof-generation',
-                    input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
-                });
+                const ticketDigest = await putAuthorisedWsTestTicket(runtime.authSessions, authSession);
                 const result = await runtime.runUntilCompletion(() =>
-                    readCompletedAppInboxResult({
-                        statusRepository: runtime.resourceInbox.entries,
-                        resultRepository: runtime.resourceInboxResults,
-                        entry: connectEntry,
-                        decodeResult: decodeAuthorisedWsClientTestResult
+                    runtime.client.writeAuthorisedWsClientConnect({
+                        authSession,
+                        generationId: 'proof-generation',
+                        ticketDigest,
+                        input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
                     })
                 );
                 expect(observedUncommitted).toBe(true);

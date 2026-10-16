@@ -54,7 +54,6 @@ import type {
     AuthMutationResult,
     AuthSessionAuthority,
     ConsumeAuthAgentTicketIntent,
-    ConsumeAuthWsTicketIntent,
     IssueAuthAgentTicketsIntent,
     IssueAuthSessionIntent,
     IssueAuthWsTicketIntent,
@@ -93,7 +92,6 @@ const AUTH_TYPES = [
     AppInboxType.AUTH_SESSION_ISSUE,
     AppInboxType.AUTH_SESSION_LOGOUT,
     AppInboxType.AUTH_WS_TICKET_ISSUE,
-    AppInboxType.AUTH_WS_TICKET_CONSUME,
     AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
     AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME
 ] as const;
@@ -404,42 +402,6 @@ export class AppAuthInboxService {
         );
     }
 
-    async consumeWebSocketTicket(
-        input:
-            & AppAuthInboxService.RequestIdentity
-            & Readonly<{
-                ticket: string;
-                expectedSessionId: string;
-            }>
-    ): Promise<Either<AppInboxFailure, IssuedAuthSession>> {
-        const ticketDigest = await hashAuthSecret(input.ticket);
-        const reserved = await this.reserveAuthIntent(
-            {
-                type: AppInboxType.AUTH_WS_TICKET_CONSUME,
-                requestId: input.requestId,
-                contextId: toAuthCredentialContextId(ticketDigest),
-                senderId: ticketDigest
-            },
-            async () => ({
-                version: 1,
-                kind: 'consume-ws-ticket',
-                requestId: input.requestId,
-                ticketDigest,
-                expectedSessionId: input.expectedSessionId
-            }),
-            (intent) =>
-                intent.kind === 'consume-ws-ticket' &&
-                intent.ticketDigest === ticketDigest &&
-                intent.expectedSessionId === input.expectedSessionId
-        );
-        if (reserved.left !== undefined) {
-            return Either.ofLeft(reserved.left);
-        }
-        return await this.waitForReservedAuthIntent(
-            requireReservedIntent(reserved, 'consume-ws-ticket')
-        );
-    }
-
     async issueAgentSessionTickets(
         input:
             & AppAuthInboxService.RequestIdentity
@@ -551,9 +513,6 @@ export class AppAuthInboxService {
     private async waitForReservedAuthIntent(
         reserved: ReservedAuthIntent<IssueAuthWsTicketIntent>
     ): Promise<Either<AppInboxFailure, WebSocketTicketResponse>>;
-    private async waitForReservedAuthIntent(
-        reserved: ReservedAuthIntent<ConsumeAuthWsTicketIntent>
-    ): Promise<Either<AppInboxFailure, IssuedAuthSession>>;
     private async waitForReservedAuthIntent(
         reserved: ReservedAuthIntent<IssueAuthAgentTicketsIntent>
     ): Promise<Either<AppInboxFailure, AgentSessionTicketResponse>>;

@@ -206,7 +206,6 @@ function authKind(type: AppInboxType): string {
         [AppInboxType.AUTH_SESSION_ISSUE]: 'issue-session',
         [AppInboxType.AUTH_SESSION_LOGOUT]: 'logout-session',
         [AppInboxType.AUTH_WS_TICKET_ISSUE]: 'issue-ws-ticket',
-        [AppInboxType.AUTH_WS_TICKET_CONSUME]: 'consume-ws-ticket',
         [AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE]: 'issue-agent-tickets',
         [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: 'consume-agent-ticket'
     };

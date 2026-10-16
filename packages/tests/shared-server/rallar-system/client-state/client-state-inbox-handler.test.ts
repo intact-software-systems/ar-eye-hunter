@@ -13,7 +13,9 @@ import {
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { authTicketDigestKey, WS_AUTH_TICKETS_NAMESPACE } from '@shared-server/rallar-system/auth/persistence/auth-storage-keys.ts';
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { PersistedWebSocketTicket } from '@shared-server/rallar-system/auth/persistence/persisted-auth-ticket.ts';
 import {
     CLIENT_EXPIRED_SESSION_PAGE_SIZE,
     type ClientExpiredSessionPageInput,
@@ -107,6 +109,8 @@ const CONNECTION = toAuthorisedWsClientConnection({
         expiresAtEpochMs: 9_000
     }
 });
+const TICKET_DIGEST = 'alice-ticket-digest';
+const FAR_FUTURE_EPOCH_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const CURRENT_AUDIT: AuditStamp = {
     atEpochMs: 500,
     actor: { kind: 'service', serviceId: SERVICE_ID },
@@ -192,18 +196,23 @@ describe('ClientStateInboxHandler phases', () => {
         expect(computed.outcome === 'completed' ? computed.sidecarWrites.length : 0).toBeGreaterThan(0);
     });
 
-    it.each([
-        { generationClosed: false, label: 'active', writes: true },
-        { generationClosed: true, label: 'inactive', writes: false }
-    ])('keeps every authorised connect $label path read-compute-validate-write ordered', async ({
+    it.each(
+        [
+            { generationClosed: false, ticketPresent: true, label: 'active', status: 'ok' },
+            { generationClosed: true, ticketPresent: true, label: 'inactive', status: 'inactive' },
+            { generationClosed: false, ticketPresent: false, label: 'ticket-rejected', status: 'ticket-rejected' }
+        ] as const
+    )('keeps every authorised connect $label path read-compute-validate-write ordered', async ({
         generationClosed,
-        writes
+        ticketPresent,
+        status
     }) => {
-        const fixture = createHandlerFixture({ generationClosed, sessionPresent: true });
+        const fixture = createHandlerFixture({ generationClosed, sessionPresent: true, ticketPresent });
         const context = createContext<AuthorisedWsClientMutationResult>(
             toAuthorisedWsClientConnectEnqueue({
                 authSession: SESSION,
                 generationId: CONNECTION.generationId,
+                ticketDigest: TICKET_DIGEST,
                 input: {
                     ...SCOPE,
                     clientInstanceId: CONNECTION.clientInstanceId,
@@ -213,12 +222,17 @@ describe('ClientStateInboxHandler phases', () => {
             })
         );
 
-        await fixture.handler.processAuthorisedWsConnect(CONNECTION, context);
+        const result = await fixture.handler.processAuthorisedWsConnect(
+            { connection: CONNECTION, ticketDigest: TICKET_DIGEST },
+            context
+        );
 
+        expect(result.status).toBe(status);
         expect(fixture.actions).toEqual(
-            writes
+            status === 'ok'
                 ? [
                     'completion.read',
+                    'ticket.read',
                     'lifecycle.read',
                     'domain.read',
                     'mutation.compute',
@@ -232,6 +246,7 @@ describe('ClientStateInboxHandler phases', () => {
                 ]
                 : [
                     'completion.read',
+                    'ticket.read',
                     'lifecycle.read',
                     'domain.read',
                     'mutation.compute',
@@ -240,6 +255,9 @@ describe('ClientStateInboxHandler phases', () => {
                     'commit'
                 ]
         );
+        // The guarded delete is the transaction's first write for every connect that presented a live ticket.
+        expect(await fixture.runtimeRepository.findEntry(WS_AUTH_TICKETS_NAMESPACE, authTicketDigestKey(TICKET_DIGEST)))
+            .toBeUndefined();
     });
 
     it.each([
@@ -502,6 +520,7 @@ describe('ClientStateInboxHandler phases', () => {
 
 interface HandlerFixtureOptions {
     readonly authoritySessionClientId?: string;
+    readonly ticketPresent?: boolean;
     readonly expiryCandidates?: readonly ClientSessionExpiryCandidate[];
     readonly failFirstExpiryTransactionAtWrite?: number;
     readonly generationClosed: boolean;
@@ -511,6 +530,7 @@ interface HandlerFixtureOptions {
 
 interface ClientHandlerFixture {
     readonly actions: string[];
+    readonly runtimeRepository: FakeRuntimeStateRepository;
     readonly continuationEntries: readonly ResourceEntry[];
     readonly continuationWriteCount: () => number;
     readonly handler: ClientStateInboxHandler;
@@ -524,8 +544,10 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
     const continuationEntries: ResourceEntry[] = [];
     const pageReads: ClientExpiredSessionPageInput[] = [];
     const writesByTransaction: number[] = [];
+    const runtimeRepository = new FakeRuntimeStateRepository();
     const handler = new ClientStateInboxHandler({
         mutationService: createHandlerMutationService(options, { actions, writesByTransaction }),
+        wsTickets: createHandlerWsTickets(runtimeRepository, { actions, ticketPresent: options.ticketPresent ?? true }),
         sessionGenerationLifecycle: {
             read: async (identity) => {
                 actions.push('lifecycle.read');
@@ -557,7 +579,7 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
                 return snapshot;
             }
         },
-        transactionWriter: createHandlerTransactionWriter({ actions, writesByTransaction }),
+        transactionWriter: createHandlerTransactionWriter({ actions, writesByTransaction }, runtimeRepository),
         mutationTiming: {
             serviceId: SERVICE_ID,
             sink: (event) => actions.push(event.operation)
@@ -567,6 +589,7 @@ function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixt
     });
     return {
         actions,
+        runtimeRepository,
         continuationEntries,
         continuationWriteCount: () => continuationEntries.length,
         handler,
@@ -615,11 +638,57 @@ function createHandlerMutationService(
     };
 }
 
+/** The live ticket the connect consumes: stored when read, so the transaction's guarded delete finds its revision. */
+function createHandlerWsTickets(
+    runtimeRepository: FakeRuntimeStateRepository,
+    { actions, ticketPresent }: Readonly<{ actions: string[]; ticketPresent: boolean; }>
+): ClientStateInboxHandler.Input['wsTickets'] {
+    const ticket: PersistedWebSocketTicket = {
+        ticketDigest: TICKET_DIGEST,
+        accessTokenDigest: 'alice-access-digest',
+        sessionId: SESSION.sessionId,
+        clientId: SESSION.clientId,
+        issuedAtEpochMs: SESSION.issuedAtEpochMs,
+        expiresAtEpochMs: FAR_FUTURE_EPOCH_MS
+    };
+    const session: PersistedAuthSession = {
+        clientId: SESSION.clientId,
+        username: SESSION.username,
+        sessionId: SESSION.sessionId,
+        accessTokenDigest: ticket.accessTokenDigest,
+        issuedAtEpochMs: SESSION.issuedAtEpochMs,
+        expiresAtEpochMs: SESSION.expiresAtEpochMs
+    };
+    return {
+        readWebSocketTicketByDigestEntry: async (ticketDigest) => {
+            actions.push('ticket.read');
+            if (!ticketPresent) {
+                return { value: undefined, expiredEntry: undefined };
+            }
+            const key = authTicketDigestKey(ticketDigest);
+            await runtimeRepository.upsert(WS_AUTH_TICKETS_NAMESPACE, key, JSON.stringify(ticket), FAR_FUTURE_EPOCH_MS);
+            const entry = await runtimeRepository.findEntry(WS_AUTH_TICKETS_NAMESPACE, key);
+            return { value: entry === undefined ? undefined : { entry, value: ticket }, expiredEntry: undefined };
+        },
+        findSessionBySessionIdEntry: async () => ({
+            entry: {
+                key: `session=${SESSION.sessionId}`,
+                value: JSON.stringify(session),
+                expireAtTimestamp: session.expiresAtEpochMs,
+                updatedTimestamp: '2026-08-05T12:00:00.000Z',
+                revision: 0
+            },
+            value: session
+        })
+    };
+}
+
 function createHandlerTransactionWriter(
-    { actions, writesByTransaction }: ClientHandlerMutationObservations
+    { actions, writesByTransaction }: ClientHandlerMutationObservations,
+    runtimeRepository: FakeRuntimeStateRepository
 ): ClientStateInboxHandler.Input['transactionWriter'] {
     const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults(), {
-        runtimeRepository: new FakeRuntimeStateRepository()
+        runtimeRepository
     });
     return {
         readCompletionFacts: (context) => {

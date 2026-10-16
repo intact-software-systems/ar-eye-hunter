@@ -1,55 +1,23 @@
 import type {
-    AuthMutationCommand,
     AuthMutationDomainComputed,
     AuthMutationRead,
     IssueAuthWsTicketCommand
 } from '../auth-mutation-contracts.ts';
-import { equalAuthJson, requireAuthTicket } from '../validate/auth-mutation-validation.ts';
-import { requireConsumedAuthSession, toConsumedAuthSessionResult } from './compute-auth-session-mutation.ts';
-
-type AuthTicketMutationCommand = Extract<AuthMutationCommand, { kind: 'issue-ws-ticket' | 'consume-ws-ticket'; }>;
+import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 
 interface ComputeAuthTicketMutationInput {
-    readonly kind: AuthTicketMutationCommand['kind'];
-    readonly command: AuthTicketMutationCommand;
+    readonly kind: IssueAuthWsTicketCommand['kind'];
+    readonly command: IssueAuthWsTicketCommand;
     readonly read: AuthMutationRead;
 }
 
 export function computeAuthTicketMutation(
     input: ComputeAuthTicketMutationInput
 ): AuthMutationDomainComputed {
-    switch (input.kind) {
-        case 'issue-ws-ticket':
-            return computeIssueAuthWebSocketTicket(
-                input.command as IssueAuthWsTicketCommand,
-                input.read as Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>
-            );
-        case 'consume-ws-ticket': {
-            const command = input.command as Extract<AuthMutationCommand, { kind: 'consume-ws-ticket'; }>;
-            const consumeRead = input.read as Extract<AuthMutationRead, { kind: 'consume-ws-ticket'; }>;
-            const ticket = requireAuthTicket(consumeRead.ticket);
-            const requestId = command.requestId;
-            const session = requireConsumedAuthSession(
-                consumeRead.session,
-                'Websocket ticket session is unavailable'
-            );
-            const accessTokenDigest = ticket.value.accessTokenDigest;
-            return {
-                command,
-                read: input.read,
-                sessions: [],
-                agentTickets: [],
-                logoutOutbox: null,
-                result: toConsumedAuthSessionResult({
-                    kind: 'ws-ticket-consumed',
-                    requestId,
-                    session,
-                    accessTokenDigest
-                }),
-                outcome: 'write'
-            };
-        }
-    }
+    return computeIssueAuthWebSocketTicket(
+        input.command,
+        input.read as Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>
+    );
 }
 
 function computeIssueAuthWebSocketTicket(

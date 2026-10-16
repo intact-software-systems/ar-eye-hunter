@@ -55,22 +55,54 @@ export namespace JsonWebSocketServer {
         nativeCall: 'not-called' | 'invoked' | 'returned';
     }
 
-    export interface CreateConnectionInput {
+    export interface CreateConnectionInput extends MintGenerationInput {
         readonly id: string;
         readonly socket: WebSocket;
+    }
+
+    export interface MintGenerationInput {
         readonly generationId?: string;
         readonly observedAtEpochMs?: number;
     }
+
+    export interface ConnectionGeneration {
+        readonly generationId: string;
+        readonly generationStartedAtEpochMs: number;
+    }
+
+    /** A generation admitted before its socket exists; sends addressed to its id wait until it opens or settles. */
+    export interface ExpectedConnection {
+        readonly id: string;
+        readonly generationId: string;
+    }
+}
+
+interface ExpectedConnectionHold {
+    readonly generationIds: Set<string>;
+    readonly deferredSends: Array<() => void>;
 }
 
 export class JsonWebSocketServer {
+    public static readonly MAX_DEFERRED_SENDS_PER_CONNECTION = 64;
+
     private readonly webSocketServerCallbacks = new Map<string, WebSocketServerCallbacks>();
     private readonly onMessageCallbacks = new Map<string, WebSocketServerOnMessageCallback>();
+    private readonly expectedConnections = new Map<string, ExpectedConnectionHold>();
     private lastGenerationStartedAtEpochMs = -1;
 
     public readonly connections = new Map<string, ConnectionContext>();
 
     createConnectionContext(input: JsonWebSocketServer.CreateConnectionInput): ConnectionContext {
+        return new ConnectionContext({
+            id: input.id,
+            socket: input.socket,
+            ...this.mintConnectionGeneration(input)
+        });
+    }
+
+    mintConnectionGeneration(
+        input: JsonWebSocketServer.MintGenerationInput = {}
+    ): JsonWebSocketServer.ConnectionGeneration {
         const generationId = input.generationId ?? crypto.randomUUID();
         const observedAtEpochMs = input.observedAtEpochMs ?? Date.now();
         if (!Number.isSafeInteger(observedAtEpochMs) || observedAtEpochMs < 0) {
@@ -84,12 +116,54 @@ export class JsonWebSocketServer {
             this.lastGenerationStartedAtEpochMs + 1
         );
         this.lastGenerationStartedAtEpochMs = generationStartedAtEpochMs;
-        return new ConnectionContext({
-            id: input.id,
-            socket: input.socket,
-            generationId,
-            generationStartedAtEpochMs
-        });
+        return { generationId, generationStartedAtEpochMs };
+    }
+
+    // --------------------
+    // Expected connections
+    // --------------------
+
+    expectConnection(expected: JsonWebSocketServer.ExpectedConnection): void {
+        const hold = this.expectedConnections.get(expected.id) ?? { generationIds: new Set(), deferredSends: [] };
+        hold.generationIds.add(expected.generationId);
+        this.expectedConnections.set(expected.id, hold);
+    }
+
+    /** The last expected generation of an id to settle runs its held sends, which then find whatever is open. */
+    releaseExpectedConnection(expected: JsonWebSocketServer.ExpectedConnection): void {
+        const hold = this.expectedConnections.get(expected.id);
+        if (!hold?.generationIds.delete(expected.generationId) || hold.generationIds.size > 0) {
+            return;
+        }
+        this.expectedConnections.delete(expected.id);
+        runDeferredSends(hold.deferredSends);
+    }
+
+    isAwaitingConnection(id: string): boolean {
+        return this.expectedConnections.has(id) && this.connections.get(id)?.isOpen !== true;
+    }
+
+    deferUntilConnectionSettles(id: string, send: () => void): boolean {
+        const hold = this.expectedConnections.get(id);
+        if (
+            hold === undefined || !this.isAwaitingConnection(id) ||
+            hold.deferredSends.length >= JsonWebSocketServer.MAX_DEFERRED_SENDS_PER_CONNECTION
+        ) {
+            return false;
+        }
+        hold.deferredSends.push(send);
+        return true;
+    }
+
+    private openExpectedConnection(ctx: ConnectionContext): void {
+        const hold = this.expectedConnections.get(ctx.id);
+        if (!hold?.generationIds.delete(ctx.generationId)) {
+            return;
+        }
+        if (hold.generationIds.size === 0) {
+            this.expectedConnections.delete(ctx.id);
+        }
+        runDeferredSends(hold.deferredSends.splice(0));
     }
 
     // --------------------
@@ -130,6 +204,7 @@ export class JsonWebSocketServer {
 
     private addAllEventListeners(ctx: ConnectionContext) {
         ctx.socket.addEventListener('open', (_: Event) => {
+            this.openExpectedConnection(ctx);
             for (const cb of this.webSocketServerCallbacks.values()) {
                 try {
                     cb.onConnection?.(ctx);
@@ -157,6 +232,7 @@ export class JsonWebSocketServer {
             if (this.connections.get(ctx.id) === ctx) {
                 this.connections.delete(ctx.id);
             }
+            this.releaseExpectedConnection({ id: ctx.id, generationId: ctx.generationId });
 
             for (const cb of this.webSocketServerCallbacks.values()) {
                 try {
@@ -338,5 +414,16 @@ export class JsonWebSocketServer {
             }
         }
         return count;
+    }
+}
+
+function runDeferredSends(sends: readonly (() => void)[]): void {
+    for (const send of sends) {
+        try {
+            send();
+        }
+        catch (error) {
+            console.error('Deferred WebSocket send failed:', error);
+        }
     }
 }

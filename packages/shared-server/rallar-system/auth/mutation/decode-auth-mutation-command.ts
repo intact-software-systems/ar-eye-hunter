@@ -41,9 +41,6 @@ function validateAuthMutationCommand(command: JsonWireObject): void {
         case 'issue-ws-ticket':
             validateIssueAuthWebSocketTicketCommand(command);
             return;
-        case 'consume-ws-ticket':
-            validateConsumeAuthWebSocketTicketCommand(command);
-            return;
         case 'issue-agent-tickets':
             validateIssueAuthAgentTicketsCommand(command);
             return;
@@ -84,19 +81,6 @@ function validateLogoutAuthSessionCommand(command: JsonWireObject): void {
 function validateIssueAuthWebSocketTicketCommand(command: JsonWireObject): void {
     requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'ticketRecord']);
     decodePersistedWebSocketTicket(command.ticketRecord);
-}
-
-function validateConsumeAuthWebSocketTicketCommand(command: JsonWireObject): void {
-    requireExactKeys(command, [
-        'version',
-        'kind',
-        'requestId',
-        'capturedAtEpochMs',
-        'ticketDigest',
-        'expectedSessionId'
-    ]);
-    requireString(command.ticketDigest, 'Auth websocket ticket digest');
-    requireString(command.expectedSessionId, 'Auth websocket expected sessionId');
 }
 
 function validateIssueAuthAgentTicketsCommand(command: JsonWireObject): void {

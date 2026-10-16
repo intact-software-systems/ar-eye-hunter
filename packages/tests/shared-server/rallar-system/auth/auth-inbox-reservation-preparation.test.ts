@@ -68,7 +68,7 @@ describe('auth reservation preparation', () => {
         expect(hashObservations.every((insideWrite) => !insideWrite)).toBe(true);
     });
 
-    it.each(['logout-session', 'consume-ws-ticket'] as const)(
+    it.each(['logout-session', 'consume-agent-ticket'] as const)(
         'waits on the reserved %s row without enqueueing it a second time',
         async (kind) => {
             const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
@@ -90,10 +90,9 @@ describe('auth reservation preparation', () => {
                     reader: auth.reader
                 })
                 : await runAuthInboxCommand({
-                    pending: auth.service.consumeWebSocketTicket({
+                    pending: auth.service.consumeAgentSessionTicket({
                         requestId: 'reserved-once-consume',
-                        ticket: 'absent-ws-ticket',
-                        expectedSessionId: 'session-1'
+                        ticket: 'absent-agent-ticket'
                     }),
                     queue: auth.queue,
                     reader: auth.reader

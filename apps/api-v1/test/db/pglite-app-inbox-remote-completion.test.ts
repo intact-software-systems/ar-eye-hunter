@@ -39,40 +39,43 @@ interface ServerRuntime {
     readonly engine: InboxOutboxEngine;
 }
 
-Deno.test('PGlite AppInbox waiter on one server returns promptly when another server handles its entry', async () => {
-    await withPGliteSql(async (sql) => {
-        const notification = createMemoryNotificationPort();
-        const waiterNotices = createCompletionNotices(notification, 'server-a');
-        const handlerNotices = createCompletionNotices(notification, 'server-b');
-        const waiterNotifications = createRelayedNotifications(waiterNotices);
-        const handlerNotifications = createRelayedNotifications(handlerNotices);
-        const waiterServer = createServerRuntime(sql, 'server-a', waiterNotifications);
-        const handlerServer = createServerRuntime(sql, 'server-b', handlerNotifications);
-        await installAppInboxCompletionNoticeSubscriber({ ...waiterNotices, notifications: waiterNotifications });
-        await installAppInboxCompletionNoticeSubscriber({ ...handlerNotices, notifications: handlerNotifications });
+/** A WebSocket connect is awaited by its upgrade route, so its completion is relayed like any other awaited type. */
+for (const type of [AppInboxType.CLIENT_PRINCIPAL_UPSERT, AppInboxType.CLIENT_AUTHORISED_WS_CONNECT] as const) {
+    Deno.test(`PGlite AppInbox ${type} waiter on one server returns promptly when another server handles its entry`, async () => {
+        await withPGliteSql(async (sql) => {
+            const notification = createMemoryNotificationPort();
+            const waiterNotices = createCompletionNotices(notification, 'server-a');
+            const handlerNotices = createCompletionNotices(notification, 'server-b');
+            const waiterNotifications = createRelayedNotifications(waiterNotices);
+            const handlerNotifications = createRelayedNotifications(handlerNotices);
+            const waiterServer = createServerRuntime(sql, 'server-a', waiterNotifications, type);
+            const handlerServer = createServerRuntime(sql, 'server-b', handlerNotifications, type);
+            await installAppInboxCompletionNoticeSubscriber({ ...waiterNotices, notifications: waiterNotifications });
+            await installAppInboxCompletionNoticeSubscriber({ ...handlerNotices, notifications: handlerNotifications });
 
-        const waited = waiterServer.client.commandClient.enqueueAndWait({
-            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            resourceId: REQUEST_ID,
-            contextId: 'remote-completion-client',
-            data: { requestId: REQUEST_ID }
+            const waited = waiterServer.client.commandClient.enqueueAndWait({
+                type,
+                resourceId: REQUEST_ID,
+                contextId: 'remote-completion-client',
+                data: { requestId: REQUEST_ID }
+            });
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            const handledAt = performance.now();
+            await handlerServer.engine.executeOnce();
+            const result = await waited;
+            const returnedAfterMs = performance.now() - handledAt;
+            await handlerServer.engine.stop();
+            await waiterServer.engine.stop();
+
+            assert.deepEqual(result.right, { accepted: true });
+            assert.ok(
+                returnedAfterMs < REMOTE_WAKE_ALLOWANCE_MS,
+                `the waiter returned ${Math.round(returnedAfterMs)} ms after the remote handler`
+            );
         });
-        await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        const handledAt = performance.now();
-        await handlerServer.engine.executeOnce();
-        const result = await waited;
-        const returnedAfterMs = performance.now() - handledAt;
-        await handlerServer.engine.stop();
-        await waiterServer.engine.stop();
-
-        assert.deepEqual(result.right, { accepted: true });
-        assert.ok(
-            returnedAfterMs < REMOTE_WAKE_ALLOWANCE_MS,
-            `the waiter returned ${Math.round(returnedAfterMs)} ms after the remote handler`
-        );
     });
-});
+}
 
 function createCompletionNotices(
     notification: ApiV1DatabaseNotificationPort,
@@ -108,7 +111,8 @@ function createMemoryNotificationPort(): ApiV1DatabaseNotificationPort {
 function createServerRuntime(
     sql: PGliteSql,
     serviceId: string,
-    completionNotifications: ResourceInboxCompletionNotifications
+    completionNotifications: ResourceInboxCompletionNotifications,
+    type: AppInboxType
 ): ServerRuntime {
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
@@ -129,7 +133,7 @@ function createServerRuntime(
         serviceId
     });
     handlerRuntime.registry.registerHandler<JsonWireValue, JsonWireValue>({
-        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        type,
         decodeCommand: (value) => value,
         encodeResult: (result) => result,
         handle: async (_command, context) =>

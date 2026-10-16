@@ -1,0 +1,379 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-ws-replay"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "workspace-ws-replay-{runId}"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsLive": {
+      "type": "ws",
+      "timeoutMs": 15000
+    },
+    "wsFresh": {
+      "type": "ws",
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "setReplayUsername",
+      "type": "set",
+      "output": "replayUsername",
+      "value": "api-v1-bb-ws-replay-{runId}"
+    },
+    {
+      "name": "registerReplayUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-ws-ticket-replay-register-001-{runId}",
+        "body": {
+          "username": "{replayUsername}",
+          "password": "api-v1-bb-ws-replay-{runId}",
+          "displayName": "WS ticket replay {runId}"
+        },
+        "outputs": {
+          "replayRegisteredClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string",
+          "username": "{replayUsername}"
+        }
+      }
+    },
+    {
+      "name": "loginReplayUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-ws-ticket-replay-login-0002-{runId}",
+        "body": {
+          "username": "{replayUsername}",
+          "password": "api-v1-bb-ws-replay-{runId}"
+        },
+        "outputs": {
+          "replayClientId": "body.clientId",
+          "replayAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "replaySessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{replayRegisteredClientId}",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveReplayAuthHeader",
+      "type": "set",
+      "output": "replayAuthHeader",
+      "secret": true,
+      "redactAs": "replayAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.replayAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "issueSingleUseWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-ws-ticket-replay-ticket-0003-{runId}",
+        "headers": {
+          "Authorization": "{replayAuthHeader}",
+          "x-client-id": "{replayClientId}"
+        },
+        "outputs": {
+          "replayWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{replaySessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveLiveWebSocketUrl",
+      "type": "set",
+      "output": "liveWsUrl",
+      "secret": true,
+      "redactAs": "liveWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.replaySessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.replayWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deriveReplayUpgradePath",
+      "type": "set",
+      "output": "replayUpgradePath",
+      "secret": true,
+      "redactAs": "replayUpgradePath",
+      "transform": {
+        "concat": [
+          "api/ws/",
+          {
+            "path": "outputs.replaySessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.replayWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "openLiveWebSocket",
+      "type": "ws.open",
+      "connection": "wsLive",
+      "request": {
+        "url": "{liveWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
+      }
+    },
+    {
+      "name": "liveSocketReceivesItsConnectSnapshot",
+      "type": "ws.wait",
+      "connection": "wsLive",
+      "expect": {
+        "connection": "wsLive",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [
+          {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "replayedTicketIsRefusedBeforeAnyUpgrade",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "{replayUpgradePath}",
+        "headers": {
+          "Upgrade": "websocket"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Invalid or expired websocket auth ticket"
+        }
+      }
+    },
+    {
+      "name": "issueFreshWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-ws-ticket-replay-ticket-0004-{runId}",
+        "headers": {
+          "Authorization": "{replayAuthHeader}",
+          "x-client-id": "{replayClientId}"
+        },
+        "outputs": {
+          "freshWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{replaySessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveFreshWebSocketUrl",
+      "type": "set",
+      "output": "freshWsUrl",
+      "secret": true,
+      "redactAs": "freshWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.replaySessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.freshWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": "{applicationId}"
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": "{workspaceId}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "freshTicketStillUpgradesAfterTheRefusedReplay",
+      "type": "ws.open",
+      "connection": "wsFresh",
+      "request": {
+        "url": "{freshWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
+      }
+    },
+    {
+      "name": "freshSocketReceivesItsConnectSnapshot",
+      "type": "ws.wait",
+      "connection": "wsFresh",
+      "expect": {
+        "connection": "wsFresh",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [
+          {
+            "completedSnapshot": {
+              "route": {
+                "topicId": "client-state.snapshot"
+              },
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "closeFreshWebSocket",
+      "type": "ws.close",
+      "connection": "wsFresh",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    },
+    {
+      "name": "logoutReplayUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout/requests/bb-ws-ticket-replay-logout-0005-{runId}",
+        "headers": {
+          "Authorization": "{replayAuthHeader}",
+          "x-client-id": "{replayClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    }
+  ]
+}

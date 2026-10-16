@@ -202,8 +202,36 @@ export function authorisedConnectOperationInput(): ComputeAuthorisedWsConnectOpe
         scope: { kind: 'client', ...TEST_SCOPE, principalId: 'alice', clientInstanceId: 'browser' },
         sessionId: authSession.sessionId
     } as const;
+    const ticket = {
+        ticketDigest: 'alice-ticket-digest',
+        accessTokenDigest: 'alice-access-digest',
+        sessionId: authSession.sessionId,
+        clientId: authSession.clientId,
+        issuedAtEpochMs: 1_500,
+        expiresAtEpochMs: 9_000
+    };
+    const session = {
+        clientId: authSession.clientId,
+        username: authSession.username,
+        sessionId: authSession.sessionId,
+        accessTokenDigest: ticket.accessTokenDigest,
+        issuedAtEpochMs: authSession.issuedAtEpochMs,
+        expiresAtEpochMs: authSession.expiresAtEpochMs
+    };
     return {
         connection,
+        ticketClaim: {
+            ticketDigest: ticket.ticketDigest,
+            clientId: authSession.clientId,
+            sessionId: authSession.sessionId,
+            sessionIssuedAtEpochMs: authSession.issuedAtEpochMs,
+            sessionExpiresAtEpochMs: authSession.expiresAtEpochMs,
+            capturedAtEpochMs: 2_000
+        },
+        ticketRead: {
+            ticket: entryValue(ticket, 0),
+            session: entryValue(session, 0)
+        },
         command,
         read: emptyRead(command),
         lifecycleFacts: {

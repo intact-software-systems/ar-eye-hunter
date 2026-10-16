@@ -14,6 +14,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import type { ToAuthorisedWsClientConnectionInput } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -24,10 +25,12 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import {
     EntityStatus,
-    type Key
+    type Key,
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
+import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteFirstRetryEligibility } from './pglite-app-inbox-test-runtime.ts';
@@ -45,6 +48,8 @@ export interface PGliteAppInboxWsCloseHarness {
     readonly groupState: GroupStateService;
     readonly clients: ClientStateRepository;
     readonly groups: GroupStateRepository;
+    /** Starts an upgrade's connect with a fresh ticket; it waits for its result while the test drives the queue. */
+    startAuthorisedWsConnect(input: ToAuthorisedWsClientConnectionInput): Promise<ResourceEntry>;
 }
 interface PGliteStateInboxConsumerInput {
     readonly sql: PGliteSql;
@@ -55,6 +60,7 @@ interface PGliteStateInboxConsumerInput {
     readonly groupState: GroupStateService;
     readonly groups: GroupStateRepository;
     readonly options: AppInboxOptions;
+    readonly authSessions: AuthSessionRepository;
 }
 interface PGliteStateInboxConsumers {
     readonly client: AppClientInboxService;
@@ -98,7 +104,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         serviceId: 'pglite-close-test'
     });
     const groups = new GroupStateRepository(runtime, groupEvents);
-    const consumers = { sql, resourceInbox, resourceResults, clientState, groupState, groups, options };
+    const consumers = { sql, resourceInbox, resourceResults, clientState, groupState, groups, options, authSessions };
     const { client, group } = createPGliteStateInboxConsumers({ ...consumers, reader });
     createPGliteStateInboxConsumers({ ...consumers, reader: secondReader });
     return {
@@ -112,8 +118,49 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         clientState,
         groupState,
         clients: new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql)),
-        groups
+        groups,
+        startAuthorisedWsConnect: async (input) => {
+            const ticketDigest = await putAuthorisedWsTestTicket(
+                authSessions,
+                input.authSession,
+                `${input.generationId}-ticket`
+            );
+            const queued = await readPGliteQueuedKeys(sql);
+            void client.writeAuthorisedWsClientConnect({ ...input, ticketDigest });
+            return await waitForNewPGliteQueueEntry(reader, sql, queued);
+        }
     };
+}
+
+async function readPGliteQueuedKeys(sql: PGliteSql): Promise<ReadonlySet<string>> {
+    const rows = await sql<{ id: string; }[]>`
+      select ri_topic_id || '|' || ri_resource_id || '|' || fk_ext_bank_id as id from resource_inbox
+    `;
+    return new Set(rows.map((row) => row.id));
+}
+
+async function waitForNewPGliteQueueEntry(
+    reader: InboxQueueReader,
+    sql: PGliteSql,
+    queued: ReadonlySet<string>
+): Promise<ResourceEntry> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        const rows = await sql<{ topic: string; resource: string; context: string; }[]>`
+          select ri_topic_id as topic, ri_resource_id as resource, fk_ext_bank_id as context from resource_inbox
+          where ri_type_id = 'APP_INBOX'
+        `;
+        const row = rows.find((candidate) =>
+            !queued.has(`${candidate.topic}|${candidate.resource}|${candidate.context}`)
+        );
+        const entry = row === undefined
+            ? undefined
+            : await reader.inbox.getItem({ topicId: row.topic, resourceId: row.resource, contextId: row.context });
+        if (entry !== undefined) {
+            return entry;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error('The authorised connect was not queued');
 }
 
 export function pauseNextPGliteLifecycleRead(
@@ -187,7 +234,8 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.resourceResults,
             database: input.sql,
-            clientStateService: input.clientState
+            clientStateService: input.clientState,
+            wsTickets: input.authSessions
         },
         {
             serviceId: 'pglite-close-test',

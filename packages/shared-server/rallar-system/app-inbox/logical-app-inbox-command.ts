@@ -228,13 +228,6 @@ function toStableAuthIntent(intent: ReturnType<typeof decodeAuthMutationIntent>)
                 authority: intent.authority,
                 ttlMs: intent.ttlMs
             };
-        case 'consume-ws-ticket':
-            return {
-                kind: intent.kind,
-                requestId: intent.requestId,
-                ticketDigest: intent.ticketDigest,
-                expectedSessionId: intent.expectedSessionId
-            };
         case 'issue-agent-tickets':
             return {
                 kind: intent.kind,

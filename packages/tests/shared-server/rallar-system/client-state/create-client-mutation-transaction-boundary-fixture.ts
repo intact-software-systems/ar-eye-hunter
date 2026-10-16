@@ -7,6 +7,7 @@ import {
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type {
     ClientStateMutationService,
     ClientStateWritten
@@ -74,6 +75,7 @@ export async function createClientMutationTransactionBoundaryFixture(
             actions,
             computedSnapshots
         }),
+        wsTickets: new AuthSessionRepository(runtimeRepository),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
         expiryContinuationWriter: { write: async () => undefined },

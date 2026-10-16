@@ -56,6 +56,7 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { connectCommand, emptyRead } from './client-mutation-compute-test-fixtures.ts';
 
 vi.mock('@shared/api/state-snapshot-page.ts', async (importOriginal) => {
@@ -540,7 +541,8 @@ function createProducer(options: { readonly collideOnRequestId?: string; readonl
         resourceInboxRepository: queue,
         resourceInboxResultsRepository: results,
         database,
-        clientStateService: clientState
+        clientStateService: clientState,
+        wsTickets: createEmptyWsTicketReader()
     }, { serviceId: 'producer-server' });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
 }

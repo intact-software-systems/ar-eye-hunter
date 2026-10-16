@@ -14,10 +14,7 @@ import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 import { toAuthLogoutOutbox } from './to-auth-logout-outbox.ts';
 
 type AuthSessionMutationCommand = Extract<AuthMutationCommand, { kind: 'issue-session' | 'logout-session'; }>;
-type AuthConsumedSessionReceipt = Extract<
-    AuthMutationResult,
-    { kind: 'ws-ticket-consumed' | 'agent-ticket-consumed'; }
->;
+type AuthConsumedSessionReceipt = Extract<AuthMutationResult, { kind: 'agent-ticket-consumed'; }>;
 type AuthIssuedSessionReceipt = Extract<AuthMutationResult, { kind: 'session-issued'; }>;
 
 interface ComputeAuthSessionMutationInput {
@@ -28,7 +25,7 @@ interface ComputeAuthSessionMutationInput {
 }
 
 interface ToConsumedAuthSessionResultInput {
-    readonly kind: 'ws-ticket-consumed' | 'agent-ticket-consumed';
+    readonly kind: 'agent-ticket-consumed';
     readonly requestId: string;
     readonly session: PersistedAuthSession;
     readonly accessTokenDigest: string;

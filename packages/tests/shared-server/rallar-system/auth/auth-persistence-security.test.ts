@@ -25,7 +25,8 @@ it('fails closed without consuming corrupt digest-key ticket rows', async () => 
     const cases = [
         {
             namespace: 'auth-sessions:ws-tickets',
-            consume: (repository: AuthSessionRepository, ticket: string) => repository.consumeWebSocketTicket(ticket),
+            consume: async (repository: AuthSessionRepository, ticket: string) =>
+                await repository.readWebSocketTicketByDigestEntry(await hashAuthSecret(ticket)),
             record: (digest: string, now: number) => ({
                 ticketDigest: digest,
                 accessTokenDigest: 'access-digest',
@@ -113,15 +114,6 @@ async function expectCurrentSessionOutcomes(
 }
 
 async function expectCurrentConsumeOutcomes(): Promise<void> {
-    await expect(
-        runCurrentOperation((service) =>
-            service.consumeWebSocketTicket({
-                requestId: 'current-ws-missing',
-                ticket: 'missing-ws-ticket',
-                expectedSessionId: 'current-session'
-            })
-        )
-    ).resolves.toMatchObject({ left: { status: 404 } });
     await expect(
         runCurrentOperation((service) =>
             service.consumeAgentSessionTicket({
@@ -218,7 +210,9 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
         }
 
         await expect(repository.findByAccessToken(token)).resolves.toBeUndefined();
-        await expect(repository.consumeWebSocketTicket('predecessor-ws-ticket')).resolves.toBeUndefined();
+        await expect(
+            repository.readWebSocketTicketByDigestEntry(await hashAuthSecret('predecessor-ws-ticket'))
+        ).resolves.toEqual({ value: undefined, expiredEntry: undefined });
         await expect(
             repository.consumeAgentSessionTicket('predecessor-agent-ticket')
         ).resolves.toBeUndefined();
@@ -226,34 +220,6 @@ it('rejects explicit predecessor rows after the current storage cutover', async 
     finally {
         clock.mockRestore();
     }
-});
-
-it('allows exactly one websocket-ticket consumer under concurrency', async () => {
-    const runtime = new FakeRuntimeStateRepository();
-    const repository = new AuthSessionRepository(runtime);
-    const expiresAtEpochMs = Date.now() + 60_000;
-    await repository.putSession({
-        clientId: 'client-1',
-        accessToken: 'access-token-plaintext',
-        username: 'alice',
-        sessionId: 'session-1',
-        issuedAtEpochMs: Date.now(),
-        expiresAtEpochMs
-    });
-    await repository.putWebSocketTicket({
-        ticket: 'presented-ticket-plaintext',
-        clientId: 'client-1',
-        sessionId: 'session-1',
-        issuedAtEpochMs: Date.now(),
-        expiresAtEpochMs
-    });
-
-    const results = await Promise.all([
-        repository.consumeWebSocketTicket('presented-ticket-plaintext'),
-        repository.consumeWebSocketTicket('presented-ticket-plaintext')
-    ]);
-
-    expect(results.filter((result) => result !== undefined)).toHaveLength(1);
 });
 
 it('persists only ticket digests and canonical ticket records', async () => {

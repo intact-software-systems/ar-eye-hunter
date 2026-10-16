@@ -16,6 +16,14 @@ import {
     computeAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import {
+    computeAuthWsTicketConsumption,
+    validateAuthWsTicketConsumption,
+    type AuthWsTicketConsumption,
+    type AuthWsTicketConsumptionClaim,
+    type AuthWsTicketConsumptionIssue,
+    type AuthWsTicketConsumptionRead
+} from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import {
     computeWsSessionConnectGuard,
@@ -51,7 +59,8 @@ import type {
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
 } from './app-client-inbox-contracts.ts';
 import type {
-    InactiveAuthorisedWsSessionResult
+    InactiveAuthorisedWsSessionResult,
+    TicketRejectedAuthorisedWsSessionResult
 } from './client-state-inbox-result-codec.ts';
 
 type ClientMutationLifecycleInput =
@@ -83,11 +92,22 @@ export type ClientMutationOperationComputed =
     }>;
 
 export type AuthorisedWsConnectOperationComputed =
-    | ClientMutationOperationComputed
+    | Extract<ClientMutationOperationComputed, { outcome: 'idempotency-conflict'; }>
+    | Readonly<
+        & Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
+        & { ticketConsumption: AuthWsTicketConsumption; }
+    >
     | Readonly<{
         outcome: 'inactive';
+        ticketConsumption: AuthWsTicketConsumption;
         durableResult: InactiveAuthorisedWsSessionResult;
         completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
+    }>
+    | Readonly<{
+        outcome: 'ticket-rejected';
+        issues: readonly AuthWsTicketConsumptionIssue[];
+        durableResult: TicketRejectedAuthorisedWsSessionResult;
+        completion: AppInboxCompletionComputed<TicketRejectedAuthorisedWsSessionResult>;
     }>;
 
 export interface MissingSessionDisconnectComputed {
@@ -134,6 +154,8 @@ interface AssertClientMutationOperationInput {
 
 export interface ComputeAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    readonly ticketClaim: AuthWsTicketConsumptionClaim;
+    readonly ticketRead: AuthWsTicketConsumptionRead;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
@@ -143,6 +165,8 @@ export interface ComputeAuthorisedWsConnectOperationInput {
 
 interface AssertAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    readonly ticketClaim: AuthWsTicketConsumptionClaim;
+    readonly ticketRead: AuthWsTicketConsumptionRead;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly lifecycleFacts: WsSessionGenerationFacts;
@@ -233,17 +257,13 @@ export function assertClientMutationOperation(
 export function computeAuthorisedWsConnectOperation(
     input: ComputeAuthorisedWsConnectOperationInput
 ): AuthorisedWsConnectOperationComputed {
+    const issues = validateAuthWsTicketConsumption(input.ticketClaim, input.ticketRead);
+    if (issues.length > 0) {
+        return computeTicketRejectedConnect(input, issues);
+    }
+    const ticketConsumption = computeAuthWsTicketConsumption(input.ticketRead);
     if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
-        const durableResult = {
-            status: 'inactive',
-            sessionId: input.connection.authSession.sessionId,
-            generationId: input.connection.generationId
-        } as const;
-        return {
-            outcome: 'inactive',
-            durableResult,
-            completion: computeCompletion(input.completionFacts, durableResult)
-        };
+        return computeInactiveConnect(input, ticketConsumption);
     }
     const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
@@ -266,7 +286,42 @@ export function computeAuthorisedWsConnectOperation(
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
         sidecarWrites: computeClientSnapshotProvenance(mutation),
-        committedSnapshots: [mutation.snapshot]
+        committedSnapshots: [mutation.snapshot],
+        ticketConsumption
+    };
+}
+
+function computeTicketRejectedConnect(
+    input: ComputeAuthorisedWsConnectOperationInput,
+    issues: readonly AuthWsTicketConsumptionIssue[]
+): Extract<AuthorisedWsConnectOperationComputed, { outcome: 'ticket-rejected'; }> {
+    const durableResult = {
+        status: 'ticket-rejected',
+        sessionId: input.connection.authSession.sessionId,
+        generationId: input.connection.generationId
+    } as const;
+    return {
+        outcome: 'ticket-rejected',
+        issues,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult)
+    };
+}
+
+function computeInactiveConnect(
+    input: ComputeAuthorisedWsConnectOperationInput,
+    ticketConsumption: AuthWsTicketConsumption
+): Extract<AuthorisedWsConnectOperationComputed, { outcome: 'inactive'; }> {
+    const durableResult = {
+        status: 'inactive',
+        sessionId: input.connection.authSession.sessionId,
+        generationId: input.connection.generationId
+    } as const;
+    return {
+        outcome: 'inactive',
+        ticketConsumption,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult)
     };
 }
 
@@ -279,7 +334,10 @@ export function assertAuthorisedWsConnectOperation(
         input.computed,
         'Authorised WebSocket client operation computed'
     );
-    if (expected.outcome === 'inactive' || input.computed.outcome === 'inactive') {
+    if (
+        expected.outcome === 'inactive' || expected.outcome === 'ticket-rejected' ||
+        input.computed.outcome === 'inactive' || input.computed.outcome === 'ticket-rejected'
+    ) {
         return;
     }
     assertClientMutationInvariants({

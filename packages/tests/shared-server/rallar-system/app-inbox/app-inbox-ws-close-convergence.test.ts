@@ -49,7 +49,7 @@ describe('AppInbox websocket close convergence', () => {
         const facts = closeFacts(harness.authSession, 'client-interleaved-close', 5);
         const pause = pauseNextLifecycleRead(harness.clientState);
 
-        const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect({
+        const connectEntry = await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -62,7 +62,8 @@ describe('AppInbox websocket close convergence', () => {
         pause.resume();
         await staleConnect;
 
-        expect(authoritativeWrites[0]).toBe('ws-session-close-high-water');
+        // The ticket's guarded delete comes first; the lifecycle guard behind it conflicts and rolls both back.
+        expect(authoritativeWrites.slice(0, 2)).toEqual(['auth-sessions:ws-tickets', 'ws-session-close-high-water']);
         expect(rollbacks).toBe(1);
         expect(
             (
@@ -134,7 +135,7 @@ describe('AppInbox websocket close convergence', () => {
         const harness = await createHarness();
         const facts = closeFacts(harness.authSession, 'client-connect-first', 10);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -155,7 +156,7 @@ describe('AppInbox websocket close convergence', () => {
         const harness = await createHarness();
         const facts = closeFacts(harness.authSession, 'client-disconnect-first', 20);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -259,12 +260,12 @@ describe('AppInbox websocket close convergence', () => {
             const harness = await createHarness();
             const older = closeFacts(harness.authSession, 'client-generation-a', 50);
             const newer = closeFacts(harness.authSession, 'client-generation-b', 60);
-            const olderConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+            const olderConnect = await harness.startAuthorisedWsConnect({
                 authSession: older.authSession,
                 generationId: older.generationId,
                 input: older.input
             });
-            const newerConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+            const newerConnect = await harness.startAuthorisedWsConnect({
                 authSession: newer.authSession,
                 generationId: newer.generationId,
                 input: newer.input
@@ -292,7 +293,7 @@ describe('AppInbox websocket close convergence', () => {
         const older = closeFacts(harness.authSession, 'client-generation-a', 70);
         const newer = closeFacts(harness.authSession, 'client-generation-b', 80);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: newer.authSession,
             generationId: newer.generationId,
             input: newer.input

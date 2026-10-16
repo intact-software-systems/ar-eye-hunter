@@ -10,7 +10,6 @@ const FORBIDDEN_DIRECT_MUTATORS = new Set([
     'putSession',
     'deleteSession',
     'putWebSocketTicket',
-    'consumeWebSocketTicket',
     'putAgentSessionTicket',
     'consumeAgentSessionTicket',
     'upsertPrincipal',
@@ -67,8 +66,6 @@ export const ALLOWED_DIRECT_BOUNDARY_CALLS = new Set([
     'readTopologyView',
     'requireApiAdminSession',
     'requireApiAuthSession',
-    'requireSharedWsAuthSession',
-    'requireWsAuthSession',
     'resetMetrics',
     'verifyIntegrity'
 ]);

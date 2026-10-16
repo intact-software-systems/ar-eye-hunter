@@ -36,6 +36,7 @@ import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
@@ -912,6 +913,7 @@ function createTestQueueBoxPubSubWsService(
 ): QueueBoxPubSubWsService {
     const service: QueueBoxPubSubWsService = {
         outbox: input.outbox ?? new InMemoryQueueBox(),
+        socket: new JsonWebSocketServer(),
         onOutboxClusterPublishDo(publisher) {
             input.registerOutboxPublisher?.(publisher);
             return service;

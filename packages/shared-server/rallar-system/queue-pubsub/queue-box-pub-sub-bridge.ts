@@ -34,6 +34,7 @@ import {
     type WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -51,6 +52,7 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
+    readonly socket: Pick<JsonWebSocketServer, 'isAwaitingConnection' | 'deferUntilConnectionSettles'>;
     onOutboxClusterPublishDo(
         publisher: (
             message: ALMessage,
@@ -239,7 +241,8 @@ async function writeQueueBoxOutboxPublication(
                 deliveryStatus: result.status,
                 recipientCount: result.recipientCount,
                 sentCount: result.sentCount,
-                failedCount: result.failedCount
+                failedCount: result.failedCount,
+                deferredCount: deferAwaitedCapturedRecipients({ message, entry, policy }, options)
             }
         });
         if (result.failedCount > 0) {
@@ -335,9 +338,11 @@ async function sendRemoteQueueBoxOutboxEntry(
 ): Promise<void> {
     const remoteMessage = decodePersistedALMessage(entry.resource);
     let result: WsServerLiveSendResult;
+    let deferredCount: number;
     try {
         const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, remoteMessage, entry);
         result = sendToCapturedLocalTargets({ message: remoteMessage, entry, policy }, options);
+        deferredCount = deferAwaitedCapturedRecipients({ message: remoteMessage, entry, policy }, options);
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -360,7 +365,8 @@ async function sendRemoteQueueBoxOutboxEntry(
             deliveryStatus: result.status,
             recipientCount: result.recipientCount,
             sentCount: result.sentCount,
-            failedCount: result.failedCount
+            failedCount: result.failedCount,
+            deferredCount
         }
     });
     if (result.failedCount === 0) {
@@ -408,6 +414,30 @@ async function readCapturedPublicationPolicy(
     return isWsQueueBoxServerReceiptRow(message)
         ? undefined
         : await service.readCapturedPolicy(message, entry);
+}
+
+/**
+ * A captured session whose connect has committed but whose socket this instance has not opened yet is
+ * held, not dropped: the row is sent to that session alone when its socket opens or its upgrade settles.
+ */
+function deferAwaitedCapturedRecipients(
+    input: SendToCapturedLocalTargetsInput,
+    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+): number {
+    const { policy } = input;
+    const socket = options.wsQBoxServerService.socket;
+    let deferredCount = 0;
+    for (const sessionId of policy?.admittedAudience ?? []) {
+        if (
+            policy !== undefined && socket.isAwaitingConnection(sessionId) &&
+            socket.deferUntilConnectionSettles(sessionId, () => {
+                sendToCapturedLocalTargets({ ...input, policy: { ...policy, admittedAudience: [sessionId] } }, options);
+            })
+        ) {
+            deferredCount += 1;
+        }
+    }
+    return deferredCount;
 }
 
 function sendToCapturedLocalTargets(

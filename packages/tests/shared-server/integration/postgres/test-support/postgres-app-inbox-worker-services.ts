@@ -92,7 +92,10 @@ export function createPostgresAppInboxWorkerServices(
         database: input.transactionSql
     };
     const handlerOptions = { serviceId: input.serviceId, timing: undefined, options: inboxOptions };
-    const client = new AppClientInboxService({ ...inboxDependencies, clientStateService: clientState }, handlerOptions);
+    const client = new AppClientInboxService(
+        { ...inboxDependencies, clientStateService: clientState, wsTickets: authSessions },
+        handlerOptions
+    );
     const group = new GroupStateInboxService({
         ...inboxDependencies,
         groupStateService: groupState,

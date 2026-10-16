@@ -3,6 +3,7 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import type { ToAuthorisedWsClientConnectionInput } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -10,9 +11,11 @@ import { GroupStateInboxService } from '@shared-server/rallar-system/group-state
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { putAuthorisedWsTestTicket } from '../../client-state/authorised-ws-test-ticket.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
 
@@ -39,6 +42,8 @@ export interface AppInboxWsCloseHarness {
     readonly groups: GroupStateRepository;
     /** Deletes the harness auth session, as a logout or an auth expiry does while its socket is still open. */
     revokeAuthSession(): Promise<void>;
+    /** Starts an upgrade's connect with a fresh ticket; it waits for its result while the test drives the queue. */
+    startAuthorisedWsConnect(input: ToAuthorisedWsClientConnectionInput): Promise<ResourceEntry>;
 }
 interface AppInboxWsCloseHarnessOptions {
     readonly onRollback?: () => void;
@@ -106,7 +111,7 @@ export async function createAppInboxWsCloseHarness(
         clientStateEventStore: database.clientEventStore,
         serviceId: 'server-12345678'
     });
-    const dependencies = { queue, results, database, clientState, groupState };
+    const dependencies = { queue, results, database, clientState, groupState, authSessions };
     const { client, group } = installWsCloseReader(reader, dependencies);
     installWsCloseReader(secondReader, dependencies);
     return {
@@ -120,8 +125,25 @@ export async function createAppInboxWsCloseHarness(
         groupState,
         clients: createTestClientStateRepository(runtimeRepository),
         groups: createTestGroupStateRepository(runtimeRepository, database.groupEventStore),
-        revokeAuthSession: async () => await authSessions.deleteSession(authSession)
+        revokeAuthSession: async () => await authSessions.deleteSession(authSession),
+        startAuthorisedWsConnect: async (input) => {
+            const ticketDigest = await putAuthorisedWsTestTicket(authSessions, input.authSession, `${input.generationId}-ticket`);
+            const queuedKeys = new Set((await queue.readEntries()).map((entry) => JSON.stringify(entry.key)));
+            void client.writeAuthorisedWsClientConnect({ ...input, ticketDigest });
+            return await waitForNewQueuedEntry(queue, queuedKeys);
+        }
     };
+}
+
+async function waitForNewQueuedEntry(queue: TestResourceInbox, queuedKeys: ReadonlySet<string>): Promise<ResourceEntry> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        const entry = (await queue.readEntries()).find((candidate) => !queuedKeys.has(JSON.stringify(candidate.key)));
+        if (entry !== undefined) {
+            return entry;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error('The authorised connect was not queued');
 }
 
 interface WsCloseReaderDependencies {
@@ -130,6 +152,7 @@ interface WsCloseReaderDependencies {
     readonly database: AppInboxTestDatabase;
     readonly clientState: ClientStateService;
     readonly groupState: GroupStateService;
+    readonly authSessions: AuthSessionRepository;
 }
 
 interface WsCloseReaderServices {
@@ -149,7 +172,7 @@ function installWsCloseReader(
     };
     return {
         client: new AppClientInboxService(
-            { ...shared, clientStateService: dependencies.clientState },
+            { ...shared, clientStateService: dependencies.clientState, wsTickets: dependencies.authSessions },
             { serviceId: 'server-12345678' }
         ),
         group: new GroupStateInboxService(

@@ -20,8 +20,7 @@ import {
     createPostgresAppInboxWorkerRuntime,
     createPostgresAppInboxWorkerTrace
 } from '../../../../packages/tests/shared-server/integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
-import { readCompletedAppInboxResult } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/read-completed-app-inbox-result.ts';
-import { decodeAuthorisedWsClientTestResult } from '../../../../packages/tests/shared-server/rallar-system/client-state/client-inbox-test-result-decoding.ts';
+import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -37,8 +36,19 @@ interface SnapshotRecipient {
     readonly scope: StateScope;
 }
 
-for (const placement of ['publisher', 'remote'] as const) {
-    Deno.test(`committed client snapshot reaches ${placement} socket through registered cluster bridge`, async () => {
+/**
+ * `after-commit`: the upgrade route registers the socket only after its connect commits, so the row can be
+ * delivered while the session is expected but not yet open; the hold delivers it when the socket opens.
+ */
+for (
+    const [placement, registration] of [
+        ['publisher', 'before-delivery'],
+        ['remote', 'before-delivery'],
+        ['publisher', 'after-commit'],
+        ['remote', 'after-commit']
+    ] as const
+) {
+    Deno.test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
         await withPGliteSql(async (sql) => {
             const recipient: SnapshotRecipient = {
                 sessionId: crypto.randomUUID(),
@@ -52,8 +62,14 @@ for (const placement of ['publisher', 'remote'] as const) {
                 recipientScope: recipient.scope
             });
             const native = new TestWebSocket('ws://recipient');
-            native.open();
-            const recipientSocket = createRecipientSocket(recipient, native);
+            const recipientSocket = new JsonWebSocketServer();
+            if (registration === 'before-delivery') {
+                native.open();
+                registerRecipientConnection(recipientSocket, recipient, native);
+            }
+            else {
+                recipientSocket.expectConnection({ id: recipient.sessionId, generationId: 'generation' });
+            }
             const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
             const publisherEngine = new InboxOutboxEngine();
             const remoteEngine = new InboxOutboxEngine();
@@ -98,6 +114,11 @@ for (const placement of ['publisher', 'remote'] as const) {
                 }
                 assert.equal((await stores.workQueue.getItem(entry.key))?.status, EntityStatus.COMPLETED);
                 assert.equal(bridge.published.length, 1);
+                if (registration === 'after-commit') {
+                    assert.equal(native.sent.length, 0);
+                    registerRecipientConnection(recipientSocket, recipient, native);
+                    native.open();
+                }
                 assert.equal(native.sent.length, 1);
             }
             catch (caught) {
@@ -144,22 +165,18 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
     };
     const runtime = createPostgresAppInboxWorkerRuntime({ sql, serviceId: 'producer', atEpochMs: recipient.now, trace: createPostgresAppInboxWorkerTrace() });
     await runtime.authSessions.putSession(authSession);
-    const entry = await runtime.client.enqueueAuthorisedWsClientConnect({
-        authSession,
-        generationId: 'generation',
-        input: {
-            ...recipient.scope,
-            clientInstanceId: 'browser',
-            connectedAtEpochMs: recipient.now,
-            expiresAtEpochMs: recipient.now + 60_000
-        }
-    });
+    const ticketDigest = await putAuthorisedWsTestTicket(runtime.authSessions, authSession);
     const result = await runtime.runUntilCompletion(() =>
-        readCompletedAppInboxResult({
-            statusRepository: runtime.resourceInbox.entries,
-            resultRepository: runtime.resourceInboxResults,
-            entry,
-            decodeResult: decodeAuthorisedWsClientTestResult
+        runtime.client.writeAuthorisedWsClientConnect({
+            authSession,
+            generationId: 'generation',
+            ticketDigest,
+            input: {
+                ...recipient.scope,
+                clientInstanceId: 'browser',
+                connectedAtEpochMs: recipient.now,
+                expiresAtEpochMs: recipient.now + 60_000
+            }
         })
     );
     assert.ok(result.right);
@@ -171,8 +188,7 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
     return toDomain(rows[0]!);
 }
 
-function createRecipientSocket(recipient: SnapshotRecipient, native: TestWebSocket): JsonWebSocketServer {
-    const socket = new JsonWebSocketServer();
+function registerRecipientConnection(socket: JsonWebSocketServer, recipient: SnapshotRecipient, native: TestWebSocket): void {
     socket.addConnection(
         new ConnectionContext({ id: recipient.sessionId, socket: native, generationId: 'generation', generationStartedAtEpochMs: recipient.now })
     );
@@ -195,7 +211,6 @@ function createRecipientSocket(recipient: SnapshotRecipient, native: TestWebSock
         capabilities: [],
         expiresAtEpochMs: recipient.now + 60_000
     });
-    return socket;
 }
 
 class SnapshotBridge implements QueueBoxPubSubBridge {

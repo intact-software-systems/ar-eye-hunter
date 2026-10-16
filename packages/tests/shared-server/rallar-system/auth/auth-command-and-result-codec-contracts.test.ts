@@ -19,7 +19,6 @@ type ExpectedAuthMutationDiscriminant =
     | 'issue-session'
     | 'logout-session'
     | 'issue-ws-ticket'
-    | 'consume-ws-ticket'
     | 'issue-agent-tickets'
     | 'consume-agent-ticket';
 
@@ -28,7 +27,6 @@ type ExpectedAuthMutationResultDiscriminant =
     | 'loggedOut'
     | 'session-issued'
     | 'ws-ticket-issued'
-    | 'ws-ticket-consumed'
     | 'agent-tickets-issued'
     | 'agent-ticket-consumed';
 
@@ -100,14 +98,6 @@ const commandFixtures = [
     },
     {
         version: 1,
-        kind: 'consume-ws-ticket',
-        requestId: 'ws-consume-request',
-        capturedAtEpochMs: 1_002,
-        ticketDigest: 'ws-ticket-digest',
-        expectedSessionId: session.sessionId
-    },
-    {
-        version: 1,
         kind: 'issue-agent-tickets',
         requestId: 'agent-issue-request',
         capturedAtEpochMs: 1_001,
@@ -158,11 +148,6 @@ const resultFixtures = [
         expiresAtEpochMs: 1_500
     },
     {
-        requestId: 'ws-consume-request',
-        kind: 'ws-ticket-consumed',
-        ...session
-    },
-    {
         requestId: 'agent-issue-request',
         kind: 'agent-tickets-issued',
         tickets: [
@@ -187,7 +172,6 @@ const [
     issueSessionCommand,
     logoutCommand,
     issueWebSocketTicketCommand,
-    consumeWebSocketTicketCommand,
     issueAgentTicketsCommand,
     consumeAgentTicketCommand
 ] = commandFixtures;
@@ -197,7 +181,6 @@ const [
     logoutResult,
     sessionIssuedResult,
     webSocketTicketIssuedResult,
-    webSocketTicketConsumedResult,
     agentTicketsIssuedResult,
     agentTicketConsumedResult
 ] = resultFixtures;
@@ -208,7 +191,7 @@ it('catches a contract that drops or adds a command or durable-result discrimina
     resultType.toEqualTypeOf<ExpectedAuthMutationResultDiscriminant>();
 });
 
-it('catches a decoder that drops any of the seven command discriminants', () => {
+it('catches a decoder that drops any of the six command discriminants', () => {
     for (const command of commandFixtures) {
         const decoded = decodeAuthMutationCommand(command);
 
@@ -284,7 +267,6 @@ it('catches invalid nested timestamps and lifecycles in every command family', (
                 expiresAtEpochMs: 1_001
             }
         },
-        { ...consumeWebSocketTicketCommand, capturedAtEpochMs: -1 },
         {
             ...issueAgentTicketsCommand,
             authority: {
@@ -329,7 +311,7 @@ it('catches invalid fields, timestamps, or lifecycles in every result family', (
             ...webSocketTicketIssuedResult,
             expiresAtEpochMs: webSocketTicketIssuedResult.issuedAtEpochMs
         },
-        { ...webSocketTicketConsumedResult, issuedAtEpochMs: Number.NaN },
+        { ...agentTicketConsumedResult, issuedAtEpochMs: Number.NaN },
         {
             ...agentTicketsIssuedResult,
             tickets: [{ ...agentTicketsIssuedResult.tickets[0], unexpected: true }]

@@ -323,9 +323,6 @@ function createDefaultApiV1RouteInstallers({
         groupAdmission: configuration.group.admission,
         strictReadAuthorization: configuration.stateApi.strictReadAuthorization,
         nowEpochMs,
-        createTokenId: () => crypto.randomUUID(),
-        createWsAuthRequestFacts: () => ({
-            requestId: crypto.randomUUID()
-        })
+        createTokenId: () => crypto.randomUUID()
     });
 }
