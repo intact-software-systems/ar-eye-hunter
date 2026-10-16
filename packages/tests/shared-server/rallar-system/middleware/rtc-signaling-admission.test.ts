@@ -83,6 +83,7 @@ describe('middleware pre-admission', () => {
             installRtcSignalingWsTopic({
                 service: runtime.wsQBoxServerService,
                 publication: undefined,
+                readConnectionCurrentness: async () => true,
                 nowEpochMs: Date.now,
                 timing: undefined
             });

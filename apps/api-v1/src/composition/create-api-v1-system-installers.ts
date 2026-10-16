@@ -24,6 +24,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { toAuthorisedWsClientDisconnectInput, toGroupPresenceSessionCleanupInput } from '../routes/ws-routes.ts';
 import {
     hasAuthorisedWsCloseFacts,
+    readAuthorisedWsConnectionCurrentness,
     releaseAuthorisedWsCloseFacts
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
@@ -66,6 +67,8 @@ function installApiV1SystemTopics(
     installRtcSignalingWsTopic({
         service: runtime.wsQBoxServerService,
         publication: input.livePublication,
+        readConnectionCurrentness: (connection) =>
+            readAuthorisedWsConnectionCurrentness(connection, (ref) => runtime.clientStateService.readSnapshot(ref)),
         nowEpochMs: input.nowEpochMs,
         timing: input.timing
     });

@@ -40,6 +40,7 @@ describe('the RTC signaling relay', () => {
                 channel: CHANNEL,
                 publisherId: 'publisher-a'
             },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: undefined
         });
@@ -62,6 +63,7 @@ describe('the RTC signaling relay', () => {
         installRtcSignalingWsTopic({
             service: serverA.service,
             publication: { transport: bus, channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: undefined
         });
@@ -79,6 +81,31 @@ describe('the RTC signaling relay', () => {
         expect(receiver.sent).toEqual([JSON.stringify(message)]);
     });
 
+    it('publishes a signal a stale socket here took, and the live socket on another server receives it', async () => {
+        const bus = createLiveWsNoticeBus();
+        const serverA = await createServerIngressFixture(undefined, 'sender');
+        const serverB = await createServerIngressFixture(undefined, 'peer-b');
+        // The recipient reconnected to server B; its old socket here is not yet reaped.
+        const staleReceiver = await connectReceiver(serverA);
+        const liveReceiver = await connectReceiver(serverB);
+        await installSubscriber(serverA, bus, 'publisher-a');
+        await installSubscriber(serverB, bus, 'publisher-b');
+        installRtcSignalingWsTopic({
+            service: serverA.service,
+            publication: { transport: bus, channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => false,
+            nowEpochMs: Date.now,
+            timing: undefined
+        });
+        const message = signalingMessage('offer-1');
+
+        expect((await serverA.service.acceptIncomingMessage(message, 'sender')).right?.kind).toBe('admitted');
+
+        await expect.poll(() => liveReceiver.sent, { timeout: 2_000 }).toEqual([JSON.stringify(message)]);
+        expect(staleReceiver.sent).toEqual([JSON.stringify(message)]);
+        expect(bus.published).toHaveLength(1);
+    });
+
     it('publishes a signal whose local recipient is not current for its scope', async () => {
         const fixture = await createServerIngressFixture(
             undefined,
@@ -93,6 +120,7 @@ describe('the RTC signaling relay', () => {
         installRtcSignalingWsTopic({
             service: fixture.service,
             publication: { transport: bus, channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: undefined
         });
@@ -110,6 +138,7 @@ describe('the RTC signaling relay', () => {
         installRtcSignalingWsTopic({
             service: fixture.service,
             publication: { transport: bus, channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: undefined
         });
@@ -134,6 +163,7 @@ describe('the RTC signaling relay', () => {
         installRtcSignalingWsTopic({
             service: fixture.service,
             publication: { transport: createLiveWsNoticeBus(), channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: (event) => timing.push(event)
         });
@@ -169,6 +199,7 @@ describe('the RTC signaling relay', () => {
         installRtcSignalingWsTopic({
             service: fixture.service,
             publication: { transport: bus, channel: CHANNEL, publisherId: 'publisher-a' },
+            readConnectionCurrentness: async () => true,
             nowEpochMs: Date.now,
             timing: undefined
         });

@@ -5,6 +5,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { WebSocketServerMessageContext } from '@shared/services/queue-message-callbacks.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { toError } from '@shared/resilience/to-error.ts';
 import { recordRallarTiming, type RallarTimingSink } from '../observability/timing.ts';
@@ -16,6 +17,11 @@ import { isInstanceLocalRtcSignal } from './is-instance-local-rtc-signal.ts';
 export interface InstallRtcSignalingWsTopicInput {
     readonly service: WsQueueBoxServerService;
     readonly publication: RallarServerWsRouterOptions['livePublication'];
+    /**
+     * Whether a socket here is its session's current connection generation. A signal only a stale socket here took
+     * is published too: the session's live socket may be on another instance.
+     */
+    readonly readConnectionCurrentness: (connection: ConnectionContext) => Promise<boolean>;
     readonly nowEpochMs: () => number;
     /**
      * Receives one `rtc-signaling-relay` row per relayed signal, named for where it went, timed from its dispatch;
@@ -76,8 +82,8 @@ export function installRtcSignalingWsTopic(input: InstallRtcSignalingWsTopicInpu
 }
 
 /**
- * A recipient connected here is sent the signal at once. Only a signal no socket here took is published for the
- * other instances, whose subscribers skip this publisher's own notices, so a recipient receives it once.
+ * A recipient connected here is sent the signal at once. A signal that reached no current socket here is published for
+ * the other instances, whose subscribers skip this publisher's own notices, so a live socket receives it once.
  */
 async function relayRtcSignalingMessage(relay: RelayRtcSignalingMessageInput): Promise<void> {
     const scope = relay.context.source.kind === 'ws-client' ? relay.context.source.authenticatedScope : undefined;
@@ -89,20 +95,14 @@ async function relayRtcSignalingMessage(relay: RelayRtcSignalingMessageInput): P
     if (expiresAtMs <= dispatchedAtMs) {
         return;
     }
-    const sent = relay.service.sendToTargetsWithResult({
-        message: relay.message,
-        expiresAtMs,
-        recipientSessionIds: [relay.recipientSessionId],
-        inboundScope: scope,
-        recipientScope: scope,
-        requireAuthenticatedRecipient: true
-    });
-    if (sent.failedCount > 0) {
-        console.error(`Local RTC signaling send failed for ${sent.failedCount} recipients.`);
-    }
+    const sent = sendRtcSignalHere(relay, scope, expiresAtMs);
     const attempt = { relay, sent, dispatchedAtMs };
-    if (sent.sentCount > 0 || !relay.publication) {
+    if (!relay.publication) {
         recordRtcSignalingRelayTiming(attempt, sent.sentCount > 0 ? 'local-send' : 'undelivered', undefined);
+        return;
+    }
+    if (sent.sentCount > 0 && await readSentConnectionCurrentness(relay)) {
+        recordRtcSignalingRelayTiming(attempt, 'local-send', undefined);
         return;
     }
     try {
@@ -115,7 +115,34 @@ async function relayRtcSignalingMessage(relay: RelayRtcSignalingMessageInput): P
     }
 }
 
-/** An instance-local signal is in no shared store, so its notice can only carry it inline. */
+function sendRtcSignalHere(
+    relay: RelayRtcSignalingMessageInput,
+    scope: StateScope,
+    expiresAtMs: number
+): WsServerLiveSendResult {
+    const sent = relay.service.sendToTargetsWithResult({
+        message: relay.message,
+        expiresAtMs,
+        recipientSessionIds: [relay.recipientSessionId],
+        inboundScope: scope,
+        recipientScope: scope,
+        requireAuthenticatedRecipient: true
+    });
+    if (sent.failedCount > 0) {
+        console.error(`Local RTC signaling send failed for ${sent.failedCount} recipients.`);
+    }
+    return sent;
+}
+
+async function readSentConnectionCurrentness(relay: RelayRtcSignalingMessageInput): Promise<boolean> {
+    const connection = relay.context.server.connections.get(relay.recipientSessionId);
+    return connection !== undefined && await relay.readConnectionCurrentness(connection);
+}
+
+/**
+ * A notice carries the signal inline whenever it fits. Only a signal admitted to the shared store may travel by its
+ * inbound key: an instance-local one is in no store another instance reads.
+ */
 async function publishRtcSignalingNotice(input: PublishRtcSignalingNoticeInput): Promise<void> {
     const { relay, publication } = input;
     const encoded = encodeLiveWsNotice({
@@ -125,15 +152,16 @@ async function publishRtcSignalingNotice(input: PublishRtcSignalingNoticeInput):
         message: relay.message,
         scope: input.scope,
         audience: { mode: 'peer', recipientSessionIds: [relay.recipientSessionId] },
-        ...(isInstanceLocalRtcSignal(relay.message) ? {} : {
-            inbound: {
-                namespace: relay.service.getInboundNamespace(),
-                reference: { senderId: relay.message.id.senderId, msgId: relay.message.id.msgId }
-            }
-        })
+        inbound: {
+            namespace: relay.service.getInboundNamespace(),
+            reference: { senderId: relay.message.id.senderId, msgId: relay.message.id.msgId }
+        }
     });
     if (encoded.kind === 'oversize') {
         throw new TypeError(`Admitted RTC signaling notice is oversized (${encoded.inlineBytes} bytes).`);
+    }
+    if (encoded.kind === 'inbound-key' && isInstanceLocalRtcSignal(relay.message)) {
+        throw new TypeError('Instance-local RTC signaling does not fit an inline notice.');
     }
     await publication.transport.publish(encoded.notice);
 }
