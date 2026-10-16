@@ -107,7 +107,9 @@ describe('ResourceInbox dequeue failure log', () => {
     });
 
     it('releases a handler conflict value for redelivery on the retry path, logged once without stack frames', async () => {
-        const queue = new InMemoryQueueBox();
+        // A pinned clock keeps the released retry from falling due later in the same pass on a slow runner.
+        const pinnedNow = Temporal.Now.instant();
+        const queue = new InMemoryQueueBox(new Map(), () => pinnedNow);
         const enqueued = toResourceEntry('write-conflict', { value: 3 });
         await queue.enqueue(enqueued);
         const errorLines: string[] = [];
