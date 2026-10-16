@@ -25,6 +25,7 @@ export function validateWaitControlCommand(command: RallarBlackBoxTestRecord): r
         ...(command.absent === undefined || command.absent === true
             ? []
             : [toControlCommandIssue('wait.absent must be true when present.')]),
+        ...validateStringField(command, 'timeoutFrom', 'wait'),
         ...validateAllowedFields(match, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, WAIT_MATCH_PATH),
         ...validateWaitMatchFields(match)
     ];

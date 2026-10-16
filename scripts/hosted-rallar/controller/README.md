@@ -379,6 +379,12 @@ with `RALLAR_BLACK_BOX_USERNAME` or its `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME`.
 When registration reports that the user already exists, the black-box auth flow
 falls back to a normal login with the same credentials.
 
+The GitHub Free workflow registers its agents' users itself: each agent shard
+registers its own `<prefix>-NN` users through the public register endpoint
+before its worker starts (an existing user is accepted), and its workers then
+run without `RALLAR_BLACK_BOX_REGISTER`, so a recipe's sign-in logs in only and
+pays one password derivation per agent instead of two.
+
 The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
 `register_before_login=true` for Hetzner runs because the current controller API
 uses memory-backed auth. Pass `--register-before-login false` only when running
@@ -828,10 +834,11 @@ whatever the recipe's outcome. The agents disconnect after the recipe reports
 its terminal state, so the export re-reads the API journal every 5 s until every
 WS connect it logged since the run start has its disconnect, for at most 120 s,
 and reports the balance it exported with. Connects and disconnects count by
-distinct request id, since a retried or rejected item logs once per attempt. The API deploys with `RALLAR_TIMING_LOGS=1` and
-`RALLAR_APP_INBOX_PHASE_TIMING=true`, so a hosted failure can be attributed on
-the server side; with both on, a 50-agent run writes about 9 000 API journal
-lines.
+distinct request id, since a retried or rejected item logs once per attempt. An acceptance run leaves the API
+uninstrumented: the rollout writes `RALLAR_TIMING_LOGS=0` and `RALLAR_APP_INBOX_PHASE_TIMING=false`, since the
+timing lines default on in the API. A diagnostic run selects the `server_timing` workflow input, which rolls the
+API out with both on, so a hosted failure can be attributed on the server side; with both on, a 50-agent run
+writes about 9 000 API journal lines, among them one event-loop lag line per second.
 
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,

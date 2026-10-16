@@ -16,6 +16,7 @@ RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-
 RALLAR_ROLLOUT_CONTROL_STATE_DIR="${RALLAR_ROLLOUT_CONTROL_STATE_DIR:-/var/lib/rallar-black-box-control}"
 RALLAR_ROLLOUT_TMP_DIR="${RALLAR_ROLLOUT_TMP_DIR:-/tmp}"
 RALLAR_API_ENV_FILE="${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}"
+RALLAR_API_SERVER_TIMING="${RALLAR_API_SERVER_TIMING:-0}"
 
 rallar_user_home() {
 	local user="${1:-rallar}"
@@ -250,10 +251,17 @@ update_env_value() {
 	rm -f "${tmp_file}"
 }
 
-# Hosted runs are attributed from the API journal, so every rollout turns the timing lines on.
+# Acceptance runs are uninstrumented and diagnostic runs opt in; the API's timing lines default on, so off is explicit.
 write_api_timing_environment() {
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "1"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "true"
+	local server_timing
+	server_timing="$(printf '%s' "${RALLAR_API_SERVER_TIMING}" | tr '[:upper:]' '[:lower:]')"
+	if [[ "${server_timing}" == 1 || "${server_timing}" == true || "${server_timing}" == yes || "${server_timing}" == on ]]; then
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "1"
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "true"
+	else
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "0"
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "false"
+	fi
 }
 
 run_rollout_self_test() {

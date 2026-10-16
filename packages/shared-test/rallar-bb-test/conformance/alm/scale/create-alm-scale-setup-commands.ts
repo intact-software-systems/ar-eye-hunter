@@ -9,6 +9,8 @@ import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
 /** Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan. */
 const LAYOUT_QUIET_WINDOW_MS = 3_500;
+/** A readiness whose layout is replaced is read again this soon, since its quiet window may already have elapsed. */
+const LAYOUT_RECHECK_INTERVAL_MS = 500;
 /**
  * The API serves a cohort's group joins one at a time, so the director's group requests and every agent's single
  * ready-status read get an allowance that grows with the cohort; a player's join runs inside its connect.
@@ -222,12 +224,17 @@ function createDirectorWait(input: AlmScaleRecipeInput, prefix: string): RallarB
     };
 }
 
-/** Readiness repeats until no plan from its own group revision, which would replace the ready layout, appears. */
+/**
+ * Readiness repeats until no plan from its own group revision, which would replace the ready layout, has appeared
+ * within the quiet window counted from the accepted layout's update, so a layout that settled earlier costs no wait.
+ */
 function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    const readiness = `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:${prefix}-layout-readiness.value`;
     return {
         kind: 'loop',
         commandId: `${prefix}-layout-stable`,
-        count: Math.floor(input.readyTimeoutMs / LAYOUT_QUIET_WINDOW_MS),
+        count: Math.ceil(input.readyTimeoutMs / LAYOUT_RECHECK_INTERVAL_MS),
+        intervalMs: LAYOUT_RECHECK_INTERVAL_MS,
         timeoutMs: input.readyTimeoutMs + LAYOUT_QUIET_WINDOW_MS,
         until: 'first-success',
         commands: [
@@ -242,12 +249,12 @@ function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): Ral
                 commandId: `${prefix}-layout-replan`,
                 absent: true,
                 timeoutMs: LAYOUT_QUIET_WINDOW_MS,
+                timeoutFrom: `{${readiness}.formation.accepted.overlay.updatedAtEpochMs}`,
                 match: {
                     topic: 'rallar.browser.formation.layout',
                     payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
                     payloadPath: 'data.identity',
-                    contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                        `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+                    contains: `"groupRevision":{${readiness}.formation.causalRevision.groupRevision},`
                 }
             }
         ]

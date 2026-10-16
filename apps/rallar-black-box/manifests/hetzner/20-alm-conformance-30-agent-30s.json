@@ -1712,7 +1712,8 @@
           {
             "kind": "loop",
             "commandId": "alm-scale-director-layout-stable",
-            "count": 12,
+            "count": 90,
+            "intervalMs": 500,
             "timeoutMs": 48500,
             "until": "first-success",
             "commands": [
@@ -1731,6 +1732,7 @@
                 "commandId": "alm-scale-director-layout-replan",
                 "absent": true,
                 "timeoutMs": 3500,
+                "timeoutFrom": "{resultCache.alm-scale-director-layout-stable:i{loop.iteration}:c1:alm-scale-director-layout-readiness.value.formation.accepted.overlay.updatedAtEpochMs}",
                 "match": {
                   "topic": "rallar.browser.formation.layout",
                   "payloadFields": {
@@ -5927,7 +5929,8 @@
           {
             "kind": "loop",
             "commandId": "alm-scale-player-layout-stable",
-            "count": 12,
+            "count": 90,
+            "intervalMs": 500,
             "timeoutMs": 48500,
             "until": "first-success",
             "commands": [
@@ -5946,6 +5949,7 @@
                 "commandId": "alm-scale-player-layout-replan",
                 "absent": true,
                 "timeoutMs": 3500,
+                "timeoutFrom": "{resultCache.alm-scale-player-layout-stable:i{loop.iteration}:c1:alm-scale-player-layout-readiness.value.formation.accepted.overlay.updatedAtEpochMs}",
                 "match": {
                   "topic": "rallar.browser.formation.layout",
                   "payloadFields": {

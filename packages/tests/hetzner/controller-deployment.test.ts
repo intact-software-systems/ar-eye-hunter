@@ -390,13 +390,13 @@ describe('Hetzner controller contracts and effects', () => {
         }
     });
 
-    it('deploys the hosted API with timing and AppInbox phase timing logs and keeps them through the rollout env sanitizer', async (context) => {
+    it('deploys the hosted API with timing and AppInbox phase timing logs only when server timing is selected, and keeps them through the rollout env sanitizer', async (context) => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
-        expect(deployScript).toContain('\nRALLAR_TIMING_LOGS=1\n');
-        expect(deployScript).toContain('\nRALLAR_APP_INBOX_PHASE_TIMING=true\n');
+        expect(deployScript).toContain('\nRALLAR_TIMING_LOGS=${RALLAR_API_TIMING_LOGS}\n');
+        expect(deployScript).toContain('\nRALLAR_APP_INBOX_PHASE_TIMING=${RALLAR_API_APP_INBOX_PHASE_TIMING}\n');
 
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-sanitize-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -426,19 +426,28 @@ describe('Hetzner controller contracts and effects', () => {
         ]);
     });
 
-    it('turns timing and AppInbox phase timing on through the rollout of an API deployed without them', async (context) => {
+    // Acceptance runs are uninstrumented: the timing lines default on in the API, so the rollout turns them off explicitly.
+    it.for([
+        { serverTiming: undefined, expected: 'PORT=8080\nRALLAR_TIMING_LOGS=0\nRALLAR_APP_INBOX_PHASE_TIMING=false\n' },
+        { serverTiming: 'false', expected: 'PORT=8080\nRALLAR_TIMING_LOGS=0\nRALLAR_APP_INBOX_PHASE_TIMING=false\n' },
+        { serverTiming: 'true', expected: 'PORT=8080\nRALLAR_TIMING_LOGS=1\nRALLAR_APP_INBOX_PHASE_TIMING=true\n' }
+    ])('writes the API timing env for server timing $serverTiming through the rollout', async ({ serverTiming, expected }, context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-timing-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
         const envFile = path.join(directory, 'api-v1.env');
-        await writeFile(envFile, 'PORT=8080\nRALLAR_TIMING_LOGS=0\n');
+        await writeFile(envFile, 'PORT=8080\nRALLAR_TIMING_LOGS=1\n');
 
         const { stdout } = await runControllerSelfTest(context, {
             scriptPath: rolloutScriptPath,
-            environment: { RALLAR_API_ENV_FILE: envFile, RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-timing-environment' }
+            environment: {
+                RALLAR_API_ENV_FILE: envFile,
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'write-api-timing-environment',
+                ...(serverTiming === undefined ? {} : { RALLAR_API_SERVER_TIMING: serverTiming })
+            }
         });
 
         expect(stdout).toContain('wroteApiTimingEnvironment=true');
-        expect(await readFile(envFile, 'utf8')).toBe('PORT=8080\nRALLAR_TIMING_LOGS=1\nRALLAR_APP_INBOX_PHASE_TIMING=true\n');
+        expect(await readFile(envFile, 'utf8')).toBe(expected);
         expect(await readFile(rolloutScriptPath, 'utf8')).toContain('\nwrite_api_timing_environment\n');
     });
 

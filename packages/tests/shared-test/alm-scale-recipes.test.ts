@@ -322,37 +322,43 @@ describe('ALM scale recipes', () => {
         }
     );
 
-    it.each(['director', 'player'] as const)('holds the %s at setup-complete until no newer plan replaces the ready layout', (role) => {
-        const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
-        const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
-        const prefix = `alm-scale-${role}`;
-        const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
+    it.each(['director', 'player'] as const)(
+        'holds the %s at setup-complete until no newer plan has replaced the ready layout for a quiet window counted from its update',
+        (role) => {
+            const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
+            const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
+            const prefix = `alm-scale-${role}`;
+            const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
 
-        expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
-        expect(recipe.commands[setupComplete - 1]).toEqual({
-            kind: 'loop',
-            commandId: `${prefix}-layout-stable`,
-            count: 12,
-            timeoutMs: 48_500,
-            until: 'first-success',
-            commands: [
-                { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
-                {
-                    kind: 'wait',
-                    commandId: `${prefix}-layout-replan`,
-                    absent: true,
-                    timeoutMs: 3_500,
-                    match: {
-                        topic: 'rallar.browser.formation.layout',
-                        payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
-                        payloadPath: 'data.identity',
-                        contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                            `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+            expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+            expect(recipe.commands[setupComplete - 1]).toEqual({
+                kind: 'loop',
+                commandId: `${prefix}-layout-stable`,
+                count: 90,
+                intervalMs: 500,
+                timeoutMs: 48_500,
+                until: 'first-success',
+                commands: [
+                    { kind: 'formation.readiness', commandId: `${prefix}-layout-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
+                    {
+                        kind: 'wait',
+                        commandId: `${prefix}-layout-replan`,
+                        absent: true,
+                        timeoutMs: 3_500,
+                        timeoutFrom: `{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-readiness.value.formation.accepted.overlay.updatedAtEpochMs}`,
+                        match: {
+                            topic: 'rallar.browser.formation.layout',
+                            payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
+                            payloadPath: 'data.identity',
+                            contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                                `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+                        }
                     }
-                }
-            ]
-        });
-    });
+                ]
+            });
+        }
+    );
 
     it('matches a re-plan from exactly the ready revision because the layout event serializes its group revision first', () => {
         const identity = toOverlayLayoutIdentity({

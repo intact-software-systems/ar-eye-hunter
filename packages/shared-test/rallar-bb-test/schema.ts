@@ -560,7 +560,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
     }),
     wait: strictCommandSchema('wait', {
         match: waitMatchSchema,
-        absent: { const: true }
+        absent: { const: true },
+        timeoutFrom: nonEmptyStringSchema
     }),
     assert: {
         properties: { kind: { const: 'assert' } },

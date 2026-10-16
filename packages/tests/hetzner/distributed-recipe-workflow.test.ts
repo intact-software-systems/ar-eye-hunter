@@ -943,6 +943,14 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(manual.jobs.run.with?.register_before_login).toBe('${{ inputs.register_before_login }}');
     });
 
+    it('leaves the API uninstrumented unless a caller selects server timing for the rollout', async () => {
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        const render = runner.jobs.run.steps?.find((step) => step.name === 'Render remote run env');
+        expect(runner.on.workflow_call?.inputs?.server_timing).toMatchObject({ type: 'boolean', default: false });
+        expect(render?.env?.RALLAR_API_SERVER_TIMING).toBe('${{ inputs.server_timing }}');
+        expect(render?.run).toContain('printf \'RALLAR_API_SERVER_TIMING=%s\\n\' "$(quote "${RALLAR_API_SERVER_TIMING}")"');
+    });
+
     it('binds external-agent and split prepare/run operator modes at their public workflow fields', async () => {
         const manual = await readWorkflow(distributedWorkflowPath);
         const runner = await readWorkflow(distributedRunnerWorkflowPath);

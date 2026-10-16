@@ -9,6 +9,7 @@ import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-sys
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
@@ -21,6 +22,7 @@ import {
     myServerId
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
+import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
 import { createApiTimingSink, toApiAppInboxServiceOptions } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
 import {
@@ -78,6 +80,13 @@ function constructDefaultRallarServer(
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
     const timing = createApiTimingSink(configuration.observability);
+    if (configuration.observability.timingLogs) {
+        backgroundTasks.register(startEventLoopLagTiming({
+            timers: createDefaultTimers(),
+            timing,
+            serviceId: myServerId
+        }));
+    }
     const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing });
 
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {

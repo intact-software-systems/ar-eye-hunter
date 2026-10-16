@@ -81,6 +81,14 @@ with `RALLAR_BLACK_BOX_WAIT_INVALID` and the unresolved reference in its details
 recipe pins a wait on an identity it cannot know when it is authored, such as the msgId a send was
 given.
 
+`wait.timeoutFrom` is exactly one such token naming an epoch in milliseconds; the timeout then counts from
+that epoch instead of the wait's start. An `absent: true` wait so closes a quiet window that opened
+before it: the ALM scale recipes count the layout quiet window from
+`{…layout-readiness.value.formation.accepted.overlay.updatedAtEpochMs}`, and a layout that settled
+earlier is checked against the buffered events and released at once. An epoch later than the wait's
+start counts from the start, so the wait never outlasts its own timeout. Anything but one token naming
+a finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+
 ## Formation Commands
 
 `formation.command` and `formation.readiness` drive the shipped browser room

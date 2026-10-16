@@ -266,6 +266,12 @@ export type RallarBlackBoxTestWaitCommand =
     & Readonly<{
         match: RallarBlackBoxTestWaitMatch;
         absent?: true;
+        /**
+         * A `{resultCache.<commandId>.<path>}` reference to an earlier epoch the timeout counts from instead of the
+         * wait's start, so an absent wait closes a quiet window that opened before it; a later epoch counts from the
+         * start, so the wait never outlasts its own timeout.
+         */
+        timeoutFrom?: string;
     }>;
 
 /**

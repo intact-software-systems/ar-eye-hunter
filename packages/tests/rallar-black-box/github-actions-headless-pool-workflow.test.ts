@@ -749,6 +749,86 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
         }
     });
 
+    // One PBKDF2 derivation per agent belongs to the recipe's sign-in: the users exist before the run, so it logs in only.
+    it('registers the shard\'s agent users before its worker starts, and the worker only logs in', async () => {
+        const githubAgents = required((await readWorkflow()).jobs?.['github-agents'], 'github-agents job');
+        const stepNames = (githubAgents.steps ?? []).map((step) => step.name);
+        const register = findStep(githubAgents, 'Register shard agent users');
+        const worker = findStep(githubAgents, 'Run headless worker shard');
+
+        expect(register.if).toBe('inputs.register_before_login');
+        expect(stepNames.indexOf('Register shard agent users')).toBeLessThan(stepNames.indexOf('Run headless worker shard'));
+        expect(register.env).toMatchObject({
+            RALLAR_API_BASE_URL: '${{ inputs.api_base_url }}',
+            RALLAR_BLACK_BOX_RUN_ID: '${{ needs.plan.outputs.run_id }}',
+            RALLAR_BLACK_BOX_AGENT_PREFIX: '${{ inputs.agent_prefix }}',
+            RALLAR_BLACK_BOX_AGENT_COUNT: '${{ matrix.shard.agent_count }}',
+            RALLAR_BLACK_BOX_AGENT_START_INDEX: '${{ matrix.shard.agent_start_index }}',
+            RALLAR_BLACK_BOX_PASSWORD: '${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}'
+        });
+        expect(worker.env).not.toHaveProperty('RALLAR_BLACK_BOX_REGISTER');
+
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-github-free-register-'));
+        try {
+            await writeFile(
+                path.join(directory, 'curl'),
+                `#!/bin/sh
+out=''; url=''
+while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; http*) url="$1"; shift;; *) shift;; esac; done
+printf '%s %s\\n' "$url" "$(cat)" >> "$CURL_LOG"
+case "$url" in
+  *controller-05) printf '{"code":"auth-user-exists"}' > "$out"; printf 409;;
+  *controller-06) printf '{"code":"internal"}' > "$out"; printf 500;;
+  *) printf '{}' > "$out"; printf 201;;
+esac
+`
+            );
+            await chmod(path.join(directory, 'curl'), 0o700);
+            const runRegistration = (agentCount: string) =>
+                spawnSync('bash', ['-c', required(register.run, 'register command')], {
+                    cwd: repoRoot,
+                    encoding: 'utf8',
+                    env: {
+                        ...osEnvironment,
+                        PATH: `${directory}:${osEnvironment.PATH}`,
+                        RUNNER_TEMP: directory,
+                        CURL_LOG: path.join(directory, 'curl.log'),
+                        RALLAR_API_BASE_URL: 'https://api.example.test/',
+                        RALLAR_BLACK_BOX_RUN_ID: 'gh-free-7.1',
+                        RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
+                        RALLAR_BLACK_BOX_AGENT_COUNT: agentCount,
+                        RALLAR_BLACK_BOX_AGENT_START_INDEX: '4',
+                        RALLAR_BLACK_BOX_PASSWORD: 'test-password'
+                    }
+                });
+
+            const registered = runRegistration('2');
+            expect(registered.status).toBe(0);
+            expect((await readFile(path.join(directory, 'curl.log'), 'utf8')).trim().split('\n')).toEqual([
+                'https://api.example.test/api/auth/register/requests/register-gh-free-7-1-controller-04 ' +
+                '{"username":"controller-04","password":"test-password"}',
+                'https://api.example.test/api/auth/register/requests/register-gh-free-7-1-controller-05 ' +
+                '{"username":"controller-05","password":"test-password"}'
+            ]);
+
+            const refused = runRegistration('3');
+            expect(refused.status).toBe(1);
+            expect(refused.stderr).toContain('Registering controller-06 returned HTTP 500.');
+            expect(`${refused.stdout}${refused.stderr}`).not.toContain('test-password');
+        }
+        finally {
+            await rm(directory, { force: true, recursive: true });
+        }
+    });
+
+    it('rolls the API out uninstrumented unless the dispatch selects server timing', async () => {
+        const workflow = await readWorkflow();
+        const jobs = required(workflow.jobs, 'jobs');
+        expect(workflow.on?.workflow_dispatch?.inputs?.server_timing).toMatchObject({ type: 'boolean', default: false });
+        expect(jobs['prepare-hetzner'].with?.server_timing).toBe('${{ inputs.server_timing }}');
+        expect(jobs.operator.with).not.toHaveProperty('server_timing');
+    });
+
     it('rejects registration-disabled multi-agent plans before manifest processing', async () => {
         const workflow = await readWorkflow();
         const plan = required(workflow.jobs?.plan, 'plan job');

@@ -476,6 +476,7 @@ class ScaleCohort {
     private readonly joinedSessionIds: string[] = [];
     private leaderSessionId: string | undefined;
     private acceptedLayoutIdentity: GroupLayoutIdentity | undefined;
+    private acceptedUpdatedAtMs: number | undefined;
     private groupRevision = 56;
     private presenceRevision = 1;
     private layoutVersion = 5;
@@ -502,10 +503,17 @@ class ScaleCohort {
         }
     }
 
+    /** The accepted layout is the planned snapshot promoted verbatim, so its update time is when it was planned. */
     readLayoutReadiness(): RallarBlackBoxTestRecord {
         return {
             readyAtEpochMs: Date.now(),
-            formation: { roomRef: GROUP, causalRevision: { groupRevision: this.groupRevision, presenceRevision: this.presenceRevision } }
+            formation: {
+                roomRef: GROUP,
+                causalRevision: { groupRevision: this.groupRevision, presenceRevision: this.presenceRevision },
+                ...(this.acceptedUpdatedAtMs === undefined
+                    ? {}
+                    : { accepted: { overlay: { updatedAtEpochMs: this.acceptedUpdatedAtMs } } })
+            }
         };
     }
 
@@ -524,9 +532,11 @@ class ScaleCohort {
             sessionIds: [...this.joinedSessionIds]
         });
         this.publishLayout({ kind: 'layoutPlanned', role: 'planned', identity });
+        const plannedAtMs = Date.now();
         setTimeout(() => {
             this.groupRevision += 1;
             this.acceptedLayoutIdentity = identity;
+            this.acceptedUpdatedAtMs = plannedAtMs;
             this.publishLayout({ kind: 'layoutAccepted', role: 'accepted', identity });
         }, 500);
     }
@@ -789,7 +799,7 @@ it('passes all 231 assertions from real generated 15-participant traffic and fin
     expect(assertions.every((assertion) => assertion.perAgent.every((row) => row.evidence === 'resolved'))).toBe(true);
 });
 
-it('holds setup-complete until the layout re-planned after readiness stays unreplaced for the quiet window', async () => {
+it('holds setup-complete until the layout re-planned after readiness stays unreplaced for the quiet window from its update', async () => {
     const cohort = new ScaleCohort(NORMAL_POLICY);
     const replanAtMs = Date.now() + 1_000;
     setTimeout(() => cohort.planLayout(), replanAtMs - Date.now());
@@ -798,7 +808,22 @@ it('holds setup-complete until the layout re-planned after readiness stays unrep
     const results = await execution;
 
     expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
-    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(6_000);
+    // The window counts from the plan the accepted layout was promoted from, not from each agent's readiness.
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeGreaterThanOrEqual(3_500);
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - replanAtMs).toBeLessThan(4_500);
+});
+
+it('releases setup-complete without a further quiet wait once the accepted layout settled earlier', async () => {
+    const cohort = new ScaleCohort(NORMAL_POLICY);
+    cohort.planLayout();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const startedAtMs = Date.now();
+    const execution = Promise.all(cohort.actors.map((actor) => actor.runSetupCompletion()));
+    await vi.runAllTimersAsync();
+    const results = await execution;
+
+    expect(results.map((result) => ({ ok: result.ok, error: result.error }))).toEqual(Array.from({ length: 15 }, () => ({ ok: true, error: undefined })));
+    expect(cohort.releasedAtMs.get('alm-scale-setup-complete')! - startedAtMs).toBeLessThan(1_000);
 });
 
 async function runCohortSetup(policy: CohortPolicy): Promise<ScaleCohort> {

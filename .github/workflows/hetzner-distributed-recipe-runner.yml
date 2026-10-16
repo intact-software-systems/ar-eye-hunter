@@ -75,6 +75,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      server_timing:
+        description: Roll the API out with its timing and AppInbox phase timing logs; off leaves it uninstrumented
+        type: boolean
+        default: false
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: string
@@ -407,6 +411,7 @@ jobs:
           RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
+          RALLAR_API_SERVER_TIMING: ${{ inputs.server_timing }}
           RALLAR_BLACK_BOX_AGENT_SOURCE: ${{ inputs.agent_source }}
           RALLAR_HETZNER_OPERATOR_PHASE: ${{ inputs.operator_phase }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
@@ -457,6 +462,7 @@ jobs:
             fi
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
+            printf 'RALLAR_API_SERVER_TIMING=%s\n' "$(quote "${RALLAR_API_SERVER_TIMING}")"
             printf 'RALLAR_BLACK_BOX_AGENT_SOURCE=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_SOURCE}")"
             printf 'RALLAR_HETZNER_OPERATOR_PHASE=%s\n' "$(quote "${RALLAR_HETZNER_OPERATOR_PHASE}")"
             printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
