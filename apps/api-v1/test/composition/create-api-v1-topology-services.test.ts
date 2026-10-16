@@ -16,6 +16,7 @@ import type {
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
+import type { GroupFormationRttMutationEvent } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } from '../../src/composition/create-api-v1-topology-services.ts';
@@ -25,7 +26,7 @@ const NOW_EPOCH_MS = 4_000_000_000_000;
 Deno.test('topology composition installs canonical owners and RTT policy inputs', async () => {
     const runtimeStateRepository = new FakeRuntimeStateRepository();
     const snapshot = createGroupSnapshot();
-    const formationEvents: unknown[] = [];
+    const formationEvents: GroupFormationRttMutationEvent[] = [];
     const input = createServicesInput(runtimeStateRepository, snapshot, formationEvents);
 
     const services = createApiV1TopologyServices(input);
@@ -109,7 +110,7 @@ class RowCountingRuntimeStateRepository extends FakeRuntimeStateRepository {
 function createServicesInput(
     runtimeStateRepository: FakeRuntimeStateRepository,
     snapshot: GroupSnapshot,
-    formationEvents: unknown[]
+    formationEvents: GroupFormationRttMutationEvent[]
 ): CreateApiV1TopologyServicesInput {
     return {
         pendingReplanReader: {
