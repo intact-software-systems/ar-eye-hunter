@@ -1,9 +1,9 @@
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { resolveAppInboxAttemptDeadlineMarginMs, type AppInboxOptions } from '../app-inbox-options.ts';
+import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { AppInboxHandlerExecutor } from './app-inbox-handler-executor.ts';
 import { AppInboxHandlerRegistry } from './app-inbox-handler-registry.ts';
@@ -21,6 +21,8 @@ export interface CreateAppInboxHandlerRuntimeInput {
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
     readonly options?: AppInboxOptions;
+    /** The timer seam of the attempt deadlines; absent, the process timers. */
+    readonly timers?: Timers;
 }
 
 export function createAppInboxHandlerRuntime(
@@ -44,13 +46,13 @@ export function createAppInboxHandlerRuntime(
             transactionWriter,
             database: input.database,
             nowEpochMs,
-            timers: input.options?.timers ?? createDefaultTimers()
+            dequeueNowEpochMs: input.inboxQueueReader.nowEpochMs,
+            timers: input.timers ?? createDefaultTimers()
         },
         {
             serviceId: input.serviceId,
             timing: input.timing,
-            options: input.options,
-            attemptDeadlineMarginMs: resolveAppInboxAttemptDeadlineMarginMs(input.options ?? {})
+            options: input.options
         }
     );
     const registry = new AppInboxHandlerRegistry(

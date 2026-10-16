@@ -673,10 +673,15 @@ interface ReservedAuthIntent<I extends AuthMutationIntent> {
     readonly reservation: AppInboxReservationClient.MaterializedReservation;
 }
 
+/** A replay that finds its intent still NEW wakes the queue as its reserver did, in case that waiter is gone. */
 function toObservedAuthIntent<I extends AuthMutationIntent>(intent: I, entry: ResourceEntry): ReservedAuthIntent<I> {
     return {
         intent,
-        reservation: { enqueue: toAuthIntentEnqueue(intent), key: entry.key, winner: false }
+        reservation: {
+            enqueue: toAuthIntentEnqueue(intent),
+            key: entry.key,
+            winner: entry.status === EntityStatus.NEW
+        }
     };
 }
 

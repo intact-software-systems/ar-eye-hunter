@@ -67,6 +67,23 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
     ]);
 });
 
+Deno.test('runtime construction refuses an attempt deadline margin outside the AppInbox lease before any startup step', () => {
+    const lease = createInput([]).resilience.inbox.reservationLeaseMs;
+    for (const attemptDeadlineMarginMs of [0, lease, lease + 1]) {
+        const events: string[] = [];
+
+        assert.throws(
+            () =>
+                constructApiV1Runtime(
+                    { ...createInput(events), appInboxOptions: { nowEpochMs: () => 1_000, attemptDeadlineMarginMs } },
+                    createOperations(events)
+                ),
+            /attempt deadline margin/
+        );
+        assert.deepEqual(events, []);
+    }
+});
+
 Deno.test('runtime construction hands one receipt recorder to the middleware and to the admin runtime', () => {
     const operations = createOperations([]);
     const handedRecorders: RallarAlmReceiptDiagnosticsRecorder[] = [];

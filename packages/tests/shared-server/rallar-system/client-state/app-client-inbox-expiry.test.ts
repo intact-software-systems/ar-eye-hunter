@@ -5,7 +5,6 @@ import type { ClientExpiredSessionPageInput } from '@shared-server/rallar-system
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { decodeExpiredClientSessionsResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -23,6 +22,7 @@ import {
     createClientExpiryTestIssuedAuthority,
     readClientExpiryTestEntries
 } from './app-client-inbox-expiry-fixtures.ts';
+import { decodeExpiredClientSessionsTestResult } from './client-inbox-test-result-decoding.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
@@ -67,7 +67,7 @@ it(
             statusRepository: queue,
             resultRepository: results,
             entry,
-            decodeResult: decodeExpiredClientSessionsResult
+            decodeResult: decodeExpiredClientSessionsTestResult
         });
 
         expect(expired.right).toHaveLength(1);

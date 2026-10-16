@@ -22,9 +22,11 @@ import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/a
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -81,7 +83,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         ]));
     });
 
-    it('hands a write conflict to the lane as a retryable value, not a thrown error with a stack', async () => {
+    it('hands a conditional write conflict from the mutation transaction to the lane as a retryable value, not a thrown error with a stack', async () => {
         let now = Temporal.Instant.from('2000-01-01T00:00:00Z');
         const harness = createRegisteredHandlerHarness({ now: () => now });
         const reservations = new AppInboxReservationClient({
@@ -92,18 +94,33 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
             if (context.entry.dequeueAudit.attempts === 1) {
                 const entry = await reservations.persistAuthority(context, { eventId: 'stable-event' });
-                throw new ResourceInboxHandlerEntryError(entry, new ResultReadConflictError());
+                try {
+                    return await harness.service.commit(context, { status: 'accepted' }, async () => {
+                        throw new RuntimeStateWriteConflictError();
+                    });
+                }
+                catch (error) {
+                    throw new ResourceInboxHandlerEntryError(entry, error as Error);
+                }
             }
             return await harness.service.commit(context, { status: 'accepted' }, async () => {});
         });
-        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const infoLog = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const errorLines: string[] = [];
+        const conflictLines: string[] = [];
+        const errorLog = vi.spyOn(console, 'error').mockImplementation((message: string) => {
+            errorLines.push(message);
+        });
+        const infoLog = vi.spyOn(console, 'info').mockImplementation((message: string) => {
+            if (message.includes('runtime-state-write-conflict')) {
+                conflictLines.push(message);
+            }
+        });
         try {
             const pending = harness.service.enqueueAndWait(harness.enqueue);
             await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-            expect(errorLog).not.toHaveBeenCalled();
-            expect(infoLog.mock.calls.filter(([message]) => String(message).includes('runtime-state-write-conflict'))).toHaveLength(1);
+            expect(errorLines).toEqual([]);
+            expect(conflictLines).toEqual([expect.stringContaining('registered-handler-request')]);
             const retry = await harness.readEntry();
             expect(retry).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
             expect(retry?.resource).toContain('stable-event');
@@ -468,7 +485,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
 
 describe('AppInboxHandlerExecutor claim invariants', () => {
     it('refuses to complete a claim whose handler-finalized entry reads back as anything but COMPLETED', async () => {
-        const claim = createDirectExecutorClaim(() => 1_000);
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000 });
         const execution = claim.executor.execute({
             ...claim.input,
             registration: {
@@ -501,7 +518,7 @@ describe('AppInboxHandlerExecutor claim invariants', () => {
         'reports a handler of $handlerDurationMs ms against its 60 s reservation lease as outrunning it: $outranLease',
         async ({ handlerDurationMs, outranLease }) => {
             let nowEpochMs = 1_000;
-            const claim = createDirectExecutorClaim(() => nowEpochMs);
+            const claim = createDirectExecutorClaim({ nowEpochMs: () => nowEpochMs });
             await claim.executor.execute({
                 ...claim.input,
                 registration: {
@@ -533,7 +550,7 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
 
     it('abandons a handler that never settles at its deadline below the reservation lease', async () => {
         const timers = createManualTimers(0);
-        const claim = createDirectExecutorClaim(() => 1_000, timers);
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, timers });
         const started = createSignal();
         const execution = claim.executor.execute({
             ...claim.input,
@@ -545,7 +562,7 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
                 }
             }
         });
-        const outcome = execution.then(() => 'settled', (error: unknown) => error);
+        const outcome = toSettledOutcome(execution);
         await started.promise;
 
         await timers.advance(DEADLINE_MS - 1);
@@ -558,9 +575,32 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
         ]));
     });
 
+    it('counts the deadline from the claim selection, so an entry that waited in its batch gets what remains of its lease', async () => {
+        const timers = createManualTimers(0);
+        const waitedInBatchMs = 30_000;
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, timers, dequeueNowEpochMs: () => waitedInBatchMs });
+        const started = createSignal();
+        const execution = claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                handle: () => {
+                    started.resolve();
+                    return new Promise<never>(() => undefined);
+                }
+            }
+        });
+        const outcome = toSettledOutcome(execution);
+        await started.promise;
+
+        await timers.advance(DEADLINE_MS - waitedInBatchMs);
+
+        expect(await readWithin(outcome, 1_000)).toMatchObject({ code: 'app-inbox-attempt-deadline-exceeded' });
+    });
+
     it('rolls back a handler write that reaches its transaction after the deadline', async () => {
         const timers = createManualTimers(0);
-        const claim = createDirectExecutorClaim(() => 1_000, timers);
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, timers });
         const started = createSignal();
         const writeAllowed = createSignal();
         let lateWrite: Promise<JsonWireValue> | undefined;
@@ -585,7 +625,7 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
                 }
             }
         });
-        const outcome = execution.then(() => 'settled', (error: unknown) => error);
+        const outcome = toSettledOutcome(execution);
         await started.promise;
 
         await timers.advance(DEADLINE_MS);
@@ -598,6 +638,59 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
             EntityStatus.RESERVED
         );
         expect(claim.harness.database.state.results.size).toBe(0);
+    });
+
+    it('refuses a pre-transaction write of an attempt abandoned at its deadline', async () => {
+        const timers = createManualTimers(0);
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000, timers });
+        const started = createSignal();
+        const persistAllowed = createSignal();
+        let lateRequirement: Promise<void> | undefined;
+        const execution = claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                handle: async (_command, context) => {
+                    claim.writer.requireUnexpiredAttempt(context);
+                    started.resolve();
+                    await persistAllowed.promise;
+                    lateRequirement = Promise.resolve().then(() => claim.writer.requireUnexpiredAttempt(context));
+                    await lateRequirement;
+                    return null;
+                }
+            }
+        });
+        const outcome = toSettledOutcome(execution);
+        await started.promise;
+
+        await timers.advance(DEADLINE_MS);
+        expect(await readWithin(outcome, 1_000)).toMatchObject({ code: 'app-inbox-attempt-deadline-exceeded' });
+        persistAllowed.resolve();
+        await vi.waitFor(() => expect(lateRequirement).toBeDefined());
+
+        await expect(lateRequirement).rejects.toMatchObject({ code: 'app-inbox-attempt-deadline-exceeded' });
+    });
+
+    it('commits a terminal failure that precedes the attempt context under the attempt deadline', async () => {
+        const claim = createDirectExecutorClaim({ nowEpochMs: () => 1_000 });
+        const begunDeadlines: ClaimableDeadlineClaim[] = [];
+        const begin = claim.writer.begin.bind(claim.writer);
+        claim.writer.begin = (context, deadline) => {
+            begunDeadlines.push(deadline);
+            begin(context, deadline);
+        };
+
+        await claim.executor.execute({
+            ...claim.input,
+            registration: {
+                ...claim.input.registration,
+                decodeCommand: () => {
+                    throw new TypeError('Group create command is invalid');
+                }
+            }
+        }).catch(() => undefined);
+
+        expect(begunDeadlines.map((deadline) => deadline.isExpired())).toEqual([false]);
     });
 
     it('serves the lane past a never-settling handler and redelivers the entry on the retry path', async () => {
@@ -628,16 +721,6 @@ describe('AppInboxHandlerExecutor attempt deadline', () => {
     });
 });
 
-/** The group-state result read's optimistic conflict, as the lane sees it when a join's read raced a write. */
-class ResultReadConflictError extends Error {
-    readonly code = 'runtime-state-write-conflict';
-
-    constructor() {
-        super('Group state result read raced a write');
-        this.name = 'ResultReadConflictError';
-    }
-}
-
 interface Signal {
     readonly promise: Promise<void>;
     readonly resolve: () => void;
@@ -649,6 +732,11 @@ function createSignal(): Signal {
         resolve = settle;
     });
     return { promise, resolve };
+}
+
+/** Settles to 'settled' or to the attempt's rejection, so a case can race it against a wall-clock wait. */
+function toSettledOutcome<T>(execution: Promise<T>): Promise<'settled' | Error> {
+    return execution.then(() => 'settled' as const, (error: Error) => error);
 }
 
 async function readWithin<T>(outcome: Promise<T>, waitMs: number): Promise<T | 'still running'> {
@@ -666,7 +754,16 @@ interface DirectExecutorClaim {
     readonly input: AppInboxHandlerExecutor.Input<JsonWireValue, JsonWireValue>;
 }
 
-function createDirectExecutorClaim(nowEpochMs: () => number, timers: Timers = createManualTimers(0)): DirectExecutorClaim {
+interface DirectExecutorClaimInput {
+    readonly nowEpochMs: () => number;
+    readonly timers?: Timers;
+    /** The dequeue clock the claim was selected on, at 0; by default the attempt starts the moment it is selected. */
+    readonly dequeueNowEpochMs?: () => number;
+}
+
+function createDirectExecutorClaim(
+    { nowEpochMs, timers = createManualTimers(0), dequeueNowEpochMs = () => 0 }: DirectExecutorClaimInput
+): DirectExecutorClaim {
     const harness = createAtomicHarness();
     const timing: RallarTimingEvent[] = [];
     const writer = new AppInboxTransactionWriter(
@@ -679,12 +776,13 @@ function createDirectExecutorClaim(nowEpochMs: () => number, timers: Timers = cr
             transactionWriter: writer,
             database: harness.database.sql,
             nowEpochMs,
+            dequeueNowEpochMs,
             timers
         },
         {
             serviceId: 'server-1',
             timing: (event) => timing.push(event),
-            attemptDeadlineMarginMs: DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS
+            options: { attemptDeadlineMarginMs: DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS }
         }
     );
     const registration: AppInboxHandlerRegistration<JsonWireValue, JsonWireValue> = {
@@ -702,7 +800,7 @@ function createDirectExecutorClaim(nowEpochMs: () => number, timers: Timers = cr
             registration,
             message: harness.context.message,
             entry: harness.entry,
-            attemptTelemetry: { ...harness.context.attemptTelemetry, reservationLeaseMs: 60_000 }
+            attemptTelemetry: { ...harness.context.attemptTelemetry, reservationLeaseMs: 60_000, selectedAtEpochMs: 0 }
         }
     };
 }

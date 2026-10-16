@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlExecutorCounters, PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import {
     computeAppInboxCompletion,
     validateAppInboxCompletion
@@ -36,14 +35,10 @@ describe('AppInbox phase timing executor counters', () => {
                 transactionWriter: writer,
                 database: database.sql,
                 nowEpochMs: () => 1_000,
+                dequeueNowEpochMs: () => harness.context.attemptTelemetry.selectedAtEpochMs,
                 timers: createDefaultTimers()
             },
-            {
-                serviceId: 'server-1',
-                timing: (event) => timing.push(event),
-                options: { phaseTiming: true },
-                attemptDeadlineMarginMs: DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS
-            }
+            { serviceId: 'server-1', timing: (event) => timing.push(event), options: { phaseTiming: true } }
         );
         await database.sql`select 'before the handler'`;
 

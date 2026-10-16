@@ -8,10 +8,7 @@ import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/r
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-import {
-    decodeAuthorisedWsClientMutationResult,
-    type AuthorisedWsClientMutationResult
-} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
+import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -22,6 +19,7 @@ import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fak
 import { createAppInboxTestResilience, TestResourceInbox, TestResourceInboxResults } from '../app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readCompletedAppInboxResult } from '../app-inbox/test-support/read-completed-app-inbox-result.ts';
+import { decodeAuthorisedWsClientTestResult } from './client-inbox-test-result-decoding.ts';
 
 const SERVICE_ID = 'server-12345678';
 
@@ -349,6 +347,6 @@ async function drainAuthorisedWsEntry(
         statusRepository: queue,
         resultRepository: results,
         entry,
-        decodeResult: decodeAuthorisedWsClientMutationResult
+        decodeResult: decodeAuthorisedWsClientTestResult
     });
 }

@@ -58,7 +58,8 @@ export class InboxQueueReader {
 
     private readonly reader: QueueMessageReader;
     private readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
-    private readonly nowEpochMs: () => number;
+    /** The dequeue clock that stamps each claim's selection. */
+    public readonly nowEpochMs: () => number;
     private readonly pressureRefreshLimiter: RateLimiter;
     private pressureScope: string | undefined;
     private pressureGeneration = 0;

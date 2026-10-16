@@ -1,7 +1,7 @@
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClaimableDeadline } from '@shared/resilience/claimable-deadline.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 
 import { createPSqlCounterScope } from '../../../postgres/create-p-sql-counter-scope.ts';
 import type { PSqlSql, PSqlTransactionWrite } from '../../../postgres/p-sql-sql.ts';
@@ -38,7 +38,7 @@ export interface AppInboxMutationTransactionWriter {
 }
 
 /** A write outside an executor-run attempt has no deadline to lose. */
-const UNBOUNDED_ATTEMPT_DEADLINE: ClaimableDeadline.Claim = { tryClaim: () => true };
+const UNBOUNDED_ATTEMPT_DEADLINE: ClaimableDeadlineClaim = { tryClaim: () => true, isExpired: () => false };
 
 export namespace AppInboxTransactionWriter {
     export interface Dependencies {
@@ -55,7 +55,7 @@ export namespace AppInboxTransactionWriter {
 
 export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly finalizationByContext = new WeakMap<object, AppInboxHandlerFinalization>();
-    private readonly deadlineByContext = new WeakMap<object, ClaimableDeadline.Claim>();
+    private readonly deadlineByContext = new WeakMap<object, ClaimableDeadlineClaim>();
     private readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     private readonly database: PSqlSql;
     private readonly nowEpochMs: () => number;
@@ -72,9 +72,19 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     }
 
     /** The attempt's transaction claims the deadline just before it commits; a lost claim rolls the attempt back. */
-    begin(context: AppInboxExecutionMetadata, deadline: ClaimableDeadline.Claim): void {
+    begin(context: AppInboxExecutionMetadata, deadline: ClaimableDeadlineClaim): void {
         this.finalizationByContext.set(context, { state: 'pending' });
         this.deadlineByContext.set(context, deadline);
+    }
+
+    /**
+     * A handler write outside its transaction, such as persisting captured authority, first checks the attempt was not
+     * abandoned at its deadline; it does not claim the deadline, which only the commit does.
+     */
+    requireUnexpiredAttempt(context: AppInboxExecutionMetadata): void {
+        if (this.deadlineByContext.get(context)?.isExpired() ?? false) {
+            throw new AppInboxAttemptDeadlineExceededError(context.entry.key);
+        }
     }
 
     read(context: AppInboxExecutionMetadata): AppInboxHandlerFinalization {

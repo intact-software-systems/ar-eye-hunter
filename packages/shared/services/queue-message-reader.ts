@@ -6,10 +6,10 @@ import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '.
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
-    type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerOutcome
+    type DequeueResourceEntryOptions
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxHandlerOutcome } from '../queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';

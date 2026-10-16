@@ -440,7 +440,8 @@ describe('topology AppInbox transaction and idempotency', () => {
                         dueAgeMs: 0,
                         attempt: 1,
                         selectedDueAtEpochMs: 0,
-                        reservationLeaseMs: 60_000
+                        reservationLeaseMs: 60_000,
+                        selectedAtEpochMs: 0
                     },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,

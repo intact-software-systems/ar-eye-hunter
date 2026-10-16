@@ -105,6 +105,7 @@ namespace AtomicAppInboxService {
         readonly timing?: RallarTimingSink;
         readonly options?: AppInboxOptions;
         readonly wakeOwningQueue?: () => void;
+        readonly timers?: Timers;
     }
 }
 
@@ -136,7 +137,8 @@ class AtomicAppInboxService {
             database: dependencies.database,
             serviceId: config.serviceId,
             timing: config.timing,
-            options: config.options
+            options: config.options,
+            timers: config.timers
         });
         this.handlerRegistry = handlerRuntime.registry;
         this.transactionWriter = handlerRuntime.transactionWriter;
@@ -289,9 +291,9 @@ export function createRegisteredHandlerHarness(
                 waitMaxElapsedMsecs: 5_000,
                 waitRetryIntervalMsecs: 1,
                 waitMaxRetryIntervalMsecs: 1,
-                waitJitterRatio: 0,
-                timers: options.timers
-            }
+                waitJitterRatio: 0
+            },
+            timers: options.timers
         }
     );
     const enqueue = createRegisteredHandlerCommand(options.topicId);

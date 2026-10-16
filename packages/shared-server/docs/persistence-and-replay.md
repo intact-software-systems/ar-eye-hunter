@@ -105,14 +105,28 @@ transaction may run again and replace that result. The work of one delivery must
 therefore stay below the lease: long maintenance such as admin prune, CRDT
 compaction and expired-session sweeps must run in bounded pages, one page per
 delivery. `AppInboxHandlerExecutor` gives each attempt a deadline the
-configured margin below its lease (`attemptDeadlineMarginMs`, default
-`DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS`). An attempt that has not claimed
-its deadline by committing when it falls due is abandoned as a retryable
-`app-inbox-attempt-deadline-exceeded` failure with a `handler-deadline-expired`
-timing event, so the serial lane serves its next entry and the entry follows the
-retry path; the abandoned handler's own commit then loses the claim and rolls
-back. A handler that claimed its deadline and still outlives its lease, such as a
+configured margin below what remains of its claim's lease, counted from the
+claim's selection on the dequeue clock (`attemptDeadlineMarginMs`, default
+`DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS`), so an entry that waited behind
+others in its batch gets only the lease that is left. The API runtime refuses to
+start when the margin does not lie strictly inside the AppInbox lease. An attempt
+that has not claimed its deadline by committing when it falls due is abandoned as
+a retryable `app-inbox-attempt-deadline-exceeded` failure with a
+`handler-deadline-expired` timing event, so the serial lane serves its next entry
+and the entry follows the retry path. The abandoned handler's own commit then
+loses the claim and rolls back, its pre-transaction authority write is refused
+(`requireUnexpiredAttempt`), and it records no late queue-retry line. A handler
+that claimed its deadline and still ran past what remained of its lease, such as a
 slow commit, is reported as a `handler-outran-lease` timing event.
+
+The deadline frees the lane from a handler stuck in JavaScript, not from one stuck
+inside an open transaction. Such a transaction rolls back only when its handler
+reaches the commit claim. On PGlite every query shares one connection, so a
+transaction that never settles blocks the lane's own release and every later query;
+on PostgreSQL it holds a pooled connection and its row locks until the handler
+settles. No `statement_timeout` or `idle_in_transaction_session_timeout` is set per
+AppInbox transaction: it would add a statement to every mutation and PGlite cannot
+enforce it, so a database-side hang stays the lease and TIMEOUT lane's to recover.
 
 ## Outbox and publication boundary
 

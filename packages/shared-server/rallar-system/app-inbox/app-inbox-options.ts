@@ -1,5 +1,3 @@
-import type { Timers } from '@shared/resilience/timers.ts';
-
 export const DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS = 10_000;
 export const DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS = 500;
 export const DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
@@ -25,7 +23,6 @@ export interface AppInboxOptions {
     readonly waitMaxRetryIntervalMsecs?: number;
     readonly waitJitterRatio?: number;
     readonly nowEpochMs?: () => number;
-    readonly timers?: Timers;
 }
 
 export interface NormalizedAppInboxOptions {
@@ -53,6 +50,26 @@ export function normalizeAppInboxOptions(options: AppInboxOptions): NormalizedAp
         ),
         waitJitterRatio: toRatio(options.waitJitterRatio, DEFAULT_APP_INBOX_WAIT_JITTER_RATIO)
     };
+}
+
+export interface AppInboxAttemptDeadlineIssue {
+    readonly code: 'app-inbox-attempt-deadline-margin-outside-lease';
+    readonly message: string;
+}
+
+/** The margin and the lease have different owners, so the process that pairs them checks it once at startup. */
+export function validateAppInboxAttemptDeadlineMargin(
+    options: AppInboxOptions,
+    reservationLeaseMs: number
+): readonly AppInboxAttemptDeadlineIssue[] {
+    const marginMs = resolveAppInboxAttemptDeadlineMarginMs(options);
+    return marginMs > 0 && marginMs < reservationLeaseMs
+        ? []
+        : [{
+            code: 'app-inbox-attempt-deadline-margin-outside-lease',
+            message:
+                `AppInbox attempt deadline margin ${marginMs} ms must lie inside the ${reservationLeaseMs} ms reservation lease`
+        }];
 }
 
 /** The handler side's one option: how far below its reservation lease an attempt's deadline falls. */

@@ -185,7 +185,15 @@ function createOutboxAttempt(resourceId: string, messageTypeId: string): Resourc
     };
     return {
         entry,
-        telemetry: { selectedLane: Reservator.NEW, queueAgeMs: 5, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 995, reservationLeaseMs: 60_000 }
+        telemetry: {
+            selectedLane: Reservator.NEW,
+            queueAgeMs: 5,
+            dueAgeMs: 0,
+            attempt: 1,
+            selectedDueAtEpochMs: 995,
+            reservationLeaseMs: 60_000,
+            selectedAtEpochMs: 1_000
+        }
     };
 }
 
@@ -208,6 +216,6 @@ function createAttempt(resourceId: string, selectedLane: Reservator): ResourceIn
     };
     return {
         entry,
-        telemetry: { selectedLane, queueAgeMs: 5, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 995, reservationLeaseMs: 60_000 }
+        telemetry: { selectedLane, queueAgeMs: 5, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 995, reservationLeaseMs: 60_000, selectedAtEpochMs: 1_000 }
     };
 }

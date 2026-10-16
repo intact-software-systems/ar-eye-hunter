@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { runWithClaimableDeadline } from '@shared/resilience/claimable-deadline.ts';
+import { runWithClaimableDeadline } from '@shared/resilience/run-with-claimable-deadline.ts';
 
 import { createManualTimers } from './manual-timers.ts';
 
@@ -36,6 +36,43 @@ describe('runWithClaimableDeadline', () => {
 
         await expect(pending).resolves.toEqual({ kind: 'expired', deadlineMs: 1_000 });
         expect(claimAfterExpiry?.()).toBe(false);
+    });
+
+    it('reports expiry without consuming the claim, so a work can stop before an unclaimed effect', async () => {
+        const timers = createManualTimers(0);
+        const observations: boolean[] = [];
+        let deadlineView: { isExpired(): boolean; tryClaim(): boolean; } | undefined;
+        const pending = runWithClaimableDeadline(timers, 1_000, (deadline) => {
+            deadlineView = deadline;
+            observations.push(deadline.isExpired());
+            return new Promise<never>(() => undefined);
+        });
+
+        observations.push(deadlineView!.isExpired());
+        await timers.advance(1_000);
+        observations.push(deadlineView!.isExpired());
+
+        await expect(pending).resolves.toEqual({ kind: 'expired', deadlineMs: 1_000 });
+        expect(observations).toEqual([false, false, true]);
+        expect(deadlineView!.tryClaim()).toBe(false);
+    });
+
+    it('keeps a deadline the work has claimed unexpired', async () => {
+        const timers = createManualTimers(0);
+        let claimedView: { isExpired(): boolean; } | undefined;
+        let finish: (() => void) | undefined;
+        const pending = runWithClaimableDeadline(timers, 10, (deadline) => {
+            deadline.tryClaim();
+            claimedView = deadline;
+            return new Promise<void>((resolve) => {
+                finish = resolve;
+            });
+        });
+
+        await timers.advance(100);
+        expect(claimedView!.isExpired()).toBe(false);
+        finish?.();
+        await expect(pending).resolves.toEqual({ kind: 'settled', value: undefined });
     });
 
     it('lets a work that claimed before the deadline finish past it with its own outcome', async () => {

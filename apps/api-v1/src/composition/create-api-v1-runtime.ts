@@ -8,6 +8,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
 import {
     normalizeAppInboxOptions,
+    validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
@@ -180,6 +181,13 @@ export function constructApiV1Runtime(
     input: CreateApiV1RuntimeInput,
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
+    const deadlineIssues = validateAppInboxAttemptDeadlineMargin(
+        input.appInboxOptions,
+        input.resilience.inbox.reservationLeaseMs
+    );
+    if (deadlineIssues.length > 0) {
+        throw new Error(deadlineIssues.map((issue) => issue.message).join('; '));
+    }
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
     const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
         nowEpochMs: input.nowEpochMs,

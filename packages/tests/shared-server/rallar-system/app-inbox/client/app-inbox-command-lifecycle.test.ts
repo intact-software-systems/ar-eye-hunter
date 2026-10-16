@@ -272,7 +272,8 @@ describe('AppInbox command lifecycle', () => {
                     dueAgeMs: 500,
                     attempt: 1,
                     selectedDueAtEpochMs: 1_500,
-                    reservationLeaseMs: 60_000
+                    reservationLeaseMs: 60_000,
+                    selectedAtEpochMs: Date.now()
                 }
             })
         ).rejects.toThrow('retryable test failure');

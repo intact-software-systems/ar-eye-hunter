@@ -21,7 +21,7 @@ import type { CreateGroupRequest, StateScope } from '@shared/api/state-types.ts'
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClaimableDeadline } from '@shared/resilience/claimable-deadline.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
@@ -37,7 +37,7 @@ const GROUP_ID = 'transaction-boundary-room';
 const REQUEST_ID = 'create-transaction-boundary-room';
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
-const UNBOUNDED_TEST_DEADLINE: ClaimableDeadline.Claim = { tryClaim: () => true };
+const UNBOUNDED_TEST_DEADLINE: ClaimableDeadlineClaim = { tryClaim: () => true, isExpired: () => false };
 export type GroupTransactionFailurePhase = 'domain-write' | AppInboxTestDatabaseStage;
 
 export interface GroupStateTransactionBoundaryHarness {

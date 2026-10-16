@@ -67,7 +67,6 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
         new Set([
             'deleteByKey',
             'replace',
-            'tryWriteIfAbsentOrReplaceExpired',
             'upsert',
             'write',
             'writeIfAbsentOrMatch',

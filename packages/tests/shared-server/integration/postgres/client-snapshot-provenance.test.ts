@@ -9,7 +9,6 @@ import {
     toDomain,
     type ResourceInboxRow
 } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
-import { decodeAuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
     WS_OUTBOX_PROVENANCE_NAMESPACE,
     WsOutboxProvenanceReader
@@ -21,6 +20,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { readCompletedAppInboxResult } from '../../rallar-system/app-inbox/test-support/read-completed-app-inbox-result.ts';
+import { decodeAuthorisedWsClientTestResult } from '../../rallar-system/client-state/client-inbox-test-result-decoding.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -99,7 +99,7 @@ describe('Postgres client snapshot provenance transaction', () => {
                         statusRepository: runtime.resourceInbox.entries,
                         resultRepository: runtime.resourceInboxResults,
                         entry: connectEntry,
-                        decodeResult: decodeAuthorisedWsClientMutationResult
+                        decodeResult: decodeAuthorisedWsClientTestResult
                     })
                 );
                 expect(observedUncommitted).toBe(true);

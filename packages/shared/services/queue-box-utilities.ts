@@ -7,14 +7,17 @@ import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
-    type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerOutcome
+    type DequeueResourceEntryOptions
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
+} from '../queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -95,8 +98,13 @@ export class QueueBoxUtilities {
             })
             .onCompletedEntries((completed) => {
                 claimedCount += completed.size;
-                // A typed rejection is a completed entry: the queue worked, so it is a resilience success.
-                if (completed.size > 0) {
+                // A typed rejection is a completed entry: the queue worked, so it is a resilience success. A conflict
+                // value is redelivered, neither a success nor an operational failure.
+                if (
+                    [...completed.values()].some((success) =>
+                        !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
+                    )
+                ) {
                     resilience.success();
                 }
             })

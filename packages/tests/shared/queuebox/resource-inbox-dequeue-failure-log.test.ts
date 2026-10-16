@@ -1,16 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import {
-    createDefaultResourceInboxDequeuer,
-    ResourceInboxHandlerFinalizedRejection,
-    ResourceInboxHandlerRetryableConflict,
-    type ResourceInboxHandlerOutcome
-} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptReleaseTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
+} from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import * as Resource from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -26,15 +27,6 @@ import {
 interface DequeuedOnce {
     readonly failures: Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>;
     readonly releases: ResourceInboxAttemptReleaseTelemetry[];
-}
-
-class RuntimeStateWriteConflictError extends Error {
-    readonly code = 'runtime-state-write-conflict';
-
-    constructor() {
-        super('Runtime state changed before the write');
-        this.name = 'RuntimeStateWriteConflictError';
-    }
 }
 
 class GroupAlreadyExistsError extends Error {
@@ -118,8 +110,16 @@ describe('ResourceInbox dequeue failure log', () => {
         const queue = new InMemoryQueueBox();
         const enqueued = toResourceEntry('write-conflict', { value: 3 });
         await queue.enqueue(enqueued);
-        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const infoLog = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const errorLines: string[] = [];
+        const conflictLines: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation((message: string) => {
+            errorLines.push(message);
+        });
+        vi.spyOn(console, 'info').mockImplementation((message: string, summary: object) => {
+            if (message.includes('conflicted')) {
+                conflictLines.push(`${message} ${JSON.stringify(summary)}`);
+            }
+        });
 
         const { failures, releases } = await dequeueOnce(
             queue,
@@ -132,12 +132,11 @@ describe('ResourceInbox dequeue failure log', () => {
                 )
         );
 
-        expect(errorLog).not.toHaveBeenCalled();
-        const conflictLines = infoLog.mock.calls.filter(([message]) => String(message).includes('conflicted'));
+        expect(errorLines).toEqual([]);
         expect(conflictLines).toHaveLength(1);
-        expect(conflictLines[0]![0]).toContain(enqueued.key.resourceId);
-        expect(conflictLines[0]![0]).toContain('runtime-state-write-conflict');
-        expect(JSON.stringify(conflictLines[0])).not.toMatch(/\n\s+at /u);
+        expect(conflictLines[0]).toContain(enqueued.key.resourceId);
+        expect(conflictLines[0]).toContain('runtime-state-write-conflict');
+        expect(conflictLines[0]).not.toMatch(/\n\s+at /u);
         expect(failures.size).toBe(0);
         expect(releases).toEqual([expect.objectContaining({
             key: enqueued.key,

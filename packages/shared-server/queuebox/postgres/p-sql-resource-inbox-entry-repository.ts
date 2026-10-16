@@ -242,12 +242,6 @@ export class PSqlResourceInboxEntryRepository {
         });
     }
 
-    async tryWriteIfAbsentOrReplaceExpired(
-        entry: ResourceEntry
-    ): Promise<ResourceEntry | null> {
-        return await this.tryWriteComputedIfAbsentOrReplaceExpired(computeResourceInboxEntryInsertValues(entry));
-    }
-
     async tryWriteComputedIfAbsentOrReplaceExpired(
         values: ResourceInboxEntryInsertValues
     ): Promise<ResourceEntry | null> {

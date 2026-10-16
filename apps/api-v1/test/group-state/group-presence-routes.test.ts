@@ -1,4 +1,4 @@
-import { decodeApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
+import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
 import assert from 'node:assert/strict';
 
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -299,6 +299,25 @@ Deno.test('a presence heartbeat whose client aborts mid-body answers a typed cli
     assert.equal(enqueued.length, 0);
 });
 
+Deno.test('a presence heartbeat body that fails for a reason other than the client stopping answers 500', async () => {
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
+    const failingBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+            controller.error(new Error('Request body was read twice'));
+        }
+    });
+
+    const response = await runtime.app.request(`${PRESENCE_HEARTBEAT_ROUTE.path}/requests/failing-heartbeat-request`, {
+        method: PRESENCE_HEARTBEAT_ROUTE.method,
+        headers: { 'content-type': 'application/json' },
+        body: failingBody
+    });
+
+    assert.equal(response.status, 500);
+    assert.equal(enqueued.length, 0);
+});
+
 Deno.test('inactive group presence returns the current snapshot as a no-op', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const inactiveResult: InactiveGroupPresenceResult = {
@@ -440,7 +459,7 @@ interface PresenceMutationRoute {
 async function requestPresenceMutation(
     app: ReturnType<typeof createGroupStateRouteTestRuntime>['app'],
     route: PresenceMutationRoute,
-    body: Record<string, unknown>
+    body: ApiMutationFailureJsonObject
 ): Promise<Response> {
     const { requestId: candidate, ...requestBody } = body;
     const requestId = typeof candidate === 'string' ? candidate : 'group-route-presence-default';
