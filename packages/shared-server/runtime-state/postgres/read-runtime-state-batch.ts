@@ -21,7 +21,11 @@ interface PSqlRuntimeStateReadBatchSelector {
     readonly keyPrefix: string | null;
     readonly keySuffix: string | null;
     readonly prefixEnd: string | null;
+    readonly reversedSuffix: string | null;
+    readonly reversedSuffixEnd: string | null;
 }
+
+const NO_SQL_SELECTOR_BOUNDS = { prefixEnd: null, reversedSuffix: null, reversedSuffixEnd: null } as const;
 
 export interface RuntimeStateReadBatchQuery {
     <Rows extends PSqlRows>(
@@ -71,7 +75,9 @@ export async function readRuntimeStateBatch(
                descriptor.value ->> 'key' as store_key,
                descriptor.value ->> 'keyPrefix' as key_prefix,
                descriptor.value ->> 'keySuffix' as key_suffix,
-               descriptor.value ->> 'prefixEnd' as prefix_end
+               descriptor.value ->> 'prefixEnd' as prefix_end,
+               descriptor.value ->> 'reversedSuffix' as reversed_suffix,
+               descriptor.value ->> 'reversedSuffixEnd' as reversed_suffix_end
         from jsonb_array_elements(${selectors.map(toSqlSelector)}::jsonb)
           with ordinality as descriptor(value, ordinality)
       ) selector
@@ -115,6 +121,19 @@ export async function readRuntimeStateBatch(
             >= char_length(selector.key_prefix) + char_length(selector.key_suffix)
           and right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C"
             = selector.key_suffix
+
+        union all
+
+        select reversed_entry.store_key,
+               reversed_entry.store_value,
+               reversed_entry.expire_at_ts,
+               reversed_entry.updated_ts,
+               reversed_entry.revision
+        from runtime_state_store reversed_entry
+        where selector.selector_kind = 'suffix'
+          and reversed_entry.store_namespace = selector.store_namespace
+          and reverse(reversed_entry.store_key) collate "C" >= selector.reversed_suffix
+          and reverse(reversed_entry.store_key) collate "C" < selector.reversed_suffix_end
       ) matched on true
       group by selector.selector_ordinal, selector.selector_id
     ) selector_result
@@ -136,15 +155,37 @@ function toSqlSelector(
 ): PSqlRuntimeStateReadBatchSelector {
     switch (selector.kind) {
         case 'key':
-            return { ...selector, keyPrefix: null, keySuffix: null, prefixEnd: null };
+            return { ...selector, ...NO_SQL_SELECTOR_BOUNDS, keyPrefix: null, keySuffix: null };
         case 'prefix':
             return {
                 ...selector,
+                ...NO_SQL_SELECTOR_BOUNDS,
                 key: null,
                 keySuffix: null,
                 prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
             };
         case 'prefix-suffix':
-            return { ...selector, key: null, prefixEnd: toExclusivePrefixEnd(selector.keyPrefix) };
+            return {
+                ...selector,
+                ...NO_SQL_SELECTOR_BOUNDS,
+                key: null,
+                prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
+            };
+        case 'suffix': {
+            const reversedSuffix = toReversedKey(selector.keySuffix);
+            return {
+                ...selector,
+                key: null,
+                keyPrefix: null,
+                prefixEnd: null,
+                reversedSuffix,
+                reversedSuffixEnd: toExclusivePrefixEnd(reversedSuffix)
+            };
+        }
     }
+}
+
+/** Code-point order, as Postgres `reverse()` reverses characters, never UTF-16 units. */
+function toReversedKey(key: string): string {
+    return Array.from(key).reverse().join('');
 }

@@ -34,7 +34,71 @@ export function validateApiV1ConfigurationInvariants(
     collector: ApiV1ConfigurationInvariantCollector,
     configuration: ValidateApiV1ConfigurationInvariantsInput
 ): void {
-    const planning = configuration.topology.planning;
+    validateTopologyPlanningInvariants(collector, configuration.topology);
+    validateTopologyDeliveryInvariants(collector, configuration.topology);
+    const completionWait = configuration.appInbox.completionWait;
+    if (
+        collector.isValid(
+            'appInbox.completionWait.retryIntervalMs',
+            'appInbox.completionWait.maxRetryIntervalMs'
+        ) && completionWait.retryIntervalMs > completionWait.maxRetryIntervalMs
+    ) {
+        collector.invariant(
+            'appInbox.completionWait.retryIntervalMs',
+            'retry-interval-exceeds-maximum',
+            'Initial AppInbox retry interval must not exceed the maximum retry interval.'
+        );
+    }
+    validateDatabaseModeInvariants(collector, configuration);
+    if (
+        collector.isValid('authentication.credentialSecret') &&
+        configuration.authentication.credentialSecret.length < 32
+    ) {
+        collector.invariant(
+            'authentication.credentialSecret',
+            'auth-secret-strength',
+            'Authentication credential secret does not meet the required strength policy.'
+        );
+    }
+    if (configuration.productionHardening) {
+        validateProductionHardening(collector, configuration);
+    }
+    if (configuration.profileName === 'prod') {
+        validateConvenientProductionPrivileges(collector, configuration);
+    }
+}
+
+function validateDatabaseModeInvariants(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: ValidateApiV1ConfigurationInvariantsInput
+): void {
+    if (
+        configuration.topology.replay.queueWorkers === 'disabled' &&
+        configuration.database.mode !== 'postgres'
+    ) {
+        collector.invariant(
+            'topology.replay.queueWorkers',
+            'disabled-workers-require-postgres',
+            'Disabled API queue workers require PostgreSQL delivery.'
+        );
+    }
+    if (
+        configuration.blackBox.pgliteEvidence.mode === 'directory' &&
+        configuration.database.mode === 'postgres'
+    ) {
+        collector.invariant(
+            'blackBox.pgliteEvidence.mode',
+            'pglite-evidence-requires-pglite',
+            'PGlite evidence publication requires a PGlite database mode.'
+        );
+    }
+}
+
+function validateTopologyPlanningInvariants(
+    collector: ApiV1ConfigurationInvariantCollector,
+    topology: ApiV1TopologyConfiguration
+): void {
+    const planning = topology.planning;
     if (
         collector.isValid(
             'topology.planning.meshMinSize',
@@ -59,7 +123,26 @@ export function validateApiV1ConfigurationInvariants(
             'Mesh parameter K must not exceed the topology degree limit.'
         );
     }
-    const queueResilience = configuration.topology.queueResilience;
+    const recompute = topology.recompute;
+    if (
+        collector.isValid(
+            'topology.recompute.formationDebounceMs',
+            'topology.recompute.formationMaxWaitMs'
+        ) && recompute.formationMaxWaitMs < recompute.formationDebounceMs
+    ) {
+        collector.invariant(
+            'topology.recompute.formationMaxWaitMs',
+            'replan-maximum-wait-below-debounce',
+            'The replan maximum wait must not be shorter than the replan debounce it bounds.'
+        );
+    }
+}
+
+function validateTopologyDeliveryInvariants(
+    collector: ApiV1ConfigurationInvariantCollector,
+    topology: ApiV1TopologyConfiguration
+): void {
+    const queueResilience = topology.queueResilience;
     if (
         collector.isValid(
             'topology.queueResilience.initialRate',
@@ -72,7 +155,7 @@ export function validateApiV1ConfigurationInvariants(
             'Initial queue rate must not exceed the maximum queue rate.'
         );
     }
-    const delivery = configuration.topology.delivery;
+    const delivery = topology.delivery;
     if (
         collector.isValid(
             'topology.delivery.heartbeatIntervalMs',
@@ -96,55 +179,6 @@ export function validateApiV1ConfigurationInvariants(
             'page-exceeds-turn',
             'Delivery page size must not exceed maximum entries per turn.'
         );
-    }
-    const completionWait = configuration.appInbox.completionWait;
-    if (
-        collector.isValid(
-            'appInbox.completionWait.retryIntervalMs',
-            'appInbox.completionWait.maxRetryIntervalMs'
-        ) && completionWait.retryIntervalMs > completionWait.maxRetryIntervalMs
-    ) {
-        collector.invariant(
-            'appInbox.completionWait.retryIntervalMs',
-            'retry-interval-exceeds-maximum',
-            'Initial AppInbox retry interval must not exceed the maximum retry interval.'
-        );
-    }
-    if (
-        configuration.topology.replay.queueWorkers === 'disabled' &&
-        configuration.database.mode !== 'postgres'
-    ) {
-        collector.invariant(
-            'topology.replay.queueWorkers',
-            'disabled-workers-require-postgres',
-            'Disabled API queue workers require PostgreSQL delivery.'
-        );
-    }
-    if (
-        configuration.blackBox.pgliteEvidence.mode === 'directory' &&
-        configuration.database.mode === 'postgres'
-    ) {
-        collector.invariant(
-            'blackBox.pgliteEvidence.mode',
-            'pglite-evidence-requires-pglite',
-            'PGlite evidence publication requires a PGlite database mode.'
-        );
-    }
-    if (
-        collector.isValid('authentication.credentialSecret') &&
-        configuration.authentication.credentialSecret.length < 32
-    ) {
-        collector.invariant(
-            'authentication.credentialSecret',
-            'auth-secret-strength',
-            'Authentication credential secret does not meet the required strength policy.'
-        );
-    }
-    if (configuration.productionHardening) {
-        validateProductionHardening(collector, configuration);
-    }
-    if (configuration.profileName === 'prod') {
-        validateConvenientProductionPrivileges(collector, configuration);
     }
 }
 
@@ -187,6 +221,15 @@ function validateProductionHardening(
     collector: ApiV1ConfigurationInvariantCollector,
     configuration: ValidateApiV1ConfigurationInvariantsInput
 ): void {
+    validateTransportHardening(collector, configuration);
+    validateAuthenticationHardening(collector, configuration);
+    validateOperationalHardening(collector, configuration);
+}
+
+function validateTransportHardening(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: ValidateApiV1ConfigurationInvariantsInput
+): void {
     if (configuration.database.mode !== 'postgres') {
         collector.invariant(
             'database.mode',
@@ -225,13 +268,12 @@ function validateProductionHardening(
             'Production hardening requires one or more exact HTTPS origins.'
         );
     }
-    if (!configuration.stateApi.strictReadAuthorization) {
-        collector.invariant(
-            'stateApi.strictReadAuthorization',
-            'hardening-strict-state-reads',
-            'Production hardening requires strict state-read authorization.'
-        );
-    }
+}
+
+function validateAuthenticationHardening(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: ValidateApiV1ConfigurationInvariantsInput
+): void {
     if (configuration.authentication.registrationMode !== 'admin') {
         collector.invariant(
             'authentication.registrationMode',
@@ -254,6 +296,19 @@ function validateProductionHardening(
             'authentication.adminClientIds',
             'hardening-non-demo-admins',
             'Production hardening requires at least one non-demo administrator identity.'
+        );
+    }
+}
+
+function validateOperationalHardening(
+    collector: ApiV1ConfigurationInvariantCollector,
+    configuration: ValidateApiV1ConfigurationInvariantsInput
+): void {
+    if (!configuration.stateApi.strictReadAuthorization) {
+        collector.invariant(
+            'stateApi.strictReadAuthorization',
+            'hardening-strict-state-reads',
+            'Production hardening requires strict state-read authorization.'
         );
     }
     if (configuration.ice.mode !== 'metered') {

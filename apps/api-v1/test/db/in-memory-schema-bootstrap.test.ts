@@ -83,7 +83,7 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
                 'runtime_state_store_namespace_key_c_ix',
                 'runtime_state_store_namespace_expire_at_ix',
                 'runtime_state_store_namespace_ix',
-                'runtime_state_store_namespace_key_c_ix',
+                'runtime_state_store_namespace_reversed_key_c_ix',
                 'runtime_state_store_pk'
             ]
         ) {
@@ -266,6 +266,33 @@ Deno.test('runtime-state prefix ranges use the composite C-collated index', asyn
         assert.match(
             plan.rows.map((row) => row['QUERY PLAN']).join('\n'),
             /Index Scan using runtime_state_store_namespace_key_c_ix/
+        );
+    }
+    finally {
+        await db.close();
+    }
+});
+
+Deno.test('runtime-state suffix ranges use the reversed-key C-collated index', async () => {
+    const db = new PGlite();
+    try {
+        await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
+
+        await db.query(`set enable_seqscan = off`);
+        await db.query(`set enable_bitmapscan = off`);
+        const plan = await db.query<{ 'QUERY PLAN': string; }>(
+            `explain
+         select store_key, store_value
+         from runtime_state_store
+         where store_namespace = $1
+           and reverse(store_key) collate "C" >= $2
+           and reverse(store_key) collate "C" < $3`,
+            ['group-state:sessions', 'a=noisses:', 'a=noisses;']
+        );
+
+        assert.match(
+            plan.rows.map((row) => row['QUERY PLAN']).join('\n'),
+            /Index Scan using runtime_state_store_namespace_reversed_key_c_ix/
         );
     }
     finally {

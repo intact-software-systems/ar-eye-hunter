@@ -22,10 +22,19 @@ export interface RuntimeStateReadBatchPrefixSuffixSelector {
     readonly keySuffix: string;
 }
 
+/** Every key in the namespace that ends with the suffix, served by an index over the reversed key. */
+export interface RuntimeStateReadBatchSuffixSelector {
+    readonly selectorId: string;
+    readonly kind: 'suffix';
+    readonly namespace: string;
+    readonly keySuffix: string;
+}
+
 export type RuntimeStateReadBatchSelector =
     | RuntimeStateReadBatchKeySelector
     | RuntimeStateReadBatchPrefixSelector
-    | RuntimeStateReadBatchPrefixSuffixSelector;
+    | RuntimeStateReadBatchPrefixSuffixSelector
+    | RuntimeStateReadBatchSuffixSelector;
 
 export interface RuntimeStateReadBatchSelection {
     readonly selectorId: string;

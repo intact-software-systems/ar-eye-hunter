@@ -12,6 +12,7 @@ import {
     type CoalescedAppOutboxWorkEnvelope
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { resolveTopologyReplanWindow, type TopologyReplanWindow } from '@shared-server/rallar-system/topology/planning/resolve-topology-replan-window.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     computeTopologyReplanDueAt,
@@ -29,6 +30,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
@@ -715,6 +717,61 @@ describe('computeTopologyReplanDueAt', () => {
     });
 });
 
+describe('the auto replan window under continuous change (D274)', () => {
+    const autoWindow = resolveTopologyReplanWindow({
+        lifecyclePolicy: { status: 'present', policy: resolveGroupLifecyclePolicyPreset('optimistic') },
+        serverDebounceMs: DEBOUNCE_MS,
+        serverMaxWaitMs: SERVER_MAX_WAIT_MS
+    });
+
+    it('lets an auto policy\'s replan fall due within the maximum wait of each burst under a revision every 300 ms', () => {
+        const runs = simulateReplanRuns(autoWindow, { revisionIntervalMs: 300, durationMs: 10_000 });
+
+        // Unbounded, each revision moves the due time 500 ms past the next one and nothing ever runs.
+        expect(runs.length).toBeGreaterThanOrEqual(4);
+        for (const run of runs) {
+            expect(run.ranAtEpochMs - run.firstPendingAtEpochMs).toBeLessThanOrEqual(2_000 + 300);
+        }
+    });
+
+    it('keeps a failed recompute\'s retry backoff when an auto merge reaches the maximum wait', () => {
+        const timing: TopologyReplanTiming = { window: autoWindow, replanNotBeforeEpochMs: null };
+        const first = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 3),
+            requestedAtEpochMs: BASE_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing,
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry: null
+        });
+        const backedOff = {
+            ...first.entryWrite.entry,
+            status: EntityStatus.RETRY,
+            dequeueAudit: {
+                attempts: 2,
+                nextTs: Temporal.Instant.fromEpochMilliseconds(BASE_EPOCH_MS + 8_000)
+            }
+        };
+
+        const merged = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, 4),
+            requestedAtEpochMs: BASE_EPOCH_MS + 2_500,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing,
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry: backedOff
+        });
+
+        expect(merged.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(merged.entryWrite.entry.dequeueAudit.attempts).toBe(2);
+        expect(merged.entryWrite.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + 8_000);
+    });
+});
+
 describe('the series anchor on coalesced rows', () => {
     const bounded: TopologyReplanTiming = {
         window: { debounceMs: DEBOUNCE_MS, maxWaitMs: 1_200 },
@@ -783,3 +840,45 @@ describe('the series anchor on coalesced rows', () => {
         expect(merged.entryWrite.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + 1_200);
     });
 });
+
+interface ReplanRun {
+    readonly firstPendingAtEpochMs: number;
+    readonly ranAtEpochMs: number;
+}
+
+interface PendingReplan {
+    readonly windowOpenedAtEpochMs: number;
+    readonly dueAtEpochMs: number;
+}
+
+interface ReplanStream {
+    readonly revisionIntervalMs: number;
+    readonly durationMs: number;
+}
+
+/**
+ * Each outbox pass first merges the new revision into the pending replan (the NEW lane drains the
+ * presence summaries), then claims the replan only if it is due (the RETRY lane), as on the hosted run.
+ */
+function simulateReplanRuns(window: TopologyReplanWindow, stream: ReplanStream): readonly ReplanRun[] {
+    const runs: ReplanRun[] = [];
+    let pending: PendingReplan | null = null;
+    for (let nowEpochMs = 0; nowEpochMs <= stream.durationMs; nowEpochMs += stream.revisionIntervalMs) {
+        const merged: PendingReplan = {
+            windowOpenedAtEpochMs: pending === null ? nowEpochMs : pending.windowOpenedAtEpochMs,
+            dueAtEpochMs: computeTopologyReplanDueAt({
+                requestedAtEpochMs: nowEpochMs,
+                previous: pending,
+                timing: { window, replanNotBeforeEpochMs: null }
+            })
+        };
+        if (merged.dueAtEpochMs <= nowEpochMs) {
+            runs.push({ firstPendingAtEpochMs: merged.windowOpenedAtEpochMs, ranAtEpochMs: nowEpochMs });
+            pending = null;
+        }
+        else {
+            pending = merged;
+        }
+    }
+    return runs;
+}

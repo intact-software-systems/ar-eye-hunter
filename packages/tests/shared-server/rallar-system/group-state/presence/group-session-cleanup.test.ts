@@ -1,68 +1,44 @@
 import type { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { readGroupSessionCleanupCandidates } from '@shared-server/rallar-system/group-state/presence/group-session-cleanup.ts';
-import type {
-    RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession, GroupScope } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../../runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 
 const SCOPE: GroupScope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 const AUTH_SESSION = {
     clientId: 'alice',
     username: 'alice',
-    sessionId: 'session-alice',
-    accessTokenDigest: 'digest-alice',
+    sessionId: 'session:alice=1',
     issuedAtEpochMs: 1_000,
     expiresAtEpochMs: 1_000_000
 } as const;
 const DISCONNECTED_AT_EPOCH_MS = 5_000;
 
-class RowCountingRuntime extends FakeRuntimeStateRepository {
-    rowsReturned = 0;
-
-    override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        const entries = await super.findAllEntries(namespace);
-        this.rowsReturned += entries.length;
-        return entries;
-    }
-
-    override async readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-        const selections = await super.readRuntimeStateBatch(selectors);
-        this.rowsReturned += selections.reduce((total, selection) => total + selection.entries.length, 0);
-        return selections;
-    }
-}
-
 describe('group session cleanup candidates', () => {
-    it.each([0, 8, 32])(
-        'reads only the disconnecting session\'s presence rows beside %i unrelated groups',
-        async (unrelatedGroupCount) => {
-            const { runtime, groups } = createRuntime();
-            await groups.putPresenceSession(session({ groupId: 'room-one' }));
-            await groups.putPresenceSession(session({ groupId: 'room-two' }));
-            for (let index = 0; index < unrelatedGroupCount; index += 1) {
-                await groups.putPresenceSession(session({
-                    groupId: `unrelated-${index}`,
-                    sessionId: `session-${index}`,
-                    principalId: `principal-${index}`
-                }));
-            }
-            runtime.rowsReturned = 0;
+    it('reads the disconnecting session\'s presence rows by their key suffix, never the whole namespace', async () => {
+        const { runtime, groups } = createRuntime();
+        await groups.putPresenceSession(session({ groupId: 'room-one' }));
+        await groups.putPresenceSession(session({ groupId: 'room-two' }));
+        // Ids that share the session id's tail or extend it, around its encoded ':' and '='.
+        await groups.putPresenceSession(session({ groupId: 'room-two', sessionId: 'xsession:alice=1' }));
+        await groups.putPresenceSession(session({ groupId: 'room-two', sessionId: 'session:alice=12' }));
+        await groups.putPresenceSession(session({ groupId: 'unrelated', sessionId: 'session-bob', principalId: 'bob' }));
+        runtime.readBatchCalls.length = 0;
 
-            const candidates = await readCandidates(groups);
+        const candidates = await readCandidates(groups);
 
-            expect(candidates.map((candidate) => candidate.groupId)).toEqual(['room-one', 'room-two']);
-            // The read is keyed by the session, so its row count does not grow with unrelated groups.
-            expect(runtime.rowsReturned).toBe(2);
-        }
-    );
+        expect(candidates.map((candidate) => `${candidate.groupId}/${candidate.sessionId}`)).toEqual([
+            'room-one/session:alice=1',
+            'room-two/session:alice=1'
+        ]);
+        expect(runtime.wholeNamespaceReads).not.toContain(SESSIONS_NAMESPACE);
+        expect(runtime.readBatchCalls.flat().map((selector) => [selector.namespace, selector.kind])).toEqual([
+            [SESSIONS_NAMESPACE, 'suffix']
+        ]);
+    });
 
     it('keeps only the principal\'s live rows in the disconnect scope that predate the disconnect', async () => {
         const { groups } = createRuntime();
@@ -72,7 +48,7 @@ describe('group session cleanup candidates', () => {
         await groups.putPresenceSession(session({ groupId: 'already-disconnected', disconnectedAtEpochMs: 4_000 }));
         await groups.putPresenceSession(session({ groupId: 'reconnected-later', connectedAtEpochMs: 6_000 }));
         await groups.putPresenceSession(session({ groupId: 'heartbeat-later', lastHeartbeatAtEpochMs: 6_000 }));
-        await groups.putPresenceSession(session({ groupId: 'other-session', sessionId: 'session-alice-2' }));
+        await groups.putPresenceSession(session({ groupId: 'other-session', sessionId: 'session:alice=2' }));
 
         const candidates = await readCandidates(groups);
 
@@ -91,21 +67,17 @@ interface SessionInput {
 }
 
 function createRuntime() {
-    const runtime = new RowCountingRuntime();
+    const runtime = new ReadBatchFakeRuntimeStateRepository();
     return { runtime, groups: createTestGroupStateRepository(runtime) };
 }
 
 async function readCandidates(groups: GroupStateRepository): Promise<readonly GroupPresenceSession[]> {
-    return await readGroupSessionCleanupCandidates(
-        groups,
-        { findBySessionId: async (sessionId) => (sessionId === AUTH_SESSION.sessionId ? AUTH_SESSION : undefined) },
-        {
-            scope: SCOPE,
-            authSession: AUTH_SESSION,
-            principalId: AUTH_SESSION.clientId,
-            disconnectedAtEpochMs: DISCONNECTED_AT_EPOCH_MS
-        }
-    );
+    return await readGroupSessionCleanupCandidates(groups, {
+        scope: SCOPE,
+        authSession: AUTH_SESSION,
+        principalId: AUTH_SESSION.clientId,
+        disconnectedAtEpochMs: DISCONNECTED_AT_EPOCH_MS
+    });
 }
 
 function session(input: SessionInput): GroupPresenceSession {

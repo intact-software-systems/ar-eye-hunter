@@ -14,5 +14,7 @@ export function isRuntimeStateReadBatchKeySelected(
             return key.length >= selector.keyPrefix.length + selector.keySuffix.length &&
                 key.startsWith(selector.keyPrefix) &&
                 key.endsWith(selector.keySuffix);
+        case 'suffix':
+            return key.endsWith(selector.keySuffix);
     }
 }

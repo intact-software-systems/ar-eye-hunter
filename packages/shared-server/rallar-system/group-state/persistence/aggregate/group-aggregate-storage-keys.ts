@@ -1,7 +1,5 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-export const GROUP_STATE_ANY_SCOPE_STORAGE_KEY_PREFIX = 'app=';
-
 function groupStateStorageKeyPart(name: string, value: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`Group-state storage key ${name} must be a non-empty string`);

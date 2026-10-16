@@ -272,7 +272,9 @@ describe('runtime-state read batches', () => {
                 key: ENTRY.key,
                 keyPrefix: null,
                 keySuffix: null,
-                prefixEnd: null
+                prefixEnd: null,
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             },
             {
                 selectorId: 'members',
@@ -281,7 +283,9 @@ describe('runtime-state read batches', () => {
                 key: null,
                 keyPrefix: `${ENTRY.key}:`,
                 keySuffix: null,
-                prefixEnd: `${ENTRY.key};`
+                prefixEnd: `${ENTRY.key};`,
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             },
             {
                 selectorId: 'principal-members',
@@ -290,9 +294,36 @@ describe('runtime-state read batches', () => {
                 key: null,
                 keyPrefix: 'app=app:ws=workspace:',
                 keySuffix: ':member=alice',
-                prefixEnd: 'app=app:ws=workspace;'
+                prefixEnd: 'app=app:ws=workspace;',
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             }
         ]]);
+    });
+
+    it('binds a suffix selector as the range of its reversed key', async () => {
+        const captured: CapturedQuery[] = [];
+        const sql = captureSql(captured, [{ selections: [{ selectorId: 'session', entries: [] }] }]);
+
+        await new PSqlRuntimeStateRepository(sql).readRuntimeStateBatch([{
+            selectorId: 'session',
+            kind: 'suffix',
+            namespace: 'group-state:sessions',
+            keySuffix: ':session=a%3Ab'
+        }]);
+
+        expect(captured[0].source).toContain('reverse(reversed_entry.store_key) collate "C" >= selector.reversed_suffix');
+        expect(captured[0].values).toEqual([[{
+            selectorId: 'session',
+            kind: 'suffix',
+            namespace: 'group-state:sessions',
+            key: null,
+            keyPrefix: null,
+            keySuffix: ':session=a%3Ab',
+            prefixEnd: null,
+            reversedSuffix: 'bA3%a=noisses:',
+            reversedSuffixEnd: 'bA3%a=noisses;'
+        }]]);
     });
 });
 

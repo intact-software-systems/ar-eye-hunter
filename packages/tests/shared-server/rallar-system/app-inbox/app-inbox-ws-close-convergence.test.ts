@@ -12,6 +12,7 @@ import { requireGroupStateWritten } from '@shared-server/rallar-system/group-sta
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type { ConnectGroupPresenceSessionRequest, StateScope } from '@shared/api/state-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import {
@@ -201,6 +202,25 @@ describe('AppInbox websocket close convergence', () => {
         await processNext(harness.reader);
 
         expect(await activeGroupSessionCount(harness, 'connect-first-room')).toBe(0);
+    });
+
+    it('closes the presence of a session whose auth session was revoked before its cleanup ran', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'revoked-session-room');
+        const facts = closeFacts(harness.authSession, 'group-revoked-session', 35);
+        const presence = groupPresenceFacts(facts, 'presence-revoked-session', -50);
+        const pending = enqueueGroupConnect({ harness, groupId: 'revoked-session-room', facts, presence });
+        await waitForQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_CONNECT);
+        await processNext(harness.reader);
+        expect((await pending).right).toBeDefined();
+        await harness.revokeAuthSession();
+
+        await enqueueGroupClose(harness.group, facts);
+        await processNext(harness.reader);
+
+        expect((await requireQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP)).status)
+            .toBe(EntityStatus.COMPLETED);
+        expect(await activeGroupSessionCount(harness, 'revoked-session-room')).toBe(0);
     });
 
     it(

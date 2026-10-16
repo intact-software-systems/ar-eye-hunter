@@ -14,11 +14,7 @@ import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
-import {
-    GROUP_STATE_ANY_SCOPE_STORAGE_KEY_PREFIX,
-    groupStateGroupStorageKey,
-    groupStateScopeStorageKey
-} from './aggregate/group-aggregate-storage-keys.ts';
+import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
 import {
     GROUPS_NAMESPACE,
@@ -249,9 +245,8 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
         const selections = await this.repository.readRuntimeStateBatch(
             [...new Set(sessionIds)].map((sessionId, index) => ({
                 selectorId: `session:${index}`,
-                kind: 'prefix-suffix',
+                kind: 'suffix',
                 namespace: SESSIONS_NAMESPACE,
-                keyPrefix: GROUP_STATE_ANY_SCOPE_STORAGE_KEY_PREFIX,
                 keySuffix: groupStatePresenceSessionStorageKeySuffix(sessionId)
             }))
         );

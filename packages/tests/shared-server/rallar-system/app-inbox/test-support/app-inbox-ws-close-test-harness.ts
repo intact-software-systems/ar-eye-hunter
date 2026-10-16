@@ -37,6 +37,8 @@ export interface AppInboxWsCloseHarness {
     readonly groupState: GroupStateService;
     readonly clients: ClientStateRepository;
     readonly groups: GroupStateRepository;
+    /** Deletes the harness auth session, as a logout or an auth expiry does while its socket is still open. */
+    revokeAuthSession(): Promise<void>;
 }
 interface AppInboxWsCloseHarnessOptions {
     readonly onRollback?: () => void;
@@ -117,7 +119,8 @@ export async function createAppInboxWsCloseHarness(
         clientState,
         groupState,
         clients: createTestClientStateRepository(runtimeRepository),
-        groups: createTestGroupStateRepository(runtimeRepository, database.groupEventStore)
+        groups: createTestGroupStateRepository(runtimeRepository, database.groupEventStore),
+        revokeAuthSession: async () => await authSessions.deleteSession(authSession)
     };
 }
 

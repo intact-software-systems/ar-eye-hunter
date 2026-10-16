@@ -488,6 +488,13 @@ Deno.test('configuration decoder enforces database, pub-sub, ICE, replay, and wo
                 setPath(input.defaultsSource, 'ice.region', 'eu');
             },
             path: 'ice.apiKey'
+        },
+        {
+            name: 'replan maximum wait below its debounce',
+            mutate(input: MutableDecodeApiV1ConfigurationInput) {
+                setPath(input.defaultsSource, 'topology.recompute.formationMaxWaitMs', 100);
+            },
+            path: 'topology.recompute.formationMaxWaitMs'
         }
     ] as const;
 
@@ -646,6 +653,9 @@ function preserveCrossFieldValidity(
     }
     if (path === 'topology.delivery.maxEntriesPerTurn') {
         setPath(input.defaultsSource, 'topology.delivery.pageSize', 1);
+    }
+    if (path === 'topology.recompute.formationMaxWaitMs') {
+        setPath(input.defaultsSource, 'topology.recompute.formationDebounceMs', 0);
     }
     if (path === 'topology.delivery.leaseDurationMs') {
         setPath(input.defaultsSource, 'topology.delivery.heartbeatIntervalMs', 1);

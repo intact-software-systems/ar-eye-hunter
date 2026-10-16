@@ -102,7 +102,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             incoming.sourceGroupStateCausalRevision
         ),
         data: incoming,
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0, nextTs: undefined },
         entryAudit: null,
         messageIdentity: null
     });
@@ -113,7 +113,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
                 input,
                 resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
                 data: incoming,
-                dequeueAudit: { attempts: 0 },
+                dequeueAudit: { attempts: 0, nextTs: undefined },
                 entryAudit: null,
                 messageIdentity: null
             }),
@@ -179,9 +179,9 @@ function toMergedCoalescedGroupRevisionEntry(
         input,
         resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
         data: nextData,
-        dequeueAudit: {
-            attempts: carriesPreviousLifecycle ? previousEntry.dequeueAudit.attempts : 0
-        },
+        dequeueAudit: carriesPreviousLifecycle
+            ? { attempts: previousEntry.dequeueAudit.attempts, nextTs: previousEntry.dequeueAudit.nextTs }
+            : { attempts: 0, nextTs: undefined },
         entryAudit: previousEntry.audit,
         messageIdentity: previous.messageIdentity
     });
@@ -369,7 +369,8 @@ interface ToCoalescedGroupRevisionEntryInput {
     readonly input: RtcTopologyCoalescedGroupRevisionInput;
     readonly resourceId: string;
     readonly data: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
-    readonly dequeueAudit: Pick<ResourceEntry['dequeueAudit'], 'attempts'>;
+    /** The attempts and retry time the row carries forward; a fresh row has neither. */
+    readonly dequeueAudit: Pick<ResourceEntry['dequeueAudit'], 'attempts' | 'nextTs'>;
     readonly entryAudit: ResourceEntry['audit'] | null;
     readonly messageIdentity: CoalescedMessageIdentity | null;
 }
@@ -388,8 +389,9 @@ function toCoalescedGroupRevisionEntry(
     const message = toCoalescedGroupRevisionMessage(entryInput, key, messageTsEpochMs);
     const metadata = data[COALESCED_APP_OUTBOX_WORK_FIELD];
     // NEW is the shape of a row no attempt has touched; a head that already
-    // failed an attempt keeps RETRY, immediately eligible through a past
-    // next_ts, when the bounded window makes a merge due at once.
+    // failed an attempt keeps RETRY, due at the later of the window's due
+    // time and its retry backoff, even when the bounded window makes a merge
+    // due at once.
     const isDue = metadata.dueAtEpochMs <= input.requestedAtEpochMs;
     const status = isDue && entryInput.dequeueAudit.attempts === 0 ? EntityStatus.NEW : EntityStatus.RETRY;
     const createdTs = Temporal.Instant.fromEpochMilliseconds(messageTsEpochMs)
@@ -410,9 +412,23 @@ function toCoalescedGroupRevisionEntry(
             attempts: entryInput.dequeueAudit.attempts,
             nextTs: status === EntityStatus.NEW
                 ? undefined
-                : Temporal.Instant.fromEpochMilliseconds(metadata.dueAtEpochMs)
+                : Temporal.Instant.fromEpochMilliseconds(
+                    computeCoalescedRetryAtEpochMs(metadata, entryInput.dequeueAudit)
+                )
         }
     };
+}
+
+/**
+ * A head that already failed an attempt keeps its retry backoff: the window may make the merged
+ * change due sooner, but never earlier than the failed recompute's next retry (D274).
+ */
+function computeCoalescedRetryAtEpochMs(
+    metadata: CoalescedAppOutboxWorkMetadata,
+    dequeueAudit: ToCoalescedGroupRevisionEntryInput['dequeueAudit']
+): number {
+    const backoffUntilEpochMs = dequeueAudit.attempts > 0 ? dequeueAudit.nextTs?.epochMilliseconds ?? 0 : 0;
+    return Math.max(metadata.dueAtEpochMs, backoffUntilEpochMs);
 }
 
 function toCoalescedGroupRevisionMessage(

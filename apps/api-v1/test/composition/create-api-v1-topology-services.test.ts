@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { SESSIONS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import type { RtcRttAppInboxCommand } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
@@ -9,16 +10,12 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import type {
-    RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { GroupFormationRttMutationEvent } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/read-batch-fake-runtime-state-repository.ts';
 import { createApiV1TopologyServices, type CreateApiV1TopologyServicesInput } from '../../src/composition/create-api-v1-topology-services.ts';
 
 const NOW_EPOCH_MS = 4_000_000_000_000;
@@ -66,46 +63,26 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     assert.deepEqual(formationEvents, []);
 });
 
-Deno.test('RTT policy inputs read only the reporting pair\'s presence rows, whatever the number of unrelated groups', async () => {
-    const rowsReturned: number[] = [];
-    for (const unrelatedGroupCount of [0, 16]) {
-        const runtimeStateRepository = new RowCountingRuntimeStateRepository();
-        const snapshot = createGroupSnapshot();
-        const services = createApiV1TopologyServices(createServicesInput(runtimeStateRepository, snapshot, []));
-        await seedReportingPairGroup(services.groupStateRepository, snapshot);
-        for (let index = 0; index < unrelatedGroupCount; index += 1) {
-            await services.groupStateRepository.putPresenceSession({
-                ...createPresenceSession(`unrelated-session-${index}`, `unrelated-${index}`),
-                groupId: `unrelated-group-${index}`
-            });
-        }
-        runtimeStateRepository.rowsReturned = 0;
+Deno.test('RTT policy inputs read the reporting pair\'s presence rows by key suffix, never the whole namespace', async () => {
+    const runtimeStateRepository = new ReadBatchFakeRuntimeStateRepository();
+    const snapshot = createGroupSnapshot();
+    const services = createApiV1TopologyServices(createServicesInput(runtimeStateRepository, snapshot, []));
+    await seedReportingPairGroup(services.groupStateRepository, snapshot);
+    await services.groupStateRepository.putPresenceSession({
+        ...createPresenceSession('unrelated-session', 'unrelated'),
+        groupId: 'unrelated-group'
+    });
+    runtimeStateRepository.readBatchCalls.length = 0;
 
-        const policy = await services.rtcRttMutationDependencies.readPolicyInputs(createRttCommand());
+    const policy = await services.rtcRttMutationDependencies.readPolicyInputs(createRttCommand());
 
-        assert.deepEqual(policy.candidateGroups.map((group) => group.group.groupId), ['group']);
-        rowsReturned.push(runtimeStateRepository.rowsReturned);
-    }
-    assert.equal(rowsReturned[1], rowsReturned[0]);
+    assert.deepEqual(policy.candidateGroups.map((group) => group.group.groupId), ['group']);
+    assert.ok(!runtimeStateRepository.wholeNamespaceReads.includes(SESSIONS_NAMESPACE));
+    const sessionSelectors = runtimeStateRepository.readBatchCalls.flat()
+        .filter((selector) => selector.namespace === SESSIONS_NAMESPACE);
+    // The pair lookup by suffix; the candidate snapshot then reads its own group's rows by group prefix.
+    assert.deepEqual(sessionSelectors.map((selector) => selector.kind), ['suffix', 'suffix', 'prefix']);
 });
-
-class RowCountingRuntimeStateRepository extends FakeRuntimeStateRepository {
-    rowsReturned = 0;
-
-    override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        const entries = await super.findAllEntries(namespace);
-        this.rowsReturned += entries.length;
-        return entries;
-    }
-
-    override async readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-        const selections = await super.readRuntimeStateBatch(selectors);
-        this.rowsReturned += selections.reduce((total, selection) => total + selection.entries.length, 0);
-        return selections;
-    }
-}
 
 function createServicesInput(
     runtimeStateRepository: FakeRuntimeStateRepository,
