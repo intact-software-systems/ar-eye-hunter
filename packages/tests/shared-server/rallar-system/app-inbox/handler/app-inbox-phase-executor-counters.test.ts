@@ -61,10 +61,30 @@ describe('AppInbox phase timing executor counters', () => {
             selectedLane: harness.context.attemptTelemetry.selectedLane,
             attempt: harness.entry.dequeueAudit.attempts,
             statements: 2,
-            executorWaitMs: 2
+            executorWaitMs: expect.any(Number)
         });
         expect(handlerAction?.details).toMatchObject({ resourceId: harness.entry.key.resourceId, statements: 3, executorWaitMs: 3 });
         expect(database.counters.statements).toBe(4);
+    });
+
+    it('credits the transaction line only its own statements while the executor counts every statement', async () => {
+        const harness = createAtomicHarness();
+        const database = createCountingDatabase();
+        const timing: RallarTimingEvent[] = [];
+        const writer = new AppInboxTransactionWriter(
+            { database: database.sql, nowEpochMs: () => 1_000 },
+            { serviceId: 'server-1', timing: (event) => timing.push(event) }
+        );
+        const completionInput = { ...writer.readCompletionFacts(harness.context), status: EntityStatus.COMPLETED, durableResult: { accepted: true } } as const;
+        const completion = computeAppInboxCompletion(completionInput);
+
+        await writer.writeComputedMutation(harness.context, completion, async () => {
+            await database.sql`select 'a concurrent route statement on the shared executor'`;
+        });
+
+        const transaction = timing.find((event) => event.operation === 'transaction');
+        expect(transaction?.details).toMatchObject({ statements: 2, executorWaitMs: expect.any(Number) });
+        expect(database.counters).toEqual({ statements: 3, executorWaitMs: 3 });
     });
 
     it('keeps the phase lines without counters when the port does not count', async () => {

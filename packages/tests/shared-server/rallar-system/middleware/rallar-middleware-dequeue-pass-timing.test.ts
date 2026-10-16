@@ -13,6 +13,7 @@ import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resourc
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
@@ -55,6 +56,54 @@ describe('Rallar middleware dequeue-pass timing', () => {
                 serviceId: 'server-1',
                 requestId: 'claimed',
                 details: expect.objectContaining({ lanesProbed: 'NEW', claimedInPass: 1, statements: 0 })
+            })
+        ]);
+    });
+
+    it('reports the outbox pass with the claimed outbox type, attributed to the server', async () => {
+        const resilience = createResilience();
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });
+        const timing: RallarTimingEvent[] = [];
+        const infrastructure = createRallarMiddlewareInfrastructure(
+            {
+                ...fixture.options,
+                webSocketServer: new JsonWebSocketServer(),
+                appInboxDequeuePassTiming: {
+                    database: { getExecutorCounters: () => ({ statements: 0, executorWaitMs: 0 }) },
+                    serviceId: 'server-1',
+                    sink: (event) => timing.push(event)
+                }
+            },
+            new InboxOutboxEngine()
+        );
+        onTestFinished(() => infrastructure.wsQBoxServerService.dispose());
+        const reader = infrastructure.outboxQueueReader;
+        reader.onOutboxMessageDo('test.outbox-pass', { onMessage: async () => undefined });
+        await reader.enqueueIfAbsent(newALUntargetedMessage(
+            'api-v1',
+            newALRoute('app-outbox.test', 'test-scope', 'claimed-outbox'),
+            'test.outbox-pass',
+            {},
+            { ttlMs: 300_000 }
+        ));
+
+        const advertisedLanes = await reader.readWorkAdvertisement(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, resilience);
+        expect(await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, resilience, advertisedLanes)).toBe(1);
+
+        expect(timing).toEqual([
+            expect.objectContaining({
+                component: 'app-inbox-phase',
+                operation: 'dequeue-pass',
+                serviceId: 'server-1',
+                requestId: 'claimed-outbox',
+                details: expect.objectContaining({
+                    type: 'test.outbox-pass',
+                    topicId: 'app-outbox.test',
+                    selectedLane: 'NEW',
+                    lanesProbed: 'NEW',
+                    claimedInPass: 1,
+                    statements: 0
+                })
             })
         ]);
     });

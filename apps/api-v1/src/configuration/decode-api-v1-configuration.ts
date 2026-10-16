@@ -1,4 +1,5 @@
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type {
     ApiV1AppInboxConfiguration,
@@ -456,6 +457,7 @@ function decodeAppInbox(
 ): ApiV1AppInboxConfiguration {
     return {
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
+        laneBudgetPolicy: decoder.enumeration('appInbox.laneBudgetPolicy', InboxQueueReader.LANE_BUDGET_POLICIES),
         completionWait: {
             maxElapsedMs: decoder.integer('appInbox.completionWait.maxElapsedMs', 0),
             retryIntervalMs: decoder.integer(

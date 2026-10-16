@@ -11,10 +11,12 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-command-identity.ts';
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
 import { nowMs } from '../observability/timing.ts';
+import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
@@ -23,6 +25,7 @@ import { createWsServerTargetResolver } from '../websocket/targets/create-ws-ser
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
     CreateRallarMiddlewareOptions,
+    RallarMiddlewareDequeuePassTimingOptions,
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
 
@@ -79,13 +82,14 @@ export function createRallarMiddlewareInfrastructure(
                 ...options.relayedAckNotices,
                 acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
             })
-            : Promise.resolve()
+            : Promise.resolve(),
+        installMiddlewareAppInboxCompletionNoticeSubscriber(options)
     ]).then(() => undefined);
 
     return {
         wsQBoxServerService,
         inboxQueueReader: createMiddlewareInboxQueueReader(options),
-        outboxQueueReader: new OutboxQueueReader(options.outbox ?? options.inbox),
+        outboxQueueReader: createMiddlewareOutboxQueueReader(options),
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
@@ -94,21 +98,47 @@ export function createRallarMiddlewareInfrastructure(
     };
 }
 
+function installMiddlewareAppInboxCompletionNoticeSubscriber(options: CreateRallarMiddlewareOptions): Promise<void> {
+    const notifications = options.appInboxDequeueOptions.completionNotifications;
+    if (options.appInboxCompletionNotices === undefined || notifications === undefined) {
+        return Promise.resolve();
+    }
+    return installAppInboxCompletionNoticeSubscriber({ ...options.appInboxCompletionNotices, notifications });
+}
+
 function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {
     const inboxQueueReader = new InboxQueueReader(
         options.inbox,
-        { ...options.appInboxDequeueOptions, isRetryableConflict: isAppInboxRetryableConflict }
+        {
+            ...options.appInboxDequeueOptions,
+            isRetryableConflict: isAppInboxRetryableConflict,
+            toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
+        }
     );
-    const timing = options.appInboxDequeuePassTiming;
-    if (timing !== undefined) {
-        inboxQueueReader.onDequeuePassDo(
-            new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
-                serviceId: timing.serviceId,
-                sink: timing.sink
-            })
-        );
-    }
+    installDequeuePassTiming(inboxQueueReader, options.appInboxDequeuePassTiming);
     return inboxQueueReader;
+}
+
+function createMiddlewareOutboxQueueReader(options: CreateRallarMiddlewareOptions): OutboxQueueReader {
+    const outboxQueueReader = new OutboxQueueReader(options.outbox ?? options.inbox);
+    installDequeuePassTiming(outboxQueueReader, options.appInboxDequeuePassTiming);
+    return outboxQueueReader;
+}
+
+/** Each reader observes its own passes, so each gets its own timing with the server's one sink. */
+function installDequeuePassTiming(
+    reader: Pick<InboxQueueReader, 'onDequeuePassDo'>,
+    timing: RallarMiddlewareDequeuePassTimingOptions | undefined
+): void {
+    if (timing === undefined) {
+        return;
+    }
+    reader.onDequeuePassDo(
+        new AppInboxDequeuePassTiming({ database: timing.database, nowMs }, {
+            serviceId: timing.serviceId,
+            sink: timing.sink
+        })
+    );
 }
 
 function createMiddlewareWsQueueBoxServer(

@@ -46,6 +46,8 @@ interface TryWithPolicyOptions {
     readonly retryIntervalMsecs: number;
     readonly maxRetryIntervalMsecs: number;
     readonly maxElapsedMsecs?: number;
+    /** A delay that would end past the elapsed budget is shortened to end at it instead of ending the retries. */
+    readonly fitDelayToElapsedBudget: boolean;
     readonly backoffFactor: number;
     readonly jitterRatio: number;
     readonly retryIf: TryWithRetryPredicate;
@@ -112,6 +114,7 @@ export class TryWithPolicy {
             maxAttempts: Number.MAX_SAFE_INTEGER,
             retryIntervalMsecs: 500,
             maxRetryIntervalMsecs: 20_000,
+            fitDelayToElapsedBudget: false,
             backoffFactor: 2,
             jitterRatio: 0.2,
             retryIf: () => true
@@ -146,6 +149,11 @@ export class TryWithPolicy {
                 ? undefined
                 : Math.max(0, maxElapsedMsecs)
         });
+    }
+
+    /** The budget becomes a deadline: the last delay waits what remains of it and the attempt after it is the last. */
+    fitDelayToElapsedBudget(): TryWithPolicy {
+        return this.with({ fitDelayToElapsedBudget: true });
     }
 
     backoffFactor(backoffFactor: number): TryWithPolicy {
@@ -205,20 +213,18 @@ export class TryWithPolicy {
             throw context.error;
         }
 
-        const randomUnit = this.dependencies.randomUnit();
-        const delayMsecs = computeRetryDelayMsecs({
-            attempt: context.attempt,
-            baseMsecs: this.options.retryIntervalMsecs,
-            maxMsecs: this.options.maxRetryIntervalMsecs,
-            factor: this.options.backoffFactor,
-            jitterRatio: this.options.jitterRatio,
-            randomUnit
-        });
-        if (
-            this.options.maxElapsedMsecs !== undefined &&
-            context.elapsedMsecs + delayMsecs >
-                this.options.maxElapsedMsecs
-        ) {
+        const delayMsecs = this.toBudgetedDelayMsecs(
+            context.elapsedMsecs,
+            computeRetryDelayMsecs({
+                attempt: context.attempt,
+                baseMsecs: this.options.retryIntervalMsecs,
+                maxMsecs: this.options.maxRetryIntervalMsecs,
+                factor: this.options.backoffFactor,
+                jitterRatio: this.options.jitterRatio,
+                randomUnit: this.dependencies.randomUnit()
+            })
+        );
+        if (delayMsecs === undefined) {
             throw this.toExhaustedError(context, context.error);
         }
 
@@ -255,6 +261,18 @@ export class TryWithPolicy {
             elapsedMsecs,
             error
         };
+    }
+
+    /** `undefined` when the delay overshoots the budget and the policy does not fit delays to it. */
+    private toBudgetedDelayMsecs(elapsedMsecs: number, delayMsecs: number): number | undefined {
+        if (this.options.maxElapsedMsecs === undefined) {
+            return delayMsecs;
+        }
+        const remainingMsecs = this.options.maxElapsedMsecs - elapsedMsecs;
+        if (delayMsecs <= remainingMsecs) {
+            return delayMsecs;
+        }
+        return this.options.fitDelayToElapsedBudget ? remainingMsecs : undefined;
     }
 
     private hasElapsedBudgetBeenExhausted(elapsedMsecs: number): boolean {

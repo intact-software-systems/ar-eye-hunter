@@ -14,9 +14,9 @@ export interface AppInboxPhaseTimingInput {
 }
 
 /**
- * One `app-inbox-phase` line whose details carry the executor's statement and wait deltas over the
- * action, when the port counts; the executor is shared, so the deltas include every statement it ran
- * meanwhile.
+ * One `app-inbox-phase` line whose details carry the statement and wait deltas the handle reports
+ * over the action, when the port counts: a counter scope reports the action's own statements, the
+ * shared root handle every statement the executor ran meanwhile.
  */
 export async function timeAppInboxPhase<T>(
     input: AppInboxPhaseTimingInput,

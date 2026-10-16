@@ -242,6 +242,35 @@ Deno.test('a distributed-run lifecycle change and shutdown write the snapshot at
     }
 });
 
+Deno.test('a snapshot read that throws during a flush is logged as a warning with its cause', async () => {
+    const service = toStagedService();
+    const timers = createManualTimers(10_000);
+    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-throw-' });
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+    try {
+        const persistence = toSnapshotPersistence({
+            storageDir,
+            controlService: toCountingControlService(service, () => {
+                throw new Error('snapshot projection failed');
+            }),
+            timers
+        });
+        persistence.persist();
+        await timers.advanceTo(10_000);
+        await persistence.stop();
+
+        assertEquals(warnings, [
+            `Could not persist control snapshot to ${storageDir}/control-snapshot.json: snapshot projection failed`
+        ]);
+    }
+    finally {
+        console.warn = warn;
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
 Deno.test('control snapshot restore rejects a distributed run whose manifest omits a now-required setting', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     const distributedRun = persisted.distributedRuns[0];

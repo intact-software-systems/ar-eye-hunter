@@ -4,18 +4,17 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
 import { toAppQueueCreatedBy } from '../queuebox/AppQueueIdentity.ts';
 import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
     type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalizedSuccess
+    type ResourceInboxHandlerFinalized
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import { ResourceInboxCommandRejectedError } from '../queuebox/resource-inbox/resource-inbox-command-rejected-error.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -36,10 +35,11 @@ export namespace QueueBoxUtilities {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
         readonly resilience: ResourceInboxResilience;
+        readonly newLaneClaimOrder: ResourceInboxClaimOrder;
         readonly onDequeuedDo: (
             entry: ResourceEntry,
             attemptTelemetry: ResourceInboxAttemptTelemetry
-        ) => Promise<void | ResourceInboxHandlerFinalizedSuccess>;
+        ) => Promise<void | ResourceInboxHandlerFinalized>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
         /** The probe that preceded this pass; without one every lane is offered a reservation. */
@@ -58,6 +58,7 @@ export class QueueBoxUtilities {
             qbox,
             typesToDequeue,
             resilience,
+            newLaneClaimOrder,
             onDequeuedDo,
             options,
             readLaneBudgets,
@@ -75,9 +76,10 @@ export class QueueBoxUtilities {
         }
 
         let claimedCount = 0;
-        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess | undefined>({
+        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalized | undefined>({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
+            newLaneClaimOrder,
             maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
             maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
             readLaneBudgets,
@@ -93,6 +95,7 @@ export class QueueBoxUtilities {
             })
             .onCompletedEntries((completed) => {
                 claimedCount += completed.size;
+                // A typed rejection is a completed entry: the queue worked, so it is a resilience success.
                 if (completed.size > 0) {
                     resilience.success();
                 }
@@ -144,9 +147,7 @@ export class QueueBoxUtilities {
     }
 }
 
-/** A handler failure the queue cannot explain as not-ready, a rejected command or an expected conflict. */
+/** A handler failure the queue cannot explain as not-ready or an expected conflict; a typed rejection is a value. */
 function isOperationalDequeueFailure(exception: Error, options: DequeueResourceEntryOptions): boolean {
-    return !isNotReadyException(exception) &&
-        !(exception instanceof ResourceInboxCommandRejectedError) &&
-        !(options.isRetryableConflict?.(exception) ?? false);
+    return !isNotReadyException(exception) && !(options.isRetryableConflict?.(exception) ?? false);
 }

@@ -185,6 +185,7 @@ function createPostgresAppInboxWorkerInbox(
     trace: PostgresAppInboxWorkerTrace
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'adaptive-retry',
         onAttemptReleaseTelemetry: (event) =>
             trace.attempts.push({
                 resourceId: event.key.resourceId,

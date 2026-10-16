@@ -81,6 +81,7 @@ export async function createRtcRttDurableEnqueue(
     return {
         type: AppInboxType.RTC_RTT_SUBMIT,
         resourceId: requestId,
+        contextId: session.sessionId,
         data: encodeAppInboxCommand(command, 'RTC RTT AppInbox command'),
         authority: decodeJsonWireValue(authority, 'RTC RTT AppInbox authority')
     };

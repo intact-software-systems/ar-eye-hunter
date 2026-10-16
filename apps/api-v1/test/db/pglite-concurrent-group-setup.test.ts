@@ -124,11 +124,13 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
             waitJitterRatio: completion.jitterRatio,
             nowEpochMs: Date.now
         },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
         adminClientIds: [],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
-        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() }
+        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() },
+        appInboxCompletionNotices: undefined
     });
 }
 

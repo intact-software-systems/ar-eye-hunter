@@ -1476,7 +1476,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     waitForPeerReadiness = async (
         input: LiveRtcControlClient.WaitForRtcReadinessInput
     ): Promise<number> => {
-        await input.agent.refreshRoom({ timeoutMs: 60_000 });
+        await input.agent.refreshRoom({ refresh: 'always', timeoutMs: 60_000 });
         const dialableSessions = this.acceptedSessions.length > 0
             ? this.acceptedSessions
             : [...this.connected].map((id) => this.requireConnectedSessionId(id));

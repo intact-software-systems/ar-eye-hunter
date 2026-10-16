@@ -36,6 +36,7 @@ import {
     toResourceEntrySnapshot,
     validateResourceEntryObservation
 } from './resource-entry-observations.ts';
+import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,
@@ -333,7 +334,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
+        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -342,6 +343,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const reserved = new Map<Key, ResourceEntry>();
         const observations = captureResourceEntryObservations(observedEntries);
         const now = this.now();
+        const claimedContexts = contextClaim === undefined ? undefined : new ResourceInboxClaimedContexts(contextClaim);
 
         for (const candidate of observations?.values() ?? this.data.values()) {
             if (reserved.size >= maxToReserve) {
@@ -356,6 +358,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             if (!isInMemoryQueueEntryReservable({ entry, typeIds, statusIds, maxAttempts, now })) {
                 continue;
             }
+            if (claimedContexts?.admits(entry.key) === false) {
+                continue;
+            }
+            claimedContexts?.record(entry.key);
             const updated = computeReservedResourceEntry(entry, now);
             this.storeEntry(key, updated);
             reserved.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));

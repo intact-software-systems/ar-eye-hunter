@@ -62,7 +62,7 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
         membershipAllowed = false;
     });
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
     return {
         service: createApiCrdtInboxService({
             inboxQueueReader,

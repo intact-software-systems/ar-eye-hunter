@@ -1,6 +1,8 @@
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator, type DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
-import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueMessageReader } from '@shared/services/queue-message-reader.ts';
 
 import type { PSqlExecutorCounters, PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { recordRallarTiming, type RallarTimingDetails, type RallarTimingSink } from '../../observability/timing.ts';
@@ -53,11 +55,12 @@ export namespace AppInboxDequeuePassTiming {
 }
 
 /**
- * One `app-inbox-phase` `dequeue-pass` line per claimed entry carrying the executor cost of the
- * pass outside the handlers: the probe, the reservations and the releases, with the lanes the probe
- * advertised. The executor is shared, so statements other callers ran meanwhile are counted too.
+ * One `app-inbox-phase` `dequeue-pass` line per claimed entry, on the inbox and on the outbox pass,
+ * carrying the executor cost of the pass outside the handlers: the probe, the reservations and the
+ * releases, with the lanes the probe advertised and the claimed type. The executor is shared, so
+ * statements other callers ran meanwhile are counted too.
  */
-export class AppInboxDequeuePassTiming implements InboxQueueReader.DequeuePassObserver {
+export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePassObserver {
     private readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     private readonly nowMs: () => number;
     private readonly config: AppInboxDequeuePassTiming.Config;
@@ -184,12 +187,29 @@ function toLanesProbed(advertisedLanes: DequeueController.WorkAdvertisement): st
 }
 
 function toClaimedAttemptDetails(attempt: ResourceInboxAttempt): RallarTimingDetails {
+    if (attempt.entry.typeId !== EnqueuedType.APP_INBOX) {
+        return toClaimedEntryDetails(attempt, toQueuedMessageTypeId(attempt.entry));
+    }
     const identity = validateAppInboxCommandIdentity(attempt.entry);
     if (identity.valid) {
         return toAppInboxAttemptTimingDetails(identity.command, attempt.entry, attempt.telemetry);
     }
+    return toClaimedEntryDetails(attempt, identity.identity.operation);
+}
+
+/** The queued message's type as the dispatcher reads it; a malformed entry names its queue type. */
+function toQueuedMessageTypeId(entry: ResourceEntry): string {
+    try {
+        return QueueMessageReader.decodeQueuedMessage(entry).payload.typeId;
+    }
+    catch {
+        return `${entry.typeId}:malformed`;
+    }
+}
+
+function toClaimedEntryDetails(attempt: ResourceInboxAttempt, type: string): RallarTimingDetails {
     return {
-        type: identity.identity.operation,
+        type,
         topicId: attempt.entry.key.topicId,
         contextId: attempt.entry.key.contextId,
         resourceId: attempt.entry.key.resourceId,

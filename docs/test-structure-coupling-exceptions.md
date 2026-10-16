@@ -4409,6 +4409,36 @@ moved or changed test.
       }
     },
     {
+      "id": "resource-inbox-dequeue-typed-rejection-logged-once-as-value",
+      "domain": "Resource inbox dequeue failure reporting",
+      "owner": "Rallar shared maintainers",
+      "summary": "A handler-finalized typed rejection reaches the dequeue batch as a value and is reported once, naming the key and the rejection code, with the cause chain as data and no stack frames.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs a handler-finalized typed rejection once as a value with its cause chain and no stack frames",
+      "coverageRelation": "The test drives the real default resource inbox dequeuer over an in-memory queue, finalizes the entry as FAILED inside the handler and returns the typed rejection, and captures the console error adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController error log and its console error adapter",
+        "observableEffect": "One typed rejection produces one operator-visible report carrying the key, the rejection code and the cause chain's summary.",
+        "requiredConstraint": "Report each finalized typed rejection exactly once, as a value, without stack frames and without a failure entry.",
+        "failureRationale": "The FAILED status and the release record do not reveal a duplicate or missing report; a second report doubles operator alerts for an expected outcome and a missing one hides why the command failed."
+      }
+    },
+    {
+      "id": "dequeue-lane-short-round-ends-the-lane",
+      "domain": "QueueBox dequeue lane budgets",
+      "owner": "Rallar shared maintainers",
+      "summary": "A lane ends after a reservation round that claimed fewer rows than it asked for, so a pass never issues an empty reservation round trip.",
+      "semanticCoverage": "packages/tests/shared/dequeue-lane-budgets.test.ts#ends a lane after a round that claimed fewer rows than it asked for, so the pass issues no empty reservation",
+      "coverageRelation": "The test drives the real dequeue controller with a scalar budget of eight and a per-round reservation of four whose store returns one row, and counts the reservation port's calls.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "DequeueController NEW-lane reservation callback (the storage reservation round trip)",
+        "observableEffect": "Each reservation call is one storage round trip on the single executor; an empty round costs a statement and returns nothing.",
+        "requiredConstraint": "A pass whose first round claims fewer rows than requested issues exactly one reservation call for that lane.",
+        "failureRationale": "The claimed keys are the same with or without the extra empty round, so only the call count shows the wasted round trip this budget rule removes."
+      }
+    },
+    {
       "id": "rtc-receiver-heartbeat-answered-without-al-admission",
       "domain": "RTC data-channel receive admission",
       "owner": "Rallar shared maintainers",
@@ -4466,6 +4496,36 @@ moved or changed test.
         "observableEffect": "One rejected re-admission produces one admission-outcome diagnostic naming the rejection and no warning.",
         "requiredConstraint": "Report a rejected re-admission once through the sink; never warn per message.",
         "failureRationale": "The after-refresh path previously warned separately; a silent or duplicated report hides authority refresh failures."
+      }
+    },
+    {
+      "id": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion relayed over the pub/sub bridge wakes the waiters of the other instance and is never accepted again by the instance that published it.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back",
+      "coverageRelation": "The test connects two completion relay owners through an in-memory notice transport, publishes from the handler side and spies on each side's local acceptance.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion notice subscriber's local acceptance callback",
+        "observableEffect": "The waiter on the other instance wakes; the publishing instance's own acceptance is not invoked for its notice.",
+        "requiredConstraint": "The publisher's acceptance callback is invoked zero times for a notice it published.",
+        "failureRationale": "A publisher that takes its own notice back wakes its local waiters twice and, if it relayed again, would loop notices between instances; the woken waiter alone cannot show it."
+      }
+    },
+    {
+      "id": "app-inbox-completion-notice-publication-failure-reported-once",
+      "domain": "AppInbox completion relay",
+      "owner": "Rallar shared maintainers",
+      "summary": "A completion notice whose publication fails is dropped with one warning, never thrown into the committing handler; the waiter keeps its safety tick.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick",
+      "coverageRelation": "The test builds the relay over a transport whose publish rejects, calls the relay and captures the console warning adapter.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AppInbox completion relay's console warning adapter",
+        "observableEffect": "One failed publication produces one operator-visible warning and no exception in the caller.",
+        "requiredConstraint": "Report each failed completion publication exactly once and never throw from the relay call.",
+        "failureRationale": "A missing warning hides a broken pub/sub bridge (remote waiters silently fall back to the tick); repeated warnings flood the log under a sustained outage."
       }
     }
   ],
@@ -9839,6 +9899,28 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs an unexpected handler failure once with the key identity"
     },
     {
+      "id": "test-structure-coupling-913d97c62b77a63e",
+      "path": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "resource-inbox-dequeue-typed-rejection-logged-once-as-value",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured console error proves a typed rejection is reported once as a value; its content, the absent failure entry and the release record are asserted independently.",
+      "semanticCoverage": "packages/tests/shared/queuebox/resource-inbox-dequeue-failure-log.test.ts#logs a handler-finalized typed rejection once as a value with its cause chain and no stack frames"
+    },
+    {
+      "id": "test-structure-coupling-eede33515130c692",
+      "path": "packages/tests/shared/dequeue-lane-budgets.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "dequeue-lane-short-round-ends-the-lane",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The reservation call count is the round-trip cost under test: one call proves the short round ended the lane; the claimed key is asserted independently.",
+      "semanticCoverage": "packages/tests/shared/dequeue-lane-budgets.test.ts#ends a lane after a round that claimed fewer rows than it asked for, so the pass issues no empty reservation"
+    },
+    {
       "id": "test-structure-coupling-8889c17e5d0c84ef",
       "path": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -9881,6 +9963,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The absent warn call, beside the single admission-outcome diagnostic after the refresh, proves the re-admission rejection is reported through the sink and not the console.",
       "semanticCoverage": "packages/tests/shared/services/web-rtc-rx-streamer-admission.test.ts#records an AL message rejected after authority refresh instead of warning about it"
+    },
+    {
+      "id": "test-structure-coupling-12a09d81ef2b31cc",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-not-taken-back-by-its-publisher",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The zero calls on the publisher's acceptance callback prove the notice is not taken back; the woken waiter on the other instance is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#wakes a waiter on the other instance and never takes its own notice back"
+    },
+    {
+      "id": "test-structure-coupling-62c673d537d6bcf6",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "app-inbox-completion-notice-publication-failure-reported-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single captured warning proves a failed publication is reported once; that the relay call does not throw is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick"
     }
   ]
 }

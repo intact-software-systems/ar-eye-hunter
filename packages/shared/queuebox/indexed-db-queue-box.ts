@@ -442,8 +442,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
+        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
+        if (contextClaim !== undefined) {
+            throw new TypeError('An IndexedDB queue box claims in queue order only.');
+        }
         const operation = this.#connection.beginOperation();
         try {
             const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(

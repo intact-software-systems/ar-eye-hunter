@@ -11,7 +11,9 @@ import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distribute
 import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { ThrottledFlush } from '@shared/resilience/throttled-flush.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ControlSnapshotRevision } from './control-service-snapshots.ts';
 import type { RallarBlackBoxControlService } from './control-service.ts';
@@ -41,11 +43,6 @@ export interface ControlSnapshotPersistenceInput {
     readonly timingSink: RallarTimingSink | undefined;
 }
 
-interface ScheduledSnapshotFlush {
-    readonly dueEpochMs: number;
-    readonly cancel: () => void;
-}
-
 interface WriteControlSnapshotFileInput {
     readonly path: string;
     readonly tempPath: string;
@@ -56,21 +53,23 @@ interface WriteControlSnapshotFileInput {
 const SNAPSHOT_FILE_SCHEMA_VERSION = 1;
 
 /**
- * Writes the whole snapshot at most once per flush interval, trailing the last change, and skips the serialization
- * when the service revision has not moved since the last write. One write is in flight at a time.
+ * Writes the whole snapshot at most once per flush interval: at once when the interval has passed or the
+ * distributed-run lifecycle moved since the last write, otherwise trailing the changes inside the interval. It skips the serialization when the service revision has not
+ * moved since the last write. One write is in flight at a time.
  */
 export class ControlSnapshotPersistence {
     private readonly input: ControlSnapshotPersistenceInput;
+    private readonly flush: ThrottledFlush;
     private sequence = 0;
-    private dirty = false;
-    private lastFlushEpochMs = Number.NEGATIVE_INFINITY;
     private flushedLifecycle: string | undefined;
     private written: ControlSnapshotRevision | undefined;
-    private flushing: Promise<void> | undefined;
-    private scheduled: ScheduledSnapshotFlush | undefined;
 
     constructor(input: ControlSnapshotPersistenceInput) {
         this.input = input;
+        this.flush = new ThrottledFlush(
+            { timers: input.timers, write: () => this.writeChangedSnapshot() },
+            { minIntervalMs: input.flushIntervalMs }
+        );
     }
 
     async restore(): Promise<void> {
@@ -84,52 +83,20 @@ export class ControlSnapshotPersistence {
         if (!this.input.storageDir) {
             return;
         }
-        this.dirty = true;
-        if (!this.flushing) {
-            this.scheduleFlush();
-        }
+        const snapshotPath = toSnapshotPath(this.input.storageDir);
+        this.flush.mark(this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle).catch((
+            error
+        ) => console.warn(`Could not persist control snapshot to ${snapshotPath}: ${toError(error).message}`));
     }
 
     /** Writes an unsaved change at once; shutdown awaits it. */
     async stop(): Promise<void> {
-        await this.flushing;
-        this.scheduled?.cancel();
-        this.scheduled = undefined;
-        if (this.dirty) {
-            await this.flush();
-        }
-    }
-
-    private scheduleFlush(): void {
-        const nowEpochMs = this.input.timers.nowMs();
-        const lifecycleChanged = this.input.controlService.snapshotLifecycleRevision() !== this.flushedLifecycle;
-        const dueEpochMs = lifecycleChanged
-            ? nowEpochMs
-            : Math.max(nowEpochMs, this.lastFlushEpochMs + this.input.flushIntervalMs);
-        if (this.scheduled !== undefined && this.scheduled.dueEpochMs <= dueEpochMs) {
-            return;
-        }
-        this.scheduled?.cancel();
-        this.scheduled = {
-            dueEpochMs,
-            cancel: this.input.timers.schedule(() => this.flush(), dueEpochMs - nowEpochMs)
-        };
-    }
-
-    private async flush(): Promise<void> {
-        this.scheduled = undefined;
-        this.flushing = this.writeChangedSnapshot();
-        await this.flushing;
-        this.flushing = undefined;
-        if (this.dirty) {
-            this.scheduleFlush();
-        }
+        await this.flush.stop();
     }
 
     private async writeChangedSnapshot(): Promise<void> {
         const { storageDir, controlService, snapshotBounds, timers } = this.input;
-        this.dirty = false;
-        this.lastFlushEpochMs = timers.nowMs();
+        const savedAtEpochMs = timers.nowMs();
         const revision = controlService.snapshotRevision();
         this.flushedLifecycle = revision.lifecycle;
         if (!storageDir || revision.content === this.written?.content) {
@@ -137,8 +104,8 @@ export class ControlSnapshotPersistence {
         }
         const write = await writeControlSnapshotFile({
             path: toSnapshotPath(storageDir),
-            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${this.lastFlushEpochMs}-${this.sequence += 1}`,
-            savedAtEpochMs: this.lastFlushEpochMs,
+            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
+            savedAtEpochMs,
             snapshot: controlService.snapshotForPersistence(snapshotBounds)
         });
         recordSnapshotFlushTiming(this.input.timingSink, write);

@@ -173,6 +173,7 @@ function createTransactionBoundaryExecution(
         ),
         transactionWriter,
         lanePhaseTiming: undefined,
+        publicationTiming: undefined,
         wakeQueue: () => {
             wakeCount += 1;
         },

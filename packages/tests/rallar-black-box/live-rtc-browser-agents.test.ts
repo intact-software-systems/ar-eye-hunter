@@ -38,7 +38,7 @@ describe('live RTC browser agent startup', () => {
         onTestFinished(() => {
             vi.unstubAllGlobals();
         });
-        await expect(refreshLiveRtcBrowserRoom({ timeoutMs: 10_000 })).rejects.toThrow('browser Rallar runtime');
+        await expect(refreshLiveRtcBrowserRoom({ refresh: 'always', timeoutMs: 10_000 })).rejects.toThrow('browser Rallar runtime');
     });
 
     it.each([false, true])('releases its context and preserves startup failure when cleanup fails=%s', async (cleanupFails) => {

@@ -5,6 +5,7 @@ import type { PSqlExecutorCounters } from '@shared-server/postgres/p-sql-sql.ts'
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxDequeuePassTiming } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -93,6 +94,45 @@ describe('AppInboxDequeuePassTiming', () => {
         ]);
     });
 
+    it('reports an outbox pass with the claimed queued message type', () => {
+        const executor = createSimulatedExecutor();
+        const presenceSummary = createOutboxAttempt('presence-summary', 'GROUP_PRESENCE_SUMMARY');
+
+        executor.observer.onProbeStarted();
+        executor.run(1);
+        executor.observer.onProbeFinished({ FINALIZATION: false, NEW: true, RETRY: false, FAIRNESS: false, TIMEOUT: false });
+        executor.observer.onPassStarted();
+        executor.run(1);
+        executor.observer.onHandlerStarted(presenceSummary);
+        executor.run(2);
+        executor.observer.onHandlerFinished(presenceSummary);
+        executor.observer.onPassFinished();
+
+        expect(executor.timing).toEqual([
+            expect.objectContaining({
+                component: 'app-inbox-phase',
+                operation: 'dequeue-pass',
+                requestId: 'presence-summary',
+                durationMs: 2,
+                details: {
+                    type: 'GROUP_PRESENCE_SUMMARY',
+                    topicId: 'app-outbox.presence',
+                    contextId: 'group-1',
+                    resourceId: 'presence-summary',
+                    senderId: undefined,
+                    attempt: 1,
+                    selectedLane: 'NEW',
+                    queueAgeMs: 5,
+                    dueAgeMs: 0,
+                    statements: 2,
+                    executorWaitMs: 2,
+                    lanesProbed: 'NEW',
+                    claimedInPass: 1
+                }
+            })
+        ]);
+    });
+
     it('reports nothing for a pass that claimed nothing', () => {
         const executor = createSimulatedExecutor();
 
@@ -125,6 +165,28 @@ function createSimulatedExecutor(): SimulatedExecutor {
         }
     };
     return executor;
+}
+
+function createOutboxAttempt(resourceId: string, messageTypeId: string): ResourceInboxAttempt {
+    const key = { topicId: 'app-outbox.presence', resourceId, contextId: 'group-1' };
+    const createdTs = Temporal.PlainDateTime.from('2026-07-22T12:00:00');
+    const entry: ResourceEntry = {
+        key,
+        resource: JSON.stringify(newALUntargetedMessage('api-v1', newALRoute(key.topicId, key.contextId, resourceId), messageTypeId, {})),
+        typeId: 'APP_OUTBOX',
+        status: EntityStatus.RESERVED,
+        audit: {
+            date: createdTs.toPlainTime(),
+            createdBy: 'server-1',
+            createdTs,
+            expiryTs: Temporal.Instant.from('2026-07-22T13:00:00Z')
+        },
+        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.from('2026-07-22T12:00:00Z') }
+    };
+    return {
+        entry,
+        telemetry: { selectedLane: Reservator.NEW, queueAgeMs: 5, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 995, reservationLeaseMs: 60_000 }
+    };
 }
 
 function createAttempt(resourceId: string, selectedLane: Reservator): ResourceInboxAttempt {

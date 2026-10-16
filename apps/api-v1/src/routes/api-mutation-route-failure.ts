@@ -183,6 +183,7 @@ function readApiMutationFailure(error: Error): ApiMutationFailure {
             message
         });
     }
+    console.error('API mutation failed unexpectedly', error);
     return createApiMutationFailure({
         code: 'api-mutation-unexpected',
         status: 500,

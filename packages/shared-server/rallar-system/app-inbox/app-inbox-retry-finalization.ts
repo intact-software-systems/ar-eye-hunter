@@ -15,7 +15,10 @@ import {
     type RallarTimingDetails,
     type RallarTimingSink
 } from '../observability/timing.ts';
-import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
+import {
+    toAppInboxEntryCompletionAwaitability,
+    validateAppInboxCommandIdentity
+} from './app-inbox-command-identity.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
 import type { AppInboxFailure } from './app-inbox-failure.ts';
 import {
@@ -99,7 +102,10 @@ async function finalizeAppInboxRetry(
     await runInPSqlTransaction(dependencies.database, async (transaction) => {
         await writeAppInboxRetryFinalization(transaction, work.completion);
     });
-    dependencies.completionNotifications?.publish(work.completion.finalizedEntry.key);
+    dependencies.completionNotifications?.publish(
+        work.completion.finalizedEntry.key,
+        toAppInboxEntryCompletionAwaitability(work.completion.finalizedEntry)
+    );
     return work.completion.finalizedEntry;
 }
 

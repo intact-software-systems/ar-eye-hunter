@@ -2,6 +2,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { toTerminalAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type {
     ClientMutationAuthority,
     ClientMutationCommand,
@@ -32,11 +33,22 @@ interface ClientIngressRecord {
     readonly [key: string]: ClientIngressValue;
 }
 
+export type IssuedClientMutationIngressIssueCode =
+    | 'client-mutation-session-expired'
+    | 'client-mutation-authority-invalid'
+    | 'client-mutation-authority-denied';
+
 export interface IssuedClientMutationIngressValidationIssue {
+    readonly code: IssuedClientMutationIngressIssueCode;
     readonly path: string;
     readonly message: string;
-    readonly cause: NonRetryableException;
 }
+
+const INGRESS_ISSUE_STATUS: Readonly<Record<IssuedClientMutationIngressIssueCode, number>> = {
+    'client-mutation-session-expired': 401,
+    'client-mutation-authority-invalid': 401,
+    'client-mutation-authority-denied': 403
+};
 
 export function readAuthenticatedClientMutationIngress(
     enqueue: AppInboxEnqueueInput
@@ -108,30 +120,35 @@ export function validateIssuedClientMutationIngress(
     const issues = validateIssuedClientSession(authority, nowEpochMs);
     if (ingress.principalId !== authority.clientId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.principalId',
             'Authenticated client mutation principal differs from issued authority.'
         ));
     }
     if (ingress.senderId !== authority.clientId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.senderId',
             'Authenticated client mutation sender differs from issued authority.'
         ));
     }
     if (ingress.actorPrincipalId !== null && ingress.actorPrincipalId !== authority.clientId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.actorPrincipalId',
             'Authenticated client mutation actor principal differs from issued authority.'
         ));
     }
     if (ingress.actorSessionId !== null && ingress.actorSessionId !== authority.sessionId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.actorSessionId',
             'Authenticated client mutation actor session differs from issued authority.'
         ));
     }
     if (ingress.sessionId !== null && ingress.sessionId !== authority.sessionId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.sessionId',
             'Authenticated client mutation session differs from issued authority.'
         ));
@@ -144,6 +161,7 @@ export function validateIssuedClientMutationIngress(
     });
     if (ingress.contextId !== expectedContextId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-denied',
             'ingress.contextId',
             'Authenticated client mutation AppInbox context differs.'
         ));
@@ -158,30 +176,35 @@ function validateIssuedClientSession(
     const issues: IssuedClientMutationIngressValidationIssue[] = [];
     if (!authority.accessToken) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-invalid',
             'authority.accessToken',
             'Authenticated client mutation access token is missing.'
         ));
     }
     if (!authority.sessionId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-invalid',
             'authority.sessionId',
             'Authenticated client mutation session id is missing.'
         ));
     }
     if (!authority.clientId) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-invalid',
             'authority.clientId',
             'Authenticated client mutation client id is missing.'
         ));
     }
     if (authority.issuedAtEpochMs >= authority.expiresAtEpochMs) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-authority-invalid',
             'authority.expiresAtEpochMs',
             'Authenticated client mutation session expiry must follow issuance.'
         ));
     }
     if (authority.expiresAtEpochMs <= nowEpochMs) {
         issues.push(toIngressValidationIssue(
+            'client-mutation-session-expired',
             'authority.expiresAtEpochMs',
             'Authenticated client mutation session is expired.'
         ));
@@ -190,10 +213,30 @@ function validateIssuedClientSession(
 }
 
 function toIngressValidationIssue(
+    code: IssuedClientMutationIngressIssueCode,
     path: string,
     message: string
 ): IssuedClientMutationIngressValidationIssue {
-    return { path, message, cause: new NonRetryableException(message) };
+    return { code, path, message };
+}
+
+/** The first issue names the failure; every issue travels with it so a client can see all of them at once. */
+export function toIssuedClientMutationIngressFailure(
+    issues: readonly [IssuedClientMutationIngressValidationIssue, ...IssuedClientMutationIngressValidationIssue[]]
+): AppInboxFailure {
+    const [first] = issues;
+    return toTerminalAppInboxFailure({
+        code: first.code,
+        status: INGRESS_ISSUE_STATUS[first.code],
+        message: first.message,
+        issues: issues.map((issue) => ({
+            code: issue.code,
+            path: issue.path.split('.'),
+            message: issue.message,
+            details: null
+        })),
+        denial: { code: first.code, message: first.message, details: null }
+    });
 }
 
 export function toAuthenticatedClientMutationContextId(

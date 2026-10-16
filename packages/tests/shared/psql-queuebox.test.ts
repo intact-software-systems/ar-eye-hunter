@@ -207,7 +207,8 @@ describe('PSqlQueueBox', () => {
         expect(reserveEntriesSkipLocked).toHaveBeenCalledWith({
             typeIds: new Set(['type-1']),
             statusIds: new Set([EntityStatus.RETRY]),
-            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            contextClaim: undefined
         });
     });
 

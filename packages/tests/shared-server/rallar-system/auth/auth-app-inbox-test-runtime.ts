@@ -69,7 +69,7 @@ export function createAuthInboxTestRuntime({
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const credentialIssuer = credentialIssuerInput ??
         createHmacAuthCredentialIssuer(credentialSecret);
     const database = createAppInboxTestDatabase(queue, results, {

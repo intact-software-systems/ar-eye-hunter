@@ -63,6 +63,6 @@ export async function releaseDequeueBatch<K, V, T>(
     }
 }
 
-function toDequeuedKeyText<K>(key: K): string {
+export function toDequeuedKeyText<K>(key: K): string {
     return typeof key === 'object' && key !== null ? JSON.stringify(key) : String(key);
 }

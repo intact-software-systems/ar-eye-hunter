@@ -157,7 +157,7 @@ interface CrdtInboxHarness {
 
 function createCrdtInboxHarness(sql: PGliteSql, now: number): CrdtInboxHarness {
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant));
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
     const service = createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,

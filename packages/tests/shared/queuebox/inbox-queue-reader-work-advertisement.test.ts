@@ -125,7 +125,7 @@ describe('InboxQueueReader work advertisement', () => {
                 onHandlerStarted: () => undefined,
                 onHandlerFinished: () => undefined
             })
-        ).toThrow('A dequeue-pass observer is already installed on this inbox reader');
+        ).toThrow('A dequeue-pass observer is already installed on this queue reader');
     });
 
     it('advertises nothing for an empty queue and runs no pass for it', async () => {
@@ -155,7 +155,11 @@ describe('InboxQueueReader work advertisement', () => {
 function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}): ObservedReader {
     let now = Temporal.Now.instant();
     const queue = new InMemoryQueueBox(new Map(), () => now);
-    const reader = new InboxQueueReader(queue, { ...dequeueOptions, nowEpochMs: () => Number(now.epochMilliseconds) });
+    const reader = new InboxQueueReader(queue, {
+        ...dequeueOptions,
+        laneBudgetPolicy: 'adaptive-retry',
+        nowEpochMs: () => Number(now.epochMilliseconds)
+    });
     const events: string[] = [];
     const claimed: ResourceInboxAttempt[] = [];
     reader.onDequeuePassDo({

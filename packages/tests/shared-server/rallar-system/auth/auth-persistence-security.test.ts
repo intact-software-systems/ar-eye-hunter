@@ -148,7 +148,7 @@ async function runCurrentOperation<Result>(
 ): Promise<Result> {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const runtime = new FakeRuntimeStateRepository();
     const service = new AppAuthInboxService(
         {

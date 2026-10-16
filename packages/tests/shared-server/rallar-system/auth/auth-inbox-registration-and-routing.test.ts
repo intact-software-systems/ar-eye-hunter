@@ -27,7 +27,7 @@ describe('AppAuthInboxService registration', () => {
     it('registers every handler before a queued logout can reach auth state', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
-        const reader = new InboxQueueReader(queue);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const runtime = new FakeRuntimeStateRepository();
         const mutationService = createAuthMutationService({
             runtimeRepository: runtime,

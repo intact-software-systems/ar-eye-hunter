@@ -19,7 +19,7 @@ import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
     const queue = new DurableTimeoutQueue();
     const service = createAppInboxClientRuntime({
-        inboxQueueReader: new InboxQueueReader(queue),
+        inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
         resourceInboxRepository: queue,
         resourceInboxResultsRepository: {
             replace: (entry) => Promise.resolve(entry),

@@ -38,7 +38,7 @@ interface RetryBacklog {
 async function createRetryBacklog(count = 6, becomeDue = true): Promise<RetryBacklog> {
     let now = Date.now();
     const queue = new ObservedQueue(new Map(), () => Temporal.Instant.fromEpochMilliseconds(now));
-    const reader = new InboxQueueReader(queue, { nowEpochMs: () => now });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => now });
     const delivered: string[] = [];
     reader.onInboxMessageDo('test.fair-service', {
         onMessage: async (message) => {

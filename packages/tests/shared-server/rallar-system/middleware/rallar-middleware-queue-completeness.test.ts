@@ -234,7 +234,7 @@ function createQueueTaskInput(
     return {
         wsQBoxServerService,
         nowEpochMs: Date.now,
-        inboxQueueReader: new InboxQueueReader(queue),
+        inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
         outboxQueueReader: new OutboxQueueReader(queue),
         appInboxResilience: resilience,
         appOutboxResilience: resilience

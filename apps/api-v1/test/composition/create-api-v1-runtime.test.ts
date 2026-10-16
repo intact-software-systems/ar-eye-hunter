@@ -4,6 +4,7 @@ import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-syste
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
+import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
@@ -86,6 +87,29 @@ Deno.test('runtime construction hands one receipt recorder to the middleware and
     assert.equal(handedRecorders[0], handedRecorders[1]);
 });
 
+Deno.test('runtime construction hands one completion notice channel to the relaying mutation runtime and the middleware', () => {
+    const operations = createOperations([]);
+    const handed: Array<AppInboxCompletionNoticeChannel | undefined> = [];
+    const notification = { notify: () => Promise.resolve(), listen: () => Promise.resolve() };
+    for (const databasePubSubMode of ['disabled', 'postgres'] as const) {
+        constructApiV1Runtime({ ...createInput([]), databasePubSubMode, databaseNotification: notification }, {
+            ...operations,
+            createMutationRuntime: (input) => {
+                handed.push(input.appInboxCompletionNotices);
+                return MUTATION_RUNTIME;
+            },
+            createMiddleware: (input) => {
+                handed.push(input.appInboxCompletionNotices);
+                return SHARED_RUNTIME;
+            }
+        });
+    }
+
+    assert.deepEqual(handed.slice(0, 2), [undefined, undefined]);
+    assert.ok(handed[2] !== undefined);
+    assert.equal(handed[2], handed[3]);
+});
+
 const MUTATION_RUNTIME: ApiV1MutationRuntime = {
     groupFormationMetrics: { rttMutation: {} },
     resourceInboxRepository: {
@@ -118,6 +142,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
+        appInboxLaneBudgetPolicy: 'fixed-retry-two',
         groupCapacity: { defaultMaxMembers: 10 },
         groupFormationRecomputeDebounceMs: 250,
         databasePubSubMode: 'disabled',

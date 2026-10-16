@@ -47,6 +47,20 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'onUnhandled',
         maximumMagnitude: 3
     }),
+    // The child captures console.error's untyped argument lists; the verifier narrows the first argument with
+    // typeof and compares the second with the summary the dequeuer must log, so nothing unchecked is trusted.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
+        rule: 'boundary.unknown',
+        symbol: 'verifyTicketRejection',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
+        rule: 'boundary.unknown',
+        symbol: 'verifyRejectedErrors',
+        maximumMagnitude: 1
+    }),
     // These two process rejection listeners take Node's unknown reason and normalize it directly to Error for
     // absence assertions on the lifecycle's retries; they supply no production input or policy.
     Object.freeze({
@@ -668,6 +682,15 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'prefix:state',
         maximumMagnitude: 4
     }),
+    // The browser IndexedDB queue box is one backend of the queue box contract: the box, its store, its entry and
+    // codec, its write-conflict error and its pure release, fairness and write computations sit beside the
+    // in-memory backend they mirror. The cluster predates this cap; it approves no eighth file.
+    Object.freeze({
+        path: 'packages/shared/queuebox',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:indexed',
+        maximumMagnitude: 7
+    }),
     // The inbound ALM directory is one feature: admission, ordered and admitted
     // delivery, the durable effect store, the work entries and the resynchronization
     // cursor, each a direct owner the README maps. Its files share the al-inbound
@@ -754,6 +777,15 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/resilience/to-error.ts',
         rule: 'boundary.unknown',
         symbol: 'toError'
+    }),
+    // An error summary carries the thrown error's own enumerable properties as the log line's data: any
+    // throwable may set any property, so their values are untrusted by construction, and no caller reads them
+    // as domain state. One contract field; a second use needs its own review.
+    Object.freeze({
+        path: 'packages/shared/resilience/to-error.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
     }),
     // These exact generic JSON boundaries guard arrays, objects and primitives
     // before recursive projection. Only comparison, serialization or its opaque

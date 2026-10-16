@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceInboxAttemptTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 
@@ -68,11 +69,32 @@ export const AppInboxType = {
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
 
+/** Enqueued by no request path that waits for the result, so no instance can hold a waiter for its completion. */
+const FIRE_AND_FORGET_APP_INBOX_TYPES: ReadonlySet<AppInboxType> = new Set([
+    AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
+    AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
+    AppInboxType.CLIENT_EXPIRED_SESSIONS,
+    AppInboxType.GROUP_PRESENCE_EXPIRE,
+    AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    AppInboxType.GROUP_FORMATION_AUTOMATION,
+    AppInboxType.GROUP_FORMATION_CRITERION,
+    AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
+    AppInboxType.GROUP_ACTIVATION_STATUS,
+    AppInboxType.RTC_RTT_SUBMIT
+]);
+
+export function toAppInboxCompletionAwaitability(
+    type: AppInboxType
+): ResourceInboxCompletionNotifications.Awaitability {
+    return FIRE_AND_FORGET_APP_INBOX_TYPES.has(type) ? 'fire-and-forget' : 'awaitable';
+}
+
 export interface AppInboxEnqueueInput {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
-    readonly contextId?: string;
+    /** The claim unit: a context's rows are claimed oldest-first; that is no mutual exclusion and no serial order. */
+    readonly contextId: string;
     readonly senderId?: string;
     readonly authority?: JsonWireValue;
     readonly data: JsonWireValue;

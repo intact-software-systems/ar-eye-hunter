@@ -169,7 +169,7 @@ interface RetryHarness {
 
 function createRetryHarness(): RetryHarness {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
     const results = new TestResourceInboxResults();
     const state: RetryHarnessState = {
         phases: [],

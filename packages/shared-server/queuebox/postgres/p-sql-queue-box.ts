@@ -110,8 +110,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
      * observed claim locks the observed rows and compares them with their observations first.
      */
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
+        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
+        if (observedEntries !== undefined && contextClaim !== undefined) {
+            throw new TypeError('An observed claim names its rows; it cannot also claim context heads.');
+        }
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -122,7 +125,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 await txRepo.reservations.reserveEntriesSkipLocked({
                     typeIds,
                     statusIds,
-                    reservationInput: options
+                    reservationInput: options,
+                    contextClaim
                 })
             );
             return new Map([...claimed.values()].map((entry) => [entry.key, entry]));

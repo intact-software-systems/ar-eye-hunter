@@ -51,7 +51,7 @@ export function toAuthorisedWsClientDisconnectEnqueue(
                 connection.authSession.sessionId
             )
         }-${encodeURIComponent(connection.generationId)}`,
-        contextId: connection.authSession.sessionId,
+        contextId: toClientAppInboxContextId(connection.scope, connection.principalId),
         senderId: connection.authSession.sessionId,
         authority: toClientMutationIssuedSessionAuthority(
             toIssuedAuthSession(connection.authSession),
@@ -121,6 +121,10 @@ function toAuthorisedWsClientConnectResourceId(
         .join(':');
 }
 
+/**
+ * A principal's connects and disconnects share it, so a disconnect is not claimed while its own connect is still NEW;
+ * it can run while that connect is reserved on another server or waits to retry.
+ */
 function toClientAppInboxContextId(scope: StateScope, principalId: string): string {
     return [scope.applicationId, scope.workspaceId, principalId].map(encodeURIComponent).join(':');
 }

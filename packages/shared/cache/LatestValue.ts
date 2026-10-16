@@ -135,6 +135,15 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
         return this.value !== undefined;
     }
 
+    /** When the held value lapses: its explicit expiry or the end of its TTL from the last write, if earlier. */
+    public readExpiresAtEpochMs(): number | undefined {
+        if (this.value === undefined || (!this.holdsValue && this.valueStartMs === 0)) {
+            return undefined;
+        }
+        const ttlEndsAtEpochMs = this.valueStartMs + this.ttlMs;
+        return this.expireAtEpochMs === undefined ? ttlEndsAtEpochMs : Math.min(ttlEndsAtEpochMs, this.expireAtEpochMs);
+    }
+
     public expired(): boolean {
         return this.expiredAt(Date.now());
     }

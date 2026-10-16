@@ -3,9 +3,17 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type {
+    RuntimeStateGuardedBatchResult,
+    RuntimeStateGuardedBatchWrite
+} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateEntryPageOptions } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateConditionalWriteResult,
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -27,9 +35,42 @@ import {
  */
 const LANE_RUNTIME_STATE_READS_PER_PRESENCE_CONNECT = 5;
 
+/**
+ * Runtime-state reads the route's authorization performs before enqueue: one
+ * session read that verifies the bearer credential against storage, no causal
+ * revision read and no persisted capture; the lane reads the causal revision
+ * and persists the ingress itself. The REST route's bearer lookup reads the
+ * session as well; this read stays so a direct service caller gets the same
+ * credential check.
+ */
+const ROUTE_RUNTIME_STATE_READS_PER_AUTHORIZATION = 1;
+
 const GROUP_ID = 'authority-reuse-room';
 
 describe('group mutation lane authority reuse', () => {
+    it('authorizes a route mutation with one session read and nothing persisted', async () => {
+        const runtimeRepository = new CountingRuntimeStateRepository();
+        const harness = await createAuthorityHarness(['owner', 'alice'], { runtimeRepository });
+        await createRoom(harness, GROUP_ID, 'Authority reuse room');
+        const descriptor = toGroupMutationDescriptor(presenceConnectEnqueue(GROUP_ID, 'alice', harness.nowEpochMs));
+        runtimeRepository.readCount = 0;
+        runtimeRepository.writeCount = 0;
+
+        const authorized = await harness.groupStateService.authorizeMutation(descriptor, harness.sessions.alice);
+
+        expect(runtimeRepository.readCount).toBe(ROUTE_RUNTIME_STATE_READS_PER_AUTHORIZATION);
+        expect(runtimeRepository.writeCount).toBe(0);
+        expect(authorized.authorityProof).toMatchObject({
+            version: 1,
+            principalId: 'alice',
+            sessionId: 'alice-session',
+            sessionIssuedAtEpochMs: harness.sessions.alice.issuedAtEpochMs,
+            sessionExpiresAtEpochMs: harness.sessions.alice.expiresAtEpochMs,
+            commandMac: expect.stringMatching(/^[0-9a-f]{64}$/)
+        });
+        expect(authorized.descriptor.request).toMatchObject({ actorPrincipalId: 'alice', actorSessionId: 'alice-session' });
+    });
+
     it('captures a presence connect with the route proof and stores the credential-equivalent authority', async () => {
         const runtimeRepository = new CountingRuntimeStateRepository();
         const harness = await createAuthorityHarness(['owner', 'alice'], { runtimeRepository });
@@ -111,6 +152,7 @@ describe('group mutation lane authority reuse', () => {
 
 class CountingRuntimeStateRepository extends FakeRuntimeStateRepository {
     readCount = 0;
+    writeCount = 0;
 
     override findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         this.readCount += 1;
@@ -146,6 +188,27 @@ class CountingRuntimeStateRepository extends FakeRuntimeStateRepository {
     override findEntriesByKeys(namespace: string, keys: readonly string[]): Promise<readonly RuntimeStateEntry[]> {
         this.readCount += 1;
         return super.findEntriesByKeys(namespace, keys);
+    }
+
+    override upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void> {
+        this.writeCount += 1;
+        return super.upsert(namespace, key, value, expireAtTimestamp);
+    }
+
+    override upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        this.writeCount += 1;
+        return super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+    }
+
+    override writeGuardedBatch(input: RuntimeStateGuardedBatchWrite): Promise<RuntimeStateGuardedBatchResult> {
+        this.writeCount += 1;
+        return super.writeGuardedBatch(input);
     }
 }
 

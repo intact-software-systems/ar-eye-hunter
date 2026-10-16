@@ -626,7 +626,7 @@ Deno.test(
                     return released;
                 }
             }
-            const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant));
+            const inboxReader = new InboxQueueReader(new RetryObservedQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
             const authority: IssuedAuthSession = {
                 clientId: 'owner',
                 sessionId: 'cross-target-owner-session',

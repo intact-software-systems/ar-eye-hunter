@@ -269,7 +269,7 @@ export class BlackBoxRallarConnectionRuntime {
         }
     }
 
-    async #refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void> {
+    async #refreshRoom({ refresh, ...options }: BlackBoxRallarRoomRefreshOptions): Promise<void> {
         const config = requireConnectionConfig(this.#foundation.connectionState);
         const roomRef = blackBoxRallarRoomRefOf(config);
         const scope = blackBoxRallarScopeOf(config);
@@ -279,6 +279,9 @@ export class BlackBoxRallarConnectionRuntime {
                 code: 'room-ref-required',
                 message: 'Room refresh requires an exact room reference.'
             }]);
+        }
+        if (refresh === 'when-absent' && this.#foundation.rallar.hasRoomSnapshot(roomRef)) {
+            return;
         }
         await this.#foundation.rallar.refreshRoomState(roomRef, { ...options, scope });
     }

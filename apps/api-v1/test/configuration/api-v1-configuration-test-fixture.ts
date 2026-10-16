@@ -124,6 +124,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         },
         appInbox: {
             phaseTiming: false,
+            laneBudgetPolicy: 'fixed-retry-two',
             completionWait: {
                 maxElapsedMs: 30_000,
                 retryIntervalMs: 250,

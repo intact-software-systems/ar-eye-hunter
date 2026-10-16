@@ -162,6 +162,7 @@ async function refreshRtcConnectRoom(
     try {
         await raceWithRtcConnectReadinessAbort(
             input.runtime.refreshRoom({
+                refresh: 'always',
                 signal: input.abortScope.signal,
                 timeoutMs: remainingMs
             }),

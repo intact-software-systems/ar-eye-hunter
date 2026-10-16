@@ -86,6 +86,7 @@ describe('live RTC formation command ids', () => {
 
         expect(calls).toEqual(['refresh', 'readiness']);
         expect(refreshRoom).toHaveBeenCalledWith({
+            refresh: 'always',
             timeoutMs: expect.any(Number)
         });
         expect(executeOk).toHaveBeenCalledWith(

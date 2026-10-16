@@ -36,14 +36,15 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
         const published: string[] = [];
         const publish = completionNotifications.publish.bind(completionNotifications);
-        completionNotifications.publish = (key) => {
+        completionNotifications.publish = (key, awaitability) => {
             published.push(key.resourceId);
-            publish(key);
+            publish(key, awaitability);
         };
         const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
         let handlerCommittedAt: number | undefined;
         const queueInbox = createPSqlResourceInboxRepository(recordingSql, () => new Date());
         const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(queueInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'adaptive-retry',
             completionNotifications,
             onAttemptReleaseTelemetry: (release) => {
                 releases.push(release);
@@ -95,7 +96,7 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
         assert.ok(handlerCommittedAt !== undefined);
         assert.deepEqual(
             statements.slice(handlerCommittedAt).filter((statement) =>
-                /update\s+resource_inbox\b/i.test(statement) && !/for update skip locked/i.test(statement)
+                /update\s+resource_inbox\b/i.test(statement) && !/for update (of \w+ )?skip locked/i.test(statement)
             ),
             [],
             'The committed handler transaction already finalized the entry; the lanes after it only claim'

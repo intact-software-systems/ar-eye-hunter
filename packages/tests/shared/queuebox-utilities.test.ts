@@ -49,6 +49,7 @@ describe('QueueBoxUtilities', () => {
         await QueueBoxUtilities.defaultDequeue({
             qbox: queue,
             typesToDequeue: new Set(['waiting']),
+            newLaneClaimOrder: 'queue',
             resilience,
             onDequeuedDo: async () => {
                 throw new NotReadyException(1_000);
@@ -83,6 +84,7 @@ describe('QueueBoxUtilities', () => {
         await QueueBoxUtilities.defaultDequeue({
             qbox: queue,
             typesToDequeue: new Set(['waiting', 'broken', 'working']),
+            newLaneClaimOrder: 'queue',
             resilience,
             onDequeuedDo: async (entry) => {
                 if (entry.typeId === 'waiting') {
@@ -116,6 +118,7 @@ describe('QueueBoxUtilities', () => {
         await QueueBoxUtilities.defaultDequeue({
             qbox: queue,
             typesToDequeue: new Set(['waiting']),
+            newLaneClaimOrder: 'queue',
             resilience,
             onDequeuedDo: async () => {
                 throw new NotReadyException(delayMs);
@@ -146,6 +149,7 @@ describe('QueueBoxUtilities', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['waiting']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async () => {
                     if (!ready) {
@@ -182,6 +186,7 @@ describe('QueueBoxUtilities', () => {
         await QueueBoxUtilities.defaultDequeue({
             qbox: new InMemoryQueueBox(),
             typesToDequeue: new Set(['waiting']),
+            newLaneClaimOrder: 'queue',
             resilience,
             onDequeuedDo: async () => {
                 throw new Error('Empty queue must not deliver work');
@@ -298,7 +303,14 @@ describe('QueueBoxUtilities', () => {
             resilience.circuitBreaker.failureCount(2);
 
             await QueueBoxUtilities.defaultDequeue(
-                { qbox: queue, typesToDequeue: new Set(['demo']), resilience: resilience, onDequeuedDo: onDequeued, options: {} }
+                {
+                    qbox: queue,
+                    typesToDequeue: new Set(['demo']),
+                    newLaneClaimOrder: 'queue',
+                    resilience: resilience,
+                    onDequeuedDo: onDequeued,
+                    options: {}
+                }
             );
 
             expect(dequeuedEntries).toEqual([]);

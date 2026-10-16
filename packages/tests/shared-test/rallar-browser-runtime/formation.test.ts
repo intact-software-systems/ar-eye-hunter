@@ -147,6 +147,7 @@ class FormationHarness {
     readonly controller: BlackBoxRallarFormationController;
     #status: RallarRoomFormationStatus | undefined;
     #room: RallarRtcRoomTransportStatus;
+    nowEpochMs = 1_000;
 
     constructor(input: FormationHarness.Input) {
         this.#status = toFormationStatus(input, this.snapshot);
@@ -160,7 +161,7 @@ class FormationHarness {
                 onStatus: (listener) => subscribe(this.#statusListeners, listener)
             },
             emit: this.emit,
-            now: () => 1_000
+            now: () => this.nowEpochMs
         });
     }
 
@@ -467,6 +468,63 @@ it('retains the rejected captured room result when the later live view is open',
     }));
 });
 
+it('emits one timing line per observed replan and per observed promotion with the layout identities and the wait', () => {
+    const harness = new FormationHarness({ stage: 'planned', formationEpoch: 1 });
+    const first: GroupLayoutIdentity = { ...PLANNED, version: 7 };
+    const second: GroupLayoutIdentity = { ...PLANNED, groupRevision: PLANNED.groupRevision + 1, version: 8 };
+    const unsubscribe = harness.controller.installDiagnostics(roomRef);
+
+    harness.nowEpochMs = 10_000;
+    harness.emitLayout({
+        kind: 'layoutPlanned',
+        roomRef,
+        layout: { role: 'planned', identity: first, overlay: createAcceptedOverlayFixture(harness.snapshot, 7, []) }
+    });
+    harness.nowEpochMs = 10_400;
+    harness.emitLayout({
+        kind: 'layoutPlanned',
+        roomRef,
+        layout: { role: 'planned', identity: second, overlay: createAcceptedOverlayFixture(harness.snapshot, 8, []) }
+    });
+    harness.nowEpochMs = 14_900;
+    harness.emitLayout({
+        kind: 'layoutAccepted',
+        roomRef,
+        layout: { role: 'accepted', identity: second, overlay: createAcceptedOverlayFixture(harness.snapshot, 8, []) }
+    });
+    unsubscribe();
+
+    expect(harness.emitted.filter((event) => event.topic === 'rallar.browser.formation.layout-timing').map((event) => event.data)).toEqual([
+        {
+            type: 'rallar.timing',
+            component: 'browser-formation',
+            operation: 'replan',
+            status: 'ok',
+            durationMs: 0,
+            atEpochMs: 10_000,
+            details: { planned: first, superseded: null }
+        },
+        {
+            type: 'rallar.timing',
+            component: 'browser-formation',
+            operation: 'replan',
+            status: 'ok',
+            durationMs: 400,
+            atEpochMs: 10_400,
+            details: { planned: second, superseded: first }
+        },
+        {
+            type: 'rallar.timing',
+            component: 'browser-formation',
+            operation: 'promotion',
+            status: 'ok',
+            durationMs: 4_500,
+            atEpochMs: 14_900,
+            details: { accepted: second, expected: second, expectedMatched: true }
+        }
+    ]);
+});
+
 it('forwards changes, layout events and room status as diagnostics', () => {
     const harness = new FormationHarness({
         stage: 'planned',
@@ -488,6 +546,7 @@ it('forwards changes, layout events and room status as diagnostics', () => {
     expect(harness.emitted.map((event) => event.topic)).toEqual([
         'rallar.browser.formation.changed',
         'rallar.browser.formation.layout',
+        'rallar.browser.formation.layout-timing',
         'rallar.browser.formation.room-status'
     ]);
 });

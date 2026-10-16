@@ -40,7 +40,7 @@ export class RealEngineAdminPruneFixture {
         this.now = now;
         const repository = createPSqlResourceInboxRepository(sql, () => new Date(this.now));
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue);
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
         const outbox = new OutboxQueueReader(queue);
         const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({

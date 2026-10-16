@@ -7,7 +7,6 @@ import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inb
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -31,6 +30,7 @@ import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.t
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
+import type { AppInboxCompletionNoticeChannel } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -75,7 +75,7 @@ export interface RallarAppClientInboxServiceFactoryInput {
     readonly wakeQueueEngine: () => void;
 }
 
-/** The one dequeue-pass timing on the shared inbox reader: the server's line, not any one inbox service's. */
+/** The dequeue-pass timing on the shared inbox and outbox readers: the server's lines, not any one service's. */
 export interface RallarMiddlewareDequeuePassTimingOptions {
     readonly database: Pick<PSqlSql, 'getExecutorCounters'>;
     readonly serviceId: string;
@@ -92,7 +92,7 @@ export interface RallarMiddlewareResilience {
 export interface CreateRallarMiddlewareOptions {
     readonly inbox: QueueBoxResourceEntryRepository;
     readonly outbox?: QueueBoxResourceEntryRepository;
-    readonly appInboxDequeueOptions?: DequeueResourceEntryOptions;
+    readonly appInboxDequeueOptions: InboxQueueReader.Options;
     /** Absent when AppInbox phase timing is off. */
     readonly appInboxDequeuePassTiming?: RallarMiddlewareDequeuePassTimingOptions;
     readonly webSocketServer?: JsonWebSocketServer;
@@ -146,6 +146,8 @@ export interface CreateRallarMiddlewareOptions {
     >;
     /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
     readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
+    readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }

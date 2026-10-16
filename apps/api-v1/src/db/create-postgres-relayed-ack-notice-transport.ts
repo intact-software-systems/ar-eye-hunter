@@ -1,4 +1,3 @@
-import { MAX_LIVE_WS_NOTICE_BYTES } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import {
     decodeRelayedAckNotice,
     type RelayedAckNoticeChannel,
@@ -7,6 +6,7 @@ import {
 
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
+import { createPostgresNoticeTransport } from './create-postgres-notice-transport.ts';
 
 export interface CreateApiV1RelayedAckNoticesInput {
     readonly mode: ApiV1DatabaseConfiguration['pubSub'];
@@ -37,32 +37,5 @@ export function createApiV1RelayedAckNotices(
 export function createPostgresRelayedAckNoticeTransport(
     notification: ApiV1DatabaseNotificationPort
 ): RelayedAckNoticeTransport {
-    return {
-        publish: async (notice) => {
-            await notification.notify(notice.channel, notice);
-        },
-        subscribe: async (channel, onNotice) => {
-            await notification.listen(channel, async (payload) => {
-                const notice = readRelayedAckNotice(payload, channel);
-                if (notice) {
-                    await onNotice(notice);
-                }
-            });
-        }
-    };
-}
-
-function readRelayedAckNotice(
-    payload: string,
-    channel: string
-): ReturnType<typeof decodeRelayedAckNotice> {
-    if (new TextEncoder().encode(payload).length >= MAX_LIVE_WS_NOTICE_BYTES) {
-        return undefined;
-    }
-    try {
-        return decodeRelayedAckNotice(JSON.parse(payload), channel);
-    }
-    catch {
-        return undefined;
-    }
+    return createPostgresNoticeTransport({ notification, decode: decodeRelayedAckNotice });
 }
