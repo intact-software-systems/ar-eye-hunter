@@ -501,9 +501,27 @@ describe('rallar-bb-test wait timeout counted from an earlier epoch', () => {
         expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
         expect(formatJsonSchemaValidationErrors(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).errors))
             .toBe('');
+        const loopKeyed = toQuietWait('quiet-loop', '{resultCache.stable:i{loop.iteration}:c1:readiness.value.acceptedHeldSinceEpochMs}');
+        expect(validateRallarBlackBoxTestCommand(loopKeyed)).toEqual({ ok: true });
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, loopKeyed).ok).toBe(true);
         expect(validateRallarBlackBoxTestCommand({ ...command, timeoutFrom: 7 })).toMatchObject({
             ok: false,
             error: 'wait.timeoutFrom must be a string.'
         });
     });
+
+    // Inside a first-success loop a malformed reference would fail every iteration and surface only at the loop's
+    // deadline, so the recipe is refused when it is loaded.
+    it.each(['at {resultCache.readiness.value.epoch}', '{resultCache.readiness.value.epoch}ms', 'resultCache.readiness.value', '{other.value}'])(
+        'refuses timeoutFrom %s at the schema and the control validation',
+        (timeoutFrom) => {
+            const command = toQuietWait('quiet-malformed', timeoutFrom);
+
+            expect(validateRallarBlackBoxTestCommand(command)).toMatchObject({
+                ok: false,
+                error: 'wait.timeoutFrom must be exactly one {resultCache.<commandId>.<path>} reference.'
+            });
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+        }
+    );
 });

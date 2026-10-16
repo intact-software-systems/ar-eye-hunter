@@ -4,6 +4,7 @@ import {
     chmod,
     mkdir,
     mkdtemp,
+    readdir,
     readFile,
     rm,
     stat,
@@ -777,8 +778,9 @@ out=''; url=''
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; http*) url="$1"; shift;; *) shift;; esac; done
 printf '%s %s\\n' "$url" "$(cat)" >> "$CURL_LOG"
 case "$url" in
-  *controller-05) printf '{"code":"auth-user-exists"}' > "$out"; printf 409;;
-  *controller-06) printf '{"code":"internal"}' > "$out"; printf 500;;
+  *controller-05-*) printf '{"code":"auth-user-exists"}' > "$out"; printf 409;;
+  *controller-06-*) printf '{"code":"internal"}' > "$out"; printf 500;;
+  *controller-07-*) echo 'curl: (7) Failed to connect' >&2; exit 7;;
   *) printf '{}' > "$out"; printf 201;;
 esac
 `
@@ -805,16 +807,37 @@ esac
             const registered = runRegistration('2');
             expect(registered.status).toBe(0);
             expect((await readFile(path.join(directory, 'curl.log'), 'utf8')).trim().split('\n')).toEqual([
-                'https://api.example.test/api/auth/register/requests/register-gh-free-7-1-controller-04 ' +
+                'https://api.example.test/api/auth/register/requests/register-controller-04-gh-free-7-1 ' +
                 '{"username":"controller-04","password":"test-password"}',
-                'https://api.example.test/api/auth/register/requests/register-gh-free-7-1-controller-05 ' +
+                'https://api.example.test/api/auth/register/requests/register-controller-05-gh-free-7-1 ' +
                 '{"username":"controller-05","password":"test-password"}'
             ]);
+            // A registration response can carry a session, so none is left behind on the runner.
+            expect((await readdir(directory)).filter((name) => name.startsWith('rallar-register-'))).toEqual([]);
 
             const refused = runRegistration('3');
             expect(refused.status).toBe(1);
             expect(refused.stderr).toContain('Registering controller-06 returned HTTP 500.');
             expect(`${refused.stdout}${refused.stderr}`).not.toContain('test-password');
+
+            const unreachable = spawnSync('bash', ['-c', required(register.run, 'register command')], {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...osEnvironment,
+                    PATH: `${directory}:${osEnvironment.PATH}`,
+                    RUNNER_TEMP: directory,
+                    CURL_LOG: path.join(directory, 'curl.log'),
+                    RALLAR_API_BASE_URL: 'https://api.example.test',
+                    RALLAR_BLACK_BOX_RUN_ID: 'gh-free-7.1',
+                    RALLAR_BLACK_BOX_AGENT_PREFIX: 'controller',
+                    RALLAR_BLACK_BOX_AGENT_COUNT: '1',
+                    RALLAR_BLACK_BOX_AGENT_START_INDEX: '7',
+                    RALLAR_BLACK_BOX_PASSWORD: 'test-password'
+                }
+            });
+            expect(unreachable.status).toBe(1);
+            expect(unreachable.stderr).toContain('::error::Registering controller-07 failed before an HTTP response.');
         }
         finally {
             await rm(directory, { force: true, recursive: true });
@@ -826,7 +849,8 @@ esac
         const jobs = required(workflow.jobs, 'jobs');
         expect(workflow.on?.workflow_dispatch?.inputs?.server_timing).toMatchObject({ type: 'boolean', default: false });
         expect(jobs['prepare-hetzner'].with?.server_timing).toBe('${{ inputs.server_timing }}');
-        expect(jobs.operator.with).not.toHaveProperty('server_timing');
+        // The run phase compares the selection with the one its prepare phase applied.
+        expect(jobs.operator.with?.server_timing).toBe('${{ inputs.server_timing }}');
     });
 
     it('rejects registration-disabled multi-agent plans before manifest processing', async () => {

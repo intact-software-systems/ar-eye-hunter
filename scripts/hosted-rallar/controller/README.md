@@ -836,9 +836,14 @@ WS connect it logged since the run start has its disconnect, for at most 120 s,
 and reports the balance it exported with. Connects and disconnects count by
 distinct request id, since a retried or rejected item logs once per attempt. An acceptance run leaves the API
 uninstrumented: the rollout writes `RALLAR_TIMING_LOGS=0` and `RALLAR_APP_INBOX_PHASE_TIMING=false`, since the
-timing lines default on in the API. A diagnostic run selects the `server_timing` workflow input, which rolls the
-API out with both on, so a hosted failure can be attributed on the server side; with both on, a 50-agent run
-writes about 9 000 API journal lines, among them one event-loop lag line per second.
+timing lines default on in the API. Such a journal has no handler lines, so the export reports "API
+uninstrumented; teardown balance unavailable" and does not wait. A diagnostic run selects the `server_timing`
+workflow input, which rolls the API out with both on, so a hosted failure can be attributed on the server side.
+A prepare phase that skips the rollout still rolls out when the API env's timing differs from `server_timing`,
+and the prepare marker records the selection, which the run phase must repeat. With both on, a 50-agent run
+writes on the order of 10 000 API journal lines: one per HTTP request including each CORS preflight, the
+AppInbox phase lines, and one `runtime`/`event-loop-lag` line per second, whose `durationMs` is the window
+length and whose `details` carry `sampleCount`, `maxLagMs` and `p50LagMs`.
 
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,

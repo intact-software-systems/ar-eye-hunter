@@ -2,11 +2,13 @@
 set -Eeuo pipefail
 
 # Bounded so the operator artifact stays within the workflow's upload limits: with timing and
-# AppInbox phase timing on, the API writes about 9 000 journal lines per 50-agent run.
+# AppInbox phase timing on, the API writes on the order of 10 000 journal lines per 50-agent run.
 JOURNAL_LINE_CAP=50000
 # The agents disconnect after the recipe reports its terminal state; the API journal is complete for
 # the run once every WS connect it logged since the run start has its disconnect. A retried or
 # rejected item logs one handler line per attempt, so connections count by distinct request id.
+# Only an instrumented API writes handler lines; an uninstrumented one gives no teardown signal.
+APP_INBOX_HANDLER='"component":"app-inbox-handler"'
 DEFAULT_TEARDOWN_TIMEOUT_SECONDS=120
 DEFAULT_TEARDOWN_POLL_SECONDS=5
 WS_CONNECT_HANDLER='"component":"app-inbox-handler","operation":"CLIENT_AUTHORISED_WS_CONNECT"'
@@ -28,7 +30,8 @@ Writes api-journal.log and control-journal.log into <dir>: the redacted raw jour
 rallar-api-v1.service and rallar-black-box-control.service since the run phase began,
 each capped at its last 50000 lines. The API journal is re-exported every poll until every
 WS connect it logged since the run start has its disconnect (the run's teardown), or the
-timeout passes (default 120 s, polled every 5 s).
+timeout passes (default 120 s, polled every 5 s). An API journal without AppInbox handler
+lines, an uninstrumented API, is exported once and reported as having no teardown balance.
 EOF_USAGE
 }
 
@@ -122,6 +125,10 @@ export_api_journal_after_teardown() {
 	local waited_seconds=0
 	local connects disconnects
 	export_journal api "${api_journal}"
+	if ! grep -q -F "${APP_INBOX_HANDLER}" "${api_journal}"; then
+		echo "API uninstrumented; teardown balance unavailable: exported without waiting for the WS teardown."
+		return 0
+	fi
 	connects="$(count_journal_request_ids "${WS_CONNECT_HANDLER}" "${api_journal}")"
 	disconnects="$(count_journal_request_ids "${WS_DISCONNECT_HANDLER}" "${api_journal}")"
 	while ((connects > disconnects && waited_seconds < teardown_timeout_seconds)); do

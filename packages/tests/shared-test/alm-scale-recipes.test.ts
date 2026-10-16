@@ -323,14 +323,33 @@ describe('ALM scale recipes', () => {
     );
 
     it.each(['director', 'player'] as const)(
-        'holds the %s at setup-complete until no newer plan has replaced the ready layout for a quiet window counted from its update',
+        'holds the %s at setup-complete until no newer plan has replaced the ready layout for a quiet window counted from when the page held it',
         (role) => {
             const scale = createAlmScaleRecipes({ participantCount: 50, group: GROUP, readyTimeoutMs: 45_000, almDiagnostics: false });
             const recipe = scale.recipes.find((candidate) => candidate.recipeId === `alm-scale-${role}`)!;
             const prefix = `alm-scale-${role}`;
             const setupComplete = recipe.commands.findIndex((command) => command.commandId === `${prefix}-setup-complete`);
 
-            expect(recipe.commands[setupComplete - 2]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+            expect(recipe.commands[setupComplete - 3]).toMatchObject({ kind: 'director.status', commandId: `${prefix}-ready-status` });
+            // Without an accepted layout the setup fails within seconds instead of spending the stable-layout allowance.
+            expect(recipe.commands[setupComplete - 2]).toEqual({
+                kind: 'loop',
+                commandId: `${prefix}-layout-accepted`,
+                count: 10,
+                intervalMs: 500,
+                timeoutMs: 10_000,
+                until: 'first-success',
+                commands: [
+                    { kind: 'formation.readiness', commandId: `${prefix}-layout-accepted-readiness`, roomRef: GROUP, timeoutMs: 5_000 },
+                    {
+                        kind: 'assert',
+                        commandId: `${prefix}-assert-layout-accepted`,
+                        operator: 'exists',
+                        source: `resultCache.${prefix}-layout-accepted:i{loop.iteration}:c1:` +
+                            `${prefix}-layout-accepted-readiness.value.acceptedHeldSinceEpochMs`
+                    }
+                ]
+            });
             expect(recipe.commands[setupComplete - 1]).toEqual({
                 kind: 'loop',
                 commandId: `${prefix}-layout-stable`,
@@ -346,7 +365,7 @@ describe('ALM scale recipes', () => {
                         absent: true,
                         timeoutMs: 3_500,
                         timeoutFrom: `{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                            `${prefix}-layout-readiness.value.formation.accepted.overlay.updatedAtEpochMs}`,
+                            `${prefix}-layout-readiness.value.acceptedHeldSinceEpochMs}`,
                         match: {
                             topic: 'rallar.browser.formation.layout',
                             payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },

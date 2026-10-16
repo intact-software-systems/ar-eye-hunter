@@ -21,6 +21,7 @@ import type {
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarFormationSummary
 } from '../black-box-rallar-operation-contracts.ts';
+import { FormationAcceptedHold } from './formation-accepted-hold.ts';
 import { FormationLayoutTiming } from './formation-layout-timing.ts';
 
 export const BLACK_BOX_RALLAR_FORMATION_TOPICS = {
@@ -76,6 +77,7 @@ interface FormationReadinessRejection extends FormationReadinessCapturedFacts {
  */
 export class BlackBoxRallarFormationController implements BlackBoxRallarFormationRuntime {
     readonly #dependencies: BlackBoxRallarFormationControllerDependencies;
+    readonly #acceptedHold = new FormationAcceptedHold();
 
     constructor(dependencies: BlackBoxRallarFormationControllerDependencies) {
         this.#dependencies = dependencies;
@@ -117,9 +119,14 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             throw error;
         }
 
+        const readyAtEpochMs = this.#dependencies.now();
+        const acceptedHeldSinceEpochMs = formationStatus === undefined
+            ? undefined
+            : this.#acceptedHold.observe(formationStatus, readyAtEpochMs);
         const diagnostics: BlackBoxRallarFormationReadinessDiagnostics = {
-            readyAtEpochMs: this.#dependencies.now(),
-            formation: summary
+            readyAtEpochMs,
+            formation: summary,
+            ...(acceptedHeldSinceEpochMs === undefined ? {} : { acceptedHeldSinceEpochMs })
         };
         this.#emit(
             BLACK_BOX_RALLAR_FORMATION_TOPICS.ready,
@@ -142,13 +149,14 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
             this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.layoutTiming, roomRef, timing)
         );
         const subscriptions = [
-            handle.onChange((status) =>
+            handle.onChange((status) => {
+                this.#acceptedHold.observe(status, this.#dependencies.now());
                 this.#emit(
                     BLACK_BOX_RALLAR_FORMATION_TOPICS.changed,
                     roomRef,
                     toFormationSummary(roomRef, status, this.#dependencies.rtc.roomStatus(roomRef).rtc)
-                )
-            ),
+                );
+            }),
             handle.onLayout((event) => {
                 this.#emit(BLACK_BOX_RALLAR_FORMATION_TOPICS.layout, roomRef, {
                     kind: event.kind,
@@ -157,6 +165,10 @@ export class BlackBoxRallarFormationController implements BlackBoxRallarFormatio
                         : { role: event.layout.role, identity: event.layout.identity })
                 });
                 layoutTiming.observe(event, this.#dependencies.now());
+                const status = handle.status();
+                if (status !== undefined) {
+                    this.#acceptedHold.observe(status, this.#dependencies.now());
+                }
             }),
             this.#dependencies.rtc.onStatus(() => this.#emitRoomStatus(roomRef))
         ];

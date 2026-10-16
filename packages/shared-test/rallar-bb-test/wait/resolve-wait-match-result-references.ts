@@ -12,6 +12,13 @@ export type InvalidWaitTimeoutFrom =
     | Readonly<{ kind: 'not-one-reference'; timeoutFrom: string; }>
     | Readonly<{ kind: 'unresolved-reference'; reference: string; }>;
 
+/**
+ * A wait's `timeoutFrom` as a recipe authors it: exactly one result reference, which a loop child may key by its
+ * `{loop.*}` placeholders; the schema and the control validation hold a recipe to it when it is loaded.
+ */
+export const WAIT_TIMEOUT_FROM_PATTERN_SOURCE =
+    '^\\{resultCache\\.(?:[^{}]|\\{loop\\.(?:index|iteration|elapsedMs|commandIndex)\\})+\\}$';
+
 const RESULT_REFERENCE_PATTERN = /\{(resultCache\.[^{}]+)\}/g;
 const SINGLE_RESULT_REFERENCE_PATTERN = /^\{(resultCache\.[^{}]+)\}$/;
 const RESULT_REFERENCE_ROOT = 'resultCache.';

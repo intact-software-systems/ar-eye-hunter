@@ -403,15 +403,21 @@ jobs:
           for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
             ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
             agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
-            request_id="$(printf 'register-%s-%s' "${RALLAR_BLACK_BOX_RUN_ID}" "${agent_id}" | tr -c 'A-Za-z0-9_-' '-')"
+            request_id="$(printf 'register-%s-%s' "${agent_id}" "${RALLAR_BLACK_BOX_RUN_ID}" | tr -c 'A-Za-z0-9_-' '-')"
             response_file="${RUNNER_TEMP}/rallar-register-${agent_id}.json"
-            status="$(AGENT_ID="${agent_id}" jq -nc '{username: env.AGENT_ID, password: env.RALLAR_BLACK_BOX_PASSWORD}' |
+            if ! status="$(AGENT_ID="${agent_id}" jq -nc '{username: env.AGENT_ID, password: env.RALLAR_BLACK_BOX_PASSWORD}' |
               curl -sS --max-time 60 -o "${response_file}" -w '%{http_code}' -X POST \
                 -H 'content-type: application/json' --data @- \
-                "${api_base_url}/api/auth/register/requests/${request_id:0:128}")"
+                "${api_base_url}/api/auth/register/requests/${request_id:0:128}")"; then
+              rm -f "${response_file}"
+              echo "::error::Registering ${agent_id} failed before an HTTP response." >&2
+              exit 1
+            fi
+            code="$(jq -r '.code // empty' "${response_file}" 2>/dev/null || true)"
+            rm -f "${response_file}"
             if [[ "${status}" == 201 ]]; then
               echo "Registered ${agent_id}."
-            elif [[ "${status}" == 409 && "$(jq -r '.code // empty' "${response_file}")" == auth-user-exists ]]; then
+            elif [[ "${status}" == 409 && "${code}" == auth-user-exists ]]; then
               echo "${agent_id} is already registered."
             else
               echo "::error::Registering ${agent_id} returned HTTP ${status}." >&2
@@ -463,6 +469,7 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: run
       rollout_before_run: false
+      server_timing: ${{ inputs.server_timing }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}

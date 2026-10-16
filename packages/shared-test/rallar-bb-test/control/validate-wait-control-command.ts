@@ -5,6 +5,7 @@ import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
+import { WAIT_TIMEOUT_FROM_PATTERN_SOURCE } from '../wait/resolve-wait-match-result-references.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
 import {
     validateAllowedFields,
@@ -25,10 +26,22 @@ export function validateWaitControlCommand(command: RallarBlackBoxTestRecord): r
         ...(command.absent === undefined || command.absent === true
             ? []
             : [toControlCommandIssue('wait.absent must be true when present.')]),
-        ...validateStringField(command, 'timeoutFrom', 'wait'),
+        ...validateWaitTimeoutFrom(command.timeoutFrom),
         ...validateAllowedFields(match, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, WAIT_MATCH_PATH),
         ...validateWaitMatchFields(match)
     ];
+}
+
+function validateWaitTimeoutFrom(timeoutFrom: unknown): readonly ControlCommandIssue[] {
+    if (timeoutFrom === undefined) {
+        return [];
+    }
+    if (typeof timeoutFrom !== 'string') {
+        return [toControlCommandIssue('wait.timeoutFrom must be a string.')];
+    }
+    return new RegExp(WAIT_TIMEOUT_FROM_PATTERN_SOURCE).test(timeoutFrom)
+        ? []
+        : [toControlCommandIssue('wait.timeoutFrom must be exactly one {resultCache.<commandId>.<path>} reference.')];
 }
 
 function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
