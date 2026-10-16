@@ -73,7 +73,6 @@ export function decodePersistedAppInboxEnqueue(
     );
 }
 
-/** A command persisted before its context became required carries the context only in its message route. */
 export function decodePersistedAppInboxCommand(message: JsonWireObject): AppInboxEnqueueInput {
     const payload = requireAppInboxWireObject(
         message.payload,
@@ -82,13 +81,7 @@ export function decodePersistedAppInboxCommand(message: JsonWireObject): AppInbo
     if (typeof payload.resource !== 'string') {
         throw new TypeError('Persisted AppInbox message resource is invalid');
     }
-    const command = requireAppInboxWireObject(
-        decodeJsonWireText(payload.resource, 'Persisted AppInbox command'),
-        'AppInbox enqueue'
+    return decodeAppInboxEnqueue(
+        decodeJsonWireText(payload.resource, 'Persisted AppInbox command')
     );
-    if (Object.hasOwn(command, 'contextId')) {
-        return decodeAppInboxEnqueue(command);
-    }
-    const route = requireAppInboxWireObject(message.route, 'Persisted AppInbox message route');
-    return decodeAppInboxEnqueue({ ...command, contextId: route.contextId });
 }

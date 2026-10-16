@@ -25,18 +25,15 @@ describe('persisted AppInbox command decoding', () => {
         });
     });
 
-    it('reads the context of a command persisted without one from its message route', () => {
-        expect(validate(AppInboxType.GROUP_CREATE, {
-            type: AppInboxType.GROUP_CREATE,
-            data: null
-        })).toMatchObject({ valid: true, command: { contextId: 'route-context' } });
-        expect(validate(AppInboxType.GROUP_CREATE, { type: AppInboxType.GROUP_CREATE, data: null }, null))
+    it('rejects a persisted command without its context as corruption', () => {
+        expect(validate(AppInboxType.GROUP_CREATE, { type: AppInboxType.GROUP_CREATE, data: null }))
             .toMatchObject({ valid: false, identity: { operationSource: 'corrupt' } });
     });
 
     it('rejects extra persisted command fields as corruption', () => {
         expect(validate(AppInboxType.GROUP_CREATE, {
             type: AppInboxType.GROUP_CREATE,
+            contextId: 'group-context',
             data: null,
             unexpectedField: true
         })).toEqual({
@@ -51,6 +48,7 @@ describe('persisted AppInbox command decoding', () => {
     it('classifies an unknown operation as unavailable', () => {
         expect(validate('GROUP_UNKNOWN', {
             type: 'GROUP_UNKNOWN',
+            contextId: 'group-context',
             data: null
         })).toEqual({
             valid: false,
@@ -62,11 +60,11 @@ describe('persisted AppInbox command decoding', () => {
     });
 });
 
-function validate(typeId: string, command: object, route: object | null = ROUTE) {
+function validate(typeId: string, command: object) {
     return validatePersistedAppInboxCommandIdentity({
         topicId: 'app-inbox.group-state',
         resource: JSON.stringify({
-            ...(route === null ? {} : { route }),
+            route: ROUTE,
             payload: {
                 typeId,
                 resource: JSON.stringify(command)
