@@ -1,17 +1,16 @@
-import type { ResourceInboxClaimOrder } from '../queue-box-types.ts';
+import type { ResourceInboxContextClaim } from '../queue-box-types.ts';
 import type { Key } from '../ResourceEntry.ts';
 
-/** The contexts one claim has taken a row from; in `oldest-per-context` order a second row of a context is refused. */
+/** The contexts a context claim may no longer take a row from: those its caller excluded and those it has taken. */
 export class ResourceInboxClaimedContexts {
-    private readonly claimOrder: ResourceInboxClaimOrder;
-    private readonly contextIds = new Set<string>();
+    private readonly contextIds: Set<string>;
 
-    constructor(claimOrder: ResourceInboxClaimOrder) {
-        this.claimOrder = claimOrder;
+    constructor(claim: ResourceInboxContextClaim) {
+        this.contextIds = new Set(claim.excludedContextIds);
     }
 
     admits(key: Key): boolean {
-        return this.claimOrder === 'queue' || !this.contextIds.has(key.contextId);
+        return !this.contextIds.has(key.contextId);
     }
 
     record(key: Key): void {

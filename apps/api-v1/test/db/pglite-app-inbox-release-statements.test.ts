@@ -96,7 +96,7 @@ Deno.test('PGlite AppInbox success committed by its handler transaction updates 
         assert.ok(handlerCommittedAt !== undefined);
         assert.deepEqual(
             statements.slice(handlerCommittedAt).filter((statement) =>
-                /update\s+resource_inbox\b/i.test(statement) && !/for update skip locked/i.test(statement)
+                /update\s+resource_inbox\b/i.test(statement) && !/for update (of \w+ )?skip locked/i.test(statement)
             ),
             [],
             'The committed handler transaction already finalized the entry; the lanes after it only claim'

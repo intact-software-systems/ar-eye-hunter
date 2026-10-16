@@ -42,7 +42,7 @@ describe('PostgreSQL resource inbox persistence', () => {
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
             reservationInput: 7,
-            claimOrder: 'queue'
+            contextClaim: undefined
         });
 
         expect(capture.queries).toHaveLength(1);
@@ -51,7 +51,7 @@ describe('PostgreSQL resource inbox persistence', () => {
         expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
-        expect(capture.queries[0]?.query).toContain('for update skip locked');
+        expect(capture.queries[0]?.query).toContain('for update of candidate skip locked');
         expect(capture.queries[0]?.query).not.toContain('start_ts is null or next_ts');
     });
 
@@ -86,7 +86,7 @@ describe('PostgreSQL resource inbox persistence', () => {
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.RETRY]),
             reservationInput: { maxToReserve: 1, maxAttempts: 2 },
-            claimOrder: 'queue'
+            contextClaim: undefined
         });
 
         expect(capture.queries).toHaveLength(1);

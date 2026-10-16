@@ -24,24 +24,25 @@ export function decodeAppInboxEnqueue(
     const enqueue = requireAppInboxWireObject(wire, 'AppInbox enqueue');
     requireExactOptionalKeys({
         value: enqueue,
-        required: ['type', 'data'],
-        optional: ['topicId', 'resourceId', 'contextId', 'senderId', 'authority'],
+        required: ['type', 'contextId', 'data'],
+        optional: ['topicId', 'resourceId', 'senderId', 'authority'],
         label: 'AppInbox enqueue'
     });
     requireString(enqueue.type, 'AppInbox enqueue type');
     if (!APP_INBOX_TYPES.has(enqueue.type)) {
         throw new AppInboxTypeUnavailableError();
     }
-    for (const field of ['topicId', 'resourceId', 'contextId', 'senderId'] as const) {
+    for (const field of ['topicId', 'resourceId', 'senderId'] as const) {
         if (enqueue[field] !== undefined) {
             requireString(enqueue[field], `AppInbox enqueue ${field}`);
         }
     }
+    requireString(enqueue.contextId, 'AppInbox enqueue contextId');
     return {
         type: enqueue.type as AppInboxType,
         ...(typeof enqueue.topicId === 'string' ? { topicId: enqueue.topicId } : {}),
         ...(typeof enqueue.resourceId === 'string' ? { resourceId: enqueue.resourceId } : {}),
-        ...(typeof enqueue.contextId === 'string' ? { contextId: enqueue.contextId } : {}),
+        contextId: enqueue.contextId,
         ...(typeof enqueue.senderId === 'string' ? { senderId: enqueue.senderId } : {}),
         ...(Object.prototype.hasOwnProperty.call(enqueue, 'authority')
             ? { authority: enqueue.authority }
@@ -64,10 +65,16 @@ function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[
 export function decodePersistedAppInboxEnqueue(
     entry: ResourceEntry
 ): AppInboxEnqueueInput {
-    const message = requireAppInboxWireObject(
-        decodeJsonWireText(entry.resource, 'Persisted AppInbox message'),
-        'Persisted AppInbox message'
+    return decodePersistedAppInboxCommand(
+        requireAppInboxWireObject(
+            decodeJsonWireText(entry.resource, 'Persisted AppInbox message'),
+            'Persisted AppInbox message'
+        )
     );
+}
+
+/** A command persisted before its context became required carries the context only in its message route. */
+export function decodePersistedAppInboxCommand(message: JsonWireObject): AppInboxEnqueueInput {
     const payload = requireAppInboxWireObject(
         message.payload,
         'Persisted AppInbox message payload'
@@ -75,7 +82,13 @@ export function decodePersistedAppInboxEnqueue(
     if (typeof payload.resource !== 'string') {
         throw new TypeError('Persisted AppInbox message resource is invalid');
     }
-    return decodeAppInboxEnqueue(
-        decodeJsonWireText(payload.resource, 'Persisted AppInbox command')
+    const command = requireAppInboxWireObject(
+        decodeJsonWireText(payload.resource, 'Persisted AppInbox command'),
+        'AppInbox enqueue'
     );
+    if (Object.hasOwn(command, 'contextId')) {
+        return decodeAppInboxEnqueue(command);
+    }
+    const route = requireAppInboxWireObject(message.route, 'Persisted AppInbox message route');
+    return decodeAppInboxEnqueue({ ...command, contextId: route.contextId });
 }

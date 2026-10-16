@@ -8,6 +8,7 @@ import {
     toSaturatedResourceInboxFairnessScanBudget,
     type DequeueResourceEntryRepository,
     type ResourceInboxClaimOrder,
+    type ResourceInboxContextClaim,
     type ResourceInboxFinalizationSelection,
     type ResourceInboxReleaseDisposition
 } from '../queue-box-types.ts';
@@ -144,6 +145,8 @@ export type ResourceInboxHandlerFinalized =
 export interface ResourceInboxDequeuerInput {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
+    /** The order the NEW lane claims in; the other lanes always claim in queue order. */
+    readonly newLaneClaimOrder: ResourceInboxClaimOrder;
     readonly maxToReserve: () => number;
     readonly maxNumToDequeue: number;
     readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
@@ -155,8 +158,6 @@ export interface ResourceInboxDequeuerInput {
 
 export interface DequeueResourceEntryOptions {
     readonly completionNotifications?: ResourceInboxCompletionNotifications;
-    /** The order the NEW lane claims in; absent claims in queue order. The other lanes always claim in queue order. */
-    readonly newLaneClaimOrder?: ResourceInboxClaimOrder;
     /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
     readonly isRetryableConflict?: (error: Error) => boolean;
     readonly jitterUnit?: () => number;
@@ -183,6 +184,8 @@ interface ResourceInboxReservationSelection {
     readonly types: Set<string>;
     readonly maxToReserve: number;
     readonly lane: typeof Reservator.NEW | typeof Reservator.RETRY;
+    /** Absent claims in queue order. */
+    readonly contextClaim: ResourceInboxContextClaim | undefined;
 }
 
 interface ResourceInboxReleasedSuccess<V> {
@@ -210,12 +213,31 @@ export function createDefaultResourceInboxDequeuer<V>(
         jitterUnit: options.jitterUnit ?? Math.random,
         recordReservationTelemetry: options.onReservationTelemetry ?? recordResourceInboxReservation
     };
+    // One pass serves a context's head at most once: its next row waits for the next pass.
+    const servedNewContextIds = new Set<string>();
+    const newContextClaim = input.newLaneClaimOrder === 'oldest-per-context'
+        ? { excludedContextIds: servedNewContextIds }
+        : undefined;
     return createResourceInboxFinalizationController<V>(dependencies, input)
-        .onNewEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxAttempts(dependencies, { types, maxToReserve, lane: Reservator.NEW })
-        )
+        .onNewEntriesReserveDo(async (types, maxToReserve) => {
+            const attempts = await reserveResourceInboxAttempts(dependencies, {
+                types,
+                maxToReserve,
+                lane: Reservator.NEW,
+                contextClaim: newContextClaim
+            });
+            for (const key of attempts.keys()) {
+                servedNewContextIds.add(key.contextId);
+            }
+            return attempts;
+        })
         .onRetryEntriesReserveDo((types, maxToReserve) =>
-            reserveResourceInboxAttempts(dependencies, { types, maxToReserve, lane: Reservator.RETRY })
+            reserveResourceInboxAttempts(dependencies, {
+                types,
+                maxToReserve,
+                lane: Reservator.RETRY,
+                contextClaim: undefined
+            })
         )
         .onFairnessEntriesReserveDo((types, maxToReserve) =>
             reserveResourceInboxFairness(dependencies, types, maxToReserve)
@@ -265,7 +287,7 @@ async function reserveResourceInboxAttempts(
             maxToReserve: selection.maxToReserve,
             maxAttempts: dependencies.resilience.retryPolicy.maxAttempts
         },
-        claimOrder: selection.lane === Reservator.NEW ? dependencies.options.newLaneClaimOrder ?? 'queue' : 'queue'
+        contextClaim: selection.contextClaim
     });
     return toResourceInboxAttempts(dependencies, entries, selection.lane);
 }

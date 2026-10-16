@@ -1,6 +1,6 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { decodeJsonWireText, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import { AppInboxTypeUnavailableError, decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
+import { AppInboxTypeUnavailableError, decodePersistedAppInboxCommand } from './app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
@@ -109,9 +109,7 @@ export function validatePersistedAppInboxCommandIdentity(
 
     let command: AppInboxEnqueueInput;
     try {
-        command = decodeAppInboxEnqueue(
-            decodeJsonWireText(outer.payload.resource, 'Persisted AppInbox command')
-        );
+        command = decodePersistedAppInboxCommand(outer);
     }
     catch (error) {
         return toInvalidIdentity(

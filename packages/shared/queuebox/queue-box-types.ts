@@ -353,13 +353,18 @@ export interface DequeueResourceEntryRepository {
  */
 export type ResourceInboxClaimOrder = 'queue' | 'oldest-per-context';
 
+/** A claim of context heads: each context's first eligible row, none of a context the caller already served. */
+export interface ResourceInboxContextClaim {
+    readonly excludedContextIds: ReadonlySet<string>;
+}
+
 export interface ResourceInboxReservationRequest {
     readonly typeIds: Set<string>;
     readonly statusIds: Set<Resource.EntityStatus>;
     readonly reservationInput: ResourceInboxReservationInput;
     readonly observedEntries?: readonly ResourceEntry[];
-    /** Absent claims in queue order. */
-    readonly claimOrder?: ResourceInboxClaimOrder;
+    /** Absent claims in queue order; an observed claim names its rows and never claims context heads. */
+    readonly contextClaim?: ResourceInboxContextClaim;
 }
 
 export interface ResourceInboxTimeoutReservationRequest {

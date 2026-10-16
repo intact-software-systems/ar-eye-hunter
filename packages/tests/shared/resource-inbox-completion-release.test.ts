@@ -48,6 +48,7 @@ describe('ResourceInbox post-release completion hints', () => {
                     new Map([...(await queue.releaseEntries(releases))].map(([key, released]) => [key, { ...released, key: wrongKey }]))
             },
             typesToDequeue: () => new Set(['waiting']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience,
@@ -101,6 +102,7 @@ describe('ResourceInbox post-release completion hints', () => {
                     releaseEntries: (releases) => queue.releaseEntries(releases)
                 },
                 typesToDequeue: () => new Set(['waiting']),
+                newLaneClaimOrder: 'queue',
                 maxToReserve: () => 1,
                 maxNumToDequeue: 1,
                 resilience,

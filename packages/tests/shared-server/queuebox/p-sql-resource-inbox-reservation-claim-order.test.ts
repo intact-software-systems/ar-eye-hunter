@@ -26,7 +26,7 @@ describe('PSqlResourceInboxReservationRepository claim order', () => {
             typeIds: new Set(['APP_INBOX']),
             statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
             reservationInput: 4,
-            claimOrder: 'queue'
+            contextClaim: undefined
         });
 
         expect([...claimed.values()].map((entry) => entry.key.resourceId))

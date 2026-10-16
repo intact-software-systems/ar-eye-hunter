@@ -129,7 +129,8 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
         adminClientIds: [],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
-        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() }
+        resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() },
+        appInboxCompletionNotices: undefined
     });
 }
 

@@ -112,6 +112,7 @@ describe('topology AppInbox durable command contract', () => {
             decodeAuthenticatedTopologyCommand(
                 {
                     type: testCase.type,
+                    contextId: 'test-context',
                     resourceId: command.requestId,
                     data: command
                 },
@@ -122,6 +123,7 @@ describe('topology AppInbox durable command contract', () => {
             decodeAuthenticatedTopologyCommand(
                 {
                     type: AppInboxType.GROUP_UPDATE,
+                    contextId: 'test-context',
                     resourceId: command.requestId,
                     data: command
                 },
@@ -152,6 +154,7 @@ describe('topology AppInbox durable command contract', () => {
 
         const firstIdentity = logicalIdentity({
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            contextId: 'test-context',
             resourceId: first.requestId,
             data: first,
             authority: {
@@ -162,6 +165,7 @@ describe('topology AppInbox durable command contract', () => {
         });
         const replayIdentity = logicalIdentity({
             type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            contextId: 'test-context',
             resourceId: replay.requestId,
             data: replay,
             authority: {
@@ -190,12 +194,14 @@ describe('topology AppInbox durable command contract', () => {
         expect(
             logicalIdentity({
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                contextId: 'test-context',
                 resourceId: first.requestId,
                 data: first
             })
         ).not.toBe(
             logicalIdentity({
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                contextId: 'test-context',
                 resourceId: divergent.requestId,
                 data: divergent
             })
@@ -255,6 +261,7 @@ describe('topology AppInbox durable command contract', () => {
             decodeAuthenticatedTopologyCommand(
                 {
                     type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                    contextId: 'test-context',
                     resourceId: command.requestId,
                     data: { ...command, predecessorCommandHash: command.commandHash }
                 },

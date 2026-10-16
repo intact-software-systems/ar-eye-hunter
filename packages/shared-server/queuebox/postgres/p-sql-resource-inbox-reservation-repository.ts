@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     toResourceInboxReservationOptions,
-    type ResourceInboxClaimOrder,
+    type ResourceInboxContextClaim,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationInput,
     type ResourceInboxWorkPage
@@ -17,6 +17,7 @@ import {
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { PSqlFragment } from '../../postgres/p-sql-fragment.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
@@ -40,7 +41,8 @@ export namespace PSqlResourceInboxReservationRepository {
         readonly reservationInput: ResourceInboxReservationInput;
     }
     export interface ReservationClaim extends ReservationSelection {
-        readonly claimOrder: ResourceInboxClaimOrder;
+        /** Undefined claims in queue order. */
+        readonly contextClaim: ResourceInboxContextClaim | undefined;
     }
     export interface ReservationRead extends ReservationSelection {
         readonly observedRowIds: readonly string[];
@@ -151,13 +153,13 @@ export class PSqlResourceInboxReservationRepository {
     /**
      * Selects and starts processing the next eligible rows in one statement: the same rows
      * `findEntriesSkipLocked` would lock, carrying the lease and attempt `startProcessingEntity` gives.
-     * In `oldest-per-context` order a row is selected only when no eligible row of its context is ahead
-     * of it, so the claim takes each context's first row. A row whose selected lifecycle was corrupt
+     * A context claim selects only its contexts' heads: each context's first eligible row in claim
+     * order, of a context its caller did not exclude. A row whose selected lifecycle was corrupt
      * throws, so the caller's transaction rolls the claim back instead of repairing the row.
      * `RETURNING` keeps no order, so the selection order is restored from the selected due time.
      */
     async reserveEntriesSkipLocked(
-        { typeIds, statusIds, reservationInput, claimOrder }: PSqlResourceInboxReservationRepository.ReservationClaim
+        { typeIds, statusIds, reservationInput, contextClaim }: PSqlResourceInboxReservationRepository.ReservationClaim
     ): Promise<Map<string, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -166,48 +168,8 @@ export class PSqlResourceInboxReservationRepository {
         if (typeIds.size === 0 || statusIds.size === 0 || maxToReserve === 0) {
             return new Map();
         }
-
-        // Separate query shapes keep the queue-order claim's plan free of the per-context probe.
-        const rows = claimOrder === 'queue'
-            ? await this.sql<ClaimedResourceInboxRow[]>`
-            update resource_inbox
-            set ri_status   = ${EntityStatus.RESERVED},
-                ri_attempts = ri_attempts + 1,
-                start_ts    = now() at time zone 'UTC',
-                end_ts      = null,
-                next_ts     = null
-            from (
-                select ri_row_id,
-                       ri_status as selected_status,
-                       ri_attempts as selected_attempts,
-                       start_ts as selected_start_ts,
-                       end_ts as selected_end_ts,
-                       next_ts as selected_next_ts
-                from resource_inbox
-                where ri_type_id in ${this.sql([...typeIds])}
-                  and ri_status in ${this.sql([...statusIds])}
-                  and ri_status <> ${EntityStatus.FAILED}
-                  and expire_ts > (now() at time zone 'UTC')
-                  and ri_attempts < ${maxAttempts}
-                  and (
-                      (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
-                      or
-                      (ri_status <> ${EntityStatus.RETRY} and start_ts is null
-                          and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
-                  )
-                order by next_ts asc nulls first, ri_row_id asc
-                    for update skip locked
-                limit ${maxToReserve}
-            ) as selected
-            where resource_inbox.ri_row_id = selected.ri_row_id
-            returning resource_inbox.*,
-                      selected.selected_status,
-                      selected.selected_attempts,
-                      selected.selected_start_ts,
-                      selected.selected_end_ts,
-                      selected.selected_next_ts
-        `
-            : await this.sql<ClaimedResourceInboxRow[]>`
+        const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
+        const statement = PSqlFragment.of`
             update resource_inbox
             set ri_status   = ${EntityStatus.RESERVED},
                 ri_attempts = ri_attempts + 1,
@@ -222,39 +184,8 @@ export class PSqlResourceInboxReservationRepository {
                        candidate.end_ts as selected_end_ts,
                        candidate.next_ts as selected_next_ts
                 from resource_inbox candidate
-                where candidate.ri_type_id in ${this.sql([...typeIds])}
-                  and candidate.ri_status in ${this.sql([...statusIds])}
-                  and candidate.ri_status <> ${EntityStatus.FAILED}
-                  and candidate.expire_ts > (now() at time zone 'UTC')
-                  and candidate.ri_attempts < ${maxAttempts}
-                  and (
-                      (candidate.ri_status = ${EntityStatus.RETRY} and candidate.next_ts <= (now() at time zone 'UTC'))
-                      or
-                      (candidate.ri_status <> ${EntityStatus.RETRY} and candidate.start_ts is null
-                          and (candidate.next_ts is null or candidate.next_ts <= (now() at time zone 'UTC')))
-                  )
-                  and not exists (
-                      select 1
-                      from resource_inbox ahead
-                      where ahead.fk_ext_bank_id = candidate.fk_ext_bank_id
-                        and ahead.ri_type_id in ${this.sql([...typeIds])}
-                        and ahead.ri_status in ${this.sql([...statusIds])}
-                        and ahead.ri_status <> ${EntityStatus.FAILED}
-                        and ahead.expire_ts > (now() at time zone 'UTC')
-                        and ahead.ri_attempts < ${maxAttempts}
-                        and (
-                            (ahead.ri_status = ${EntityStatus.RETRY} and ahead.next_ts <= (now() at time zone 'UTC'))
-                            or
-                            (ahead.ri_status <> ${EntityStatus.RETRY} and ahead.start_ts is null
-                                and (ahead.next_ts is null or ahead.next_ts <= (now() at time zone 'UTC')))
-                        )
-                        and (
-                            (ahead.next_ts is null and candidate.next_ts is not null)
-                            or (ahead.next_ts is not distinct from candidate.next_ts
-                                and ahead.ri_row_id < candidate.ri_row_id)
-                            or ahead.next_ts < candidate.next_ts
-                        )
-                  )
+                where ${toEligibleRowPredicate('candidate', eligibility)}
+                  ${contextClaim === undefined ? PSqlFragment.of`` : toContextHeadPredicate(eligibility, contextClaim)}
                 order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
                     for update of candidate skip locked
                 limit ${maxToReserve}
@@ -267,6 +198,7 @@ export class PSqlResourceInboxReservationRepository {
                       selected.selected_end_ts,
                       selected.selected_next_ts
         `;
+        const rows = await this.sql<ClaimedResourceInboxRow[]>(...statement.toStatement());
         for (const row of rows) {
             toDomain(toSelectedResourceInboxRow(row));
         }
@@ -286,26 +218,17 @@ export class PSqlResourceInboxReservationRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
-              and ri_status in ${this.sql([...statusIds])}
-              and ri_status <> ${EntityStatus.FAILED}
-              and ri_row_id = any(${observedRowIds}::bigint[])
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts < ${maxAttempts}
-              and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
-                  or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
-                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
-              )
-            order by next_ts asc nulls first, ri_row_id asc
+        const eligibility = { typeIds: this.sql([...typeIds]), statusIds: this.sql([...statusIds]), maxAttempts };
+        const statement = PSqlFragment.of`
+            select candidate.*
+            from resource_inbox candidate
+            where candidate.ri_row_id = any(${observedRowIds}::bigint[])
+              and ${toEligibleRowPredicate('candidate', eligibility)}
+            order by candidate.next_ts asc nulls first, candidate.ri_row_id asc
                 for update skip locked
             limit ${observedRowIds.length}
         `;
+        const rows = await this.sql<ResourceInboxRow[]>(...statement.toStatement());
 
         return rowsToMap(rows);
     }
@@ -571,4 +494,46 @@ function validateWorkPosition(
     return issues.length > 0
         ? Either.ofLeft(new TypeError(issues.join('; ')))
         : Either.ofRight({ createdAt: value[0], rowId: BigInt(value[1]) });
+}
+
+interface ResourceInboxEligibility {
+    readonly typeIds: object;
+    readonly statusIds: object;
+    readonly maxAttempts: number;
+}
+
+/** A row a NEW or RETRY claim may start now: its type and status, alive, attempts left, and due. */
+function toEligibleRowPredicate(alias: 'candidate' | 'head', eligibility: ResourceInboxEligibility): PSqlFragment {
+    const row = PSqlFragment.identifier(alias);
+    return PSqlFragment.of`(
+        ${row}.ri_type_id in ${eligibility.typeIds}
+        and ${row}.ri_status in ${eligibility.statusIds}
+        and ${row}.ri_status <> ${EntityStatus.FAILED}
+        and ${row}.expire_ts > (now() at time zone 'UTC')
+        and ${row}.ri_attempts < ${eligibility.maxAttempts}
+        and (
+            (${row}.ri_status = ${EntityStatus.RETRY} and ${row}.next_ts <= (now() at time zone 'UTC'))
+            or
+            (${row}.ri_status <> ${EntityStatus.RETRY} and ${row}.start_ts is null
+                and (${row}.next_ts is null or ${row}.next_ts <= (now() at time zone 'UTC')))
+        )
+    )`;
+}
+
+/**
+ * The candidate is its context's first eligible row in claim order, and its context is not excluded. One sort of the
+ * eligible rows names every context's head; a per-candidate probe for an eligible row ahead is quadratic in them.
+ */
+function toContextHeadPredicate(
+    eligibility: ResourceInboxEligibility,
+    contextClaim: ResourceInboxContextClaim
+): PSqlFragment {
+    return PSqlFragment.of`
+        and candidate.ri_row_id in (
+            select distinct on (head.fk_ext_bank_id) head.ri_row_id
+            from resource_inbox head
+            where ${toEligibleRowPredicate('head', eligibility)}
+              and head.fk_ext_bank_id <> all(${[...contextClaim.excludedContextIds]}::varchar[])
+            order by head.fk_ext_bank_id, head.next_ts asc nulls first, head.ri_row_id asc
+        )`;
 }

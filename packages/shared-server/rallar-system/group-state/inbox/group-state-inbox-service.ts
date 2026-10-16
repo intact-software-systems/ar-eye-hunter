@@ -22,13 +22,12 @@ import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-tra
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import {
     processGroupSessionCleanup,
-    toExpiredPresenceEnqueue,
     toGroupSessionCleanupEnqueue
 } from '../presence/group-presence-service.ts';
 import type {
@@ -50,6 +49,7 @@ import {
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
+import { toGroupSystemCommandEnqueue } from './to-group-system-command-enqueue.ts';
 
 export namespace GroupStateInboxService {
     export interface Dependencies {
@@ -138,7 +138,9 @@ export class GroupStateInboxService {
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
         const ingresses = await this.groupStateService.captureExpiredPresenceMutationIngresses(atEpochMs);
         for (const ingress of ingresses) {
-            await this.queueEntryWriter.enqueue(toExpiredPresenceEnqueue(ingress));
+            await this.queueEntryWriter.enqueue(
+                toGroupSystemCommandEnqueue(AppInboxType.GROUP_PRESENCE_EXPIRE, ingress)
+            );
         }
         return ingresses.length;
     }
@@ -151,25 +153,16 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue({
-            type: AppInboxType.GROUP_FORMATION_CRITERION,
-            resourceId: ingress.queueResourceId,
-            authority: decodeJsonWireValue(
-                ingress,
-                'Group formation AppInbox authority'
-            ),
-            data: { commandId: ingress.command.commandId }
-        });
+        await this.queueEntryWriter.enqueue(
+            toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_CRITERION, ingress)
+        );
     }
 
     async enqueueFormationAutomationCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void> {
         const ingress = await this.groupStateService.captureFormationAutomationMutationIngress(command, atEpochMs);
-        await this.queueEntryWriter.enqueue({
-            type: AppInboxType.GROUP_FORMATION_AUTOMATION,
-            resourceId: ingress.queueResourceId,
-            authority: decodeJsonWireValue(ingress, 'Group formation automation authority'),
-            data: { commandId: ingress.command.commandId }
-        });
+        await this.queueEntryWriter.enqueue(
+            toGroupSystemCommandEnqueue(AppInboxType.GROUP_FORMATION_AUTOMATION, ingress)
+        );
     }
 
     async enqueueTopologyPublicationCommand(
@@ -180,12 +173,9 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue({
-            type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
-            resourceId: ingress.queueResourceId,
-            authority: decodeJsonWireValue(ingress, 'Group topology publication AppInbox authority'),
-            data: { commandId: ingress.command.commandId }
-        });
+        await this.queueEntryWriter.enqueue(
+            toGroupSystemCommandEnqueue(AppInboxType.GROUP_TOPOLOGY_PUBLICATION, ingress)
+        );
     }
 
     async enqueueActivationStatusCommand(
@@ -196,12 +186,7 @@ export class GroupStateInboxService {
             command,
             atEpochMs
         );
-        await this.queueEntryWriter.enqueue({
-            type: AppInboxType.GROUP_ACTIVATION_STATUS,
-            resourceId: ingress.queueResourceId,
-            authority: decodeJsonWireValue(ingress, 'Group activation status AppInbox authority'),
-            data: { commandId: ingress.command.commandId }
-        });
+        await this.queueEntryWriter.enqueue(toGroupSystemCommandEnqueue(AppInboxType.GROUP_ACTIVATION_STATUS, ingress));
     }
 
     async enqueueGroupSessionCleanup(

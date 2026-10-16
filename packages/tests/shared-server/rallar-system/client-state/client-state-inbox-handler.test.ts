@@ -444,6 +444,7 @@ describe('ClientStateInboxHandler phases', () => {
         }
         const context = createContext<ClientStateWritten>({
             type: AppInboxType.CLIENT_SESSION_CONNECT,
+            contextId: 'test-context',
             resourceId: original.commandId,
             authority: original.authority,
             data: {}

@@ -67,7 +67,10 @@ export class InboxQueueReader {
     private pressureRefresh: Promise<void> | undefined;
 
     private static readonly PRESSURE_WINDOW_MS = 1_000;
-    /** One NEW round claims at most this many contexts' oldest entries; the pass serves them one after another. */
+    /**
+     * A NEW round claims one context's oldest entry, so a peer instance can take the next head meanwhile; a pass
+     * serves at most this many contexts.
+     */
     private static readonly NEW_CONTEXTS_PER_PASS = 8;
 
     public readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
@@ -90,7 +93,7 @@ export class InboxQueueReader {
         this.reader = new QueueMessageReader(inbox, {
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
             creationNow,
-            dequeueOptions: { ...dequeueOptions, newLaneClaimOrder: 'oldest-per-context' }
+            dequeueOptions
         });
     }
 
@@ -140,6 +143,8 @@ export class InboxQueueReader {
         return await this.reader.dequeue({
             typesToDequeue,
             resilience,
+            // A budgeted AppInbox pass serves each context's head once; any other type set keeps draining in queue order.
+            newLaneClaimOrder: isAppInbox ? 'oldest-per-context' : 'queue',
             readLaneBudgets: isAppInbox
                 ? () => this.readLaneBudgets(resilience.retryPolicy.maxAttempts, workAdvertisement)
                 : undefined,
@@ -151,14 +156,13 @@ export class InboxQueueReader {
         maxAttempts: number,
         workAdvertisement: DequeueController.WorkAdvertisement | undefined
     ): DequeueController.LaneBudgets {
+        const retryQuota = this.readRetryQuota(maxAttempts, workAdvertisement);
         return {
             FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1 },
-            NEW: {
-                maxToReserve: InboxQueueReader.NEW_CONTEXTS_PER_PASS,
-                maxNumToDequeue: InboxQueueReader.NEW_CONTEXTS_PER_PASS
-            },
+            NEW: { maxToReserve: 1, maxNumToDequeue: InboxQueueReader.NEW_CONTEXTS_PER_PASS },
             FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1 },
-            RETRY: { maxToReserve: 1, maxNumToDequeue: this.readRetryQuota(maxAttempts, workAdvertisement) },
+            // One claim for the whole quota: a short claim ends the lane without a second, empty reservation.
+            RETRY: { maxToReserve: retryQuota, maxNumToDequeue: retryQuota },
             TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1 }
         };
     }

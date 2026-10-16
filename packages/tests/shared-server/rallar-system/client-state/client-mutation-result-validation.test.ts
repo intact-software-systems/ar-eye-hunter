@@ -442,7 +442,7 @@ function createExecutionMetadata(): AppInboxExecutionMetadata {
         dequeueAudit: { attempts: 1 }
     };
     return {
-        enqueue: { type: AppInboxType.CLIENT_EXPIRED_SESSIONS, data: { atEpochMs: 8_000, afterKey: null } },
+        enqueue: { type: AppInboxType.CLIENT_EXPIRED_SESSIONS, contextId: 'test-context', data: { atEpochMs: 8_000, afterKey: null } },
         message: {
             id: { v: 3, msgId: entry.key.resourceId, ts: 1_000, senderId: 'client-service' },
             route: entry.key,

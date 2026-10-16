@@ -32,8 +32,7 @@ export function createAppInboxResourceEntry(
         {
             ...enqueue,
             topicId: enqueue.topicId ?? '',
-            resourceId: enqueue.resourceId ?? '',
-            contextId: enqueue.contextId ?? ''
+            resourceId: enqueue.resourceId ?? ''
         },
         '',
         true
@@ -53,7 +52,7 @@ export function toPhysicalAppInboxQueueKey(
     const key = {
         topicId: enqueue.topicId ?? defaultTopicId,
         resourceId: enqueue.resourceId,
-        contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server'
+        contextId: enqueue.contextId
     };
     return strictQueueIdentity ? toStrictAppInboxQueueKey(key) : toAppQueueKey(key);
 }

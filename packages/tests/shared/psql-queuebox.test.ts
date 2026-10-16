@@ -208,7 +208,7 @@ describe('PSqlQueueBox', () => {
             typeIds: new Set(['type-1']),
             statusIds: new Set([EntityStatus.RETRY]),
             reservationInput: { maxToReserve: 1, maxAttempts: 2 },
-            claimOrder: 'queue'
+            contextClaim: undefined
         });
     });
 

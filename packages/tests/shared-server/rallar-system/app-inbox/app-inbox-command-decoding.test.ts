@@ -3,6 +3,8 @@ import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-s
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+const ROUTE = { topicId: 'app-inbox.group-state', resourceId: 'request-1', contextId: 'route-context' };
+
 describe('persisted AppInbox command decoding', () => {
     it('uses JSON-wire data as the sole persisted enqueue shape', () => {
         expectTypeOf<AppInboxEnqueueInput['data']>().toEqualTypeOf<JsonWireValue>();
@@ -11,14 +13,25 @@ describe('persisted AppInbox command decoding', () => {
     it('accepts the exact current JSON-wire command', () => {
         expect(validate(AppInboxType.GROUP_CREATE, {
             type: AppInboxType.GROUP_CREATE,
+            contextId: 'group-context',
             data: { requestId: 'request-1' }
         })).toMatchObject({
             valid: true,
             identity: {
                 operation: AppInboxType.GROUP_CREATE,
                 operationSource: 'command'
-            }
+            },
+            command: { contextId: 'group-context' }
         });
+    });
+
+    it('reads the context of a command persisted without one from its message route', () => {
+        expect(validate(AppInboxType.GROUP_CREATE, {
+            type: AppInboxType.GROUP_CREATE,
+            data: null
+        })).toMatchObject({ valid: true, command: { contextId: 'route-context' } });
+        expect(validate(AppInboxType.GROUP_CREATE, { type: AppInboxType.GROUP_CREATE, data: null }, null))
+            .toMatchObject({ valid: false, identity: { operationSource: 'corrupt' } });
     });
 
     it('rejects extra persisted command fields as corruption', () => {
@@ -49,10 +62,11 @@ describe('persisted AppInbox command decoding', () => {
     });
 });
 
-function validate(typeId: string, command: object) {
+function validate(typeId: string, command: object, route: object | null = ROUTE) {
     return validatePersistedAppInboxCommandIdentity({
         topicId: 'app-inbox.group-state',
         resource: JSON.stringify({
+            ...(route === null ? {} : { route }),
             payload: {
                 typeId,
                 resource: JSON.stringify(command)

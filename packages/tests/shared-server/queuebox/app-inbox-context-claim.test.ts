@@ -64,11 +64,55 @@ describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s stora
         }
         const request = { typeIds: InboxQueueReader.INBOX_DEQUEUE_TYPES, statusIds: new Set([EntityStatus.NEW]), reservationInput: 8 };
 
-        const heads = await queue.reserveEntries({ ...request, claimOrder: 'oldest-per-context' });
+        const heads = await queue.reserveEntries({ ...request, contextClaim: { excludedContextIds: new Set() } });
         const rest = await queue.reserveEntries(request);
 
         expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['a-0', 'b-0', 'c-0']);
         expect([...rest.values()].map((entry) => entry.key.resourceId)).toEqual(['a-1', 'a-2']);
+    });
+
+    it('skips a context its claim excludes', async () => {
+        const queue = await createQueue(backend);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        for (const [contextId, resourceId] of [['user-a', 'a-0'], ['user-a', 'a-1'], ['room-b', 'b-0'], ['room-c', 'c-0']]) {
+            await reader.enqueueIfAbsent(createContextMessage(contextId!, resourceId!));
+        }
+
+        const heads = await queue.reserveEntries({
+            typeIds: InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 8,
+            contextClaim: { excludedContextIds: new Set(['user-a']) }
+        });
+
+        expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['b-0', 'c-0']);
+    });
+
+    it('claims one head per NEW round and excludes the contexts the pass already served', async () => {
+        const queue = await createQueue(backend);
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        for (const [contextId, resourceId] of [['user-a', 'a-0'], ['user-a', 'a-1'], ['room-b', 'b-0']]) {
+            await reader.enqueueIfAbsent(createContextMessage(contextId!, resourceId!));
+        }
+        const rounds: Array<Readonly<{ reserved: readonly string[]; excluded: readonly string[]; }>> = [];
+        const reserveEntries = queue.reserveEntries.bind(queue);
+        queue.reserveEntries = async (claim) => {
+            const excluded = [...(claim.contextClaim?.excludedContextIds ?? [])];
+            const reserved = await reserveEntries(claim);
+            if (claim.statusIds.has(EntityStatus.NEW)) {
+                rounds.push({ reserved: [...reserved.values()].map((entry) => entry.key.resourceId), excluded });
+            }
+            return reserved;
+        };
+        reader.onInboxMessageDo('test.context-claim', { onMessage: async () => {} });
+
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createQueueResilience());
+
+        expect(rounds).toEqual([
+            { reserved: ['a-0'], excluded: [] },
+            { reserved: ['b-0'], excluded: ['user-a'] },
+            { reserved: [], excluded: ['user-a', 'room-b'] }
+        ]);
     });
 });
 
@@ -122,7 +166,7 @@ describe('PostgreSQL oldest-per-context claim', () => {
             typeIds: InboxQueueReader.INBOX_DEQUEUE_TYPES,
             statusIds: new Set([EntityStatus.NEW]),
             reservationInput: 8,
-            claimOrder: 'oldest-per-context'
+            contextClaim: { excludedContextIds: new Set() }
         });
 
         expect([...heads.values()].map((entry) => entry.key.resourceId)).toEqual(['unscheduled', 'live']);

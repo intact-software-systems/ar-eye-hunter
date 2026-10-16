@@ -15,6 +15,7 @@ import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classi
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
 import { nowMs } from '../observability/timing.ts';
+import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
@@ -80,7 +81,8 @@ export function createRallarMiddlewareInfrastructure(
                 ...options.relayedAckNotices,
                 acceptRelayedAck: (message, publisherId) => wsQBoxServerService.acceptRelayedAck(message, publisherId)
             })
-            : Promise.resolve()
+            : Promise.resolve(),
+        installMiddlewareAppInboxCompletionNoticeSubscriber(options)
     ]).then(() => undefined);
 
     return {
@@ -93,6 +95,14 @@ export function createRallarMiddlewareInfrastructure(
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function installMiddlewareAppInboxCompletionNoticeSubscriber(options: CreateRallarMiddlewareOptions): Promise<void> {
+    const notifications = options.appInboxDequeueOptions.completionNotifications;
+    if (options.appInboxCompletionNotices === undefined || notifications === undefined) {
+        return Promise.resolve();
+    }
+    return installAppInboxCompletionNoticeSubscriber({ ...options.appInboxCompletionNotices, notifications });
 }
 
 function createMiddlewareInboxQueueReader(options: CreateRallarMiddlewareOptions): InboxQueueReader {

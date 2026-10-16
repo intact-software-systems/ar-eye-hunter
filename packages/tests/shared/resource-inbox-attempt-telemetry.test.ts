@@ -127,6 +127,7 @@ function dequeuer(repository: DequeueResourceEntryRepository, observations: Reso
     return createDefaultResourceInboxDequeuer<string>({
         repository: repository,
         typesToDequeue: () => new Set(['APP_INBOX']),
+        newLaneClaimOrder: 'queue',
         maxToReserve: () => 1,
         maxNumToDequeue: 10,
         resilience: resilience(),

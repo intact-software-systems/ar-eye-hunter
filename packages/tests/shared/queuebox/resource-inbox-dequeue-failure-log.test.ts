@@ -115,6 +115,7 @@ async function dequeueOnce(
     await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedRejection | undefined>({
         repository: queue,
         typesToDequeue: () => new Set([typeId]),
+        newLaneClaimOrder: 'queue',
         maxToReserve: () => 1,
         maxNumToDequeue: 1,
         resilience: ResourceInboxResilience.createDefault({

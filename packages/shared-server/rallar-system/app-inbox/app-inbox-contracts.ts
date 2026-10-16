@@ -72,7 +72,8 @@ export interface AppInboxEnqueueInput {
     readonly type: AppInboxType;
     readonly topicId?: string;
     readonly resourceId?: string;
-    readonly contextId?: string;
+    /** The serialization unit: one context's entries are served in order, and never behind another context's. */
+    readonly contextId: string;
     readonly senderId?: string;
     readonly authority?: JsonWireValue;
     readonly data: JsonWireValue;

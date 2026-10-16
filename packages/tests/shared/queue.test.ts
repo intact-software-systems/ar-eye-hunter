@@ -76,6 +76,7 @@ describe('enqueue and dequeue', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: toTestResilience(),
@@ -152,6 +153,7 @@ describe('enqueue and dequeue', () => {
             createDefaultResourceInboxDequeuer<string>({
                 repository: repository,
                 typesToDequeue: () => new Set(['APP_INBOX']),
+                newLaneClaimOrder: 'queue',
                 maxToReserve: () => 1,
                 maxNumToDequeue: 1,
                 resilience: toTestResilience(),
@@ -232,6 +234,7 @@ describe('enqueue and dequeue', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 100,
             resilience: resilienceDto
@@ -271,6 +274,7 @@ describe('released ResourceInbox outcomes', () => {
             const results = await createDefaultResourceInboxDequeuer<string>({
                 repository: queue,
                 typesToDequeue: () => new Set(['APP_INBOX']),
+                newLaneClaimOrder: 'queue',
                 maxToReserve: () => 1,
                 maxNumToDequeue: 3,
                 resilience: toTestResilience(),
@@ -329,6 +333,7 @@ describe('handler-finalized ResourceInbox success', () => {
         const results = await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedSuccess>({
             repository: queue,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: toTestResilience(),
@@ -421,6 +426,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(retryPolicy)
@@ -448,6 +454,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience()
@@ -493,6 +500,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),
@@ -536,6 +544,7 @@ describe('resource inbox retry and fairness lanes', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),
@@ -582,6 +591,7 @@ describe('resource inbox retry and fairness lanes', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: repository,
             typesToDequeue: () => new Set(['APP_INBOX']),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 10,
             resilience: toTestResilience(),

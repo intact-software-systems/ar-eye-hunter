@@ -67,6 +67,7 @@ export class OutboxQueueReader {
         return await this.reader.dequeue({
             typesToDequeue,
             resilience,
+            newLaneClaimOrder: 'queue',
             readLaneBudgets: undefined,
             workAdvertisement
         });

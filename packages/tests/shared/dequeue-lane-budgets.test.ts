@@ -161,6 +161,7 @@ describe('DequeueController lane budgets', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: createQueueResilience()
@@ -193,6 +194,7 @@ describe('DequeueController lane budgets', () => {
         const controller = createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 5,
             maxNumToDequeue: 1000,
             resilience: createQueueResilience(),
@@ -228,6 +230,7 @@ describe('DequeueController lane budgets', () => {
         const dequeuer = createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => new Set([EnqueuedType.APP_INBOX]),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 5,
             maxNumToDequeue: 1_000,
             resilience: createQueueResilience(),
@@ -270,6 +273,7 @@ describe('DequeueController lane budgets', () => {
         const dequeuer = createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1_000,
             resilience: createQueueResilience(),
@@ -303,6 +307,7 @@ describe('DequeueController lane budgets', () => {
                 const controller = createDefaultResourceInboxDequeuer<string>({
                     repository: queue,
                     typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    newLaneClaimOrder: 'queue',
                     maxToReserve: () => 1,
                     maxNumToDequeue: 1_000,
                     resilience: createQueueResilience(),
@@ -353,6 +358,7 @@ describe('DequeueController lane budgets', () => {
         await createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 2,
             maxNumToDequeue: 2,
             resilience: createQueueResilience(),
@@ -379,6 +385,7 @@ describe('DequeueController lane budgets', () => {
                 const dequeuer = createDefaultResourceInboxDequeuer<string>({
                     repository: queue,
                     typesToDequeue: () => InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    newLaneClaimOrder: 'queue',
                     maxToReserve: () => 1,
                     maxNumToDequeue: 1_000,
                     resilience: createQueueResilience(),

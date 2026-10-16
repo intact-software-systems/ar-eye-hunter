@@ -30,6 +30,7 @@ import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.t
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
+import type { AppInboxCompletionNoticeChannel } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
@@ -145,6 +146,8 @@ export interface CreateRallarMiddlewareOptions {
     >;
     /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
     readonly relayedAckNotices?: RelayedAckNoticeChannel;
+    /** The notice channel that wakes a waiter whose entry another instance completed; absent on a single instance. */
+    readonly appInboxCompletionNotices?: AppInboxCompletionNoticeChannel;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }

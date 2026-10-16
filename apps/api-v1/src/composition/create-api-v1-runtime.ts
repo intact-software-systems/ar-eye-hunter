@@ -20,6 +20,7 @@ import {
     type RallarAlmReceiptDiagnosticsRecorder
 } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { AppInboxCompletionNoticeChannel } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {
     initRtcRttReceiptFamilyCleanup
@@ -49,6 +50,7 @@ import type {
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
+import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
 import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import {
@@ -126,6 +128,7 @@ interface StartRuntimeStateExpiryInput {
 
 interface CreateSharedMiddlewareInput {
     readonly mutation: ApiV1MutationRuntime;
+    readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
     readonly rtcTopology: ApiRtcTopologyRuntime;
     readonly topology: ApiV1TopologyServices;
     readonly wsRuntimeName: string;
@@ -181,7 +184,12 @@ export function constructApiV1Runtime(
         nowEpochMs: input.nowEpochMs,
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
-    const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input));
+    const appInboxCompletionNotices = createApiV1AppInboxCompletionNotices({
+        mode: input.databasePubSubMode,
+        notification: input.databaseNotification,
+        publisherId: input.queuePubSubPublisherId
+    });
+    const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input, appInboxCompletionNotices));
     const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
     input.backgroundTasks.register(rtcTopology.stop);
     operations.configureWsRuntimeStores(input.wsRuntimeName, mutation.runtimeStateRepository);
@@ -194,6 +202,7 @@ export function constructApiV1Runtime(
     });
     const runtime = operations.createMiddleware({
         mutation,
+        appInboxCompletionNotices,
         rtcTopology,
         topology,
         wsRuntimeName: input.wsRuntimeName,
@@ -259,9 +268,11 @@ function createRuntimeTopology(
 }
 
 function toMutationRuntimeInput(
-    input: CreateApiV1RuntimeInput
+    input: CreateApiV1RuntimeInput,
+    appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined
 ): CreateApiV1MutationRuntimeInput {
     return {
+        appInboxCompletionNotices,
         database: input.database,
         serviceId: input.serviceId,
         authCredentialSecret: input.authCredentialSecret,
@@ -365,6 +376,7 @@ function createSharedMiddleware(
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
         relayedAckNotices,
+        appInboxCompletionNotices: input.appInboxCompletionNotices,
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });

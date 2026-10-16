@@ -54,6 +54,7 @@ describe('AppInbox retry exhaustion', () => {
                 }
             },
             typesToDequeue: () => new Set([EnqueuedType.APP_INBOX]),
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 1,
             resilience: createResilience(),

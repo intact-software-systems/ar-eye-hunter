@@ -34,6 +34,7 @@ describe('QueueBox operational failure circuit', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['operational-failure']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async () => {
                     throw new Error('Storage transport unavailable');
@@ -48,6 +49,7 @@ describe('QueueBox operational failure circuit', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['later-work']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async () => {},
                 options: {}
@@ -81,6 +83,7 @@ describe('QueueBox operational failure circuit', () => {
             await QueueBoxUtilities.defaultDequeue({
                 qbox: queue,
                 typesToDequeue: new Set(['command-rejection', 'storage-failure']),
+                newLaneClaimOrder: 'queue',
                 resilience,
                 onDequeuedDo: async (entry) => {
                     if (entry.typeId === 'storage-failure') {

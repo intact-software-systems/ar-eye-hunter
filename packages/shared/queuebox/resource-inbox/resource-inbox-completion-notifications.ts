@@ -12,6 +12,9 @@ export namespace ResourceInboxCompletionNotifications {
         wait(delayMsecs: number): Promise<void>;
         close(): void;
     }
+
+    /** Carries a completion no waiter in this process observed to the other processes sharing the queue. */
+    export type Relay = (identity: Identity) => void;
 }
 
 interface ResourceInboxCompletionWait {
@@ -22,13 +25,16 @@ interface ResourceInboxCompletionWait {
 export class ResourceInboxCompletionNotifications {
     private readonly subscriptions = new Map<string, Set<ResourceInboxCompletionSubscription>>();
     private readonly timers: Timers;
+    private readonly relay: ResourceInboxCompletionNotifications.Relay | undefined;
 
-    constructor(timers: Timers) {
+    /** Without a relay the process is the queue's only reader, so every waiter it could wake is its own. */
+    constructor(timers: Timers, relay?: ResourceInboxCompletionNotifications.Relay) {
         this.timers = timers;
+        this.relay = relay;
     }
 
-    static createDefault(): ResourceInboxCompletionNotifications {
-        return new ResourceInboxCompletionNotifications(createDefaultTimers());
+    static createDefault(relay?: ResourceInboxCompletionNotifications.Relay): ResourceInboxCompletionNotifications {
+        return new ResourceInboxCompletionNotifications(createDefaultTimers(), relay);
     }
 
     subscribe(
@@ -47,10 +53,24 @@ export class ResourceInboxCompletionNotifications {
         return subscription;
     }
 
+    /** A completion committed here; one with no local waiter may be awaited by another process, so it is relayed. */
     publish(key: ResourceInboxCompletionNotifications.Identity): void {
-        for (const subscription of this.subscriptions.get(toCompletionKey(key)) ?? []) {
+        if (!this.notifyLocal(key)) {
+            this.relay?.(key);
+        }
+    }
+
+    /** A completion another process committed and relayed; it wakes local waiters and is never relayed again. */
+    acceptRelayed(key: ResourceInboxCompletionNotifications.Identity): void {
+        this.notifyLocal(key);
+    }
+
+    private notifyLocal(key: ResourceInboxCompletionNotifications.Identity): boolean {
+        const subscriptions = this.subscriptions.get(toCompletionKey(key));
+        for (const subscription of subscriptions ?? []) {
             subscription.notify();
         }
+        return subscriptions !== undefined;
     }
 }
 

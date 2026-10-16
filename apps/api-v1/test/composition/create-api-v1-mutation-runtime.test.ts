@@ -24,7 +24,8 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
             inbox: createApiV1TestQueueResilience(),
             outbox: createApiV1TestQueueResilience(),
             appOutbox: createApiV1TestQueueResilience()
-        }
+        },
+        appInboxCompletionNotices: undefined
     });
 
     assert.equal(mutation.runtimeStateRepository.sql, databaseProbe.database);

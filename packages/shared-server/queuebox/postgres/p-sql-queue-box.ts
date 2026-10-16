@@ -29,7 +29,6 @@ import {
     captureResourceEntryObservations,
     validateResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
-import { ResourceInboxClaimedContexts } from '@shared/queuebox/resource-inbox/resource-inbox-claimed-contexts.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -111,8 +110,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
      * observed claim locks the observed rows and compares them with their observations first.
      */
     async reserveEntries(
-        { typeIds, statusIds, reservationInput, observedEntries, claimOrder = 'queue' }: ResourceInboxReservationRequest
+        { typeIds, statusIds, reservationInput, observedEntries, contextClaim }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
+        if (observedEntries !== undefined && contextClaim !== undefined) {
+            throw new TypeError('An observed claim names its rows; it cannot also claim context heads.');
+        }
         const options = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -124,7 +126,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     typeIds,
                     statusIds,
                     reservationInput: options,
-                    claimOrder
+                    contextClaim
                 })
             );
             return new Map([...claimed.values()].map((entry) => [entry.key, entry]));
@@ -145,7 +147,6 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 });
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
-                const claimedContexts = new ResourceInboxClaimedContexts(claimOrder);
 
                 for (const entry of foundEntries.values()) {
                     if (reservedEntries.size >= options.maxToReserve) {
@@ -154,14 +155,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     if (validateResourceEntryObservation(entry, observations).left) {
                         continue;
                     }
-                    if (!claimedContexts.admits(entry.key)) {
-                        continue;
-                    }
                     const reserved = await txRepo.reservations.startProcessingEntity(entry, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
                         (reservedEntry) => {
-                            claimedContexts.record(entry.key);
                             reservedEntries.set(entry.key, reservedEntry);
                             return undefined;
                         }

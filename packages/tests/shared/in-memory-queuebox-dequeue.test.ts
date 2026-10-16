@@ -76,6 +76,7 @@ describe('InMemoryQueueBox dequeue for compute', () => {
         const dequeued = await createDefaultResourceInboxDequeuer<string>({
             repository: queue,
             typesToDequeue: () => types,
+            newLaneClaimOrder: 'queue',
             maxToReserve: () => 1,
             maxNumToDequeue: 100,
             resilience: resilienceDto

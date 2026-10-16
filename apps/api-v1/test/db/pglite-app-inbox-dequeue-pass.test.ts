@@ -34,11 +34,12 @@ const REQUEST_ID = 'dequeue-pass-request-000001';
 const OVERDUE_REQUEST_ID = 'dequeue-pass-overdue-000001';
 
 /**
- * One NEW item through the registered engine pass on its own executor: the inbox probe is one statement, the
- * NEW claim is one statement and a handler-finalized item needs no release. The outbox task probes an
- * in-memory queue here so its probe does not land on the counted executor during the pass.
+ * One NEW item through the registered engine pass on its own executor: the inbox probe is one statement, each
+ * NEW round claims one context head (the item's, then none, which ends the lane) and a handler-finalized item
+ * needs no release. The outbox task probes an in-memory queue here so its probe does not land on the counted
+ * executor during the pass.
  */
-const EXPECTED_PASS_STATEMENTS_OUTSIDE_HANDLER = 2;
+const EXPECTED_PASS_STATEMENTS_OUTSIDE_HANDLER = 3;
 const EXPECTED_HANDLER_STATEMENTS = 3;
 /**
  * An overdue row is also a due row, so the probe advertises RETRY beside FAIRNESS: the probe, the FAIRNESS
@@ -94,7 +95,7 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
         assert.equal(
             (countersAfterPass?.statements ?? 0) - (countersBeforePass?.statements ?? 0),
             EXPECTED_PASS_STATEMENTS_OUTSIDE_HANDLER + EXPECTED_HANDLER_STATEMENTS,
-            'the whole pass is the probe, the claim and the handler'
+            'the whole pass is the probe, the two NEW rounds and the handler'
         );
     });
 });

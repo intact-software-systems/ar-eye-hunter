@@ -135,3 +135,34 @@ describe('Local ResourceInbox completion notification ownership', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 });
+
+describe('Relayed ResourceInbox completion notifications', () => {
+    it('relays only a completion no local waiter observed and never relays an accepted one again', async () => {
+        vi.useFakeTimers();
+        const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
+        const notifications = ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key));
+        notifications.publish(identity);
+        expect(relayed).toEqual([identity]);
+
+        const subscription = notifications.subscribe(identity);
+        let settlements = 0;
+        void subscription.wait(1000).then(() => {
+            settlements += 1;
+        });
+        notifications.publish(identity);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(relayed).toEqual([identity]);
+        expect(settlements).toBe(1);
+
+        void subscription.wait(1000).then(() => {
+            settlements += 1;
+        });
+        notifications.acceptRelayed(identity);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(settlements).toBe(2);
+        subscription.close();
+        notifications.acceptRelayed(identity);
+        expect(relayed).toEqual([identity]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});

@@ -9,6 +9,8 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -63,6 +65,48 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
         userAgent: 'Browser'
     });
     expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
+});
+
+it('serves an authorised websocket disconnect after its own connect behind a backlog of the principal', async () => {
+    const queue = new TestResourceInbox();
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const results = new TestResourceInboxResults();
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const authSessions = new AuthSessionRepository(runtimeRepository);
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const service = createAuthorisedWsService({ database, queue, reader, results, runtimeRepository });
+    const backlog = ['alice-tab-1', 'alice-tab-2', 'alice-tab-3'].map((sessionId) => issuedSession('alice', sessionId));
+    const closing = issuedSession('alice', 'alice-closing-tab');
+    for (const session of [...backlog, closing]) {
+        await authSessions.putSession(session);
+    }
+    for (const session of backlog) {
+        await service.enqueueAuthorisedWsClientConnect({ authSession: session, generationId: 'generation-1' });
+    }
+    const closingConnect = { authSession: closing, generationId: 'generation-1' } as const;
+    const connect = await service.enqueueAuthorisedWsClientConnect(closingConnect);
+    const disconnect = await service.enqueueAuthorisedWsClientDisconnect({
+        connection: toAuthorisedWsClientConnection(closingConnect),
+        disconnectedAtEpochMs: Date.now(),
+        reason: 'socket-closed'
+    });
+
+    const completedInPass = new Map<string, number>();
+    for (let pass = 1; await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createAppInboxTestResilience()) > 0; pass += 1) {
+        for (const entry of [connect, disconnect]) {
+            if ((await queue.getItem(entry.key))?.status === EntityStatus.COMPLETED && !completedInPass.has(entry.key.resourceId)) {
+                completedInPass.set(entry.key.resourceId, pass);
+            }
+        }
+    }
+
+    expect(completedInPass.get(disconnect.key.resourceId)).toBeGreaterThan(completedInPass.get(connect.key.resourceId) ?? Number.POSITIVE_INFINITY);
+    const snapshot = await createClientStateService({
+        runtimeRepository,
+        clientStateEventStore: database.clientEventStore,
+        serviceId: SERVICE_ID
+    }).readSnapshot({ applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID, principalId: 'alice' });
+    expect(snapshot?.activeSessions.map((session) => session.sessionId).toSorted()).toEqual(['alice-tab-1', 'alice-tab-2', 'alice-tab-3']);
 });
 
 it('processes authorised websocket connects in the requested state scope', async () => {

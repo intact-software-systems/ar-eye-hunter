@@ -57,6 +57,10 @@ import {
     recordRallarTiming,
     type RallarTimingSink
 } from '@shared-server/rallar-system/observability/timing.ts';
+import {
+    createAppInboxCompletionRelay,
+    type AppInboxCompletionNoticeChannel
+} from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import {
@@ -97,6 +101,8 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
+    /** Relays a completion no local waiter observed to the other instances; undefined on a single instance. */
+    readonly appInboxCompletionNotices: AppInboxCompletionNoticeChannel | undefined;
 }
 
 export interface ApiV1MutationRuntime {
@@ -170,7 +176,11 @@ interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDepend
 export function createApiV1MutationRuntime(
     input: CreateApiV1MutationRuntimeInput
 ): ApiV1MutationRuntime {
-    const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
+    const completionNotifications = ResourceInboxCompletionNotifications.createDefault(
+        input.appInboxCompletionNotices === undefined
+            ? undefined
+            : createAppInboxCompletionRelay(input.appInboxCompletionNotices)
+    );
     const appInboxDequeueOptions = createAppInboxDequeueOptions(input, completionNotifications);
     const resources = createApiV1MutationResources(input.database, input.nowEpochMs);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);

@@ -2,7 +2,7 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
@@ -26,6 +26,7 @@ export namespace QueueMessageReader {
     export interface DequeueInput {
         readonly typesToDequeue: Set<string>;
         readonly resilience: ResourceInboxResilience;
+        readonly newLaneClaimOrder: ResourceInboxClaimOrder;
         readonly readLaneBudgets: DequeueController.ReadLaneBudgets | undefined;
         readonly workAdvertisement: DequeueController.WorkAdvertisement | undefined;
     }
@@ -110,6 +111,7 @@ export class QueueMessageReader {
                     qbox: this.repository,
                     typesToDequeue: input.typesToDequeue,
                     resilience: input.resilience,
+                    newLaneClaimOrder: input.newLaneClaimOrder,
                     onDequeuedDo: (entry, attemptTelemetry) => this.dispatchQueuedMessage(entry, attemptTelemetry),
                     options: this.config.dequeueOptions,
                     readLaneBudgets: input.readLaneBudgets,
