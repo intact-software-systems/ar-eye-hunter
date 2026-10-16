@@ -357,7 +357,10 @@ intent; no second session read; the ticket consumed in the connect item with the
 commit; a handler deadline; one completion publish; no test-only entry points; principal-scoped teardown; a bounded
 replan wait; the recipes' quiet wait from the accepted layout; pre-registration in the hosted prepare job; typed
 conflicts. Each RED first, judged by the hosted 50 connect, sign-in, formation tail and traffic-ready medians, with
-15, 30 and 50 run locally first and then hosted in that order on one head.
+15, 30 and 50 run locally first and then hosted in that order on one head. The D266 measurement on the hosted 50
+(D286) found the API's single thread ≈ 89 % busy and ≈ 70 % of it in the embedded database, so the hosted lane moves to
+Postgres by maintainer ruling and D287–D290 cut the statements, decodes and bytes per outbox row, per replan and per
+group read; the connect and traffic-ready targets are judged after those, on the Postgres-backed hosted lane.
 
 ### Step 2h: the shared primitives and the V1c closure
 
