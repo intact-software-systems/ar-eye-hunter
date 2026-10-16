@@ -133,9 +133,10 @@ export async function adoptDeferredOverlayTopology(
 }
 
 /**
- * A group never observed admits the layout; an observed group admits it only
- * while active with the own session. A layout that places the own session at
- * a revision the cache has not reached is deferred, not dropped.
+ * An observed group admits a layout only while active with the own session. A
+ * layout that places the own session at a revision the cache has not reached,
+ * or in a group not cached yet, is deferred: the own join response may still
+ * predate the own presence and would clear an admitted layout.
  */
 function resolveOverlayMembershipAdmission(
     topology: RallarOverlayTopologySnapshot,
@@ -143,7 +144,10 @@ function resolveOverlayMembershipAdmission(
 ): OverlayMembershipAdmission {
     const groupSnapshot = findGroupStateSnapshotByRef(topology.groupRef);
     if (groupSnapshot === undefined) {
-        return wasGroupStateSnapshotObservedByRef(topology.groupRef) ? 'dropped' : 'admitted';
+        if (wasGroupStateSnapshotObservedByRef(topology.groupRef)) {
+            return 'dropped';
+        }
+        return topology.activeSessionIds.includes(sessionId) ? 'deferred' : 'admitted';
     }
     if (!isGroupActive(groupSnapshot)) {
         return 'dropped';

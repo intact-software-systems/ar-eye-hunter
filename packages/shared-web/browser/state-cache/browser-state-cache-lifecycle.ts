@@ -201,13 +201,16 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     private installStateRepositoryObservers(
         next: BrowserStateCacheLifecycle.ObserverContext
     ): void {
-        const { webRtcGroupManager, scope, sessionId } = next;
+        const { webRtcGroupManager } = next;
         if (this.hasMatchingObserverContext(next)) {
             return;
         }
 
         this.cancelSnapshotAssemblies();
-        this.#deferredOverlayTopologies.clear();
+        // Held layouts belong to the session and scope, not to the observer options a room refresh may change.
+        if (this.#observerContext === undefined || !isSameObserverConnection(this.#observerContext, next)) {
+            this.#deferredOverlayTopologies.clear();
+        }
         this.#observersUnsubscribe?.();
         this.#observerContext = next;
 
@@ -217,11 +220,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         this.#observersUnsubscribe = () => {
             unsubscribeClient();
             unsubscribeGroup();
-            if (
-                this.#observerContext?.webRtcGroupManager === webRtcGroupManager &&
-                this.#observerContext.sessionId === sessionId &&
-                isSameStateScope(this.#observerContext.scope, scope)
-            ) {
+            if (this.#observerContext !== undefined && isSameObserverConnection(this.#observerContext, next)) {
                 this.#observerContext = undefined;
             }
         };
@@ -231,9 +230,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
         next: BrowserStateCacheLifecycle.ObserverContext
     ): boolean {
         const context = this.#observerContext;
-        return context?.webRtcGroupManager === next.webRtcGroupManager &&
-            context.sessionId === next.sessionId &&
-            isSameStateScope(context.scope, next.scope) &&
+        return context !== undefined &&
+            isSameObserverConnection(context, next) &&
             isSameBootstrapOverlayPolicy(
                 context.bootstrapOverlayPolicy,
                 next.bootstrapOverlayPolicy
@@ -333,6 +331,15 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     private readActiveStateCacheScope(initialScope: StateScope): StateScope {
         return this.#observerContext?.scope ?? initialScope;
     }
+}
+
+function isSameObserverConnection(
+    left: BrowserStateCacheLifecycle.ObserverContext,
+    right: BrowserStateCacheLifecycle.ObserverContext
+): boolean {
+    return left.webRtcGroupManager === right.webRtcGroupManager &&
+        left.sessionId === right.sessionId &&
+        isSameStateScope(left.scope, right.scope);
 }
 
 function resolveStateCacheScope(options: StateCacheScopeOptions): StateScope {

@@ -78,6 +78,41 @@ describe('browser overlay adoption deferred until the own session is in the cach
         });
     });
 
+    it('adopts a layout that arrived before the own join response for a group never cached', async () => {
+        const browser = installBrowser();
+        const join = groupAt({ groupRevision: 33, presenceRevision: 16 }, OTHERS);
+        const layout = createTopologySnapshot(join, { groupRevision: 33, presenceRevision: 17 }, 2);
+
+        await browser.receive(topologyMessage(layout, 'topology-v2'));
+        await browser.hydrate([join]);
+        await browser.receive(deltaMessage(join, groupAt({ groupRevision: 33, presenceRevision: 17 }, [...OTHERS, 'session-a'])));
+
+        expect(findPlannedOverlayById(layout.overlayId)).toMatchObject({ provenance: 'server', overlayVersion: 2 });
+        expect(readOverlayAdoptionDiagnostics()).toMatchObject({
+            membershipIneligibleDeferredCount: 1,
+            membershipDeferredAdoptedCount: 1
+        });
+    });
+
+    it('keeps a held layout across a room refresh that reinstalls the observers for the same session', async () => {
+        const browser = installBrowser();
+        const join = groupAt({ groupRevision: 33, presenceRevision: 16 }, OTHERS);
+        const layout = createTopologySnapshot(join, { groupRevision: 33, presenceRevision: 17 }, 2);
+        await browser.receive(topologyMessage(layout, 'topology-v2'));
+
+        // A room refresh hydrates with its own options, which replaces the observer context.
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: browser.manager,
+            clientData: CLIENT,
+            clientSnapshots: [],
+            groupSnapshots: [groupAt({ groupRevision: 33, presenceRevision: 17 }, [...OTHERS, 'session-a'])],
+            options: { groupFormation: { bootstrapDegree: 3 } }
+        });
+
+        expect(findPlannedOverlayById(layout.overlayId)).toMatchObject({ provenance: 'server', overlayVersion: 2 });
+        expect(readOverlayAdoptionDiagnostics().membershipDeferredAdoptedCount).toBe(1);
+    });
+
     it('adopts the layout for a late joiner whose join snapshot predates its own presence', async () => {
         const browser = installBrowser();
         const join = groupAt({ groupRevision: 58, presenceRevision: 38 }, OTHERS);
