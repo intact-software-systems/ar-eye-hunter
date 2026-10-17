@@ -60,23 +60,36 @@ Recipe**, and prefers PostgreSQL over PGlite. Local PostgreSQL 05a preflight and
 05c rehearsal passed unchanged (50/50 and 600/600 frames) on the published retention
 candidate. They are rehearsal evidence, not hosted acceptance; their full executable
 and source fingerprint was corroborated after capture. Hosted acquisition retains its
-own immutable source and environment. A separate explicit human approval authorizes
-one deployment restart and PostgreSQL test-database reset for that candidate; subsequent
-cohort runs reuse the deployment without further resets.
+own immutable source and environment. The human authorizes deployments from
+`codex/e3-retention-lifetimes` regardless of SHA, including the rollout's shared-service
+restart and PostgreSQL test-database reset. This authorization does not change cohort
+comparability: select one exact candidate, then reuse its deployment without resets
+between retained runs.
 
 The first hosted 05a operation completed all 50 frames and six commands, but it is
 not admitted as green preflight: the fleet report counts an explicitly accepted
 HTTP 409 from concurrent group creation as a failed agent. The browser HTTP response
-diagnostic ignores the command's accepted-status policy. Correct that shared diagnostic
-owner and verify accepted and rejected statuses without suppressing arbitrary failures.
-Retain the original contradictory artifact unchanged. The three hosted 05c runs remain
-unstarted; a corrected candidate needs fresh local rehearsal and hosted preflight before
-that sequence can proceed. The prior restart/reset approval names the original candidate
-and does not authorize another candidate's deployment reset.
+diagnostic ignored the command's accepted-status policy. The corrected shared owner
+now reports explicitly accepted responses as informational and rejected responses as
+warnings, preserving native HTTP evidence and unrestricted defaults. Retain the original
+contradictory artifact unchanged. The corrected candidate passed fresh local PostgreSQL
+05a and 05c rehearsal with 100% fleet success, followed by green hosted preflight
+and three primary plus six controlled-repeat 05c runs on one unchanged deployment.
+Branch-wide deployment approval removes the need for another SHA-specific permission
+request, not the requirement for fresh evidence on a changed candidate.
 
-The next two slices are the authorized B07 sequence and fresh E1 acquisition on a quiet
-host. The remaining heap investigation and unchanged canonical E3 primary and conditional
-repeat remain the **final overall plan point**, after the other required outcomes are
+The B07 hosted workloads all pass their unchanged per-agent thresholds: each retained
+run delivers 600/600 frames with 100% fleet success. Preserve the earlier registration
+failure as a pre-recipe attempt. The frozen descriptive projection has 66 complete
+run-level numeric series. Seven primary series exceed 20% CV, triggering one separate
+six-run repeat; ten repeat series exceed 20% CV, including six original triggers and
+four new noisy series. The descriptive baseline is inconclusive. Do not take a second
+repeat or drop quantized latency metrics after observing their variance. No canonical
+B07 controller admission or optimization claim follows from these successful workloads.
+
+The next two slices are fresh E1 acquisition on a quiet host and reconciliation of
+the remaining non-heap acceptance gaps. The remaining heap investigation and unchanged
+canonical E3 primary and conditional repeat remain the **final overall plan point**, after the other required outcomes are
 ready. Section 11 defines that sequencing. The B07 execution-environment amendment below
 does not alter B01–B06 acceptance or Section 12's overall completion gate.
 
@@ -2043,13 +2056,19 @@ Set `target_agent_count=2`, `agents_per_job=1`, `max_parallel_jobs=2`,
 `install_playwright=true`, `ready_timeout_seconds=120`, and
 `terminal_timeout_seconds=180`. Preserve authored RTC capture selection. Keep the
 recorded public API/control/SPA endpoints fixed throughout the cohort. Use unique
-run IDs and explicit isolated room IDs through the canonical materializer; record
-both source and effective GroupRef and manifest hashes. Isolation changes identity,
-not the stream workload.
+run IDs, fresh run-scoped agent prefixes and explicit isolated room IDs through the
+canonical materializer; record both source and effective GroupRef and manifest hashes.
+Fresh prefixes isolate registered users without resetting PostgreSQL. Reusing an existing
+username currently returns canonical `auth-mutation-rejected`, which the workflow's
+registration step does not treat as its recognized `auth-user-exists` case. Preserve any
+such pre-recipe failure and diagnose it before a new attempt. Map agent suffixes 01/02
+to stable participant positions across isolated runs. Isolation changes identity, not the
+stream workload.
 
 The approved initial candidate rollout uses `rollout_control_plane=true`; it restarts
-the shared test services and resets their PostgreSQL test database. That explicit
-approval applies to the selected candidate only. After successful preflight, set
+the shared test services and resets their PostgreSQL test database. The human's
+explicit approval covers deployments from this branch regardless of SHA. After successful
+preflight, set
 `rollout_control_plane=false` for retained runs and reuse the same verified deployment.
 Do not reset the database between recipes. Retain each workflow run/attempt, actual
 source, deployment proof, agent placement, operation diagnostics, native artifacts,
@@ -2058,6 +2077,19 @@ pre-recipe failure is not a stream result. Do not rerun to conceal a failure.
 
 Apply the existing distributed run-level CV and single controlled-repeat rules.
 The original per-agent frame, success, drop and p95/p99 thresholds remain unchanged.
+For the first B07 descriptive cohort, freeze all numeric scalar fields emitted by
+canonical `analysis.performance` before the first retained run. Match per-agent values
+by stable participant identity rather than slowest-agent array order. Each series has
+three workflow-run samples; the preflight and local rehearsals are separate. A triggered
+repeat has six new complete 05c runs, preserving the per-run workload, in a separate
+output linked to the exact primary summary bytes. Never append to the primary or use
+individual frames as independent workflow-run samples.
+
+The current canonical baseline workload controller supports B01–B06, not B07. Reuse
+its statistics functions for descriptive analysis, but do not claim B07 controller
+admission or a governed finalized baseline from that adapter. Resolving this integration
+gap is separate from observing successful hosted workloads; neither outcome waives
+existing correctness, noise, source identity or overall completion requirements.
 Placement metadata must substantiate any multi-host claim; two GitHub jobs alone do
 not establish geographic diversity. Local rehearsal and hosted sender-completion
 measurements do not establish end-to-end receiver latency or E3 heap acceptance.
@@ -2698,7 +2730,7 @@ justified yet.”
 | 8       | Bounded E1 recovery completed without original corpus bytes. Acceptance remains unverified; fresh governed acquisition is required on a quiet host with the unchanged 44-case workload and controller-selected repeat.                                                                                                                                                                                                                                                                 |
 | 9       | E2 reconciliation completed: 37 verified archives, 448 matching summaries, 35 strict groups, 12 noisy repeat cohorts. Preserve inconclusive metrics; no optimization justified yet.                                                                                                                                                                                                                                                                                                    |
 | 10      | E3 conditionally completed for sequencing only. Zero accepted cohorts; heap acceptance remains open. The remaining heap investigation and unchanged canonical primary/conditional repeat are the final overall plan point. Earlier failures and diagnostics remain preserved.                                                                                                                                                                                                          |
-| 11      | B07 authorized for local PostgreSQL rehearsal followed by Run GitHub Free Distributed Recipe on one exact candidate. Local 05a and one 05c rehearsal passed. Hosted 05a exposed accepted-status diagnostic misclassification; correct and revalidate it before the three retained runs.                                                                                                                                                                                                |
+| 11      | B07 local PostgreSQL rehearsal, corrected hosted preflight, three primary and six controlled-repeat runs passed workload thresholds on one exact candidate. Preserve the pre-recipe registration failure. Frozen descriptive analysis remains inconclusive: ten repeat series exceed 20% CV. No second repeat or canonical B07 controller admission.                                                                                                                                   |
 | 12      | Provisional coverage reconciled; no optimization justified yet. Final ranking remains gated on accepted E3, required repeats and verified relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                      |
 | 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                                                                                                      |
 | 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                                                                                                                                                                                   |
@@ -2750,17 +2782,7 @@ a new candidate; earlier profiles do not qualify it automatically.
 
 Keep only these next two independently testable slices concrete:
 
-1. **Execute the authorized B07 sequence.** Retain the passing local PostgreSQL 05a
-   preflight and single 05c rehearsal as local context. On the selected immutable
-   candidate, use the GitHub Free workflow and PostgreSQL deployment described in
-   Section 5: correct the demonstrated accepted-status diagnostic error, verify it
-   locally, then obtain green hosted 05a before three independent 05c runs. A changed
-   source is a new candidate and must not inherit the original preflight result.
-   Verify actual source, backend, placement, materialization, complete native artifacts,
-   per-agent thresholds and operation success. Preserve every failed attempt and
-   diagnose its first demonstrated failure before deciding any further action. Keep
-   local and hosted populations separate; enforce existing noise/repeat rules.
-2. **Acquire fresh governed E1 evidence when the host is quiet.** The bounded recovery
+1. **Acquire fresh governed E1 evidence when the host is quiet.** The bounded recovery
    search is exhausted for known repository locations and focused GitHub sources;
    original bytes remain missing. Run the current benchmark package's correctness and
    type gates before measurement, bind a clean immutable source/fingerprint, then use
@@ -2771,6 +2793,14 @@ Keep only these next two independently testable slices concrete:
    containers, builds, tests, browser matrices, other benchmarks or artifact analysis.
    Existing unrelated workloads must not be stopped merely to manufacture quiet-host
    evidence. A historical Issue report or synthetic fixture cannot satisfy acceptance.
+2. **Reconcile remaining non-heap acceptance gaps.** Inspect the current visible/operator,
+   deployed HOST/RUN, actual Actions and Task65 evidence against their existing
+   requirements, and determine which candidate-required E4 evidence is still missing.
+   Distinguish delivered behavior from measured acceptance and exact-candidate proof.
+   Check the B07 controller integration gap against the authorized completion contract;
+   descriptive hosted success alone does not prove canonical admission. Select the next
+   implementation or acquisition only from a demonstrated unmet requirement. This
+   reconciliation must not relax any acceptance gate or expand into speculative fixes.
 
 E2's bounded reconciliation is complete. Its 37 observations remain in separate
 source/environment/harness populations; 12 repeat cohorts contain CV-noisy metrics.
