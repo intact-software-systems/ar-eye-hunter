@@ -18,48 +18,17 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '../group-mutation-contracts.ts';
-import { auditStamp, computeGroupMutationWriteResult, noOp, rejected, requireGroup } from '../group-mutation-result.ts';
+import {
+    auditStamp,
+    computeGroupMutationWriteResult,
+    noOp,
+    rejected,
+    requireGroup
+} from '../group-mutation-result.ts';
 import { assertActive } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 type UpdateActivationStatusCommand = Extract<GroupMutationCommand, { operation: 'updateGroupActivationStatus'; }>;
-
-/**
- * Is this reading newer than the status already on the row, within one causal
- * series? Product decision 33: a write must strictly advance its evidence
- * watermark, and an equal-or-older one is a typed drop that writes nothing.
- *
- * The rule is scoped to the series `(formationEpoch, coverageBasisLayoutIdentity)`,
- * because a changed basis starts a distinct series whose watermarks are not
- * comparable. A clock's write carries no watermark at all and is never
- * dropped here: a decay that is the *absence* of evidence can never advance
- * one, which is why the durable clocks exist.
- */
-function isSupersededByStoredEvidence(
-    command: UpdateActivationStatusCommand,
-    stored: GroupActivationStatus | null
-): boolean {
-    const observed = command.input.evidenceWatermark;
-    if (observed === null || stored === null || stored.evidenceWatermark === null) {
-        return false;
-    }
-    if (
-        !isSameGroupActivationSeries(stored, {
-            formationEpoch: command.input.expectedFormationEpoch,
-            coverageBasisLayoutIdentity: command.input.expectedLayout
-        })
-    ) {
-        return false;
-    }
-    return resolveNewerEvidenceWatermark(observed, stored.evidenceWatermark) !== observed;
-}
-
-/** Nothing worth a group CAS, a durable event and a delta to every session. */
-function isSamePublishedStatus(next: GroupActivationStatus, stored: GroupActivationStatus | null): boolean {
-    return stored !== null &&
-        stored.condition === next.condition &&
-        isSameGroupActivationSeries(stored, next);
-}
 
 /**
  * The observed-status write (product decision 3): derived, non-authoritative
@@ -120,6 +89,12 @@ export function computeUpdateGroupActivationStatus(
         activation: resolution.policy.activation,
         formationAttemptCount: group.formationAttemptCount
     });
+    const previousCondition = group.activationStatus !== null && isSameGroupActivationSeries(group.activationStatus, {
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis
+        })
+        ? group.activationStatus.condition
+        : undefined;
     const next: GroupActivationStatus = {
         condition: computeGroupActivationCondition({
             business,
@@ -132,7 +107,7 @@ export function computeUpdateGroupActivationStatus(
                     minimumViableRate: resolution.policy.activation.minimumViableRate,
                     dwellSatisfied: command.input.dwellSatisfied
                 },
-                previousCondition: group.activationStatus?.condition,
+                previousCondition,
                 hysteresisWidth: GROUP_ACTIVATION_HYSTERESIS_WIDTH
             })
         }),
@@ -168,4 +143,41 @@ export function computeUpdateGroupActivationStatus(
         lifecyclePolicy: null,
         presenceSummaryWork: 'enqueue'
     });
+}
+
+/**
+ * Is this reading newer than the status already on the row, within one causal
+ * series? Product decision 33: a write must strictly advance its evidence
+ * watermark, and an equal-or-older one is a typed drop that writes nothing.
+ *
+ * The rule is scoped to the series `(formationEpoch, coverageBasisLayoutIdentity)`,
+ * because a changed basis starts a distinct series whose watermarks are not
+ * comparable. A clock's write carries no watermark at all and is never
+ * dropped here: a decay that is the *absence* of evidence can never advance
+ * one, which is why the durable clocks exist.
+ */
+function isSupersededByStoredEvidence(
+    command: UpdateActivationStatusCommand,
+    stored: GroupActivationStatus | null
+): boolean {
+    const observed = command.input.evidenceWatermark;
+    if (observed === null || stored === null || stored.evidenceWatermark === null) {
+        return false;
+    }
+    if (
+        !isSameGroupActivationSeries(stored, {
+            formationEpoch: command.input.expectedFormationEpoch,
+            coverageBasisLayoutIdentity: command.input.expectedLayout
+        })
+    ) {
+        return false;
+    }
+    return resolveNewerEvidenceWatermark(observed, stored.evidenceWatermark) !== observed;
+}
+
+/** Nothing worth a group CAS, a durable event and a delta to every session. */
+function isSamePublishedStatus(next: GroupActivationStatus, stored: GroupActivationStatus | null): boolean {
+    return stored !== null &&
+        stored.condition === next.condition &&
+        isSameGroupActivationSeries(stored, next);
 }

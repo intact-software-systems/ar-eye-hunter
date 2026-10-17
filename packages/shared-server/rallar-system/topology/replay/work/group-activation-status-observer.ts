@@ -1,9 +1,10 @@
 import {
     GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS,
+    resolveCoverageBasisLayoutIdentity,
     resolveGroupBusinessLiveness
 } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
-import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import { computeGroupFormationReading } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
+import { isSameGroupActivationSeries } from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
 import { resolveGroupActivationStatusAction } from '@shared/api/group-lifecycle/activation-status/resolve-group-activation-status-action.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -46,8 +47,8 @@ export interface GroupActivationStatusPetitionDependencies {
  *
  * Petitioning is not writing. The command re-authorizes through AppInbox
  * against fresh state, and its compute drops an equal-or-older watermark and
- * no-ops an unchanged band, so a steady group pays an enqueue and nothing
- * durable.
+ * no-ops an unchanged band within the same activation series. A new epoch
+ * or basis must publish its own observed band.
  */
 export interface PetitionGroupActivationStatusInput {
     readonly dependencies: GroupActivationStatusPetitionDependencies;
@@ -59,6 +60,15 @@ export interface PetitionGroupActivationStatusInput {
      * the only path allowed to confirm one.
      */
     readonly dwell: Readonly<{ satisfied: true; dueAtEpochMs: number; }> | null;
+}
+
+/** The self-rescheduling heartbeat: consumed when it fires, re-armed by the reading it causes. */
+interface ArmEvidenceExpiryInput {
+    readonly dependencies: GroupActivationStatusPetitionDependencies;
+    readonly groupRef: GroupRef;
+    readonly formationEpoch: number;
+    readonly coverageBasisLayoutIdentity: GroupLayoutIdentity;
+    readonly nowEpochMs: number;
 }
 
 export async function petitionGroupActivationStatus(
@@ -87,8 +97,8 @@ export async function petitionGroupActivationStatus(
         // Measure the layout the basis names or measure nothing. The snapshot
         // in hand is the one this work cycle committed, which is not always
         // the accepted layout the basis resolves to -- and reporting a
-        // planned candidate's coverage as the accepted layout's is the exact
-        // confusion slice 12a's review caught on the read surface.
+        // planned candidate's coverage as the accepted layout's would describe
+        // traffic that the accepted layout does not carry.
         return;
     }
     const policy = toReadGroupLifecyclePolicy(
@@ -109,6 +119,12 @@ export async function petitionGroupActivationStatus(
         workspaceId: group.workspaceId,
         groupId: group.groupId
     };
+    const previousCondition = group.activationStatus !== null && isSameGroupActivationSeries(group.activationStatus, {
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis
+        })
+        ? group.activationStatus.condition
+        : undefined;
     const action = resolveGroupActivationStatusAction({
         business: resolveGroupBusinessLiveness(group, authority.nowEpochMs),
         lifecycleState: group.lifecycleState,
@@ -121,7 +137,7 @@ export async function petitionGroupActivationStatus(
             successRate: policy.activation.successRate,
             minimumViableRate: policy.activation.minimumViableRate
         },
-        previousCondition: group.activationStatus?.condition,
+        previousCondition,
         nowEpochMs: authority.nowEpochMs
     });
     if (action.kind === 'none') {
@@ -192,15 +208,6 @@ export async function petitionGroupActivationStatus(
             nowEpochMs: authority.nowEpochMs
         });
     }
-}
-
-/** The self-rescheduling heartbeat: consumed when it fires, re-armed by the reading it causes. */
-interface ArmEvidenceExpiryInput {
-    readonly dependencies: GroupActivationStatusPetitionDependencies;
-    readonly groupRef: GroupRef;
-    readonly formationEpoch: number;
-    readonly coverageBasisLayoutIdentity: GroupLayoutIdentity;
-    readonly nowEpochMs: number;
 }
 
 async function armEvidenceExpiry(

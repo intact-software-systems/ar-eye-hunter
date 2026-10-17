@@ -100,6 +100,7 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql, () => new Date(nowEpochMs()));
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: 1,
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     });
     const results = new ResourceInboxResultsRepository(instrumentedSql);
@@ -201,7 +202,7 @@ function createStateWriteTopologyService({
             inboxQueueReader,
             resourceInboxRepository,
             resourceInboxResultsRepository,
-            database: database,
+            database,
             groupStateService: groupState,
             mutationOwners: {
                 configMutationService: topologyMutationOwners.configMutation,
