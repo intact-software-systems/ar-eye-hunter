@@ -140,6 +140,7 @@ describe('Group presence lifecycle retry', () => {
             service.disconnectPresenceSession(SCOPE, groupRef.groupId, 'session-1', {
                 principalId: 'alice',
                 generationId: 'generation-session-1',
+                connectionGenerationId: 'ws-generation-session-1',
                 reason: 'socket-closed',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'session-1',
@@ -299,6 +300,7 @@ describe('Group presence lifecycle retry', () => {
             service.connectPresenceSession(SCOPE, 'room-session-principal-invariant', 'session-1', {
                 principalId: 'bob',
                 generationId: 'bob-generation',
+                connectionGenerationId: 'bob-ws-generation',
                 connectedAtEpochMs: 3_000,
                 lastHeartbeatAtEpochMs: 3_000,
                 expiresAtEpochMs: 60_000,

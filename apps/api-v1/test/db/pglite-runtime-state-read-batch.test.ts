@@ -7,7 +7,7 @@ import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-dat
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-Deno.test('PGlite returns dense packed runtime-state key and prefix selections', async () => {
+Deno.test('PGlite returns dense runtime-state key and prefix selections as one driver row per selected entry (D289)', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     const namespace = `read-batch-${crypto.randomUUID()}`;
@@ -36,8 +36,12 @@ Deno.test('PGlite returns dense packed runtime-state key and prefix selections',
             selectorId: 'exact',
             keys: ['exact']
         }]);
-        assert.equal(selections[2].entries[0].value, 'exact-value');
-        assert.deepEqual(driverRowCounts, [1]);
+        assert.deepEqual(
+            { ...selections[2].entries[0], updatedTimestamp: undefined },
+            { key: 'exact', value: 'exact-value', expireAtTimestamp: FUTURE_MS, updatedTimestamp: undefined, revision: 0 }
+        );
+        assert.ok(Number.isFinite(Date.parse(selections[2].entries[0].updatedTimestamp)));
+        assert.deepEqual(driverRowCounts, [3]);
     }
     finally {
         await lifecycle.close();
@@ -58,6 +62,45 @@ Deno.test('PGlite selects literal prefix-suffix matches in caller order and C ke
         const selections = await repository.readRuntimeStateBatch(fixture.selectors);
 
         assert.deepEqual(toSelectionKeys(selections), fixture.expectedSelections);
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
+Deno.test('PGlite probes a version of exactly the rows a batch reads that every write of one of them moves (D289)', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const namespace = `read-batch-${crypto.randomUUID()}`;
+    const repository = new PSqlRuntimeStateRepository(lifecycle.database);
+    const selectors = createSelectors(namespace);
+
+    try {
+        assert.equal(await repository.readRuntimeStateBatchVersion(selectors), undefined);
+        await repository.upsert(namespace, 'prefix:a', 'prefix-a', FUTURE_MS);
+        await repository.upsert(namespace, 'exact', 'exact-value', FUTURE_MS);
+        const initial = await repository.readRuntimeStateBatchVersion(selectors);
+
+        assert.deepEqual(initial?.expireAtEpochMs, [FUTURE_MS]);
+        // The full read names the same version from its own statement, so a value read with it can be kept under it.
+        const versioned = await repository.readRuntimeStateBatchWithVersion(selectors);
+        assert.deepEqual(versioned.version, initial);
+        assert.deepEqual(versioned.selections, await repository.readRuntimeStateBatch(selectors));
+        assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);
+        await repository.upsert(`${namespace}:sibling`, 'prefix:a', 'sibling', FUTURE_MS);
+        assert.deepEqual(await repository.readRuntimeStateBatchVersion(selectors), initial);
+
+        await repository.upsert(namespace, 'prefix:a', 'prefix-a-updated', FUTURE_MS);
+        const updated = await repository.readRuntimeStateBatchVersion(selectors);
+        assert.notEqual(updated?.version, initial?.version);
+
+        await lifecycle.database.begin(async (transaction) => {
+            await transaction`delete from runtime_state_store where store_namespace = ${namespace} and store_key = 'exact'`;
+            await transaction`
+              insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts)
+              values (${namespace}, 'exact', 'replaced-value', to_timestamp(${FUTURE_MS} / 1000.0))
+            `;
+        });
+        assert.notEqual((await repository.readRuntimeStateBatchVersion(selectors))?.version, updated?.version);
     }
     finally {
         await lifecycle.close();

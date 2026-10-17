@@ -151,27 +151,6 @@ const operationMatrix: readonly Readonly<{
     {
         command: {
             version: 1,
-            kind: 'consume-ws-ticket',
-            requestId: 'websocket-consume-request',
-            capturedAtEpochMs: 1_002,
-            ticketDigest: websocketTicket.ticketDigest,
-            expectedSessionId: session.sessionId
-        },
-        read: {
-            kind: 'consume-ws-ticket',
-            ticket: entry(websocketTicket, 'ticket-digest=websocket-ticket-digest'),
-            expiredTicketEntry: null,
-            session: entry(session, 'session=session-1')
-        },
-        result: {
-            requestId: 'websocket-consume-request',
-            kind: 'ws-ticket-consumed',
-            ...session
-        }
-    },
-    {
-        command: {
-            version: 1,
             kind: 'issue-agent-tickets',
             requestId: 'agent-issue-request',
             capturedAtEpochMs: 1_001,
@@ -233,7 +212,7 @@ const operationMatrix: readonly Readonly<{
 ];
 
 describe('auth mutation compute operation matrix', () => {
-    it('preserves all seven write decisions, input identities, and results', () => {
+    it('preserves all six write decisions, input identities, and results', () => {
         for (const { command, read, result } of operationMatrix) {
             const computed = computeAuthMutation({
                 command,
@@ -249,7 +228,7 @@ describe('auth mutation compute operation matrix', () => {
     });
 
     it('preserves registration, session, websocket-ticket, and agent-ticket replay decisions', () => {
-        for (const index of [0, 1, 3, 5]) {
+        for (const index of [0, 1, 3, 4]) {
             const { command, result } = operationMatrix[index];
             const read = replayRead(command);
             const computed = computeAuthMutation({
@@ -282,19 +261,7 @@ describe('auth mutation compute rejections', () => {
             })
         ).toThrow('Auth command/facts operation differs');
 
-        const websocket = operationMatrix[4];
-        const websocketRead = websocket.read as Extract<AuthMutationRead, { kind: 'consume-ws-ticket'; }>;
-        const websocketRejection = catchComputeRejection(websocket.command, {
-            ...websocketRead,
-            session: null
-        });
-        expect(websocketRejection).toBeInstanceOf(AuthMutationRejectedError);
-        expect(websocketRejection).toMatchObject({
-            message: 'Websocket ticket session is unavailable',
-            status: 404
-        });
-
-        const agent = operationMatrix[6];
+        const agent = operationMatrix[5];
         const agentRead = agent.read as Extract<AuthMutationRead, { kind: 'consume-agent-ticket'; }>;
         const agentRejection = catchComputeRejection(agent.command, { ...agentRead, session: null });
         expect(agentRejection).toBeInstanceOf(AuthMutationRejectedError);

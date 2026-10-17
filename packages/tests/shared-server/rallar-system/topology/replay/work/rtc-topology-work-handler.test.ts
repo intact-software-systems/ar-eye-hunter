@@ -104,6 +104,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const summaryWorker = new GroupPresenceSummaryWork({
             outboxQueueReader,
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => nowEpochMs,
             serviceId: 'summary-worker'
@@ -157,6 +158,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-alice', {
             principalId: 'alice',
             generationId: 'presence-alice',
+            connectionGenerationId: 'ws-presence-alice',
             actorPrincipalId: 'alice',
             expiresAtEpochMs: nowEpochMs + 60_000,
             requestId: 'connect-alice'
@@ -164,6 +166,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await groupService.connectPresenceSession(SCOPE, ref.groupId, 'session-bob', {
             principalId: 'bob',
             generationId: 'presence-bob',
+            connectionGenerationId: 'ws-presence-bob',
             actorPrincipalId: 'bob',
             expiresAtEpochMs: nowEpochMs + 60_000,
             requestId: 'connect-bob'
@@ -272,7 +275,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(() => readRtcTopologyWorkEnvelope(incompatible, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE)).toThrow(/unexpected __rallarCoalescedWork/i);
     });
 
-    it('rejects equal-causal queued and finder authority with different content', async () => {
+    it('rejects equal-causal queued RTT-refresh and finder authority with different content', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
         const queuedGroup = createGroupSnapshotWithCausalRevision(7, 6);
@@ -283,7 +286,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 displayName: 'equal tuple but different finder authority'
             }
         };
-        await enqueueGroupRevisionWork(outboxQueueReader, queuedGroup);
+        await enqueueRttRefreshWork(outboxQueueReader, queuedGroup, rtt('session-a', 'session-b', 1));
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyManagement = createGroupTopologyRuntimeOwners({
@@ -308,12 +311,12 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
     });
 
-    it('rejects incomparable queued and finder authority after a lower-bound cache miss', async () => {
+    it('rejects incomparable queued RTT-refresh and finder authority after a lower-bound cache miss', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
         const queuedGroup = createGroupSnapshotWithCausalRevision(2, 1);
         const incomparableFinderGroup = createGroupSnapshotWithCausalRevision(1, 2);
-        await enqueueGroupRevisionWork(outboxQueueReader, queuedGroup);
+        await enqueueRttRefreshWork(outboxQueueReader, queuedGroup, rtt('session-a', 'session-b', 1));
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
         const authoritySelections: Array<GroupStateCausalRevision | undefined> = [];
@@ -352,12 +355,12 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(authoritySelections).toEqual([queuedGroup.causalRevision, undefined]);
     });
 
-    it('prefers durable group authority when cache state masks an incomparable tuple', async () => {
+    it('prefers durable group authority when cache state masks an incomparable RTT-refresh tuple', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
         const queuedGroup = createGroupSnapshotWithCausalRevision(2, 1);
         const durableGroup = createGroupSnapshotWithCausalRevision(1, 2);
-        await enqueueGroupRevisionWork(outboxQueueReader, queuedGroup);
+        await enqueueRttRefreshWork(outboxQueueReader, queuedGroup, rtt('session-a', 'session-b', 1));
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
         const groupStateRepository = createTestGroupStateRepository(runtimeRepository);
@@ -490,21 +493,14 @@ describe('RTC topology APP_OUTBOX work', () => {
         else {
             const envelope = readJsonObject(message.payload.resource, 'topology work envelope');
             const data = requireJsonObject(envelope.data, 'topology work data');
-            const groupSnapshot = requireJsonObject(
-                data.groupSnapshot,
-                'topology work group snapshot'
-            );
-            const { causalRevision: _causalRevision, ...snapshotWithoutCausalRevision } = groupSnapshot;
+            const { sourceGroupStateCausalRevision: _sourceGroupStateCausalRevision, ...dataWithoutCausalRevision } = data;
             corruptMessage = {
                 ...message,
                 payload: {
                     ...message.payload,
                     resource: JSON.stringify({
                         ...envelope,
-                        data: {
-                            ...data,
-                            groupSnapshot: snapshotWithoutCausalRevision
-                        }
+                        data: dataWithoutCausalRevision
                     })
                 }
             };
@@ -591,6 +587,40 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(retiredRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
     });
 
+    it('completes group-revision work for a removed group without planning or publishing (D290)', async () => {
+        const queue = new InMemoryQueueBox();
+        const outboxQueueReader = new OutboxQueueReader(queue);
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        const planning = createGroupTopologyRuntimeOwners({
+            findGroupSnapshotByRef: () => undefined,
+            readCurrentGroupSnapshot: async () => undefined,
+            readRttMeasurements: () => [],
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: snapshots
+        }).planning;
+        const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 10,
+            outboxQueueReader,
+            database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }),
+            topologyPlanning: planning,
+            executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
+        });
+        const group = createGroupSnapshot(4);
+        await enqueueGroupRevisionWork(outboxQueueReader, group);
+        const reserved = await queue.reserveEntries({
+            typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1
+        });
+        const entry = [...reserved.values()][0]!;
+
+        await expect(handler.onMessage(decodePersistedALMessage(entry.resource), entry)).resolves.toBeUndefined();
+
+        expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect(await snapshots.findSnapshot(group.group)).toBeUndefined();
+    });
+
     it('skips sub-threshold RTT work before planning and reuses a qualifying retry decision', async () => {
         const queue = new InMemoryQueueBox();
         const outboxQueueReader = new OutboxQueueReader(queue);
@@ -623,6 +653,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),
@@ -718,8 +749,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group,
-            snapshotSelection: 'prefer-current'
+            knownGroup: group
         });
         const submittedCommands: CriterionSubmission[] = [];
         const reservationStatusesAtSubmission: Array<EntityStatus | undefined> = [];
@@ -743,6 +773,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority: async () => authority,
+                readTopologyPlanningAuthorityIfPresent: async () => authority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),
@@ -844,6 +875,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
                 readDurationNowMs: () => 0,
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPlanningObservation: vi.fn(),

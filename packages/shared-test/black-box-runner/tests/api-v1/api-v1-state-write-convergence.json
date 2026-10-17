@@ -383,6 +383,7 @@
         },
         "body": {
           "generationId": "generation-1-{runId}",
+          "connectionGenerationId": "connection-generation-1-{runId}",
           "principalId": "{ownerClientId}",
           "connectedAtEpochMs": "{expiredPresenceAtEpochMs}",
           "lastHeartbeatAtEpochMs": "{expiredPresenceAtEpochMs}",
@@ -412,6 +413,7 @@
         },
         "body": {
           "generationId": "expiry-probe-generation-1-{runId}",
+          "connectionGenerationId": "expiry-probe-connection-generation-1-{runId}",
           "principalId": "{ownerClientId}",
           "connectedAtEpochMs": "{expiredPresenceAtEpochMs}",
           "lastHeartbeatAtEpochMs": "{expiredPresenceAtEpochMs}",
@@ -504,6 +506,7 @@
                 },
                 "body": {
                   "generationId": "generation-2-{runId}",
+                  "connectionGenerationId": "connection-generation-2-{runId}",
                   "principalId": "{ownerClientId}",
                   "expiresAtEpochMs": 9007199254740991
                 },

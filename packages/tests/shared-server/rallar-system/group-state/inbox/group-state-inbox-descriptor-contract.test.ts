@@ -529,7 +529,14 @@ const descriptorCases: readonly DescriptorCase[] = [
                 scope: SCOPE,
                 groupId,
                 sessionId: 'presence-session',
-                request: { generationId: 'generation-1', principalId: 'member', expiresAtEpochMs: 9_000, ...actor, requestId: 'presence-connect' }
+                request: {
+                    generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
+                    principalId: 'member',
+                    expiresAtEpochMs: 9_000,
+                    ...actor,
+                    requestId: 'presence-connect'
+                }
             }
         },
         descriptor: {
@@ -538,7 +545,14 @@ const descriptorCases: readonly DescriptorCase[] = [
             groupId,
             targetPrincipalId: 'member',
             sessionId: 'presence-session',
-            request: { generationId: 'generation-1', principalId: 'member', expiresAtEpochMs: 9_000, ...actor, requestId: 'presence-connect' }
+            request: {
+                generationId: 'generation-1',
+                connectionGenerationId: 'ws-generation-1',
+                principalId: 'member',
+                expiresAtEpochMs: 9_000,
+                ...actor,
+                requestId: 'presence-connect'
+            }
         }
     },
     {

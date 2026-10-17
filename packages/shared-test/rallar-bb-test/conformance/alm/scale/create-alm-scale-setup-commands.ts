@@ -7,8 +7,16 @@ import type {
 import { RESTORED_SESSION_RALLAR } from '../alm-conformance-session-commands.ts';
 import type { AlmScaleRecipeInput } from './create-alm-scale-recipes.ts';
 
-/** Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan. */
+/**
+ * Longer than the observed 2.7 s between a layout's acceptance and its follow-up re-plan, counted from when the page
+ * first held the accepted layout at the readiness revision, which the acceptance's own write produces.
+ */
 const LAYOUT_QUIET_WINDOW_MS = 3_500;
+/** A readiness whose layout is replaced is read again this soon, since its quiet window may already have elapsed. */
+const LAYOUT_RECHECK_INTERVAL_MS = 500;
+/** A promotion still in flight lands within this; a setup with no accepted layout by then fails instead of looping. */
+const ACCEPTED_LAYOUT_GATE_MS = 5_000;
+const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
 /**
  * The API serves a cohort's group joins one at a time, so the director's group requests and every agent's single
  * ready-status read get an allowance that grows with the cohort; a player's join runs inside its connect.
@@ -55,6 +63,7 @@ export function createAlmScaleSetupCommands(
             refresh: 'when-absent',
             timeoutMs: computeGroupRequestTimeoutMs(input)
         },
+        createAcceptedLayoutGate(input, prefix),
         createStableLayoutWait(input, prefix),
         createSetupBarrier(input, prefix, 'setup-complete'),
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
@@ -62,7 +71,10 @@ export function createAlmScaleSetupCommands(
     ];
 }
 
-/** Only the director writes the group: a player's room join admits it to the open group. */
+/**
+ * Only the director writes the group: a player's room join admits it to the open group. Its capacity is the cohort,
+ * the director and every player, so the join that completes the roster replans at once (D288).
+ */
 function createDirectorEnsureGroupCommands(
     input: AlmScaleRecipeInput,
     prefix: string
@@ -72,6 +84,7 @@ function createDirectorEnsureGroupCommands(
         requestPrefix: prefix,
         group: input.group,
         actor: '{auth.clientId}',
+        maxMembers: input.participantCount,
         timeoutMs: computeGroupRequestTimeoutMs(input)
     });
 }
@@ -222,12 +235,44 @@ function createDirectorWait(input: AlmScaleRecipeInput, prefix: string): RallarB
     };
 }
 
-/** Readiness repeats until no plan from its own group revision, which would replace the ready layout, appears. */
+function createAcceptedLayoutGate(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    return {
+        kind: 'loop',
+        commandId: `${prefix}-layout-accepted`,
+        count: Math.ceil(ACCEPTED_LAYOUT_GATE_MS / LAYOUT_RECHECK_INTERVAL_MS),
+        intervalMs: LAYOUT_RECHECK_INTERVAL_MS,
+        timeoutMs: ACCEPTED_LAYOUT_GATE_MS + LAYOUT_READINESS_TIMEOUT_MS,
+        until: 'first-success',
+        commands: [
+            {
+                kind: 'formation.readiness',
+                commandId: `${prefix}-layout-accepted-readiness`,
+                roomRef: { ...input.group },
+                timeoutMs: LAYOUT_READINESS_TIMEOUT_MS
+            },
+            {
+                kind: 'assert',
+                commandId: `${prefix}-assert-layout-accepted`,
+                operator: 'exists',
+                source: `resultCache.${prefix}-layout-accepted:i{loop.iteration}:c1:` +
+                    `${prefix}-layout-accepted-readiness.value.acceptedHeldSinceEpochMs`
+            }
+        ]
+    };
+}
+
+/**
+ * Readiness repeats until no plan from its own group revision, which would replace the ready layout, has appeared
+ * within the quiet window counted from when the page first held the accepted layout at that revision, so a layout
+ * that settled earlier costs no wait.
+ */
 function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): RallarBlackBoxTestCommand {
+    const readiness = `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:${prefix}-layout-readiness.value`;
     return {
         kind: 'loop',
         commandId: `${prefix}-layout-stable`,
-        count: Math.floor(input.readyTimeoutMs / LAYOUT_QUIET_WINDOW_MS),
+        count: Math.ceil(input.readyTimeoutMs / LAYOUT_RECHECK_INTERVAL_MS),
+        intervalMs: LAYOUT_RECHECK_INTERVAL_MS,
         timeoutMs: input.readyTimeoutMs + LAYOUT_QUIET_WINDOW_MS,
         until: 'first-success',
         commands: [
@@ -235,19 +280,19 @@ function createStableLayoutWait(input: AlmScaleRecipeInput, prefix: string): Ral
                 kind: 'formation.readiness',
                 commandId: `${prefix}-layout-readiness`,
                 roomRef: { ...input.group },
-                timeoutMs: 5_000
+                timeoutMs: LAYOUT_READINESS_TIMEOUT_MS
             },
             {
                 kind: 'wait',
                 commandId: `${prefix}-layout-replan`,
                 absent: true,
                 timeoutMs: LAYOUT_QUIET_WINDOW_MS,
+                timeoutFrom: `{${readiness}.acceptedHeldSinceEpochMs}`,
                 match: {
                     topic: 'rallar.browser.formation.layout',
                     payloadFields: { 'data.kind': 'layoutPlanned', 'data.role': 'planned' },
                     payloadPath: 'data.identity',
-                    contains: `"groupRevision":{resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                        `${prefix}-layout-readiness.value.formation.causalRevision.groupRevision},`
+                    contains: `"groupRevision":{${readiness}.formation.causalRevision.groupRevision},`
                 }
             }
         ]

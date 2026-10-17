@@ -30,6 +30,8 @@ export type StateHeartbeatWorkflowValue = ClientSnapshot | GroupSnapshot | undef
 export interface RefreshStateHeartbeatOptions {
     /** The browser's own generation; the group heartbeats fall back to it when a group snapshot lacks the session. */
     readonly generationId: string;
+    /** The open socket's generation, which the client session must keep; undefined while no socket is open. */
+    readonly wsConnectionGenerationId: string | undefined;
     /** The browser's cached snapshot of its principal; absent until the server's connect snapshot has arrived. */
     readonly clientSnapshot: ClientSnapshot | undefined;
     readonly scope?: StateScope;
@@ -52,6 +54,7 @@ interface HeartbeatClientWithPresenceRepairInput {
     readonly request: HeartbeatStateClientSessionHttpInput['request'];
     readonly requestId: string;
     readonly repairRequestId: string;
+    readonly wsConnectionGenerationId: string | undefined;
     readonly scope: StateScope;
     readonly authSession: AuthSession | undefined;
     readonly signal?: AbortSignal;
@@ -100,12 +103,14 @@ export async function refreshStateHeartbeat(
                         clientData,
                         request: clientHeartbeatRequest({
                             clientData,
-                            generationId: resolveClientSessionGenerationId(clientData, options),
+                            generationId: options.wsConnectionGenerationId ??
+                                resolveClientSessionGenerationId(clientData, options),
                             heartbeatAtEpochMs,
                             expiresAtEpochMs
                         }),
                         requestId: clientRequestId,
                         repairRequestId,
+                        wsConnectionGenerationId: options.wsConnectionGenerationId,
                         scope,
                         authSession: options.authSession,
                         signal
@@ -209,7 +214,7 @@ async function heartbeatClientWithPresenceRepair(
             actorSessionId: input.request.actorSessionId ?? input.clientData.sessionId,
             presenceState: input.request.presenceState ?? 'online',
             transport: 'ws',
-            connectionId: input.request.generationId,
+            ...(input.wsConnectionGenerationId === undefined ? {} : { connectionId: input.wsConnectionGenerationId }),
             connectedAtEpochMs: input.request.lastHeartbeatAtEpochMs,
             lastHeartbeatAtEpochMs: input.request.lastHeartbeatAtEpochMs,
             expiresAtEpochMs: input.request.expiresAtEpochMs

@@ -9,6 +9,7 @@ import { requireApiAuthSession } from '@shared-server/http/request-auth-service.
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -125,8 +126,10 @@ function createGroupSetupMutation(sql: PGliteSql): ApiV1MutationRuntime {
             nowEpochMs: Date.now
         },
         appInboxLaneBudgetPolicy: 'fixed-retry-two',
+        appInboxNewLaneConcurrency: 1,
         groupCapacity: { defaultMaxMembers: defaults.group.defaultMaxMembers },
         groupFormationRecomputeDebounceMs: defaults.topology.recompute.formationDebounceMs,
+        groupFormationRecomputeMaxWaitMs: defaults.topology.recompute.formationMaxWaitMs,
         adminClientIds: [],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: { inbox: createApiV1TestQueueResilience(), outbox: createApiV1TestQueueResilience(), appOutbox: createApiV1TestQueueResilience() },
@@ -157,7 +160,7 @@ function createGroupSetupQueue(mutation: ApiV1MutationRuntime): GroupSetupQueue 
         appOutboxResilience: mutation.resilience.appOutbox,
         inboxQueueReader,
         outboxQueueReader,
-        wakeQueueEngine: () => engine.wakeAfterExternalWrite()
+        wakeQueueEngine: () => engine.wakeAfterExternalWrite(new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX, EnqueuedType.WS_OUTBOX]))
     });
     registerApplicationQueueReaderTasks({
         engine,

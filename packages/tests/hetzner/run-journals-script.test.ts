@@ -172,6 +172,55 @@ describe('Hetzner run journal export script', () => {
         expect(outcome.stdout).toContain('WS teardown incomplete: 0 of 1 connections disconnected after 1 s; exporting anyway.');
     });
 
+    // An uninstrumented API writes no handler timing lines, so 0 of 0 would claim a teardown nobody observed.
+    it('reports an uninstrumented API journal honestly and exports it without waiting for a teardown it cannot see', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-run-journals-uninstrumented-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const journalPath = path.join(directory, 'journalctl');
+        const callsPath = path.join(directory, 'journalctl-calls.txt');
+        await writeFile(
+            journalPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                'printf "%s\\n" "$*" >> "${OWNED_JOURNAL_CALLS}"',
+                'if [[ "$*" == *rallar-black-box-control.service* ]]; then echo "control line"; exit 0; fi',
+                'echo "Server started on port 8080."'
+            ].join('\n')
+        );
+        await chmod(journalPath, 0o755);
+        const outputDirectory = path.join(directory, 'operation');
+
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: [
+                exportScriptPath,
+                '--since',
+                '@1700000000',
+                '--output-dir',
+                outputDirectory,
+                '--teardown-poll-seconds',
+                '30',
+                '--teardown-timeout-seconds',
+                '120'
+            ],
+            options: {
+                env: {
+                    PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+                    LANG: 'C',
+                    LC_ALL: 'C',
+                    OWNED_JOURNAL_CALLS: callsPath
+                }
+            }
+        });
+
+        const calls = (await readFile(callsPath, 'utf8')).trim().split('\n');
+        expect(await readFile(path.join(outputDirectory, 'api-journal.log'), 'utf8')).toBe('Server started on port 8080.\n');
+        expect(calls.filter((call) => call.includes('rallar-api-v1.service'))).toHaveLength(1);
+        expect(outcome.stdout).toContain('API uninstrumented; teardown balance unavailable: exported without waiting for the WS teardown.');
+        expect(outcome.stdout).not.toContain('WS teardown complete');
+    });
+
     it.for([
         { args: ['--output-dir', '/tmp/owned'], missing: '--since' },
         { args: ['--since', '@1700000000'], missing: '--output-dir' },

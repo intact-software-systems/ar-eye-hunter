@@ -5,7 +5,6 @@ import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-st
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
-import type { GroupTopologyPlanningSnapshotSelection } from './group-topology-planning-authority.ts';
 
 export function isGroupTopologyActiveAt(
     snapshot: GroupSnapshot,
@@ -24,8 +23,7 @@ export function isGroupAggregateTopologyActiveAt(group: Group, observedAtEpochMs
 
 export function selectGroupTopologyPlanningSnapshot(
     knownGroup: GroupSnapshot,
-    currentGroup: GroupSnapshot | undefined,
-    snapshotSelection: GroupTopologyPlanningSnapshotSelection
+    currentGroup: GroupSnapshot | undefined
 ): GroupSnapshot {
     if (!currentGroup) {
         return knownGroup;
@@ -35,7 +33,7 @@ export function selectGroupTopologyPlanningSnapshot(
         readGroupCausalRevision(knownGroup)
     );
     if (comparison === 'dominates') {
-        return snapshotSelection === 'preserve-known-revision' ? knownGroup : currentGroup;
+        return currentGroup;
     }
     if (comparison === 'dominated') {
         return knownGroup;

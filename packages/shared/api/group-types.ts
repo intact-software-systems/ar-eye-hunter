@@ -214,6 +214,8 @@ type GroupPresenceSessionBase =
 
         generationId: string;
         generationVersion: number;
+        /** The WebSocket connection generation of the socket this presence belongs to; its close cleans only this. */
+        connectionGenerationId: string;
 
         connectedAtEpochMs: number;
         lastHeartbeatAtEpochMs: number;

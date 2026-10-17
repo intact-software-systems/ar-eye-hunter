@@ -98,7 +98,6 @@ describe('InMemoryQueueBox value ownership', () => {
             'enqueue',
             'enqueueIfAbsent',
             'writeIfAllObserved',
-            'tryWriteIfAbsentOrReplaceExpired',
             'replaceIfObserved',
             'setItem'
         ] as const
@@ -118,9 +117,6 @@ describe('InMemoryQueueBox value ownership', () => {
                 break;
             case 'writeIfAllObserved':
                 expect(queue.writeIfAllObserved([{ expected: undefined, entry }])).toBe(true);
-                break;
-            case 'tryWriteIfAbsentOrReplaceExpired':
-                await queue.tryWriteIfAbsentOrReplaceExpired(entry);
                 break;
             case 'replaceIfObserved':
                 await queue.enqueue(createEntry());

@@ -324,7 +324,9 @@ never loses an acknowledgement to a throw out of `readControlAdmission` or its e
 [`al-outbound-canonical-message.ts`](./al-outbound-canonical-message.ts) owns the
 canonical key, full message reference, identity fact, and their validation.
 [`al-outbound-canonical-storage.ts`](./al-outbound-canonical-storage.ts) reads and
-compares those observations and writes new facts through the admission transaction.
+compares those observations; [`admission/al-outbound-canonical-fact-writes.ts`](./admission/al-outbound-canonical-fact-writes.ts)
+observes the canonical pair a commit may write, re-reads it inside the admission write (a dequeue's own
+claim answers for its row) and writes new facts through the admission transaction.
 Each message has one raw envelope. Sent metadata, recipient actions, and repair work
 refer to it; [`al-outbound-transport-message.ts`](./al-outbound-transport-message.ts)
 captures and reconstructs the permitted transport differences.

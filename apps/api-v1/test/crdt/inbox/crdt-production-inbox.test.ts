@@ -130,7 +130,7 @@ Deno.test(
                 policies: [{ documentType: 'checklist', rollout: 'production' }]
             });
             const outboxQueueReader = new RecordingOutboxQueueReader(queue);
-            const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
             const service = factory({
                 inboxQueueReader,
                 outboxQueueReader,
@@ -358,7 +358,10 @@ interface ProductionCrdtInboxHarness {
 function createProductionCrdtInboxHarness(input: ProductionServiceInput): ProductionCrdtInboxHarness {
     const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
     const resourceInbox = createPSqlResourceInboxRepository(queueSql, () => new Date(now));
-    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+        laneBudgetPolicy: 'fixed-retry-two',
+        newLaneConcurrency: 1
+    });
     const service = createApiCrdtInboxService({
         inboxQueueReader,
         resourceInboxRepository: resourceInbox.entries,

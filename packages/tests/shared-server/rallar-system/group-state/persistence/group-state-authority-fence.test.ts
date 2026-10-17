@@ -169,17 +169,7 @@ class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
         }>[]
     > {
         this.batchReadCalls.push(selectors.map((selector) => ({ ...selector })));
-        const snapshot = cloneRuntime(this);
-        return await Promise.all(
-            selectors.map(async (selector) => ({
-                selectorId: selector.selectorId,
-                entries: selector.kind === 'key'
-                    ? [await snapshot.findEntry(selector.namespace, selector.key)].filter(
-                        (entry): entry is RuntimeStateEntry => entry !== undefined
-                    )
-                    : await snapshot.findEntriesByPrefix(selector.namespace, selector.keyPrefix)
-            }))
-        );
+        return await cloneRuntime(this).readRuntimeStateBatch(selectors);
     }
 }
 

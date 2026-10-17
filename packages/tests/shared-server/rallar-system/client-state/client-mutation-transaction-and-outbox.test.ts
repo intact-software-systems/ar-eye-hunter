@@ -23,6 +23,7 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
 import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 
@@ -169,7 +170,7 @@ interface RetryHarness {
 
 function createRetryHarness(): RetryHarness {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const state: RetryHarnessState = {
         phases: [],
@@ -188,7 +189,8 @@ function createRetryHarness(): RetryHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createRetryClientState(state, durable)
+                clientStateService: createRetryClientState(state, durable),
+                wsTickets: createEmptyWsTicketReader()
             },
             {
                 serviceId: 'server-12345678',

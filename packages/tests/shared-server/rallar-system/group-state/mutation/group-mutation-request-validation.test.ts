@@ -193,6 +193,31 @@ describe('group mutation request validation', () => {
         expect(Object.hasOwn(minimalHeartbeat, 'expiresAtEpochMs')).toBe(false);
     });
 
+    it('requires a presence connect to name the WebSocket connection generation it belongs to', () => {
+        const connect = {
+            requestId: 'connect-without-connection-generation',
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+            principalId: 'owner-1',
+            generationId: 'generation-1'
+        };
+        expect(validateGroupPresenceMutationRequest('connectPresence', connect).map((issue) => issue.message)).toEqual([
+            'Group connectPresence connectionGenerationId must be a non-empty string'
+        ]);
+        expect(
+            validateGroupPresenceMutationRequest('connectPresence', { ...connect, connectionGenerationId: '' })
+                .map((issue) => issue.message)
+        ).toEqual(['Group connectPresence connectionGenerationId must be a non-empty string']);
+        expect(validateGroupPresenceMutationRequest('connectPresence', { ...connect, connectionGenerationId: 'ws-1' }))
+            .toEqual([]);
+        expect(
+            validateGroupPresenceMutationRequest('heartbeatPresence', {
+                generationId: 'generation-1',
+                connectionGenerationId: 'ws-1'
+            }).map((issue) => issue.message)
+        ).toEqual(['Group heartbeatPresence request has unexpected key: connectionGenerationId']);
+    });
+
     it('rejects reversed connect timestamps with exact domain errors', () => {
         const heartbeatBeforeConnect = () =>
             validateGroupPresenceMutationRequest('connectPresence', {
@@ -201,6 +226,7 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 principalId: 'owner-1',
                 generationId: 'generation-1',
+                connectionGenerationId: 'ws-1',
                 connectedAtEpochMs: 2_000,
                 lastHeartbeatAtEpochMs: 1_999,
                 expiresAtEpochMs: 3_000
@@ -217,6 +243,7 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 principalId: 'owner-1',
                 generationId: 'generation-1',
+                connectionGenerationId: 'ws-1',
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 1_999

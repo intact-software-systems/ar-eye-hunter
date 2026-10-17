@@ -64,10 +64,13 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         director: createSpaBrowserRallarDirectorRuntime(),
         formation: createSpaBrowserRallarFormationRuntime(),
         close: async () => await (await readBrowserRallarRuntime()).close(),
-        health: async (input) =>
-            await (await readBrowserRallarRuntime()).health({
-                includeRtcDiagnostics: input?.includeRtcDiagnostics === true
-            })
+        health: async (input) => {
+            const rtcDiagnosticsPeerIds = decodeRtcDiagnosticsPeerIds(input?.rtcDiagnosticsPeerIds);
+            return await (await readBrowserRallarRuntime()).health({
+                includeRtcDiagnostics: input?.includeRtcDiagnostics === true,
+                ...(rtcDiagnosticsPeerIds === undefined ? {} : { rtcDiagnosticsPeerIds })
+            });
+        }
     };
 }
 
@@ -188,4 +191,11 @@ function toRallarBlackBoxBrowserWebSocket(socket: WebSocket): RallarBlackBoxBrow
         addEventListener: (type, listener) => socket.addEventListener(type, listener),
         removeEventListener: (type, listener) => socket.removeEventListener(type, listener)
     };
+}
+
+function decodeRtcDiagnosticsPeerIds(value: unknown): readonly string[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    return value.every((peerId) => typeof peerId === 'string') ? value : undefined;
 }

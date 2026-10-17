@@ -344,6 +344,7 @@
         },
         "body": {
           "generationId": "delta-generation-{runId}",
+          "connectionGenerationId": "delta-connection-generation-{runId}",
           "principalId": "{alphaClientId}"
         }
       },
@@ -369,6 +370,7 @@
         },
         "body": {
           "generationId": "delta-generation-{runId}",
+          "connectionGenerationId": "delta-connection-generation-{runId}",
           "principalId": "{betaClientId}"
         }
       },
@@ -394,6 +396,7 @@
         },
         "body": {
           "generationId": "delta-generation-{runId}",
+          "connectionGenerationId": "delta-connection-generation-{runId}",
           "principalId": "{gammaClientId}"
         }
       },

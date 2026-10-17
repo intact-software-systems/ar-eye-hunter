@@ -254,12 +254,12 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
 
         // one "round" across all tasks
         let createdThisRound = 0;
+        const readiness = await readRoundReadiness(tasks);
 
-        for (const ct of tasks) {
-            const maxConc = await ct.inputTask.maxConcurrency();
-            const allowed = isAllowedToAddTask(ct.tasksInFlight, maxConc);
+        for (const [index, ct] of tasks.entries()) {
+            const { maxConc, ready } = readiness[index]!;
 
-            if (allowed && (await ct.inputTask.isWork())) {
+            if (ready) {
                 const computed = submitAsyncTasks({
                     runnable: ct.inputTask.runnable,
                     ongoingTasks: ct.tasksInFlight,
@@ -300,4 +300,27 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
         numIsWorkIterations,
         numSuccessiveNoTasksCreated
     };
+}
+
+interface LoopsTaskReadiness {
+    readonly maxConc: number;
+    readonly ready: boolean;
+}
+
+/**
+ * Every task of a round answers its readiness at once, so probes that share a store can share one read;
+ * the round still submits in task order, and the first failure in task order is the round's failure.
+ */
+async function readRoundReadiness(tasks: readonly LoopsComputedTaskDto[]): Promise<readonly LoopsTaskReadiness[]> {
+    const settled = await Promise.allSettled(tasks.map(async (ct): Promise<LoopsTaskReadiness> => {
+        const maxConc = await ct.inputTask.maxConcurrency();
+        const allowed = isAllowedToAddTask(ct.tasksInFlight, maxConc);
+        return { maxConc, ready: allowed && await ct.inputTask.isWork() };
+    }));
+    return settled.map((result) => {
+        if (result.status === 'rejected') {
+            throw result.reason;
+        }
+        return result.value;
+    });
 }

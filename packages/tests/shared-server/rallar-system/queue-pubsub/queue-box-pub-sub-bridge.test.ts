@@ -36,6 +36,8 @@ import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
@@ -171,6 +173,49 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
         expect(bridge.subscribedChannels).toEqual(['queuebox-events']);
         expect(deliveredMessages).toEqual([message]);
+    });
+
+    it('holds rows for a session whose upgrade committed here, keeping the newest when the hold is full', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const timingEvents: RallarTimingEvent[] = [];
+        const held: ALMessage[] = [];
+        let socketOpened = false;
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => ['awaited-session'],
+            sendToTargetsWithResult: (message, _recipients, admittedPeerIds) => {
+                if (socketOpened && admittedPeerIds?.length === 1 && admittedPeerIds[0] === 'awaited-session') {
+                    held.push(message);
+                }
+                return noRecipientLiveSendResult(message);
+            }
+        });
+        const holds = wsQBoxServerService.socket.expectedConnections;
+        holds.expect({ id: 'awaited-session', generationId: 'generation-1', expiresAtEpochMs: Date.now() + 60_000 });
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            timing: (event) => timingEvents.push(event)
+        });
+        const rowCount = ExpectedConnectionHolds.MAX_HELD_SENDS_PER_CONNECTION + 6;
+        const messages: ALMessage[] = [];
+        for (let index = 0; index < rowCount; index += 1) {
+            const entry = createWsOutboxEntry();
+            messages.push(decodePersistedALMessage(entry.resource));
+            await outboxPublishers[0](messages.at(-1)!, entry);
+        }
+        // Rows addressed to the session while its connect waits; the connect's own rows arrive last.
+        socketOpened = true;
+        holds.open({ id: 'awaited-session', generationId: 'generation-1' });
+
+        expect(held).toHaveLength(ExpectedConnectionHolds.MAX_HELD_SENDS_PER_CONNECTION);
+        expect(held.at(-1)).toEqual(messages.at(-1));
+        const evicted = timingEvents
+            .filter((event) => event.operation === 'outbox-direct-send')
+            .reduce((sum, event) => sum + Number(event.details?.deferEvictedCount ?? 0), 0);
+        expect(evicted).toBe(6);
     });
 
     it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {
@@ -912,6 +957,7 @@ function createTestQueueBoxPubSubWsService(
 ): QueueBoxPubSubWsService {
     const service: QueueBoxPubSubWsService = {
         outbox: input.outbox ?? new InMemoryQueueBox(),
+        socket: new JsonWebSocketServer(),
         onOutboxClusterPublishDo(publisher) {
             input.registerOutboxPublisher?.(publisher);
             return service;

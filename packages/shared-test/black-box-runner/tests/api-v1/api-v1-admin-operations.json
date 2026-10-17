@@ -656,6 +656,7 @@
         },
         "body": {
           "generationId": "adminops-generation-{runId}",
+          "connectionGenerationId": "adminops-connection-generation-{runId}",
           "principalId": "{scopeClientId}"
         }
       },

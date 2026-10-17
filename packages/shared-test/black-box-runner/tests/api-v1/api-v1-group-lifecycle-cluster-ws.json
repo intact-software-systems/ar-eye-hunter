@@ -271,6 +271,7 @@
         },
         "body": {
           "generationId": "lcws-generation-{runId}",
+          "connectionGenerationId": "lcws-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -318,6 +319,7 @@
         },
         "body": {
           "generationId": "lcws-generation-{runId}",
+          "connectionGenerationId": "lcws-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

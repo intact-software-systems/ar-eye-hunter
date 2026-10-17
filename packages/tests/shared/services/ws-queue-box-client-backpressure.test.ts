@@ -185,7 +185,7 @@ describe('the WS client under its socket\'s backpressure (D184, D185)', () => {
         const message = roomSend('dequeued', 'at-least-once', REJECT_UNDER_CONGESTION);
 
         await client.service.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()));
-        client.engine.wakeAfterExternalWrite();
+        client.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
         await expect.poll(() => readCongestion(client).length).toBeGreaterThanOrEqual(1);
         client.native.bufferedAmount = 0;
 

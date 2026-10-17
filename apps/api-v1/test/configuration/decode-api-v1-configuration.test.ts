@@ -129,6 +129,15 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
     }
 });
 
+Deno.test('the committed defaults bound a coalesced topology replan at 4.5 s after a 500 ms debounce (D288)', async () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.defaultsSource = await readJsonResource('defaults-config.json');
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.deepEqual(configuration.topology.recompute, { formationDebounceMs: 500, formationMaxWaitMs: 4_500 });
+});
+
 Deno.test('Metered ICE uses the mandatory default region when no override is provided', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = {
@@ -264,6 +273,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
         ['topology.planning.meshExitWidth', 0],
         ['topology.planning.treeExitWidth', 0],
         ['topology.recompute.formationDebounceMs', 0],
+        ['topology.recompute.formationMaxWaitMs', 0],
         ['topology.rttRefinement.minIntervalMs', 0],
         ['topology.rttRefinement.vivaldiDeltaThresholdMs', 0],
         ['topology.queueResilience.failureThreshold', 1],
@@ -487,6 +497,13 @@ Deno.test('configuration decoder enforces database, pub-sub, ICE, replay, and wo
                 setPath(input.defaultsSource, 'ice.region', 'eu');
             },
             path: 'ice.apiKey'
+        },
+        {
+            name: 'replan maximum wait below its debounce',
+            mutate(input: MutableDecodeApiV1ConfigurationInput) {
+                setPath(input.defaultsSource, 'topology.recompute.formationMaxWaitMs', 100);
+            },
+            path: 'topology.recompute.formationMaxWaitMs'
         }
     ] as const;
 
@@ -645,6 +662,9 @@ function preserveCrossFieldValidity(
     }
     if (path === 'topology.delivery.maxEntriesPerTurn') {
         setPath(input.defaultsSource, 'topology.delivery.pageSize', 1);
+    }
+    if (path === 'topology.recompute.formationMaxWaitMs') {
+        setPath(input.defaultsSource, 'topology.recompute.formationDebounceMs', 0);
     }
     if (path === 'topology.delivery.leaseDurationMs') {
         setPath(input.defaultsSource, 'topology.delivery.heartbeatIntervalMs', 1);

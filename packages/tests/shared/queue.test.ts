@@ -9,12 +9,10 @@ import {
     type ResourceInboxRelease,
     type ResourceInboxReservationInput
 } from '@shared/queuebox/queue-box-types.ts';
-import {
-    createDefaultResourceInboxDequeuer,
-    ResourceInboxHandlerFinalizedSuccess
-} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
+import { ResourceInboxHandlerFinalizedSuccess } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,

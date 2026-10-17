@@ -5,6 +5,7 @@ import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
+import { WAIT_TIMEOUT_FROM_PATTERN_SOURCE } from '../wait/resolve-wait-match-result-references.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
 import {
     validateAllowedFields,
@@ -25,9 +26,20 @@ export function validateWaitControlCommand(command: RallarBlackBoxTestRecord): r
         ...(command.absent === undefined || command.absent === true
             ? []
             : [toControlCommandIssue('wait.absent must be true when present.')]),
+        ...validateWaitTimeoutFrom(command),
         ...validateAllowedFields(match, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, WAIT_MATCH_PATH),
         ...validateWaitMatchFields(match)
     ];
+}
+
+function validateWaitTimeoutFrom(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const timeoutFrom = command.timeoutFrom;
+    if (typeof timeoutFrom !== 'string') {
+        return validateStringField(command, 'timeoutFrom', 'wait');
+    }
+    return new RegExp(WAIT_TIMEOUT_FROM_PATTERN_SOURCE).test(timeoutFrom)
+        ? []
+        : [toControlCommandIssue('wait.timeoutFrom must be exactly one {resultCache.<commandId>.<path>} reference.')];
 }
 
 function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
@@ -50,12 +62,13 @@ function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly Cont
             validateStringField(match, key, WAIT_MATCH_PATH)
         ),
         ...validateBooleanField(match, 'exists', WAIT_MATCH_PATH),
-        ...validateWaitPayloadFields(match.payloadFields),
+        ...validateWaitPayloadFields(match),
         ...validateIntegerField({ record: match, key: 'sinceEpochMs', path: WAIT_MATCH_PATH, minimum: 0 })
     ];
 }
 
-function validateWaitPayloadFields(payloadFields: unknown): readonly ControlCommandIssue[] {
+function validateWaitPayloadFields(match: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const payloadFields = match.payloadFields;
     if (payloadFields === undefined) {
         return [];
     }

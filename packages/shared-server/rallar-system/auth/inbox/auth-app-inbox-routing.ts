@@ -15,8 +15,6 @@ export function toAuthAppInboxType(
             return AppInboxType.AUTH_SESSION_LOGOUT;
         case 'issue-ws-ticket':
             return AppInboxType.AUTH_WS_TICKET_ISSUE;
-        case 'consume-ws-ticket':
-            return AppInboxType.AUTH_WS_TICKET_CONSUME;
         case 'issue-agent-tickets':
             return AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE;
         case 'consume-agent-ticket':
@@ -35,7 +33,6 @@ export function toAuthIntentContextId(intent: AuthMutationIntent): string {
         case 'issue-ws-ticket':
         case 'issue-agent-tickets':
             return toAuthSessionContextId(intent.authority.clientId, intent.authority.sessionId);
-        case 'consume-ws-ticket':
         case 'consume-agent-ticket':
             return toAuthCredentialContextId(intent.ticketDigest);
     }
@@ -52,7 +49,6 @@ export function toAuthIntentSenderId(intent: AuthMutationIntent): string {
         case 'issue-ws-ticket':
         case 'issue-agent-tickets':
             return intent.authority.clientId;
-        case 'consume-ws-ticket':
         case 'consume-agent-ticket':
             return intent.ticketDigest;
     }
@@ -71,8 +67,6 @@ export function toAuthCommandContextId(command: AuthMutationCommand): string {
                 command.ticketRecord.clientId,
                 command.ticketRecord.sessionId
             );
-        case 'consume-ws-ticket':
-            return toAuthCredentialContextId(command.ticketDigest);
         case 'issue-agent-tickets':
             return toAuthSessionContextId(command.authority.clientId, command.authority.sessionId);
         case 'consume-agent-ticket':
@@ -117,7 +111,6 @@ export function toAuthCommandSenderId(command: AuthMutationCommand): string {
             return command.ticketRecord.clientId;
         case 'issue-agent-tickets':
             return command.authority.clientId;
-        case 'consume-ws-ticket':
         case 'consume-agent-ticket':
             return command.ticketDigest;
     }

@@ -4,7 +4,6 @@ import type { ResourceInboxStatusAndAttempts } from '../../queuebox/postgres/res
 
 export interface AppInboxEntryRepository {
     readStatusAndAttempts(key: Key): Promise<ResourceInboxStatusAndAttempts | undefined>;
-    tryWriteIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry | null>;
     replaceIfObserved(
         expected: ResourceEntry,
         replacement: ResourceEntry

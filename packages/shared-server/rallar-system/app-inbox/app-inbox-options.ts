@@ -5,6 +5,11 @@ export const DEFAULT_APP_INBOX_WAIT_JITTER_RATIO = 0.2;
 /** Above the hosted p99 handler time; an abandoned claim's late finish still fails its attempt guard after a reclaim. */
 export const APP_INBOX_RESERVATION_LEASE_MS = 60_000;
 /**
+ * How long before its reservation lease runs out a handler attempt is abandoned, so the serial lane moves on and
+ * the attempt's own commit is refused before another process can reclaim the entry.
+ */
+export const DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS = 5_000;
+/**
  * A waiter with a live completion subscription re-reads on a wake, or on this tick when a wake was lost. Well below
  * any caller's HTTP allowance (the native fixtures allow 5 s), so one lost wake costs a tick, not the request.
  */
@@ -12,6 +17,7 @@ export const APP_INBOX_WAIT_SAFETY_TICK_MSECS = 1_000;
 
 export interface AppInboxOptions {
     readonly phaseTiming?: boolean;
+    readonly attemptDeadlineMarginMs?: number;
     readonly waitMaxElapsedMsecs?: number;
     readonly waitRetryIntervalMsecs?: number;
     readonly waitMaxRetryIntervalMsecs?: number;
@@ -44,6 +50,31 @@ export function normalizeAppInboxOptions(options: AppInboxOptions): NormalizedAp
         ),
         waitJitterRatio: toRatio(options.waitJitterRatio, DEFAULT_APP_INBOX_WAIT_JITTER_RATIO)
     };
+}
+
+export interface AppInboxAttemptDeadlineIssue {
+    readonly code: 'app-inbox-attempt-deadline-margin-outside-lease';
+    readonly message: string;
+}
+
+/** The margin and the lease have different owners, so the process that pairs them checks it once at startup. */
+export function validateAppInboxAttemptDeadlineMargin(
+    options: AppInboxOptions,
+    reservationLeaseMs: number
+): readonly AppInboxAttemptDeadlineIssue[] {
+    const marginMs = resolveAppInboxAttemptDeadlineMarginMs(options);
+    return marginMs > 0 && marginMs < reservationLeaseMs
+        ? []
+        : [{
+            code: 'app-inbox-attempt-deadline-margin-outside-lease',
+            message:
+                `AppInbox attempt deadline margin ${marginMs} ms must lie inside the ${reservationLeaseMs} ms reservation lease`
+        }];
+}
+
+/** The handler side's one option: how far below its reservation lease an attempt's deadline falls. */
+export function resolveAppInboxAttemptDeadlineMarginMs(options: AppInboxOptions): number {
+    return toNonNegativeFiniteNumber(options.attemptDeadlineMarginMs, DEFAULT_APP_INBOX_ATTEMPT_DEADLINE_MARGIN_MS);
 }
 
 function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {

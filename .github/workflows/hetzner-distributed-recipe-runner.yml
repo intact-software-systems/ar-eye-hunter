@@ -75,6 +75,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      server_timing:
+        description: Roll the API out with its timing and AppInbox phase timing logs; off leaves it uninstrumented
+        type: boolean
+        default: false
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: string
@@ -407,6 +411,7 @@ jobs:
           RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: ${{ vars.RALLAR_BLACK_BOX_RTC_CAPTURE_MODE }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
+          RALLAR_API_SERVER_TIMING: ${{ inputs.server_timing }}
           RALLAR_BLACK_BOX_AGENT_SOURCE: ${{ inputs.agent_source }}
           RALLAR_HETZNER_OPERATOR_PHASE: ${{ inputs.operator_phase }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
@@ -457,6 +462,7 @@ jobs:
             fi
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
+            printf 'RALLAR_API_SERVER_TIMING=%s\n' "$(quote "${RALLAR_API_SERVER_TIMING}")"
             printf 'RALLAR_BLACK_BOX_AGENT_SOURCE=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_SOURCE}")"
             printf 'RALLAR_HETZNER_OPERATOR_PHASE=%s\n' "$(quote "${RALLAR_HETZNER_OPERATOR_PHASE}")"
             printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
@@ -550,6 +556,43 @@ jobs:
               -n "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" ]]
           }
 
+          requested_api_server_timing() {
+            if bool_enabled "${RALLAR_API_SERVER_TIMING:-0}"; then echo true; else echo false; fi
+          }
+
+          # The API's timing lines default on, so an env file without the key runs instrumented.
+          applied_api_server_timing() {
+            local env_file="${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}"
+            local value
+            if [[ ! -r "${env_file}" ]]; then
+              echo unknown
+              return 0
+            fi
+            value="$(grep -E '^RALLAR_TIMING_LOGS=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+            case "${value}" in
+              0 | false) echo false ;;
+              *) echo true ;;
+            esac
+          }
+
+          validate_prepare_server_timing() {
+            local prepared
+            prepared="$(jq -r '.serverTiming // empty' "${RALLAR_DISTRIBUTED_PREPARE_MARKER}")"
+            if [[ "${prepared}" != "$(requested_api_server_timing)" ]]; then
+              echo "::error::The prepare phase applied server_timing=${prepared:-unrecorded}, but this run requests server_timing=$(requested_api_server_timing); dispatch both phases with the same server_timing." >&2
+              exit 1
+            fi
+          }
+
+          rollout_controller() {
+            echo "RALLAR_OPERATION_STAGE=rollout-controller"
+            ./10-stop-headless-workers.sh || true
+            ./08-rollout-controller.sh
+            echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
+            RALLAR_INSTALL_PLAYWRIGHT=0
+            export RALLAR_INSTALL_PLAYWRIGHT
+          }
+
           write_prepare_marker() {
             local manifestSha
             manifestSha="${RALLAR_SOURCE_MANIFEST_SHA256}"
@@ -557,6 +600,7 @@ jobs:
               --arg runId "${RALLAR_DISTRIBUTED_RUN_ID}" \
               --arg ref "${RALLAR_REPO_REF}" \
               --arg manifestSha "${manifestSha}" \
+              --arg serverTiming "$(requested_api_server_timing)" \
               --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
               --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
               --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
@@ -570,7 +614,8 @@ jobs:
                   RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: $treeMinSize,
                   RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: $meshMinSize,
                   RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: $meshParamK
-                }
+                },
+                serverTiming: $serverTiming
               }' > "${RALLAR_DISTRIBUTED_PREPARE_MARKER}"
           }
 
@@ -608,12 +653,10 @@ jobs:
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
             echo "Run phase skips API/control rollout; prepare phase must already be complete when required."
           elif bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
-            echo "RALLAR_OPERATION_STAGE=rollout-controller"
-            ./10-stop-headless-workers.sh || true
-            ./08-rollout-controller.sh
-            echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
-            RALLAR_INSTALL_PLAYWRIGHT=0
-            export RALLAR_INSTALL_PLAYWRIGHT
+            rollout_controller
+          elif [[ "$(applied_api_server_timing)" != "$(requested_api_server_timing)" ]]; then
+            echo "The API runs with server timing $(applied_api_server_timing), but server_timing is $(requested_api_server_timing); rolling the controller out to apply it."
+            rollout_controller
           fi
 
           if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "prepare" ]]; then
@@ -642,6 +685,9 @@ jobs:
 
           if remote_topology_env_requires_rollout && [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
             validate_prepare_marker
+          fi
+          if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" && -s "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" ]]; then
+            validate_prepare_server_timing
           fi
 
           case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in

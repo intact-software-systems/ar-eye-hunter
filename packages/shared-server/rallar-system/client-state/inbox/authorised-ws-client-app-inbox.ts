@@ -1,4 +1,5 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
@@ -7,13 +8,18 @@ import type { RegisterAuthorisedWsClientInput } from '../client-state-service-co
 import { toClientMutationIssuedSessionAuthority } from '../mutation/client-mutation-authority.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
-    ClientAuthorisedWsSessionDisconnectAppInboxPayload
+    ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+    ClientAuthorisedWsTicketConnectAppInboxPayload
 } from './app-client-inbox-contracts.ts';
 
-export interface ToAuthorisedWsClientConnectEnqueueInput {
-    readonly authSession: IssuedAuthSession;
+export interface ToAuthorisedWsClientConnectionInput {
+    readonly authSession: IssuedAuthSession | PersistedAuthSession;
     readonly generationId: string;
     readonly input?: RegisterAuthorisedWsClientInput;
+}
+
+export interface ToAuthorisedWsClientConnectEnqueueInput extends ToAuthorisedWsClientConnectionInput {
+    readonly ticketDigest: string;
 }
 
 export interface ToAuthorisedWsClientDisconnectEnqueueInput {
@@ -36,7 +42,10 @@ export function toAuthorisedWsClientConnectEnqueue(
             connection.scope,
             'connectAuthorisedWsSession'
         ),
-        data: encodeAppInboxCommand(connection, 'Authorized WebSocket connect AppInbox command')
+        data: encodeAppInboxCommand(
+            { connection, ticketDigest: input.ticketDigest } satisfies ClientAuthorisedWsTicketConnectAppInboxPayload,
+            'Authorized WebSocket connect AppInbox command'
+        )
     };
 }
 
@@ -79,7 +88,7 @@ export function toAuthorisedWsClientScope(
 }
 
 export function toAuthorisedWsClientConnection(
-    input: ToAuthorisedWsClientConnectEnqueueInput
+    input: ToAuthorisedWsClientConnectionInput
 ): ClientAuthorisedWsSessionConnectAppInboxPayload {
     const scope = toAuthorisedWsClientScope(input.input);
     const authSession = input.authSession;

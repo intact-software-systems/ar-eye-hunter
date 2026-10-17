@@ -1,20 +1,16 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
-import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
-import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type { ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
-import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import {
     captureALOutboundCreationExpiry,
     decodeALOutboundCanonicalMessage,
     decodeALOutboundIdentityFact,
-    isALOutboundCanonicalReplacement,
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundIdentityKey,
@@ -37,12 +33,6 @@ export interface ALOutboundCanonicalObservation {
     readonly creationExpiry?: string;
 }
 
-export interface ALOutboundCanonicalFactWrite {
-    readonly entry: ResourceEntry;
-    readonly expected: ResourceEntry | undefined;
-    readonly replaceExisting: boolean;
-}
-
 export async function readALOutboundCanonicalMessage(
     input: ALOutboundCanonicalReadInput
 ): Promise<ALOutboundCanonicalObservation> {
@@ -52,7 +42,7 @@ export async function readALOutboundCanonicalMessage(
         ? input.observedEntry
         : await input.queue.getItem(key);
     const reference = input.stored?.reference ?? (entry
-        ? toALOutboundMessageReference(input.scope, entry, decodePersistedALMessage(entry.resource))
+        ? toALOutboundMessageReference(input.scope, entry, decodePersistedALMessageRow(entry))
         : undefined);
     const identity = await input.queue.getItem(toALOutboundIdentityKey(key));
     if (reference !== undefined && reference.expiresAtMs <= input.nowMs()) {
@@ -108,89 +98,4 @@ function validateCanonicalReuse(
         )
         ? Either.ofRight(canonical)
         : Either.ofLeft(new TypeError('Canonical identity has conflicting content'));
-}
-
-export interface ALOutboundCanonicalWriteReadInput {
-    readonly queue: Pick<QueueBoxResourceEntryRepository, 'getItem'>;
-    readonly scope: string;
-    readonly entry: ResourceEntry | undefined;
-    readonly creationExpiry: string;
-    readonly activatePendingCanonical: boolean;
-    readonly nowMs: () => number;
-}
-
-export async function readALOutboundCanonicalWrites(
-    input: ALOutboundCanonicalWriteReadInput
-): Promise<readonly ALOutboundCanonicalFactWrite[]> {
-    const { queue, scope, entry, creationExpiry, activatePendingCanonical } = input;
-    if (!entry) {
-        return [];
-    }
-    const expected = await queue.getItem(entry.key);
-    const reference = toALOutboundMessageReference(scope, entry, decodePersistedALMessage(entry.resource));
-    const identity = toALOutboundIdentityEntry(reference, entry, creationExpiry);
-    const expectedIdentity = await queue.getItem(identity.key);
-    const replacing = isALOutboundCanonicalReplacement(activatePendingCanonical, expected, entry);
-    // R = D: an awaited getter may already have evicted the other fact at expiry.
-    if (reference.expiresAtMs > input.nowMs()) {
-        if (expectedIdentity) {
-            decodeALOutboundCanonicalMessage(reference, entry, expectedIdentity);
-            if (decodeALOutboundIdentityFact(JSON.parse(expectedIdentity.resource)).creationExpiry !== creationExpiry) {
-                throw new ALAdmissionCorruptionError(
-                    JSON.stringify(identity.key),
-                    new TypeError('Canonical creation observation differs')
-                );
-            }
-        }
-        if (expected?.key.topicId === 'AL_OUTBOUND_MESSAGE' && !expectedIdentity) {
-            throw new ALAdmissionCorruptionError(
-                JSON.stringify(expected.key),
-                new TypeError('Live canonical identity fact is missing')
-            );
-        }
-        if (expected && expected.resource !== entry.resource && !replacing) {
-            throw new ALAdmissionCorruptionError(
-                JSON.stringify(expected.key),
-                new TypeError('Canonical identity has conflicting content')
-            );
-        }
-    }
-    return [{
-        entry,
-        expected,
-        replaceExisting: replacing ||
-            (activatePendingCanonical && expected?.status === EntityStatus.COMPLETED &&
-                entry.status === EntityStatus.NEW)
-    }, { entry: identity, expected: expectedIdentity, replaceExisting: false }];
-}
-
-/** Uses the caller's admission transaction; both observations precede either buffered write. */
-export async function writeALOutboundCanonicalFacts(
-    tx: ALAdmissionWorkWriteContext,
-    writes: readonly ALOutboundCanonicalFactWrite[],
-    nowMs: () => number
-): Promise<'written' | 'expired'> {
-    const observed: (ResourceEntry | undefined)[] = [];
-    for (const write of writes) {
-        observed.push(await tx.readWork(write.entry.key));
-    }
-    if (writes.some((write) => write.entry.audit.expiryTs.epochMilliseconds <= nowMs())) {
-        return 'expired';
-    }
-    for (const [index, write] of writes.entries()) {
-        const current = observed[index];
-        if (
-            current === undefined || write.expected === undefined
-                ? current !== write.expected
-                : !hasSameResourceEntryValue(current, write.expected)
-        ) {
-            throw new ALAdmissionBackendConflictError('Outbound canonical fact observation changed');
-        }
-    }
-    for (const [index, write] of writes.entries()) {
-        if (!observed[index] || write.replaceExisting) {
-            tx.writeWork(write.entry);
-        }
-    }
-    return 'written';
 }

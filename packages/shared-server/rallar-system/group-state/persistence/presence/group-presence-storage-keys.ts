@@ -3,6 +3,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     decodeGroupStateChildStorageKey,
     groupStateChildStorageKey,
+    groupStateChildStorageKeySuffix,
     groupStateGroupStorageKey
 } from '../aggregate/group-aggregate-storage-keys.ts';
 
@@ -11,6 +12,10 @@ type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string; }>;
 
 export function groupStatePresenceSessionStorageKey(ref: GroupSessionStorageRef): string {
     return groupStateChildStorageKey(ref, 'session', ref.sessionId);
+}
+
+export function groupStatePresenceSessionStorageKeySuffix(sessionId: string): string {
+    return groupStateChildStorageKeySuffix('session', sessionId);
 }
 
 export function decodeGroupStatePresenceSessionStorageKey(

@@ -342,6 +342,7 @@ export type GroupMutationCommand =
                 & Readonly<{
                     principalId: string;
                     generationId: string;
+                    connectionGenerationId: string;
                     connectedAtEpochMs: number | null;
                     lastHeartbeatAtEpochMs: number | null;
                     expiresAtEpochMs: number | null;

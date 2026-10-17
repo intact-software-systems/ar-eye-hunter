@@ -229,7 +229,8 @@ class PresenceConvergenceFixture {
         runtimeRepository: this.runtime,
         now: () => this.now,
         serviceId: 'presence-test',
-        recomputeDebounceMs: 0
+        recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0
     });
     readonly planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: async (ref) => await this.repository.readSnapshot(ref),
@@ -295,6 +296,7 @@ class PresenceConvergenceFixture {
             principalId: 'C',
             actorPrincipalId: 'C',
             generationId: 'C-first',
+            connectionGenerationId: 'ws-C-first',
             requestId: 'depart-C'
         });
         const departure = await this.convergePresence('departure');
@@ -326,6 +328,7 @@ class PresenceConvergenceFixture {
             principalId: sessionId,
             actorPrincipalId: sessionId,
             generationId,
+            connectionGenerationId: `ws-${generationId}`,
             expiresAtEpochMs: this.now + 60_000,
             requestId: `connect-${generationId}`
         });
@@ -351,7 +354,7 @@ class PresenceConvergenceFixture {
             origin,
             requestedAtEpochMs: this.now - 2_000,
             expireAtEpochMs: this.now + 60_000,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'presence-test',
             previousEntry: await this.queue.getItem(toCoalescedGroupRevisionKey(REF)) ?? null
         });

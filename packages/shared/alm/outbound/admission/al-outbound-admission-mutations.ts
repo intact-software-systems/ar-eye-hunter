@@ -154,54 +154,35 @@ export class ALOutboundAdmissionMutations {
         return mutations.map((mutation) => this.computeStateWrite(mutation, nowMs));
     }
 
-    /** The first moved supersedence observation, or undefined: the commit fence owns the throw. */
+    /**
+     * The first moved supersedence observation, or undefined: the commit fence owns the throw. Every
+     * guard is read at once, so the fence costs one round trip; the first in order still decides.
+     */
     async readCurrentObservationConflict(
         transaction: ALAdmissionWorkWriteContext,
         writes: readonly ALOutboundStateWrite[]
     ): Promise<ALOutboundCommitFenceIssue | undefined> {
-        for (const write of writes) {
-            if (write.supersedenceGuard === undefined) {
-                continue;
-            }
-            const current = await transaction.read(
-                write.key,
-                (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
-            );
-            if (!jsonEquals(current, write.supersedenceGuard.expected)) {
-                return { kind: 'conflict', message: 'Outbound shared supersedence observation changed' };
-            }
-        }
-        return undefined;
+        const moved = await Promise.all(writes.map(async (write) =>
+            write.supersedenceGuard !== undefined &&
+            !jsonEquals(
+                await transaction.read(write.key, (value) => decodeALAdmissionSupersedenceValue(value, 'latest')),
+                write.supersedenceGuard.expected
+            )
+        ));
+        return moved.includes(true)
+            ? { kind: 'conflict', message: 'Outbound shared supersedence observation changed' }
+            : undefined;
     }
 
-    /** The first message id another sender or scope already owns, or undefined. */
+    /** The first message id another sender or scope already owns, or undefined; every owner row is read at once. */
     async readMessageIdentityConflict(
         transaction: ALAdmissionWorkWriteContext,
         mutations: readonly ALOutboundAdmissionMutation[]
     ): Promise<ALOutboundCommitFenceIssue | undefined> {
-        for (const mutation of mutations) {
-            if (mutation.kind === 'set-msg-owner') {
-                const key = toALOutboundMessageOwnerKey(this.namespace, mutation.msgId);
-                const owner = await transaction.read(key, decodeALAdmissionString);
-                if (owner !== undefined && owner !== mutation.senderId) {
-                    return { kind: 'corruption', key, message: 'Message id belongs to another sender' };
-                }
-            }
-            if (mutation.kind === 'set-sent-message') {
-                const key = toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId);
-                const sent = await transaction.read(
-                    key,
-                    (value) => decodeALOutboundSentMessage(value, mutation.snapshot.msgId)
-                );
-                if (
-                    mutation.reference.scope !== this.canonicalScope ||
-                    (sent !== undefined && !jsonEquals(sent.reference, mutation.reference))
-                ) {
-                    return { kind: 'corruption', key, message: 'Message id has conflicting canonical identity' };
-                }
-            }
-        }
-        return undefined;
+        const issues = await Promise.all(
+            mutations.map((mutation) => this.readMessageIdentityIssue(transaction, mutation))
+        );
+        return issues.find((issue) => issue !== undefined);
     }
 
     async writeStateWrites(
@@ -216,6 +197,31 @@ export class ALOutboundAdmissionMutations {
                 await transaction.set(write.key, write.value, write.expireAtTimestamp);
             }
         }
+    }
+
+    private async readMessageIdentityIssue(
+        transaction: ALAdmissionWorkWriteContext,
+        mutation: ALOutboundAdmissionMutation
+    ): Promise<ALOutboundCommitFenceIssue | undefined> {
+        if (mutation.kind === 'set-msg-owner') {
+            const key = toALOutboundMessageOwnerKey(this.namespace, mutation.msgId);
+            const owner = await transaction.read(key, decodeALAdmissionString);
+            return owner !== undefined && owner !== mutation.senderId
+                ? { kind: 'corruption', key, message: 'Message id belongs to another sender' }
+                : undefined;
+        }
+        if (mutation.kind !== 'set-sent-message') {
+            return undefined;
+        }
+        const key = toALOutboundSentMessageKey(this.namespace, mutation.snapshot.msgId);
+        const sent = await transaction.read(
+            key,
+            (value) => decodeALOutboundSentMessage(value, mutation.snapshot.msgId)
+        );
+        return mutation.reference.scope !== this.canonicalScope ||
+                (sent !== undefined && !jsonEquals(sent.reference, mutation.reference))
+            ? { kind: 'corruption', key, message: 'Message id has conflicting canonical identity' }
+            : undefined;
     }
 
     private computeStateWrite(mutation: ALOutboundAdmissionMutation, nowMs: number): ALOutboundStateWrite {

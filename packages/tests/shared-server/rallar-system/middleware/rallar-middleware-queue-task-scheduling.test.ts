@@ -43,7 +43,7 @@ function createQueueTaskSchedulingHarness(
             return undefined;
         }
     });
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => Date.now() });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: () => Date.now() });
     registerApplicationQueueReaderTasks({
         engine,
         nowEpochMs: () => Date.now(),

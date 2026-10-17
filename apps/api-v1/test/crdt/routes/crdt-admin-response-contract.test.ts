@@ -164,7 +164,7 @@ async function createCrdtAdminRouteHarness(
     const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(now));
     const results = new ResourceInboxResultsRepository(sql);
     const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
-    const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const outbox = new OutboxQueueReader(queue);
     const mutationService = createTestCrdtMutationService(sql);
     const documentKey = await seedCrdtAdminDocument(sql, mutationService, now);

@@ -93,10 +93,10 @@ describe('group presence delta producer provenance', () => {
         }
         else {
             const work = decodeCanonicalGroupPresenceSummaryWork(producer.message, producer.entry);
-            const [read] = await producer.worker.read(
+            const [read] = (await producer.worker.read(
                 [{ work, reservation: { key: producer.entry.key, expectedAttempts: 1 } }],
                 producer.now
-            );
+            )).right ?? [];
             const row = producer.worker.compute(work, read!).downstreamOutboxWrites[0]!.entry;
             await producer.repository.upsert(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(row.key), 'existing-proof', producer.now + 60_000);
         }

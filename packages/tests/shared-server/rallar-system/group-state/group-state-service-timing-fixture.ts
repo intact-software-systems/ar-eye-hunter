@@ -287,6 +287,7 @@ const timingCleanup = {
     scope: timingScope,
     authSession: {} as never,
     principalId: 'cleanup-principal',
+    connectionGenerationId: 'cleanup-ws-generation',
     disconnectedAtEpochMs: 1_000
 };
 const timingSnapshotPageOptions = { limit: 1 };

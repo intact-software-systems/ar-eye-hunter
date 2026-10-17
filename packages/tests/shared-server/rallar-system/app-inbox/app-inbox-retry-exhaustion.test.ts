@@ -5,11 +5,13 @@ import {
     createDefaultResourceInboxDequeuer,
     type ResourceInboxRetryExhaustion
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import {
     EntityStatus,
     toKeyAsString,
     type Key
 } from '@shared/queuebox/ResourceEntry.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import {
     describe,
     expect,
@@ -21,6 +23,7 @@ const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 import {
     createAtomicHarness,
     createResilience,
+    dequeueExhaustedAtomicEntry,
     toExhaustion,
     toPersistedAppInboxResource,
     toRecovery
@@ -225,6 +228,21 @@ describe('AppInbox retry exhaustion', () => {
         }
     );
 
+    it.each(['initial', 'recovery'] as const)(
+        'publishes one completion for an entry the %s lane finalizes as exhausted',
+        async (lane) => {
+            const harness = createAtomicHarness({ attempts: lane === 'initial' ? 20 : 21 });
+            const completionNotifications = new CountingCompletionNotifications();
+
+            await dequeueExhaustedAtomicEntry({ harness, lane, options: { completionNotifications } });
+
+            expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status).toBe(
+                EntityStatus.FAILED
+            );
+            expect(completionNotifications.published).toEqual([harness.entry.key.resourceId]);
+        }
+    );
+
     it('rolls back a lost recovery reservation and finalizes its successor', async () => {
         const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
         const recover = createAppInboxRetryFinalizer({
@@ -258,3 +276,19 @@ describe('AppInbox retry exhaustion', () => {
         });
     });
 });
+
+class CountingCompletionNotifications extends ResourceInboxCompletionNotifications {
+    readonly published: string[] = [];
+
+    constructor() {
+        super(createDefaultTimers());
+    }
+
+    override publish(
+        key: ResourceInboxCompletionNotifications.Identity,
+        awaitability: ResourceInboxCompletionNotifications.Awaitability
+    ): void {
+        this.published.push(key.resourceId);
+        super.publish(key, awaitability);
+    }
+}

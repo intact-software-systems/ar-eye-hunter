@@ -55,7 +55,7 @@ describe('ALWorkHandler under a session ownership', () => {
 
         await fixture.handler.ready();
         fixture.handler.committed(COMMITTED_W1);
-        fixture.engine.wakeAfterExternalWrite();
+        fixture.engine.wakeAfterExternalWrite(new Set([WORK_TYPE]));
         await fixture.engine.executeOnce();
 
         expect(fixture.released).toEqual([]);
@@ -74,7 +74,7 @@ describe('ALWorkHandler under a session ownership', () => {
         expect(fixture.batchCount()).toBe(1);
         // The task now answers the engine's rounds, and an external write reaches its memory.
         await fixture.engine.executeOnce();
-        fixture.engine.wakeAfterExternalWrite();
+        fixture.engine.wakeAfterExternalWrite(new Set([WORK_TYPE]));
         await fixture.engine.executeOnce();
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'external-wake']);
         // An owner runs its own commits and announces none.

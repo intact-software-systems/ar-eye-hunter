@@ -181,6 +181,7 @@ function createGroupPresenceSession(group: Group, sessionId: string): GroupPrese
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: group.rosterVersion,
         status: 'active',
         connectedAtEpochMs: group.rosterVersion,

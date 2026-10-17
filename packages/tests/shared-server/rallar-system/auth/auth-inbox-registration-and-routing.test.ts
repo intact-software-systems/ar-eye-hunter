@@ -18,7 +18,6 @@ const AUTH_INBOX_TYPES = [
     'AUTH_SESSION_ISSUE',
     'AUTH_SESSION_LOGOUT',
     'AUTH_WS_TICKET_ISSUE',
-    'AUTH_WS_TICKET_CONSUME',
     'AUTH_AGENT_SESSION_TICKETS_ISSUE',
     'AUTH_AGENT_SESSION_TICKET_CONSUME'
 ] as const;
@@ -27,7 +26,7 @@ describe('AppAuthInboxService registration', () => {
     it('registers every handler before a queued logout can reach auth state', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const runtime = new FakeRuntimeStateRepository();
         const mutationService = createAuthMutationService({
             runtimeRepository: runtime,

@@ -612,6 +612,7 @@ function createDeltaGroupSession(
         sessionId: `session-${principalId}`,
         principalId,
         generationId: `generation-${principalId}`,
+        connectionGenerationId: `ws-generation-${principalId}`,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

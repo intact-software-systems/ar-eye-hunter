@@ -120,10 +120,11 @@ export async function readSummaryWork(
     command: GroupPresenceSummaryWorkData,
     nowEpochMs: number
 ): Promise<GroupPresenceSummaryWorkRead> {
-    const [read] = await work.read(
+    const reads = await work.read(
         [{ work: command, reservation: summaryReservationRead(command.commandId) }],
         nowEpochMs
     );
+    const [read] = reads.right ?? [];
     if (read === undefined) {
         throw new Error(`Expected one presence summary read for ${command.commandId}`);
     }

@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
@@ -11,7 +12,7 @@ interface FetchCall {
     readonly requestId?: string;
     readonly method: string;
     readonly rawBody?: string;
-    readonly body?: Record<string, unknown>;
+    readonly body?: ApiJsonObject;
 }
 
 describe('room group-state workflows', () => {
@@ -20,6 +21,7 @@ describe('room group-state workflows', () => {
     beforeEach(() => {
         fetchCalls.length = 0;
         configureApiClient({ apiBaseUrl: '' });
+        vi.spyOn(Date, 'now').mockReturnValue(1_000);
         vi.stubGlobal('localStorage', {
             getItem: vi.fn(() => null),
             setItem: vi.fn(),
@@ -41,7 +43,8 @@ describe('room group-state workflows', () => {
             displayName: 'My Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         });
 
         expect(fetchCalls).toEqual([
@@ -68,11 +71,13 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/generated-room/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
+                    expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -89,6 +94,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
             requestedGroupId: 'rallar',
             options: {
@@ -134,11 +140,13 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/app-1/workspaces/workspace-1/groups/rallar/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
+                    expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -160,6 +168,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -182,6 +191,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             intent: { inviteToken: 'invite-1', joinCode: 'code-1' }
         });
 
@@ -203,11 +213,13 @@ describe('room group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"principal-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"principal-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"principal-1","actorSessionId":"session-1"}',
                 body: {
                     principalId: 'principal-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
+                    expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'principal-1',
                     actorSessionId: 'session-1'
                 }
@@ -224,6 +236,7 @@ describe('room group-state workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -357,7 +370,7 @@ function readRequestIds(
     fetchCalls: readonly FetchCall[],
     method: string,
     suffix: string
-): unknown[] {
+): (string | undefined)[] {
     return fetchCalls
         .filter((call) => call.method === method && call.url.endsWith(suffix))
         .map((call) => call.requestId);
@@ -384,7 +397,7 @@ function groupSnapshot(groupId: string): GroupSnapshot {
     });
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

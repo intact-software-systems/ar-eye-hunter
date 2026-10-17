@@ -118,6 +118,7 @@ export async function seedExpiredGroupPresenceSession(
     });
     await service.connectPresenceSession(input.scope, input.groupRef.groupId, input.sessionId, {
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         principalId: 'alice',
         connectedAtEpochMs: input.atEpochMs - 20_000,
         lastHeartbeatAtEpochMs: input.atEpochMs - 10_000,

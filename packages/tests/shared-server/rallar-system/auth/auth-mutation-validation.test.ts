@@ -276,22 +276,6 @@ function webSocketTicketCases(): readonly AuthMutationCase[] {
                 expiredTicketEntry: null,
                 session: entry(session, 'session=session-1')
             }
-        },
-        {
-            command: {
-                version: 1,
-                kind: 'consume-ws-ticket',
-                requestId: 'websocket-consume-request',
-                capturedAtEpochMs: 1_000,
-                ticketDigest: websocketTicket.ticketDigest,
-                expectedSessionId: session.sessionId
-            },
-            read: {
-                kind: 'consume-ws-ticket',
-                ticket: entry(websocketTicket, 'ticket=websocket-ticket-digest'),
-                expiredTicketEntry: null,
-                session: entry(session, 'session=session-1')
-            }
         }
     ];
 }
@@ -381,12 +365,10 @@ function registrationAndSessionRejectionCases(cases: readonly AuthMutationCase[]
 
 function webSocketTicketRejectionCases(cases: readonly AuthMutationCase[]) {
     const issueWebSocket = cases[3];
-    const consumeWebSocket = cases[4];
     const expiredWebSocketCommand = {
         ...issueWebSocket.command,
         ticketRecord: { ...websocketTicket, expiresAtEpochMs: 1_000 }
     } as AuthMutationCommand;
-    const missingWebSocketTicketRead = { ...consumeWebSocket.read, ticket: null } as AuthMutationRead;
 
     return [
         rejectionCase({
@@ -395,21 +377,13 @@ function webSocketTicketRejectionCases(cases: readonly AuthMutationCase[]) {
             read: issueWebSocket.read,
             message: 'Websocket ticket is expired',
             status: 410
-        }),
-        rejectionCase({
-            label: 'consumed websocket ticket absence',
-            command: consumeWebSocket.command,
-            read: missingWebSocketTicketRead,
-            message: 'Auth ticket is invalid or consumed',
-            status: 404,
-            computed: computeAuth(consumeWebSocket.command, consumeWebSocket.read)
         })
     ];
 }
 
 function agentTicketRejectionCases(cases: readonly AuthMutationCase[]) {
-    const issueAgent = cases[5];
-    const consumeAgent = cases[6];
+    const issueAgent = cases[4];
+    const consumeAgent = cases[5];
     const duplicateAgentCommand = {
         ...issueAgent.command,
         tickets: [agentTicketCommand, agentTicketCommand]

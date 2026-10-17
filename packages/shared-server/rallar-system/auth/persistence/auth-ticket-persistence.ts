@@ -60,20 +60,6 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
         );
     }
 
-    async consumeWebSocketTicket(ticket: string): Promise<PersistedAuthSession | undefined> {
-        const issuedTicket = await this.findWebSocketTicketByDigestEntry(await hashAuthSecret(ticket));
-        if (!issuedTicket) {
-            return undefined;
-        }
-        requireConditionalWrite(
-            await this.deleteWebSocketTicketStorageKeyIfRevision(
-                issuedTicket.entry.key,
-                issuedTicket.entry.revision
-            )
-        );
-        return await this.readTicketSession(issuedTicket.value);
-    }
-
     async putAgentSessionTicket(ticket: IssuedAgentSessionTicket): Promise<void> {
         const ticketDigest = await hashAuthSecret(ticket.ticket);
         const session = await this.findSessionById(ticket.sessionId);

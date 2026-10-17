@@ -179,6 +179,7 @@
         },
         "body": {
           "generationId": "generation-fence-{runId}",
+          "connectionGenerationId": "connection-generation-fence-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -305,6 +306,7 @@
         },
         "body": {
           "generationId": "generation-fence-{runId}",
+          "connectionGenerationId": "connection-generation-fence-{runId}",
           "principalId": "{bobClientId}"
         }
       },

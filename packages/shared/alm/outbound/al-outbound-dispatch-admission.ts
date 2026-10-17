@@ -4,7 +4,10 @@ import {
     isALFreezeOfMessage,
     resolveALFrozenMulticastAudience
 } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import {
+    decodePersistedALMessageRow,
+    toChangedALMessageRow
+} from '../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
@@ -162,8 +165,21 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[]> {
+        // The first member that threw is rethrown once every member ran, so the own write of each has landed.
+        return (await this.commitAllSettled(dispatches)).map((outcome) => {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+            return outcome.value;
+        });
+    }
+
+    /** `commitAll` with each member's own answer: a member whose single commit threw rejects alone. */
+    async commitAllSettled(
+        dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
+    ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
         if (dispatches.length < 2) {
-            return await Promise.all(dispatches.map((dispatch) => this.commit(dispatch)));
+            return await Promise.allSettled(dispatches.map((dispatch) => this.commit(dispatch)));
         }
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
@@ -179,7 +195,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                     console.warn('AL outbound group commit threw; its members commit alone', error);
                     return undefined;
                 });
-            return grouped ?? await this.commitEachAlone(members);
+            return grouped?.map((value) => ({ status: 'fulfilled', value })) ?? await this.commitEachAlone(members);
         }
         finally {
             for (const { phases } of members) {
@@ -229,22 +245,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    /**
-     * Every member commits, whatever an earlier one answered. A member whose single commit would throw
-     * does not stop the members after it: the first such throw is rethrown once every member ran, so
-     * the caller still sees it and the own write of each member has already landed. The caller owes
-     * the owner its wake for those writes on the rethrow too.
-     */
+    /** Every member commits alone, one after another, whatever an earlier one answered; each keeps its own answer. */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]
-    ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[]> {
-        const outcomes: Promise<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
+    ): Promise<readonly PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[]> {
+        const outcomes: PromiseSettledResult<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
         for (const { dispatch, phases } of members) {
-            const outcome = this.commitWithPhases(dispatch, phases);
-            outcomes.push(outcome);
-            await outcome.catch(() => undefined);
+            const [outcome] = await Promise.allSettled([this.commitWithPhases(dispatch, phases)]);
+            outcomes.push(outcome!);
         }
-        return await Promise.all(outcomes);
+        return outcomes;
     }
 
     /** The results of the group, or `undefined` when every member must commit alone instead. */
@@ -551,11 +561,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             : this.dependencies.toOutboxEntry(read.msg);
         return {
             read,
-            outboxEntry: {
-                ...entry,
+            outboxEntry: toChangedALMessageRow(entry, {
                 key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
                     toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
-            },
+            }),
             dispatchAtMs,
             intent: dispatch.intent,
             phase: dispatch.phase,
@@ -698,7 +707,7 @@ export function isALOutboundCanonicalRowFrozenBy(canonicalEntry: ResourceEntry, 
     const canonical = decodeALAdmissionValue(
         canonicalEntry.resource,
         JSON.stringify(canonicalEntry.key),
-        () => decodePersistedALMessage(canonicalEntry.resource)
+        () => decodePersistedALMessageRow(canonicalEntry)
     );
     return isALFreezeOfMessage(canonical, msg);
 }

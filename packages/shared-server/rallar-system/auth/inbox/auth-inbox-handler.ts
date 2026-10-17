@@ -9,13 +9,7 @@ import {
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
-import type {
-    AuthMutationCommand,
-    AuthMutationIntent,
-    AuthMutationRead,
-    AuthMutationResult
-} from '../mutation/auth-mutation-contracts.ts';
-import { AuthMutationRejectedError } from '../mutation/auth-mutation-rejected-error.ts';
+import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
 import { computeAuthLogoutProvenance, writeAuthLogoutProvenance } from '../mutation/compute/auth-logout-provenance.ts';
 import { readAuthMutationAttempt } from '../mutation/read-auth-mutation-attempt.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
@@ -44,18 +38,7 @@ export class AuthInboxHandler {
             mutationService: this.dependencies.mutationService,
             nowEpochMs: this.dependencies.nowEpochMs
         });
-        try {
-            return await this.completeAuthMutation(read, context);
-        }
-        catch (error) {
-            if (
-                error instanceof AuthMutationRejectedError && read.command.kind === 'consume-ws-ticket' &&
-                read.authoritativeState.kind === 'consume-ws-ticket'
-            ) {
-                error.setConsumeRead(toConsumeRead(read.command, read.authoritativeState));
-            }
-            throw error;
-        }
+        return await this.completeAuthMutation(read, context);
     }
 
     private async completeAuthMutation(
@@ -117,22 +100,4 @@ function assertAuthInboxIdentity(
     ) {
         throw new TypeError('Auth AppInbox command identity differs from queue key');
     }
-}
-
-function toConsumeRead(
-    command: Extract<AuthMutationCommand, { kind: 'consume-ws-ticket'; }>,
-    read: Extract<AuthMutationRead, { kind: 'consume-ws-ticket'; }>
-): AuthMutationRejectedError.ConsumeRead {
-    const ticket = read.ticket;
-    const expiredEntry = read.expiredTicketEntry;
-    return {
-        consumeRequestId: command.requestId,
-        expectedSessionId: command.expectedSessionId,
-        capturedAtEpochMs: command.capturedAtEpochMs,
-        ticketRead: ticket ? 'live' : expiredEntry ? 'expired' : 'absent',
-        storageExpiresAtEpochMs: ticket?.entry.expireAtTimestamp ?? expiredEntry?.expireAtTimestamp ?? null,
-        ticketSessionId: ticket?.value.sessionId ?? null,
-        ticketIssuedAtEpochMs: ticket?.value.issuedAtEpochMs ?? null,
-        ticketExpiresAtEpochMs: ticket?.value.expiresAtEpochMs ?? null
-    };
 }

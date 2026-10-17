@@ -218,7 +218,7 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
-            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
             const outboxReader = new OutboxQueueReader(queue);
 
             const authority = {
@@ -277,6 +277,7 @@ Deno.test(
             const summaryWork = new GroupPresenceSummaryWork({
                 outboxQueueReader: outboxReader,
                 recomputeDebounceMs: 0,
+                recomputeMaxWaitMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
@@ -452,7 +453,7 @@ Deno.test(
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox, Temporal.Now.instant);
-            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
 
             const authority = {
                 clientId: 'alice',
@@ -555,6 +556,7 @@ Deno.test(
                     new PSqlQueueBox(resourceInbox, Temporal.Now.instant)
                 ),
                 recomputeDebounceMs: 0,
+                recomputeMaxWaitMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-summary-fence',

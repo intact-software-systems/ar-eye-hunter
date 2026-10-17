@@ -4,7 +4,7 @@ import {
     type ObservableKeyedValueListener
 } from '@shared/cache/RepositoryInterfaces.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { PersistenceErrorHandler } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+import type { PersistenceErrorHandler } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
 
 export {
     createRallarDataFacade,

@@ -108,7 +108,8 @@ describe('GroupStateSnapshotReadThroughCache', () => {
             cache: {
                 findOrLoadByRef: (groupRef, options) => cache.findOrLoadByRef(groupRef, options),
                 observe: (snapshot) => cache.observe(snapshot)
-            }
+            },
+            current: durable
         });
 
         const stored = await repository.findPresenceEntry({
@@ -215,6 +216,7 @@ async function convergePresenceSummaryForCacheTest(
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => 2_001,
         serviceId: 'cache-convergence-test'

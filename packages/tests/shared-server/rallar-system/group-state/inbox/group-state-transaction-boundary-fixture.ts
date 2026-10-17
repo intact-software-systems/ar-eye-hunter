@@ -21,6 +21,7 @@ import type { CreateGroupRequest, StateScope } from '@shared/api/state-types.ts'
 import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ClaimableDeadlineClaim } from '@shared/resilience/run-with-claimable-deadline.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../../app-inbox/test-support/app-inbox-resource-fixtures.ts';
@@ -36,6 +37,7 @@ const GROUP_ID = 'transaction-boundary-room';
 const REQUEST_ID = 'create-transaction-boundary-room';
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
+const UNBOUNDED_TEST_DEADLINE: ClaimableDeadlineClaim = { tryClaim: () => true, isExpired: () => false };
 export type GroupTransactionFailurePhase = 'domain-write' | AppInboxTestDatabaseStage;
 
 export interface GroupStateTransactionBoundaryHarness {
@@ -78,7 +80,7 @@ export async function createGroupStateTransactionBoundaryHarness(
     );
     const context = await createReservedContext(storage.queue, ingress);
     const execution = createTransactionBoundaryExecution(storage, groupState);
-    execution.transactionWriter.begin(context);
+    execution.transactionWriter.begin(context, UNBOUNDED_TEST_DEADLINE);
     return {
         context,
         ...execution,
@@ -112,7 +114,7 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
         createOwnerAuthority()
     );
     const seedContext = await createReservedContext(storage.queue, seedIngress);
-    transactionWriter.begin(seedContext);
+    transactionWriter.begin(seedContext, UNBOUNDED_TEST_DEADLINE);
     await handler.processGroupStateMutation(seedContext);
     storage.reachedStages.length = 0;
 
@@ -126,7 +128,7 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
         createOwnerAuthority()
     );
     const context = await createReconfigureReservedContext(storage.queue, ingress);
-    transactionWriter.begin(context);
+    transactionWriter.begin(context, UNBOUNDED_TEST_DEADLINE);
     storage.enableFailures();
     return {
         context,

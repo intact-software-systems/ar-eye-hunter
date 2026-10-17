@@ -10,6 +10,8 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { TestWebSocket } from './test-web-socket.ts';
 
+const FAR_FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
+
 describe('JsonWebSocketServer', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -234,6 +236,55 @@ describe('JsonWebSocketServer', () => {
 
         expect(server.connections.has('session-1')).toBe(false);
         expect(lifecycle).toEqual(['close:session-1:false', 'close:session-1:true']);
+    });
+
+    it('runs the sends held for an expected generation when its socket opens, in order', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const generation = server.mintConnectionGeneration();
+        const sent: string[] = [];
+        const holds = server.expectedConnections;
+        holds.expect({ id: 'session-1', generationId: generation.generationId, expiresAtEpochMs: FAR_FUTURE_MS });
+
+        expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('first') })).toBe('held');
+        expect(holds.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => sent.push('second') })).toBe('held');
+        const socket = new TestWebSocket('session-1');
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+        expect(sent).toEqual([]);
+        expect(holds.isAwaiting('session-1')).toBe(true);
+
+        socket.open();
+
+        expect(sent).toEqual(['first', 'second']);
+        expect(holds.isAwaiting('session-1')).toBe(false);
+    });
+
+    it('settles an expected generation whose socket closes before it opens', () => {
+        vi.stubGlobal('WebSocket', TestWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const generation = server.mintConnectionGeneration();
+        const settled: string[] = [];
+        server.expectedConnections.expect({ id: 'session-1', generationId: generation.generationId, expiresAtEpochMs: FAR_FUTURE_MS });
+        server.expectedConnections.hold('session-1', { expiresAtEpochMs: FAR_FUTURE_MS, send: () => settled.push('held') });
+        const socket = new TestWebSocket('session-1');
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket, ...generation }));
+
+        socket.disconnect(1006, 'client-gone');
+
+        expect(settled).toEqual(['held']);
+        expect(server.expectedConnections.isAwaiting('session-1')).toBe(false);
+    });
+
+    it('mints a strictly monotonic generation start before any socket exists', () => {
+        const server = new JsonWebSocketServer();
+        const first = server.mintConnectionGeneration({ observedAtEpochMs: 100 });
+        const second = server.mintConnectionGeneration({ observedAtEpochMs: 99 });
+
+        expect(first.generationStartedAtEpochMs).toBe(100);
+        expect(second.generationStartedAtEpochMs).toBe(101);
+        expect(first.generationId).not.toBe(second.generationId);
     });
 
     it('can close a live connection by id for auth logout', () => {

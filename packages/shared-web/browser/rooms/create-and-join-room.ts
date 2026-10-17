@@ -11,6 +11,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 
 import { leaveRoom } from './leave-room.ts';
 import type { RallarCreateRoomInput, RallarRoomSwitchPartialFailureError } from './rallar-room-contracts.ts';
+import { requireOwnWsConnectionGenerationId } from './require-own-ws-connection-generation-id.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import { createAndJoinStateGroup, type StateGroupWorkflowValue } from './room-group-state-workflows.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
@@ -41,6 +42,7 @@ export async function createAndJoinRoom(input: CreateAndJoinRoomInput): Promise<
             principalId: session.clientId,
             sessionId: session.sessionId,
             generationId: context.middleware.heartbeat.generationId,
+            connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
             scope,
             policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
             requestedGroupId: createInput.groupId,
@@ -63,7 +65,7 @@ interface CreateRoomSwitchPartialFailureErrorInput {
     readonly operation: 'create-and-switch' | 'join';
     readonly joinedRoom: GroupSnapshot;
     readonly previousRoomRef: GroupRef;
-    readonly leaveError: unknown;
+    readonly leaveError: RallarRoomSwitchPartialFailureError['leaveError'];
 }
 
 export async function createAndSwitchRoom(input: CreateAndSwitchRoomInput): Promise<GroupSnapshot> {

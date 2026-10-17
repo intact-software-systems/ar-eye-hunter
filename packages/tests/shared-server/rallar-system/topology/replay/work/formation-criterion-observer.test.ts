@@ -7,6 +7,7 @@ import {
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import type { RtcTopologyMutationRead } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyRttRefreshWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { computeFormationCriterionCommand } from '@shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts';
 import {
@@ -16,7 +17,6 @@ import {
     type DeferredCriterionPetitionDependencies,
     type StageTriggerPetitionDependencies
 } from '@shared-server/rallar-system/topology/replay/work/formation-criterion-observer.ts';
-import type { PersistedRtcTopologyWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type {
@@ -49,14 +49,17 @@ const planned: RallarOverlayTopologySnapshot = {
     createdAtEpochMs: 1000,
     updatedAtEpochMs: 1000
 };
-const work: PersistedRtcTopologyWork = {
-    kind: 'group-revision',
+// The deferred petition follows an RTT refinement the claim gate skipped, the only work it receives.
+const work: RtcTopologyRttRefreshWork = {
+    kind: 'rtt-refresh',
     overlayId: planned.overlayId,
     groupSnapshot: group,
-    sourceGroupStateCausalRevision: planned.sourceGroupStateCausalRevision,
+    requestedGroupStateCausalRevision: planned.sourceGroupStateCausalRevision,
+    requestedRttVersion: 1,
+    rtt: { sessionIdFrom: 'session-a', sessionIdTo: 'session-b', rttMs: 1, createdAtEpochMs: 1000, version: 1 },
+    refinementObservationId: 'rtt-observation-1',
     requestedAtEpochMs: 1000,
     requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-    origin: 'automatic',
     publish: true
 };
 

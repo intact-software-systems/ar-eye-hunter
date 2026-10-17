@@ -36,7 +36,7 @@ interface ObservedPass {
     readonly handlers: ObservedHandler[];
 }
 
-/** What the queue machinery itself cost: the probe plus the pass, less every handler's own span. */
+/** What the queue machinery itself cost: the probe plus the pass, less the time any handler ran. */
 interface DequeuePassCost {
     readonly durationMs: number;
     readonly counters: RallarTimingDetails;
@@ -141,27 +141,52 @@ export class AppInboxDequeuePassTiming implements QueueMessageReader.DequeuePass
     }
 }
 
+/** Concurrent handlers overlap, so their time is their spans' union, which the pass span always contains. */
 function computeDequeuePassCost(pass: ObservedPass, finished: ExecutorSample): DequeuePassCost {
-    const spans: ExecutorSpan[] = [{ started: pass.started, finished }];
-    if (pass.probe !== undefined) {
-        spans.push(pass.probe);
-    }
-    const handlerSpans = pass.handlers.flatMap((handler) =>
-        handler.finished === undefined ? [] : [{ started: handler.started, finished: handler.finished }]
+    const passSpan = { started: pass.started, finished };
+    const spans: ExecutorSpan[] = pass.probe === undefined ? [passSpan] : [passSpan, pass.probe];
+    const handlerSpans = toSpanUnion(
+        pass.handlers.flatMap((handler) =>
+            handler.finished === undefined ? [] : [{ started: handler.started, finished: handler.finished }]
+        )
     );
-    const durationMs = sumDurationMs(spans) - sumDurationMs(handlerSpans);
+    const handlersMs = sumDurationMs(handlerSpans);
+    const timing = { passWallMs: toRoundedMs(sumDurationMs([passSpan])), handlersMs: toRoundedMs(handlersMs) };
+    const durationMs = sumDurationMs(spans) - handlersMs;
     const counted = [...spans, ...handlerSpans].every((span) =>
         span.started.counters !== undefined && span.finished.counters !== undefined
     );
     if (!counted) {
-        return { durationMs, counters: {} };
+        return { durationMs, counters: timing };
     }
     const statements = sumStatements(spans) - sumStatements(handlerSpans);
     const executorWaitMs = sumExecutorWaitMs(spans) - sumExecutorWaitMs(handlerSpans);
     return {
         durationMs,
-        counters: toExecutorCounterDeltaDetails({ statements: 0, executorWaitMs: 0 }, { statements, executorWaitMs })
+        counters: {
+            ...toExecutorCounterDeltaDetails({ statements: 0, executorWaitMs: 0 }, { statements, executorWaitMs }),
+            ...timing
+        }
     };
+}
+
+/** Overlapping spans merge into one, from the earliest start sample to the latest finish sample. */
+function toSpanUnion(spans: readonly ExecutorSpan[]): readonly ExecutorSpan[] {
+    const merged: ExecutorSpan[] = [];
+    for (const span of [...spans].sort((left, right) => left.started.atMs - right.started.atMs)) {
+        const last = merged.at(-1);
+        if (last === undefined || span.started.atMs > last.finished.atMs) {
+            merged.push(span);
+        }
+        else if (span.finished.atMs > last.finished.atMs) {
+            merged[merged.length - 1] = { started: last.started, finished: span.finished };
+        }
+    }
+    return merged;
+}
+
+function toRoundedMs(durationMs: number): number {
+    return Math.round(durationMs * 100) / 100;
 }
 
 function sumDurationMs(spans: readonly ExecutorSpan[]): number {

@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import {
-    decodeALMessage,
+    decodeALMessageRow,
     decodeALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -110,7 +110,7 @@ function validateDispatchEffects<TPrepared>(
 }
 
 function validateQueueMessage(entry: ResourceEntry, message: ALMessage): ALMessageRejection | undefined {
-    const decoded = decodeALMessage(entry.resource);
+    const decoded = decodeALMessageRow(entry);
     if (decoded.left) {
         return decoded.left;
     }

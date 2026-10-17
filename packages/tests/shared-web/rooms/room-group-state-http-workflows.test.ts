@@ -61,7 +61,8 @@ describe('room group-state HTTP workflows', () => {
             displayName: 'My Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         });
 
         expect(result.group.groupId).toBe('group-created');
@@ -96,6 +97,7 @@ describe('room group-state HTTP workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             requestedGroupId: 'rallar'
         });
 
@@ -128,6 +130,7 @@ describe('room group-state HTTP workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             requestedGroupId: 'rallar',
             options: {
                 description: 'Mission room',
@@ -297,6 +300,7 @@ describe('room group-state HTTP workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 
@@ -344,6 +348,7 @@ describe('room group-state HTTP workflows', () => {
             principalId: 'private-principal-id',
             sessionId: 'private-session-id',
             generationId: 'private-generation-id',
+            connectionGenerationId: 'private-ws-generation-id',
             requestedGroupId: 'private-target-group'
         });
 
@@ -379,6 +384,7 @@ describe('room group-state HTTP workflows', () => {
                 principalId: 'principal-1',
                 sessionId: 'session-1',
                 generationId: 'generation-1',
+                connectionGenerationId: 'ws-generation-1',
                 intent: {
                     inviteToken: 'invite-1',
                     joinCode: 'code-1'
@@ -426,7 +432,8 @@ describe('room group-state HTTP workflows', () => {
                     groupId: 'group-1',
                     principalId: 'principal-1',
                     sessionId: 'session-1',
-                    generationId: 'generation-1'
+                    generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1'
                 })
             ).rejects.toMatchObject({
                 status: 403,
@@ -467,7 +474,8 @@ describe('room group-state HTTP workflows', () => {
                 groupId: 'group-1',
                 principalId: 'principal-1',
                 sessionId: 'session-1',
-                generationId: 'generation-1'
+                generationId: 'generation-1',
+                connectionGenerationId: 'ws-generation-1'
             })
         ).rejects.toMatchObject({
             status: 403,
@@ -517,6 +525,7 @@ describe('room group-state HTTP workflows', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             policies: { command: { maxAttempts: 2 } }
         });
 

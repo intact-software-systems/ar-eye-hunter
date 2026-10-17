@@ -858,12 +858,14 @@ function isGroupPresenceConnectRequest(
             ...MUTATION_ACTOR_KEYS,
             'principalId',
             'generationId',
+            'connectionGenerationId',
             'connectedAtEpochMs',
             'lastHeartbeatAtEpochMs',
             'expiresAtEpochMs'
         ]) &&
         isNonEmptyString(value.principalId) &&
         isNonEmptyString(value.generationId) &&
+        isNonEmptyString(value.connectionGenerationId) &&
         isOptionalEpoch(value.connectedAtEpochMs) &&
         isOptionalEpoch(value.lastHeartbeatAtEpochMs) &&
         isOptionalEpoch(value.expiresAtEpochMs)

@@ -27,6 +27,10 @@ heartbeat targeting, and overlay adoption all hang off cache writes.
 5. [isRtcTopologyCurrentStateMessage](./is-rtc-topology-current-state-message.ts#isRtcTopologyCurrentStateMessage)
    gates which `overlay.topology` messages count as fresh durable current
    state (server-push hydration/repair identities).
+   [DeferredOverlayTopologies](./deferred-overlay-topologies.ts#DeferredOverlayTopologies)
+   keeps the newest layout per group that arrived before the cached snapshot
+   admitted the own session; the group observer re-attempts it through
+   [adoptDeferredOverlayTopology](./overlay-topology-message-dispatch.ts#adoptDeferredOverlayTopology).
 6. [refreshStateSnapshots](../state-read/refresh-state-snapshots.ts#refreshStateSnapshots) performs
    the connect-time collection reads that feed
    [browserStateCacheLifecycle.hydrate](./browser-state-cache-lifecycle.ts#browserStateCacheLifecycle);

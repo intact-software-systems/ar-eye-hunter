@@ -1,11 +1,12 @@
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeOverlayTopologySnapshot } from '@shared/api/authoritative-state-validation.ts';
-import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
+import { compareGroupCausalRevision, isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import {
     resolveGroupLayoutRole,
     toGroupLayoutIdentity,
     type GroupLayoutRole
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { toOverlayInfoForSession, type RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -17,6 +18,7 @@ import { emitOverlayAdoption, type OverlayAdoptionOutcome } from '@shared/reposi
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
+import type { DeferredOverlayTopologies } from './deferred-overlay-topologies.ts';
 import { isRtcTopologyCurrentStateMessage } from './is-rtc-topology-current-state-message.ts';
 
 export interface AdoptOverlayTopologyInput {
@@ -24,6 +26,7 @@ export interface AdoptOverlayTopologyInput {
     readonly sessionId: string;
     readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
     readonly adoption: 'current-state' | 'publication';
+    readonly deferredTopologies: DeferredOverlayTopologies;
 }
 
 export interface DispatchOverlayTopologyMessageInput {
@@ -31,7 +34,17 @@ export interface DispatchOverlayTopologyMessageInput {
     readonly scope: StateScope;
     readonly sessionId: string;
     readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+    readonly deferredTopologies: DeferredOverlayTopologies;
 }
+
+export interface AdoptDeferredOverlayTopologyInput {
+    readonly groupRef: GroupRef;
+    readonly sessionId: string;
+    readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+    readonly deferredTopologies: DeferredOverlayTopologies;
+}
+
+type OverlayMembershipAdmission = 'admitted' | 'deferred' | 'dropped';
 
 export interface AdoptOverlayTopologyResult {
     readonly role: GroupLayoutRole;
@@ -61,6 +74,7 @@ export async function dispatchOverlayTopologyMessage(
         topology,
         sessionId: input.sessionId,
         webRtcGroupManager: input.webRtcGroupManager,
+        deferredTopologies: input.deferredTopologies,
         adoption: isRtcTopologyCurrentStateMessage(
                 input.snapshot,
                 topology,
@@ -75,23 +89,91 @@ export async function dispatchOverlayTopologyMessage(
 export async function adoptOverlayTopology(
     input: AdoptOverlayTopologyInput
 ): Promise<AdoptOverlayTopologyResult> {
-    const overlay = toOverlayInfoForSession(input.topology, input.sessionId);
-    const groupSnapshot = findGroupStateSnapshotByRef(input.topology.groupRef);
-    const acceptedIdentity = groupSnapshot?.group.acceptedLayoutIdentity ?? undefined;
-    const role = resolveGroupLayoutRole({
-        publication: toGroupLayoutIdentity(input.topology),
-        accepted: acceptedIdentity
-    });
-
-    const membershipIneligible = groupSnapshot === undefined
-        ? wasGroupStateSnapshotObservedByRef(input.topology.groupRef)
-        : !isGroupActive(groupSnapshot) || !isSessionInGroup(groupSnapshot, input.sessionId);
-    if (membershipIneligible) {
-        const outcome = 'membership-ineligible-dropped';
-        emitOverlayAdoption(input.topology.overlayId, outcome);
-        return { role, outcome, changed: false };
+    const admission = resolveOverlayMembershipAdmission(input.topology, input.sessionId);
+    if (admission === 'admitted') {
+        return await adoptAdmittedOverlayTopology(input);
     }
+    const outcome = admission === 'deferred' && input.deferredTopologies.keep(input.topology)
+        ? 'membership-ineligible-deferred'
+        : 'membership-ineligible-dropped';
+    emitOverlayAdoption(input.topology.overlayId, outcome);
+    return { role: resolvePublicationRole(input.topology), outcome, changed: false };
+}
 
+/**
+ * Re-attempts the layout kept for a group once its cached snapshot changes. A
+ * kept layout lost its delivery moment, so it is adopted as a publication.
+ */
+export async function adoptDeferredOverlayTopology(
+    input: AdoptDeferredOverlayTopologyInput
+): Promise<void> {
+    const topology = input.deferredTopologies.find(input.groupRef);
+    if (topology === undefined) {
+        return;
+    }
+    const admission = resolveOverlayMembershipAdmission(topology, input.sessionId);
+    if (admission === 'deferred') {
+        return;
+    }
+    input.deferredTopologies.discard(input.groupRef);
+    if (admission === 'dropped') {
+        emitOverlayAdoption(topology.overlayId, 'membership-ineligible-dropped');
+        return;
+    }
+    const result = await adoptAdmittedOverlayTopology({
+        topology,
+        sessionId: input.sessionId,
+        webRtcGroupManager: input.webRtcGroupManager,
+        adoption: 'publication',
+        deferredTopologies: input.deferredTopologies
+    });
+    if (result.changed) {
+        emitOverlayAdoption(topology.overlayId, 'membership-deferred-adopted');
+    }
+}
+
+/**
+ * An observed group admits a layout only while active with the own session. A
+ * layout that places the own session at a revision the cache has not reached,
+ * or in a group not cached yet, is deferred: the own join response may still
+ * predate the own presence and would clear an admitted layout.
+ */
+function resolveOverlayMembershipAdmission(
+    topology: RallarOverlayTopologySnapshot,
+    sessionId: string
+): OverlayMembershipAdmission {
+    const groupSnapshot = findGroupStateSnapshotByRef(topology.groupRef);
+    if (groupSnapshot === undefined) {
+        if (wasGroupStateSnapshotObservedByRef(topology.groupRef)) {
+            return 'dropped';
+        }
+        return topology.activeSessionIds.includes(sessionId) ? 'deferred' : 'admitted';
+    }
+    if (!isGroupActive(groupSnapshot)) {
+        return 'dropped';
+    }
+    if (isSessionInGroup(groupSnapshot, sessionId)) {
+        return 'admitted';
+    }
+    const order = compareGroupCausalRevision(topology.sourceGroupStateCausalRevision, groupSnapshot.causalRevision);
+    return topology.activeSessionIds.includes(sessionId) && (order === 'dominates' || order === 'incomparable')
+        ? 'deferred'
+        : 'dropped';
+}
+
+function resolvePublicationRole(topology: RallarOverlayTopologySnapshot): GroupLayoutRole {
+    return resolveGroupLayoutRole({
+        publication: toGroupLayoutIdentity(topology),
+        accepted: findGroupStateSnapshotByRef(topology.groupRef)?.group.acceptedLayoutIdentity ?? undefined
+    });
+}
+
+async function adoptAdmittedOverlayTopology(
+    input: AdoptOverlayTopologyInput
+): Promise<AdoptOverlayTopologyResult> {
+    input.deferredTopologies.discardThrough(input.topology);
+    const overlay = toOverlayInfoForSession(input.topology, input.sessionId);
+    const role = resolvePublicationRole(input.topology);
     if (role === 'superseded' || role === 'incomparable') {
         const outcome = role === 'superseded'
             ? 'dominated-dropped'

@@ -14,6 +14,7 @@ import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-i
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import type { AuthWsTicketConsumptionReader } from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type {
     ClientExpiredSessionPageInput,
@@ -31,8 +32,6 @@ import { toUpsertClientInstanceMutationInput } from '../mutation/command-input/t
 import { toUpsertClientPrincipalMutationInput } from '../mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import {
     CLIENT_STATE_INBOX_REGISTRATION_TYPES,
-    type ClientAuthorisedWsSessionConnectAppInboxPayload,
-    type ClientAuthorisedWsSessionDisconnectAppInboxPayload,
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
@@ -51,8 +50,8 @@ import {
     type ToAuthorisedWsClientDisconnectEnqueueInput
 } from './authorised-ws-client-app-inbox.ts';
 import {
-    decodeClientAuthorisedWsSessionConnectAppInboxPayload,
     decodeClientAuthorisedWsSessionDisconnectAppInboxPayload,
+    decodeClientAuthorisedWsTicketConnectAppInboxPayload,
     decodeClientExpiredSessionsAppInboxPayload,
     decodeClientInstanceUpsertAppInboxPayload,
     decodeClientPrincipalUpsertAppInboxPayload,
@@ -64,7 +63,6 @@ import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
 import {
     decodeAuthorisedWsClientMutationResult,
     decodeClientStateWritten,
-    decodeExpiredClientSessionsResult,
     type AuthorisedWsClientMutationResult
 } from './client-state-inbox-result-codec.ts';
 
@@ -75,6 +73,7 @@ export namespace AppClientInboxService {
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly clientStateService: ClientStateService;
+        readonly wsTickets: AuthWsTicketConsumptionReader;
     }
 
     export interface Config {
@@ -123,6 +122,7 @@ export class AppClientInboxService {
         this.clientStateService = dependencies.clientStateService;
         this.handler = new ClientStateInboxHandler({
             mutationService: dependencies.clientStateService,
+            wsTickets: dependencies.wsTickets,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
             expiryCandidates: dependencies.clientStateService,
             expiryContinuationWriter: {
@@ -161,7 +161,8 @@ export class AppClientInboxService {
         return result;
     }
 
-    public async processAuthorisedWsClientConnect(
+    /** The upgrade route waits for this result before it upgrades: only a written connect registers a socket. */
+    public async writeAuthorisedWsClientConnect(
         input: ToAuthorisedWsClientConnectEnqueueInput
     ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
         return await this.commandClient.enqueueAndWaitForResult(
@@ -170,32 +171,10 @@ export class AppClientInboxService {
         );
     }
 
-    public async enqueueAuthorisedWsClientConnect(input: ToAuthorisedWsClientConnectEnqueueInput) {
-        return await this.queueEntryWriter.enqueue(toAuthorisedWsClientConnectEnqueue(input));
-    }
-
-    public async processAuthorisedWsClientDisconnect(
-        input: ToAuthorisedWsClientDisconnectEnqueueInput
-    ): Promise<Either<AppInboxFailure, AuthorisedWsClientMutationResult>> {
-        return await this.commandClient.enqueueAndWaitForResult(
-            toAuthorisedWsClientDisconnectEnqueue(input),
-            decodeAuthorisedWsClientMutationResult
-        );
-    }
-
     public async enqueueAuthorisedWsClientDisconnect(
         input: ToAuthorisedWsClientDisconnectEnqueueInput
     ) {
         return await this.queueEntryWriter.enqueue(toAuthorisedWsClientDisconnectEnqueue(input));
-    }
-
-    public async processExpiredSessions(
-        atEpochMs: number = Date.now()
-    ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
-        return await this.commandClient.enqueueReplacingTerminalAndWaitForResult(
-            this.toExpiredSessionsEnqueue({ atEpochMs, afterKey: null }),
-            decodeExpiredClientSessionsResult
-        );
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
@@ -321,7 +300,7 @@ export class AppClientInboxService {
     private registerAuthorisedWsClientConnect(): void {
         this.handlers.registerHandler({
             type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            decodeCommand: decodeClientAuthorisedWsSessionConnectAppInboxPayload,
+            decodeCommand: decodeClientAuthorisedWsTicketConnectAppInboxPayload,
             encodeResult: (result) => encodeAppInboxResult(result, 'Authorised WebSocket connect AppInbox result'),
             handle: async (session, context) => await this.handler.processAuthorisedWsConnect(session, context)
         });
@@ -347,7 +326,7 @@ export class AppClientInboxService {
 
     private toExpiredSessionsEnqueue(
         input: ClientExpiredSessionPageInput,
-        resourceId: string = 'expire-client-sessions'
+        resourceId: string
     ): AppInboxEnqueueInput {
         return {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,

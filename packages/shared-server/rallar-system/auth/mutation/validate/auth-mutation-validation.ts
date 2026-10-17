@@ -130,7 +130,6 @@ export function assertAuthRuntimeStateAuthority(
         }
         case 'register-user':
         case 'logout-session':
-        case 'consume-ws-ticket':
         case 'consume-agent-ticket':
             return;
     }

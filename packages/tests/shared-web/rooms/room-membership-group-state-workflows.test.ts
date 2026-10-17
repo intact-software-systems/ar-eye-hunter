@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
@@ -11,7 +12,7 @@ interface FetchCall {
     readonly requestId?: string;
     readonly method: string;
     readonly rawBody?: string;
-    readonly body?: Record<string, unknown>;
+    readonly body?: ApiJsonObject;
 }
 
 describe('room membership group-state workflows', () => {
@@ -20,6 +21,7 @@ describe('room membership group-state workflows', () => {
     beforeEach(() => {
         fetchCalls.length = 0;
         configureApiClient({ apiBaseUrl: '' });
+        vi.spyOn(Date, 'now').mockReturnValue(1_000);
         vi.stubGlobal('localStorage', {
             getItem: vi.fn(() => null),
             setItem: vi.fn(),
@@ -93,7 +95,8 @@ describe('room membership group-state workflows', () => {
             groupId: 'group-1',
             actorPrincipalId: 'member-1',
             sessionId: 'member-session',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         });
 
         expect(fetchCalls).toEqual([
@@ -111,11 +114,13 @@ describe('room membership group-state workflows', () => {
                 url: '/api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/member-session',
                 requestId: 'presence-request-000001',
                 method: 'PUT',
-                rawBody: '{"principalId":"member-1","generationId":"generation-1",' +
+                rawBody: '{"principalId":"member-1","generationId":"generation-1","connectionGenerationId":"ws-generation-1","expiresAtEpochMs":121000,' +
                     '"actorPrincipalId":"member-1","actorSessionId":"member-session"}',
                 body: {
                     principalId: 'member-1',
                     generationId: 'generation-1',
+                    connectionGenerationId: 'ws-generation-1',
+                    expiresAtEpochMs: 121_000,
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session'
                 }
@@ -282,7 +287,7 @@ function roomSnapshot(groupId: string): GroupSnapshot {
     });
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }

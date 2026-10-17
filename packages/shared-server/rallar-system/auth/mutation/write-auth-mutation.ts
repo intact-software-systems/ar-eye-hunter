@@ -21,7 +21,7 @@ export async function writeAuthMutation(
     return computed.result;
 }
 
-async function writeAuthPersistenceOperation(
+export async function writeAuthPersistenceOperation(
     transaction: PSqlSql,
     operation: AuthPersistenceOperation
 ): Promise<void> {

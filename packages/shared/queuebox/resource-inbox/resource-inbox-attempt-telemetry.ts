@@ -13,6 +13,8 @@ export interface ResourceInboxAttemptTelemetry {
     readonly selectedDueAtEpochMs: number;
     /** How long this claim may stay RESERVED before the TIMEOUT lane reclaims it for another attempt. */
     readonly reservationLeaseMs: number;
+    /** When the dequeue clock selected this claim; its lease runs from here, not from when its handler starts. */
+    readonly selectedAtEpochMs: number;
 }
 
 export interface ResourceInboxAttemptReleaseTelemetry {
@@ -76,7 +78,8 @@ export function computeResourceInboxAttempt(input: ResourceInboxAttemptInput): R
             dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
             attempt: entry.dequeueAudit.attempts,
             selectedDueAtEpochMs: dueAtEpochMs,
-            reservationLeaseMs
+            reservationLeaseMs,
+            selectedAtEpochMs
         }
     };
 }

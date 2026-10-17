@@ -133,6 +133,7 @@ describe('GroupStateRepository persistence', () => {
             sessionId: 'session',
             principalId: 'alice',
             generationId: 'generation',
+            connectionGenerationId: 'ws-generation',
             generationVersion: 1,
             connectedAtEpochMs: 1_000,
             lastHeartbeatAtEpochMs: 1_000,

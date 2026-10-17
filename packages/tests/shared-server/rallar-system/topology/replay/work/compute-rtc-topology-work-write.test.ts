@@ -336,7 +336,7 @@ describe('RTC topology complete write computation', () => {
                 ...fixture.facts,
                 workEnvelope: {
                     ...fixture.facts.workEnvelope,
-                    data: { ...work, groupSnapshot: group, sourceGroupStateCausalRevision: group.causalRevision }
+                    data: { ...work, groupRef: toCanonicalGroupRef(group.group), sourceGroupStateCausalRevision: group.causalRevision }
                 }
             },
             read: {
@@ -663,7 +663,7 @@ function createCoalescedReturnEntry(
     const common = {
         aggregateRef: returned.group,
         expireAtEpochMs: 10_000,
-        timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+        timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'topology-service',
         origin: 'automatic'
     } as const;
@@ -685,7 +685,7 @@ function createGroupRevisionWork(group: GroupSnapshot): RtcTopologyGroupRevision
     return {
         kind: 'group-revision',
         overlayId: toScopedOverlayId(group.group),
-        groupSnapshot: group,
+        groupRef: toCanonicalGroupRef(group.group),
         sourceGroupStateCausalRevision: group.causalRevision,
         requestedAtEpochMs: 1,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),

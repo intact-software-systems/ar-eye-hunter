@@ -316,6 +316,7 @@ async function assertNativeGroupSessions(
         assert.equal(presence.principalId, 'alice');
         assert.equal(presence.status, 'active');
         assert.equal(presence.generationId, connection.generationId);
+        assert.equal(presence.connectionGenerationId, connection.generationId);
         assert.ok(presence.generationVersion >= 1);
         assert.equal(presence.disconnectedAtEpochMs, null);
         assert.equal(presence.disconnectReason, null);
@@ -340,7 +341,12 @@ async function assertNativeGroupSessionAuthority(observation: NativeGroupSession
             scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
             groupId: groupRef.groupId,
             sessionId: target.sessionId,
-            request: { requestId, principalId: 'alice', generationId: `${before.generationId}-unauthorized` }
+            request: {
+                requestId,
+                principalId: 'alice',
+                generationId: `${before.generationId}-unauthorized`,
+                connectionGenerationId: `${before.connectionGenerationId}-unauthorized`
+            }
         }
     });
     assert.equal(response.status, 403);

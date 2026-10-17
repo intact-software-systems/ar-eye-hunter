@@ -7,7 +7,6 @@ import type {
     ResourceInboxRetryExhaustionRecovery,
     ResourceInboxRetryFinalizer
 } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
@@ -15,10 +14,7 @@ import {
     type RallarTimingDetails,
     type RallarTimingSink
 } from '../observability/timing.ts';
-import {
-    toAppInboxEntryCompletionAwaitability,
-    validateAppInboxCommandIdentity
-} from './app-inbox-command-identity.ts';
+import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
 import type { AppInboxFailure } from './app-inbox-failure.ts';
 import {
@@ -32,7 +28,6 @@ export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustionRecovery;
 
 export interface AppInboxRetryFinalizerDependencies {
-    readonly completionNotifications?: ResourceInboxCompletionNotifications;
     readonly database: PSqlSql;
     readonly timing?: RallarTimingSink;
 }
@@ -102,10 +97,6 @@ async function finalizeAppInboxRetry(
     await runInPSqlTransaction(dependencies.database, async (transaction) => {
         await writeAppInboxRetryFinalization(transaction, work.completion);
     });
-    dependencies.completionNotifications?.publish(
-        work.completion.finalizedEntry.key,
-        toAppInboxEntryCompletionAwaitability(work.completion.finalizedEntry)
-    );
     return work.completion.finalizedEntry;
 }
 

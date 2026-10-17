@@ -7,6 +7,8 @@ export const DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS = 3;
 export const DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS = [0, 2, 8] as const;
 
 export class RuntimeStateWriteConflictError extends Error {
+    readonly code = 'runtime-state-write-conflict';
+
     constructor() {
         super('Runtime state conditional write conflict');
         this.name = 'RuntimeStateWriteConflictError';

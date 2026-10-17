@@ -88,7 +88,8 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 treeExitWidth: 0
             },
             recompute: {
-                formationDebounceMs: 500
+                formationDebounceMs: 500,
+                formationMaxWaitMs: 4_500
             },
             rttRefinement: {
                 minIntervalMs: 30_000,
@@ -125,6 +126,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
         appInbox: {
             phaseTiming: false,
             laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 4,
             completionWait: {
                 maxElapsedMs: 30_000,
                 retryIntervalMs: 250,

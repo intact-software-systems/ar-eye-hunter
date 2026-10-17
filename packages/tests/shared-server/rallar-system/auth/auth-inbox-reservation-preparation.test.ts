@@ -68,6 +68,75 @@ describe('auth reservation preparation', () => {
         expect(hashObservations.every((insideWrite) => !insideWrite)).toBe(true);
     });
 
+    it.each(['logout-session', 'consume-agent-ticket'] as const)(
+        'waits on the reserved %s row without enqueueing it a second time',
+        async (kind) => {
+            const auth = createAuthInboxTestHarness(new FakeRuntimeStateRepository());
+            const enqueueIfAbsent = vi.spyOn(auth.reader, 'enqueueIfAbsent');
+            const result = kind === 'logout-session'
+                ? await runAuthInboxCommand({
+                    pending: auth.service.logoutSession({
+                        requestId: 'reserved-once-logout',
+                        session: {
+                            clientId: 'client-1',
+                            username: 'alice',
+                            sessionId: 'session-1',
+                            accessToken: 'absent-access-token',
+                            issuedAtEpochMs: 500,
+                            expiresAtEpochMs: 2_000
+                        }
+                    }),
+                    queue: auth.queue,
+                    reader: auth.reader
+                })
+                : await runAuthInboxCommand({
+                    pending: auth.service.consumeAgentSessionTicket({
+                        requestId: 'reserved-once-consume',
+                        ticket: 'absent-agent-ticket'
+                    }),
+                    queue: auth.queue,
+                    reader: auth.reader
+                });
+
+            expect(result.left?.retry ?? null).toBeNull();
+            expect(await auth.queue.readEntries()).toHaveLength(1);
+            expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        }
+    );
+
+    it('wakes the queue for a replay that finds its intent still NEW, instead of waiting for the idle poll', async () => {
+        let wakes = 0;
+        const auth = createAuthInboxTestRuntime({
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            serviceId: 'replay-wake-auth',
+            credentialSecret: 'replay-wake-secret-0123456789abcdef',
+            wakeOwningQueue: () => {
+                wakes += 1;
+            }
+        });
+        const session = {
+            clientId: 'client-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            accessToken: 'absent-access-token',
+            issuedAtEpochMs: 500,
+            expiresAtEpochMs: 2_000
+        };
+        const original = auth.service.logoutSession({ requestId: 'replay-wake-logout', session });
+        await vi.waitFor(() => expect(wakes).toBe(1));
+
+        const replay = auth.service.replayLogoutSessionWithCredentialProof({
+            requestId: 'replay-wake-logout',
+            clientId: session.clientId,
+            accessToken: session.accessToken
+        });
+
+        await vi.waitFor(() => expect(wakes).toBe(2));
+        const result = await runAuthInboxCommand({ pending: original, queue: auth.queue, reader: auth.reader });
+        expect(result.right).toEqual({ loggedOut: true });
+        await expect(replay).resolves.toEqual(result);
+    });
+
     it.each(['candidate', 'live-row'] as const)('uses the owned auth observation for %s', async (boundary) => {
         const observedAtMs = Date.now() - 60_000;
         const auth = createAuthInboxTestRuntime({
@@ -127,10 +196,10 @@ describe('auth reservation preparation', () => {
         const before = JSON.stringify(existing);
         vi.spyOn(auth.queue, 'findAllByTopicAndResourceId').mockResolvedValue([existing]);
         const write = vi.spyOn(auth.queue, 'writeMaterializedIfAbsentOrReplaceExpired');
-        const completion = Either.ofRight<AppInboxFailure, LogoutResponse>({ loggedOut: true });
-        vi.spyOn(auth.service, 'processAuthIntentUntilCompletion').mockResolvedValue(completion);
 
-        await expect(auth.service.logoutSession(input)).resolves.toEqual(completion);
+        await expect(auth.service.logoutSession(input)).resolves.toEqual(
+            Either.ofRight<AppInboxFailure, LogoutResponse>({ loggedOut: true })
+        );
         expect(write).not.toHaveBeenCalled();
         expect(JSON.stringify(existing)).toBe(before);
     });

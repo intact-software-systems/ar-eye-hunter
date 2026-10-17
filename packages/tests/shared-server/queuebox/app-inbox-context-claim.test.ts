@@ -34,7 +34,7 @@ afterEach(async () => {
 
 describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s storage', (backend) => {
     it('serves an idle context ahead of another context\'s backlog and keeps each context in order', async () => {
-        const reader = new InboxQueueReader(await createQueue(backend), { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: Date.now });
+        const reader = new InboxQueueReader(await createQueue(backend), { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: Date.now });
         const completed: string[] = [];
         reader.onInboxMessageDo('test.context-claim', {
             onMessage: async (message) => {
@@ -58,7 +58,7 @@ describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s stora
 
     it('claims each context\'s oldest eligible row in one reservation, and in queue order without the context claim', async () => {
         const queue = await createQueue(backend);
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1 });
         for (const [contextId, resourceId] of [['user-a', 'a-0'], ['user-a', 'a-1'], ['room-b', 'b-0'], ['user-a', 'a-2'], ['room-c', 'c-0']]) {
             await reader.enqueueIfAbsent(createContextMessage(contextId!, resourceId!));
         }
@@ -73,7 +73,7 @@ describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s stora
 
     it('skips a context its claim excludes', async () => {
         const queue = await createQueue(backend);
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         for (const [contextId, resourceId] of [['user-a', 'a-0'], ['user-a', 'a-1'], ['room-b', 'b-0'], ['room-c', 'c-0']]) {
             await reader.enqueueIfAbsent(createContextMessage(contextId!, resourceId!));
         }
@@ -90,7 +90,7 @@ describe.each(['memory', 'pglite'] as const)('AppInbox context claim on %s stora
 
     it('claims one head per NEW round and excludes the contexts the pass already served', async () => {
         const queue = await createQueue(backend);
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         for (const [contextId, resourceId] of [['user-a', 'a-0'], ['user-a', 'a-1'], ['room-b', 'b-0']]) {
             await reader.enqueueIfAbsent(createContextMessage(contextId!, resourceId!));
         }

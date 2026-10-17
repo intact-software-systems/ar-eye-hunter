@@ -146,6 +146,7 @@ describe('group-state delta envelope construction', () => {
         const work = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => {
                 throw new Error('compute read the worker clock');
@@ -215,6 +216,7 @@ async function connectSession({ service, groupId, principalId, sessionId }: Conn
     await service.connectPresenceSession(SCOPE, groupId, sessionId, {
         principalId,
         generationId: `${sessionId}-generation`,
+        connectionGenerationId: `${sessionId}-ws-generation`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${groupId}-${sessionId}`
@@ -225,6 +227,7 @@ function createSummaryWorkService(runtime: GroupBarrierRepository): GroupPresenc
     return new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'

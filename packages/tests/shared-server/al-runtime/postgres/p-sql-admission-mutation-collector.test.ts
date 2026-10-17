@@ -19,7 +19,12 @@ interface SenderVersion {
 describe('PostgreSQL admission mutation collector validated reads', () => {
     it('decodes point, prefix, and buffered reads while keeping missing values absent', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', NEVER_EXPIRE_AT_TIMESTAMP);
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toEqual({ senderId: 'peer-1', version: 1 });
@@ -41,7 +46,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         { label: 'wrong sender slot', serialized: '{"senderId":"peer-2","version":1}' }
     ])('rejects $label in point and prefix reads without writing pending work', async ({ serialized }) => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         await repository.upsert('admission', 'version:peer-1', serialized, NEVER_EXPIRE_AT_TIMESTAMP);
 
         await expect(collector.read('version:peer-1', decodeSenderVersion)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
@@ -54,7 +64,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
 
     it('validates buffered values before exposing them to the write callback', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
 
         await collector.set('version:peer-1', { senderId: 'peer-1', version: 1 });
         await collector.set('version:peer-2', { senderId: 'peer-2', version: 'bad' });
@@ -71,7 +86,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
         { label: 'negative-zero expiry', key: 'version:peer-1', revision: 0, expireAtTimestamp: -0 }
     ])('rejects an envelope with $label', async ({ key, revision, expireAtTimestamp }) => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         repository.data.set('admission::version:peer-1', {
             key,
             value: '{"senderId":"peer-1","version":1}',
@@ -86,7 +106,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
 
     it('keeps valid expired values absent but does not hide expired corruption', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', 1);
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
@@ -103,7 +128,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
 
     it('retains a refreshed value when expired cleanup loses its observed revision', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         await repository.upsert('admission', 'version:peer-1', '{"senderId":"peer-1","version":1}', 1);
 
         expect(await collector.read('version:peer-1', decodeSenderVersion)).toBeUndefined();
@@ -117,7 +147,12 @@ describe('PostgreSQL admission mutation collector validated reads', () => {
 
     it('preserves repository failures instead of relabeling them as corruption', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const collector = new PSqlAdmissionMutationCollector(repository, 'admission', Date.now);
+        const collector = new PSqlAdmissionMutationCollector({
+            repository,
+            readEntry: (key) => repository.findEntry('admission', key),
+            namespace: 'admission',
+            nowEpochMs: Date.now
+        });
         const unavailable = new Error('storage unavailable');
         repository.beforeConditionalWrite = () => {
             throw unavailable;

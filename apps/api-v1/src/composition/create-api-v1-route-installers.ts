@@ -7,6 +7,8 @@ import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/ra
 import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
+import type { PersistedWebSocketTicket } from '@shared-server/rallar-system/auth/persistence/persisted-auth-ticket.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
@@ -30,21 +32,12 @@ import {
 } from '../routes/state-snapshot-read/create-state-snapshot-read-route-registrars.ts';
 import * as swaggerRoutes from '../routes/swagger-routes.ts';
 import * as wsRoutes from '../routes/ws-routes.ts';
-import { requireApiAuthSession, requireWsAuthSession } from '../services/request-auth-service.ts';
+import { requireApiAuthSession } from '../services/request-auth-service.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
-export interface ApiV1WsAuthRequestFacts {
-    readonly requestId: string;
-}
-
 export interface ApiV1RouteAuthRequest {
     readonly header: (name: string) => string | undefined;
-}
-
-export interface ApiV1RouteWsAuthRequest {
-    readonly sessionId: string;
-    readonly ticket?: string;
 }
 
 export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRuntime {
@@ -53,7 +46,8 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
     readonly passwordDerivationAdmission: AuthPasswordDerivationAdmission;
     readonly appClientInboxService: Pick<
         ApiV1Runtime['appClientInboxService'],
-        | 'enqueueAuthorisedWsClientConnect'
+        | 'writeAuthorisedWsClientConnect'
+        | 'enqueueAuthorisedWsClientDisconnect'
         | 'processAuthenticatedEntryUntilCompletion'
     >;
     readonly topologyInboxService: Pick<
@@ -101,7 +95,6 @@ export interface CreateApiV1RouteInstallersInput<
     readonly strictReadAuthorization: boolean;
     readonly nowEpochMs: () => number;
     readonly createTokenId: () => string;
-    readonly createWsAuthRequestFacts: () => ApiV1WsAuthRequestFacts;
 }
 
 export interface ApiV1RouteInstallers {
@@ -114,11 +107,15 @@ export interface ApiV1RouteInstallerOperations<Runtime extends ApiV1RouteInstall
         request: ApiV1RouteAuthRequest,
         repository: Runtime['authSessionRepository']
     ) => Promise<IssuedAuthSession>;
-    readonly requireWsAuthSession: (
-        input: ApiV1RouteWsAuthRequest,
-        appAuthInbox: Runtime['appAuthInboxService'],
-        facts: ApiV1WsAuthRequestFacts
-    ) => Promise<IssuedAuthSession>;
+    readonly readWsConnectTicket: (
+        ticketDigest: string,
+        repository: Runtime['authSessionRepository']
+    ) => Promise<PersistedWebSocketTicket | undefined>;
+    readonly readWsConnectSession: (
+        sessionId: string,
+        repository: Runtime['authSessionRepository']
+    ) => Promise<PersistedAuthSession | undefined>;
+    readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
 }
 
 interface ApiV1RouteConstruction<
@@ -201,12 +198,12 @@ function createApiV1WsRouteInstaller<
         wsRoutes.registerWsRoutes(app, {
             socketServer: input.runtime.wsQBoxServerService.socket,
             appClientInboxService: input.runtime.appClientInboxService,
-            requireWsAuthSession: (request) =>
-                operations.requireWsAuthSession(
-                    request,
-                    input.runtime.appAuthInboxService,
-                    input.createWsAuthRequestFacts()
-                )
+            readWsConnectTicket: (ticketDigest) =>
+                operations.readWsConnectTicket(ticketDigest, input.runtime.authSessionRepository),
+            readWsConnectSession: (sessionId) =>
+                operations.readWsConnectSession(sessionId, input.runtime.authSessionRepository),
+            upgradeWebSocket: operations.upgradeWebSocket,
+            nowEpochMs: input.nowEpochMs
         });
 }
 
@@ -308,5 +305,8 @@ function createApiV1AdministrationRouteInstallers<
 
 const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {
     requireApiAuthSession,
-    requireWsAuthSession
+    readWsConnectTicket: async (ticketDigest, repository) =>
+        (await repository.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
+    readWsConnectSession: (sessionId, repository) => repository.findBySessionId(sessionId),
+    upgradeWebSocket: (request) => Deno.upgradeWebSocket(request)
 };

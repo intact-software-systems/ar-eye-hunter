@@ -12,6 +12,7 @@ import {
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput
 } from '../../mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyRttRefreshWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
@@ -84,7 +85,7 @@ export type AcceptedRtcTopologyWork =
     }>
     | Readonly<{
         decision: 'skipped-rtt-refinement';
-        work: PersistedRtcTopologyWork;
+        work: RtcTopologyRttRefreshWork;
         group: GroupSnapshot;
     }>;
 

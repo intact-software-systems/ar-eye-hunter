@@ -112,12 +112,7 @@ describe('state-write diagnostic projection', () => {
                         createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
                             creationNow: Temporal.Now.instant,
                             createMessage: createAppInboxQueueMessageFixture
-                        }),
-                    enqueueReplacingTerminal: async (enqueue) =>
-                        createAppInboxResourceEntry(enqueue, 'PRIVATE-worker-a', {
-                            creationNow: Temporal.Now.instant,
-                            createMessage: createAppInboxQueueMessageFixture
-                        }).key
+                        })
                 },
                 resultWaiter: {
                     waitForResult: async <Result>(

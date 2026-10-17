@@ -1,7 +1,7 @@
-import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
-import { toError } from '../resilience/to-error.ts';
-import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from './ObservableLatestRepository.ts';
-import type { ObservableLatestValue } from './ObservableLatestValue.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../../persistence/PersistenceProvider.ts';
+import { toError } from '../../resilience/to-error.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from '../ObservableLatestRepository.ts';
+import type { ObservableLatestValue } from '../ObservableLatestValue.ts';
 import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent,
@@ -11,7 +11,7 @@ import {
     type ReadableKeyedValues,
     type Unsubscribe,
     type UpdateIfNewerOptions
-} from './RepositoryInterfaces.ts';
+} from '../RepositoryInterfaces.ts';
 
 export type PersistenceErrorHandler<K, V> = (
     error: Error,

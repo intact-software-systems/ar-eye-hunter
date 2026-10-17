@@ -6,6 +6,7 @@ import {
     newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -167,6 +168,7 @@ function toGroupFixtureActiveSessions(input: CreateGroupSnapshotInput): GroupSna
         sessionId,
         principalId: sessionId,
         generationId: `generation-${input.snapshotVersion}`,
+        connectionGenerationId: `ws-generation-${input.snapshotVersion}`,
         generationVersion: input.snapshotVersion,
         status: 'active',
         connectedAtEpochMs: 1,
@@ -382,59 +384,64 @@ export function createPagedSnapshotReceiver(receive: (message: ALMessage) => Pro
         if (!isStateSnapshotTopic(message.payload.typeId)) {
             return receive(message);
         }
-        const payload = readFixtureRecord(JSON.parse(message.payload.resource));
-        const topology = message.payload.typeId === AppTopics.overlayTopology;
-        const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
-        const identity = readFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
-        const scope = {
-            kind: principal ? 'principal' as const : 'group' as const,
-            applicationId: String(identity.applicationId),
-            workspaceId: String(identity.workspaceId),
-            resourceId: String(identity[principal ? 'principalId' : 'groupId'])
-        };
-        const causal = principal ? undefined : readFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
-        const revision = topology
-            ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
-            : principal
-            ? `revision=${payload.stateRevision}`
-            : `group=${causal!.groupRevision};presence=${causal!.presenceRevision}`;
-        const targets = message.targets?.mode === 'unicast'
-            ? message.targets
-            : principal
-            ? {
-                mode: 'broadcast' as const,
-                scope: 'principal' as const,
-                principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
-            }
-            : {
-                mode: 'broadcast' as const,
-                scope: 'room' as const,
-                groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId }
-            };
-        const pages = computeStateSnapshotPages({
-            scope,
-            revision,
-            resource: message.payload.resource,
-            envelope: {
-                id: message.id,
-                route: message.route,
-                targets,
-                delivery: { reliability: 'best-effort', ack: 'none' },
-                constraints: { expiresAtMs: message.id.ts + 60_000 },
-                audit: { createdBy: message.id.senderId, createdTs: message.id.ts }
-            }
-        }).fold((issue) => {
-            throw new TypeError(issue.message);
-        }, (messages) => messages);
-        for (const page of pages) {
+        for (const page of toSnapshotPageMessages(message)) {
             await receive(page);
         }
     };
 }
 
-function readFixtureRecord(value: unknown): Record<string, unknown> {
+/** The page envelopes the fake server sends for one snapshot-topic message. */
+export function toSnapshotPageMessages(message: ALMessage): readonly ALMessage[] {
+    const payload = decodeFixtureRecord(JSON.parse(message.payload.resource));
+    const topology = message.payload.typeId === AppTopics.overlayTopology;
+    const principal = message.payload.typeId === AppTopics.clientStateSnapshot;
+    const identity = decodeFixtureRecord(payload[topology ? 'groupRef' : principal ? 'principal' : 'group']);
+    const scope = {
+        kind: principal ? 'principal' as const : 'group' as const,
+        applicationId: String(identity.applicationId),
+        workspaceId: String(identity.workspaceId),
+        resourceId: String(identity[principal ? 'principalId' : 'groupId'])
+    };
+    const causal = principal ? undefined : decodeFixtureRecord(payload[topology ? 'sourceGroupStateCausalRevision' : 'causalRevision']);
+    const revision = topology
+        ? JSON.stringify([causal!.groupRevision, causal!.presenceRevision, payload.version])
+        : principal
+        ? `revision=${payload.stateRevision}`
+        : `group=${causal!.groupRevision};presence=${causal!.presenceRevision}`;
+    const targets = message.targets?.mode === 'unicast'
+        ? message.targets
+        : principal
+        ? {
+            mode: 'broadcast' as const,
+            scope: 'principal' as const,
+            principalRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, principalId: scope.resourceId }
+        }
+        : {
+            mode: 'broadcast' as const,
+            scope: 'room' as const,
+            groupRef: { applicationId: scope.applicationId, workspaceId: scope.workspaceId, groupId: scope.resourceId }
+        };
+    const pages = computeStateSnapshotPages({
+        scope,
+        revision,
+        resource: message.payload.resource,
+        envelope: {
+            id: message.id,
+            route: message.route,
+            targets,
+            delivery: { reliability: 'best-effort', ack: 'none' },
+            constraints: { expiresAtMs: message.id.ts + 60_000 },
+            audit: { createdBy: message.id.senderId, createdTs: message.id.ts }
+        }
+    }).fold((issue) => {
+        throw new TypeError(issue.message);
+    }, (messages) => messages);
+    return pages;
+}
+
+function decodeFixtureRecord(value: unknown): ApiJsonObject {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Snapshot fixture requires a record');
     }
-    return value as Record<string, unknown>;
+    return value as ApiJsonObject;
 }

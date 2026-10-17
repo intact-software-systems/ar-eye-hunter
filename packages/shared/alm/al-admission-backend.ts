@@ -326,6 +326,10 @@ class InMemoryAdmissionWorkWriteBuffer extends ALAdmissionWriteBuffer implements
         return observed === undefined ? undefined : toResourceEntrySnapshot(observed);
     }
 
+    async readClaimedWork(claimed: ResourceEntry): Promise<ResourceEntry | undefined> {
+        return await this.readWork(claimed.key);
+    }
+
     writeWork(entry: ResourceEntry): void {
         const key = toKeyAsString(entry.key);
         if (!this.observations.has(key) || this.pendingWork.has(key)) {

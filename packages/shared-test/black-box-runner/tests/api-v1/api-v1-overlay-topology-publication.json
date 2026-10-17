@@ -278,6 +278,7 @@
         },
         "body": {
           "generationId": "overlay-generation-{runId}",
+          "connectionGenerationId": "overlay-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -303,6 +304,7 @@
         },
         "body": {
           "generationId": "overlay-generation-{runId}",
+          "connectionGenerationId": "overlay-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { toChangedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -42,6 +43,8 @@ export interface ALOutboundCommitDispatchOptions {
     readonly explicitPlan?: boolean;
     readonly pendingAdmission?: ResourceEntry;
     readonly observedOutboxEntry?: ResourceEntry;
+    /** The outbox row exactly as this caller's own claim returned it; its commit fences that claim. */
+    readonly claimedOutboxEntry?: ResourceEntry;
     readonly attemptIdentity?: string;
     readonly repairBudget?: Readonly<{ priorAttempts: number; maxAttempts: number; }>;
 }
@@ -92,10 +95,9 @@ export function computeALOutboundDispatch<TPrepared>(
     }
 
     const awaitPhysicalDispatch = input.intent === 'enqueue' && read.plan.preparedMessages.length === 0;
-    const canonicalEntry = {
-        ...input.outboxEntry,
+    const canonicalEntry = toChangedALMessageRow(input.outboxEntry, {
         status: awaitPhysicalDispatch ? EntityStatus.NEW : EntityStatus.COMPLETED
-    };
+    });
     const writes = computeDispatchWrites(input, canonicalEntry, repairCharge.right!);
     const queuedAttempts = writes.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared').length;
     const verdict = computeALOutboundRouteVerdict(
@@ -115,6 +117,7 @@ export function computeALOutboundDispatch<TPrepared>(
             : 'none',
         bundle: {
             pendingAdmission: options.pendingAdmission,
+            claimedCanonical: options.claimedOutboxEntry,
             senderId: read.msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
             canonicalEntry,

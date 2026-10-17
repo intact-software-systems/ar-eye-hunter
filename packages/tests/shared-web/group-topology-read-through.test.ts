@@ -470,7 +470,7 @@ function removeOverlayRoles(overlayId: string): void {
     removeAcceptedOverlayById(overlayId);
 }
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: object | undefined): Response {
     return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' }
@@ -550,6 +550,7 @@ function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): Gr
             sessionId,
             principalId: sessionId,
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             generationVersion: 1,
             status: 'active',
             disconnectedAtEpochMs: null,

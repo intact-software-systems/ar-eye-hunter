@@ -1,5 +1,5 @@
 import { ObservableValueEventType, type ObservableKeyedValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
-import { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+import { WriteBehindObservableLatestRepository } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,

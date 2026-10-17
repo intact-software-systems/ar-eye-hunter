@@ -127,6 +127,7 @@ async function connect(
     await createService(runtime, nowEpochMs).connectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         principalId,
         generationId,
+        connectionGenerationId: `ws-${generationId}`,
         actorPrincipalId: principalId,
         expiresAtEpochMs: nowEpochMs + 60_000,
         requestId: `connect-${groupId}-${principalId}-${generationId}`
@@ -142,6 +143,7 @@ async function disconnect(
 ): Promise<void> {
     await createService(runtime, nowEpochMs).disconnectPresenceSession(SCOPE, groupId, sessionId(groupId, principalId), {
         generationId,
+        connectionGenerationId: `ws-${generationId}`,
         actorPrincipalId: principalId,
         disconnectedAtEpochMs: nowEpochMs,
         requestId: `disconnect-${groupId}-${principalId}-${generationId}`
@@ -161,15 +163,16 @@ async function expandBatch(
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 10_000,
         serviceId: 'summary-worker'
     });
     const commands = (await listEvents(runtime, groupId)).slice(seedEventCount).map(toSummaryCommand);
-    const reads: readonly GroupPresenceSummaryWorkRead[] = await work.read(
+    const reads: readonly GroupPresenceSummaryWorkRead[] = (await work.read(
         commands.map((command) => ({ work: command, reservation: summaryReservationRead(command.commandId) })),
         BASE_EPOCH_MS + 10_000
-    );
+    )).right ?? [];
     return commands.map((command, index) => {
         const computed = work.compute(command, reads[index]!);
         expect(work.validate(command, reads[index]!, computed)).toEqual([]);

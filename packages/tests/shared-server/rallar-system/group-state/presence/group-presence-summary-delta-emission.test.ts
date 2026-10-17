@@ -143,6 +143,7 @@ async function createConnectedScenario(groupId: string): Promise<ConnectedScenar
     await service.connectPresenceSession(SCOPE, groupId, `${groupId}-bob-session`, {
         principalId: 'bob',
         generationId: `${groupId}-bob-generation`,
+        connectionGenerationId: `${groupId}-bob-ws-generation`,
         actorPrincipalId: 'bob',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${groupId}-bob`
@@ -161,6 +162,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         runtimeRepository: scenario.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'

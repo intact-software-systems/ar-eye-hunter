@@ -54,11 +54,11 @@ describe('DequeueController work advertisement', () => {
     it('still requires a positive budget for every lane, advertised or not', async () => {
         const lanes = createControllerLanes({ ...NOTHING_ADVERTISED, NEW: true });
         lanes.controller.withLaneBudgets(() => ({
-            FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1 },
-            NEW: { maxToReserve: 1, maxNumToDequeue: 1 },
-            FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1 },
-            RETRY: { maxToReserve: 1, maxNumToDequeue: 1 },
-            TIMEOUT: { maxToReserve: 0, maxNumToDequeue: 1 }
+            FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
+            NEW: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
+            FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
+            RETRY: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
+            TIMEOUT: { maxToReserve: 0, maxNumToDequeue: 1, maxConcurrentComputes: 1 }
         }));
 
         await expect(lanes.controller.dequeueForCompute(async () => 'done')).rejects.toBeInstanceOf(TypeError);

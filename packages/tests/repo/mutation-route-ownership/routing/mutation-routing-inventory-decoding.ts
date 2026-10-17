@@ -25,7 +25,6 @@ const PATHS = {
     acc: 'apps/api-v1/src/admin-operations/compact-api-admin-crdt.ts',
     acl: 'apps/api-v1/src/admin-operations/update-api-admin-crdt-lifecycle.ts',
     ace: 'apps/api-v1/src/admin-operations/erase-api-admin-crdt.ts',
-    rq: 'apps/api-v1/src/services/request-auth-service.ts',
     l: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
     e: 'packages/shared-server/rallar-system/group-state/presence/' +
         'reconcile-expired-group-presence.ts',

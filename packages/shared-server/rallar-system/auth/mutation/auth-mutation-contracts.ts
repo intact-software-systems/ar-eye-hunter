@@ -73,14 +73,6 @@ export type IssueAuthWsTicketIntent =
         ttlMs: number;
     }>;
 
-export type ConsumeAuthWsTicketIntent =
-    & IntentBase
-    & Readonly<{
-        kind: 'consume-ws-ticket';
-        ticketDigest: string;
-        expectedSessionId: string;
-    }>;
-
 export type IssueAuthAgentTicketsIntent =
     & IntentBase
     & Readonly<{
@@ -102,7 +94,6 @@ export type AuthMutationIntent =
     | IssueAuthSessionIntent
     | LogoutAuthSessionIntent
     | IssueAuthWsTicketIntent
-    | ConsumeAuthWsTicketIntent
     | IssueAuthAgentTicketsIntent
     | ConsumeAuthAgentTicketIntent;
 
@@ -135,14 +126,6 @@ export type IssueAuthWsTicketCommand =
         ticketRecord: PersistedWebSocketTicket;
     }>;
 
-export type ConsumeAuthWsTicketCommand =
-    & CommandBase
-    & Readonly<{
-        kind: 'consume-ws-ticket';
-        ticketDigest: string;
-        expectedSessionId: string;
-    }>;
-
 export type IssueAuthAgentTicketsCommand =
     & CommandBase
     & Readonly<{
@@ -173,7 +156,6 @@ export type AuthMutationCommand =
     | IssueAuthSessionCommand
     | LogoutAuthSessionCommand
     | IssueAuthWsTicketCommand
-    | ConsumeAuthWsTicketCommand
     | IssueAuthAgentTicketsCommand
     | ConsumeAuthAgentTicketCommand;
 
@@ -212,7 +194,7 @@ export type AuthMutationResult =
             expiresAtEpochMs: number;
         }>
         | Readonly<{
-            kind: 'ws-ticket-consumed' | 'agent-ticket-consumed';
+            kind: 'agent-ticket-consumed';
             clientId: string;
             username: string;
             sessionId: string;
@@ -256,12 +238,6 @@ export type AuthMutationRead =
     | (Readonly<{ kind: 'logout-session'; }> & AuthSessionEntries)
     | Readonly<{
         kind: 'issue-ws-ticket';
-        ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
-        expiredTicketEntry: RuntimeStateEntry | null;
-        session: RuntimeStateEntryValue<PersistedAuthSession> | null;
-    }>
-    | Readonly<{
-        kind: 'consume-ws-ticket';
         ticket: RuntimeStateEntryValue<PersistedWebSocketTicket> | null;
         expiredTicketEntry: RuntimeStateEntry | null;
         session: RuntimeStateEntryValue<PersistedAuthSession> | null;

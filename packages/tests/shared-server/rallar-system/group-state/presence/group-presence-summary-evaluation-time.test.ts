@@ -408,6 +408,7 @@ function createExpiryCrossingPresence(): ExpiryCrossingPresence {
     const admitted = {
         sessionId: 'alice-session',
         generationId: 'alice-generation',
+        connectionGenerationId: 'alice-ws-generation',
         generationVersion: 1_000,
         connectedAtEpochMs: 1_000
     };

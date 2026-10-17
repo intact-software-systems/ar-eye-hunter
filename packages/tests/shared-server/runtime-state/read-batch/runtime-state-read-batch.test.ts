@@ -80,7 +80,13 @@ describe('runtime-state read batches', () => {
         ['empty prefix-suffix suffix', [{ ...PRINCIPAL_MEMBERS, keySuffix: '' }]],
         ['prefix-suffix without a suffix', [{ ...SELECTORS[1], kind: 'prefix-suffix' }]],
         ['prefix selector carrying a suffix', [{ ...SELECTORS[1], keySuffix: ':member=alice' }]],
-        ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]]
+        ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]],
+        ['empty suffix', [{ selectorId: 'tail', kind: 'suffix', namespace: 'group-state:sessions', keySuffix: '' }]],
+        [
+            'suffix that starts outside the BMP',
+            [{ selectorId: 'tail', kind: 'suffix', namespace: 'group-state:sessions', keySuffix: '\u{10FFFF}:x' }]
+        ],
+        ['suffix selector carrying a prefix', [{ ...PRINCIPAL_MEMBERS, kind: 'suffix' }]]
     ])('rejects %s', (_label, input) => {
         expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
@@ -208,21 +214,10 @@ describe('runtime-state read batches', () => {
         }
     });
 
-    it('uses one fixed parameterized SELECT and returns one packed driver row', async () => {
+    it('uses one fixed parameterized SELECT and returns one driver row per selected entry (D289)', async () => {
         const memberEntry = { ...ENTRY, key: 'app=app:ws=workspace:group=room:member=alice' };
         const captured: CapturedQuery[] = [];
-        const sql = captureSql(captured, [{
-            selections: [{
-                selectorId: 'group',
-                entries: [toDriverEntry(ENTRY)]
-            }, {
-                selectorId: 'members',
-                entries: []
-            }, {
-                selectorId: 'principal-members',
-                entries: [toDriverEntry(memberEntry)]
-            }]
-        }]);
+        const sql = captureSql(captured, [toDriverRow(1, ENTRY), toDriverRow(3, memberEntry)]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
         await expect(repository.readRuntimeStateBatch([...SELECTORS, PRINCIPAL_MEMBERS])).resolves
@@ -252,7 +247,8 @@ describe('runtime-state read batches', () => {
             'char_length(suffix_entry.store_key) >= char_length(selector.key_prefix) + char_length(selector.key_suffix)'
         );
         expect(query.source).not.toMatch(/\blike\b|\bsimilar\b|~/iu);
-        expect(query.source).toMatch(/jsonb_agg/iu);
+        expect(query.source).not.toMatch(/jsonb_agg/iu);
+        expect(query.values.filter((value) => typeof value === 'boolean')).toEqual([true]);
         expect(query.source).not.toMatch(/for\s+update|pg_advisory|lock\s+table/iu);
         for (
             const secret of [
@@ -264,7 +260,7 @@ describe('runtime-state read batches', () => {
         ) {
             expect(query.source).not.toContain(secret);
         }
-        expect(query.values).toEqual([[
+        expect(query.values.find(Array.isArray)).toEqual([
             {
                 selectorId: 'group',
                 kind: 'key',
@@ -272,7 +268,9 @@ describe('runtime-state read batches', () => {
                 key: ENTRY.key,
                 keyPrefix: null,
                 keySuffix: null,
-                prefixEnd: null
+                prefixEnd: null,
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             },
             {
                 selectorId: 'members',
@@ -281,7 +279,9 @@ describe('runtime-state read batches', () => {
                 key: null,
                 keyPrefix: `${ENTRY.key}:`,
                 keySuffix: null,
-                prefixEnd: `${ENTRY.key};`
+                prefixEnd: `${ENTRY.key};`,
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             },
             {
                 selectorId: 'principal-members',
@@ -290,17 +290,48 @@ describe('runtime-state read batches', () => {
                 key: null,
                 keyPrefix: 'app=app:ws=workspace:',
                 keySuffix: ':member=alice',
-                prefixEnd: 'app=app:ws=workspace;'
+                prefixEnd: 'app=app:ws=workspace;',
+                reversedSuffix: null,
+                reversedSuffixEnd: null
             }
-        ]]);
+        ]);
+    });
+
+    it('binds a suffix selector as the range of its reversed key', async () => {
+        const captured: CapturedQuery[] = [];
+        const sql = captureSql(captured, []);
+
+        await new PSqlRuntimeStateRepository(sql).readRuntimeStateBatch([{
+            selectorId: 'session',
+            kind: 'suffix',
+            namespace: 'group-state:sessions',
+            keySuffix: ':session=a%3Ab'
+        }]);
+
+        expect(captured[0].source).toContain('reverse(reversed_entry.store_key) collate "C" >= selector.reversed_suffix');
+        expect(captured[0].values.find(Array.isArray)).toEqual([{
+            selectorId: 'session',
+            kind: 'suffix',
+            namespace: 'group-state:sessions',
+            key: null,
+            keyPrefix: null,
+            keySuffix: ':session=a%3Ab',
+            prefixEnd: null,
+            reversedSuffix: 'bA3%a=noisses:',
+            reversedSuffixEnd: 'bA3%a=noisses;'
+        }]);
     });
 });
 
-function toDriverEntry(entry: RuntimeStateEntry): PSqlRows[number] {
+function toDriverRow(selectorOrdinal: number, entry: RuntimeStateEntry): PSqlRows[number] {
     return {
-        ...entry,
-        expireAtTimestamp: String(entry.expireAtTimestamp),
-        revision: String(entry.revision)
+        selector_ordinal: selectorOrdinal,
+        store_key: entry.key,
+        store_value: entry.value,
+        expire_at_timestamp: String(entry.expireAtTimestamp),
+        updated_timestamp: entry.updatedTimestamp,
+        revision: String(entry.revision),
+        row_version: '1/(0,1)'
     };
 }
 

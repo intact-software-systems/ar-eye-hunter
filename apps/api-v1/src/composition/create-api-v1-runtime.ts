@@ -8,6 +8,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
 import {
     normalizeAppInboxOptions,
+    validateAppInboxAttemptDeadlineMargin,
     type AppInboxOptions
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
@@ -49,7 +50,10 @@ import type {
 } from '../configuration/api-v1-configuration.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
-import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
+import {
+    API_V1_LIVE_WS_NOTICE_CHANNEL,
+    createApiV1LiveWsNoticeTransport
+} from '../db/api-v1-live-ws-notice-transport.ts';
 import { createApiV1AppInboxCompletionNotices } from '../db/create-postgres-app-inbox-completion-notice-transport.ts';
 import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
@@ -105,8 +109,10 @@ export interface CreateApiV1RuntimeInput {
     readonly wsReceiptObserver?: WsQueueBoxServerReceiptObserver;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
+    readonly appInboxNewLaneConcurrency: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly topologyReplay: ApiV1TopologyReplayConfiguration;
@@ -179,6 +185,13 @@ export function constructApiV1Runtime(
     input: CreateApiV1RuntimeInput,
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
+    const deadlineIssues = validateAppInboxAttemptDeadlineMargin(
+        input.appInboxOptions,
+        input.resilience.inbox.reservationLeaseMs
+    );
+    if (deadlineIssues.length > 0) {
+        throw new Error(deadlineIssues.map((issue) => issue.message).join('; '));
+    }
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
     const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
         nowEpochMs: input.nowEpochMs,
@@ -281,8 +294,10 @@ function toMutationRuntimeInput(
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
         appInboxLaneBudgetPolicy: input.appInboxLaneBudgetPolicy,
+        appInboxNewLaneConcurrency: input.appInboxNewLaneConcurrency,
         groupCapacity: input.groupCapacity,
         groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+        groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
         adminClientIds: input.adminClientIds,
         crdtPolicies: input.crdtPolicies,
         resilience: input.resilience
@@ -304,7 +319,7 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
         createApiStateSnapshotReadSelectors({
             clientDurable: mutation.clientsRepository,
             clientCache: mutation.clientSnapshotCache,
-            groupDurable: mutation.groupsRepository,
+            groupDurable: mutation.groupCurrentSnapshotCache,
             groupCache: mutation.groupSnapshotCache
         }, timing),
     requireRuntime: requireApiV1Runtime
@@ -328,7 +343,6 @@ function createSharedMiddleware(
     const relayedAckNotices = createApiV1RelayedAckNotices({
         mode: input.databasePubSubMode,
         notification: input.databaseNotification,
-        channel: input.queuePubSubChannel,
         publisherId: input.queuePubSubPublisherId
     });
     const wsOutboxProvenance = new WsOutboxProvenanceReader({
@@ -349,9 +363,7 @@ function createSharedMiddleware(
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
         inboundStores,
-        inboundVolatileStores: relayedAckNotices === undefined
-            ? createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName)
-            : undefined,
+        inboundVolatileStores: createServerWsQBoxALVolatileInboundRuntimeStores(input.wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
@@ -466,7 +478,7 @@ function createApiV1LiveWsNoticeSubscriber(
             localBus: input.queuePubSubLocalBus,
             nowMs: input.nowEpochMs
         }),
-        channel: input.queuePubSubChannel,
+        channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
         publisherId: input.queuePubSubPublisherId,
         nowMs: input.nowEpochMs,
         filterEligibleRecipientSessionIds: (candidateSessionIds, notice) =>

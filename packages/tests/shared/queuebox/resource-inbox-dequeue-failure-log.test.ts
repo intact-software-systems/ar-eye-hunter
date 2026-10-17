@@ -1,14 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { DequeueController } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import {
-    createDefaultResourceInboxDequeuer,
-    ResourceInboxHandlerFinalizedRejection
-} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptReleaseTelemetry
 } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
+} from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import * as Resource from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -102,17 +105,103 @@ describe('ResourceInbox dequeue failure log', () => {
         })]);
         expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.FAILED);
     });
+
+    it('releases a handler conflict value for redelivery on the retry path, logged once as one line without stack frames', async () => {
+        // A pinned clock keeps the released retry from falling due later in the same pass on a slow runner.
+        const pinnedNow = Temporal.Now.instant();
+        const queue = new InMemoryQueueBox(new Map(), () => pinnedNow);
+        const enqueued = toResourceEntry('write-conflict', { value: 3 });
+        await queue.enqueue(enqueued);
+        const errorLines: string[] = [];
+        const conflictCalls: (readonly string[])[] = [];
+        vi.spyOn(console, 'error').mockImplementation((message: string) => {
+            errorLines.push(message);
+        });
+        vi.spyOn(console, 'info').mockImplementation((...logged: string[]) => {
+            if (String(logged[0]).includes('conflicted')) {
+                conflictCalls.push(logged);
+            }
+        });
+
+        const { failures, releases } = await dequeueOnce(
+            queue,
+            'write-conflict',
+            async (attempt) =>
+                new ResourceInboxHandlerRetryableConflict(
+                    attempt.entry,
+                    'runtime-state-write-conflict',
+                    new RuntimeStateWriteConflictError()
+                )
+        );
+
+        expect(errorLines).toEqual([]);
+        // A console object argument prints as a multi-line dump on Deno, so the summary travels inside the one string.
+        expect(conflictCalls).toHaveLength(1);
+        const [line, ...rest] = conflictCalls[0]!;
+        expect(rest).toEqual([]);
+        expect(typeof line).toBe('string');
+        expect(line).not.toContain('\n');
+        expect(line).toContain(enqueued.key.resourceId);
+        expect(line).toContain('runtime-state-write-conflict');
+        expect(line).toContain('RuntimeStateWriteConflictError');
+        expect(line).toContain('Runtime state conditional write conflict');
+        expect(failures.size).toBe(0);
+        expect(releases).toEqual([expect.objectContaining({
+            key: enqueued.key,
+            classification: 'retryable',
+            status: EntityStatus.RETRY,
+            failure: { kind: 'retryable', code: 'runtime-state-write-conflict', name: 'RuntimeStateWriteConflictError' }
+        })]);
+        expect(await queue.getItem(enqueued.key)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 1 } });
+    });
+
+    it.each(
+        [
+            [0, EntityStatus.RETRY, 1],
+            [6, EntityStatus.RETRY, 150],
+            [19, EntityStatus.FAILED, null]
+        ] as const
+    )(
+        'caps the backoff of a conflict released after %i attempts at its retry delay, inside the attempt budget (D304)',
+        async (attemptsBefore, status, expectedDelayMs) => {
+            const pinnedNow = Temporal.Now.instant();
+            const queue = new InMemoryQueueBox(new Map(), () => pinnedNow);
+            const fresh = toResourceEntry('summary-conflict', { value: 4 });
+            await queue.enqueue({ ...fresh, dequeueAudit: { attempts: attemptsBefore } });
+            vi.spyOn(console, 'info').mockImplementation(() => {});
+
+            const { releases } = await dequeueOnce(
+                queue,
+                'summary-conflict',
+                async (attempt) =>
+                    new ResourceInboxHandlerRetryableConflict(
+                        attempt.entry,
+                        'group-presence-summary-changed',
+                        new RuntimeStateWriteConflictError(),
+                        150
+                    )
+            );
+
+            expect(releases).toEqual([expect.objectContaining({ key: fresh.key, classification: 'retryable', status })]);
+            const released = await queue.getItem(fresh.key);
+            expect(released?.dequeueAudit.attempts).toBe(attemptsBefore + 1);
+            if (expectedDelayMs !== null) {
+                // The first retry keeps the backoff's 1 ms; after the seventh attempt the 2 s backoff is capped at 150 ms.
+                expect(released?.dequeueAudit.nextTs?.epochMilliseconds).toBe(pinnedNow.epochMilliseconds + expectedDelayMs);
+            }
+        }
+    );
 });
 
 async function dequeueOnce(
     queue: InMemoryQueueBox,
     typeId: string,
-    computer: (attempt: ResourceInboxAttempt) => Promise<ResourceInboxHandlerFinalizedRejection | undefined>
+    computer: (attempt: ResourceInboxAttempt) => Promise<ResourceInboxHandlerOutcome | undefined>
 ): Promise<DequeuedOnce> {
     const duration = Temporal.Duration.from({ seconds: 10 });
     const failures = new Map<Resource.Key, DequeueController.Failure<Resource.Key, ResourceInboxAttempt>>();
     const releases: ResourceInboxAttemptReleaseTelemetry[] = [];
-    await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalizedRejection | undefined>({
+    await createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
         repository: queue,
         typesToDequeue: () => new Set([typeId]),
         newLaneClaimOrder: 'queue',

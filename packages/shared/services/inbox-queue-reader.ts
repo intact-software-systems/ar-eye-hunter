@@ -30,6 +30,11 @@ export namespace InboxQueueReader {
 
     export interface Options extends DequeueResourceEntryOptions {
         readonly laneBudgetPolicy: LaneBudgetPolicy;
+        /**
+         * How many distinct-context heads one NEW round reserves in one claim and runs together, from one to the
+         * contexts a pass serves. Rows of one context never run together: a pass serves each context's head once.
+         */
+        readonly newLaneConcurrency: number;
     }
 
     export interface PressureSample {
@@ -49,6 +54,11 @@ export class InboxQueueReader {
     public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
         this.INBOX_ENQUEUE_TYPE
     ]);
+    /**
+     * The contexts one pass serves, each its oldest entry once. A NEW round claims up to the lane's concurrency of these
+     * heads at once rather than all of them, so a peer instance can take the other heads meanwhile.
+     */
+    public static readonly NEW_CONTEXTS_PER_PASS = 8;
     public static readonly LANE_BUDGET_POLICIES: readonly InboxQueueReader.LaneBudgetPolicy[] = [
         'drain',
         'fixed-one',
@@ -58,7 +68,9 @@ export class InboxQueueReader {
 
     private readonly reader: QueueMessageReader;
     private readonly laneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
-    private readonly nowEpochMs: () => number;
+    private readonly newLaneConcurrency: number;
+    /** The dequeue clock that stamps each claim's selection. */
+    public readonly nowEpochMs: () => number;
     private readonly pressureRefreshLimiter: RateLimiter;
     private pressureScope: string | undefined;
     private pressureGeneration = 0;
@@ -67,11 +79,6 @@ export class InboxQueueReader {
     private pressureRefresh: Promise<void> | undefined;
 
     private static readonly PRESSURE_WINDOW_MS = 1_000;
-    /**
-     * A NEW round claims one context's oldest entry, so a peer instance can take the next head meanwhile; a pass
-     * serves at most this many contexts.
-     */
-    private static readonly NEW_CONTEXTS_PER_PASS = 8;
 
     public readonly completionNotifications: ResourceInboxCompletionNotifications | undefined;
     public readonly inbox: QueueBoxResourceEntryRepository;
@@ -84,6 +91,7 @@ export class InboxQueueReader {
         this.completionNotifications = dequeueOptions.completionNotifications;
         this.inbox = inbox;
         this.laneBudgetPolicy = dequeueOptions.laneBudgetPolicy;
+        this.newLaneConcurrency = requireNewLaneConcurrency(dequeueOptions.newLaneConcurrency);
         this.nowEpochMs = dequeueOptions.nowEpochMs ?? Date.now;
         this.pressureRefreshLimiter = RateLimiter.initWithTs(
             InboxQueueReader.PRESSURE_WINDOW_MS,
@@ -157,13 +165,18 @@ export class InboxQueueReader {
         workAdvertisement: DequeueController.WorkAdvertisement | undefined
     ): DequeueController.LaneBudgets {
         const retryQuota = this.readRetryQuota(maxAttempts, workAdvertisement);
+        // Only NEW heads are of distinct contexts; every other lane may hold two rows of one context, so they run in turn.
         return {
-            FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1 },
-            NEW: { maxToReserve: 1, maxNumToDequeue: InboxQueueReader.NEW_CONTEXTS_PER_PASS },
-            FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1 },
+            FINALIZATION: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
+            NEW: {
+                maxToReserve: this.newLaneConcurrency,
+                maxNumToDequeue: InboxQueueReader.NEW_CONTEXTS_PER_PASS,
+                maxConcurrentComputes: this.newLaneConcurrency
+            },
+            FAIRNESS: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 },
             // One claim for the whole quota: a short claim ends the lane without a second, empty reservation.
-            RETRY: { maxToReserve: retryQuota, maxNumToDequeue: retryQuota },
-            TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1 }
+            RETRY: { maxToReserve: retryQuota, maxNumToDequeue: retryQuota, maxConcurrentComputes: 1 },
+            TIMEOUT: { maxToReserve: 1, maxNumToDequeue: 1, maxConcurrentComputes: 1 }
         };
     }
 
@@ -236,4 +249,14 @@ export class InboxQueueReader {
             console.warn('AppInbox retry pressure observation failed', error);
         }
     }
+}
+
+function requireNewLaneConcurrency(newLaneConcurrency: number): number {
+    if (
+        !Number.isSafeInteger(newLaneConcurrency) || newLaneConcurrency < 1 ||
+        newLaneConcurrency > InboxQueueReader.NEW_CONTEXTS_PER_PASS
+    ) {
+        throw new RangeError('AppInbox NEW lane concurrency must be an integer from 1 to the contexts a pass serves');
+    }
+    return newLaneConcurrency;
 }

@@ -366,6 +366,7 @@ function createGroupSessions(groupId: string, sessionIds: readonly string[]): Gr
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

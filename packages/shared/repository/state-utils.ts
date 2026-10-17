@@ -5,6 +5,10 @@ export function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean
 }
 
 export function jsonEquals(left: unknown, right: unknown): boolean {
+    // One object is its own JSON content: a shared decode compares without serializing either side.
+    if (left === right && typeof left === 'object' && left !== null) {
+        return true;
+    }
     // Content ordering follows conversion so toJSON observes the established projection.
     const leftJson = stableJsonStringify(left);
     const rightJson = stableJsonStringify(right);

@@ -69,7 +69,7 @@ class LanePolicyArm {
             createPSqlResourceInboxRepository(recordResourceInboxStatements(storage.sql, this.statements), () => new Date()),
             Temporal.Now.instant
         );
-        this.reader = new InboxQueueReader(this.queue, { laneBudgetPolicy: arm, nowEpochMs: () => this.now });
+        this.reader = new InboxQueueReader(this.queue, { laneBudgetPolicy: arm, newLaneConcurrency: 1, nowEpochMs: () => this.now });
         this.reader.onInboxMessageDo('test.fair-service', { onMessage: async (message: ALMessage) => await this.onMessage(message) });
     }
 

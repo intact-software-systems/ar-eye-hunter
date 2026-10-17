@@ -31,6 +31,8 @@ export function createCachedGroupStateService(
     options: Readonly<{
         durable: GroupStateService;
         cache: CachedGroupStateServiceCache;
+        /** The current-state reader: as durable as the service, and may serve an unchanged revision from memory. */
+        current: Readonly<{ readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>; }>;
     }>
 ): CachedGroupStateService {
     return {
@@ -62,7 +64,7 @@ export function createCachedGroupStateService(
                 options.cache.observe(snapshot);
                 return snapshot;
             }),
-        readCurrentSnapshot: async (ref) => await options.durable.readSnapshot(ref),
+        readCurrentSnapshot: async (ref) => await options.current.readSnapshot(ref),
         readSnapshotAtLeast: async (ref, readOptions) => await options.cache.findOrLoadByRef(ref, readOptions),
         listSnapshots: async (scope) => await options.durable.listSnapshots(scope),
         listSnapshotsPage: async (scope, pageOptions) => await options.durable.listSnapshotsPage(scope, pageOptions),

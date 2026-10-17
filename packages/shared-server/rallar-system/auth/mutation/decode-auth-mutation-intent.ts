@@ -40,17 +40,6 @@ function validateAuthMutationIntent(intent: JsonWireObject): void {
             decodePersistedAuthSession(intent.authority);
             requirePositiveInteger(intent.ttlMs, 'Auth websocket ticket ttlMs');
             return;
-        case 'consume-ws-ticket':
-            requireExactKeys(intent, [
-                'version',
-                'kind',
-                'requestId',
-                'ticketDigest',
-                'expectedSessionId'
-            ]);
-            requireString(intent.ticketDigest, 'Auth websocket ticket digest');
-            requireString(intent.expectedSessionId, 'Auth websocket expected sessionId');
-            return;
         case 'issue-agent-tickets':
             validateIssueAuthAgentTicketsIntent(intent);
             return;

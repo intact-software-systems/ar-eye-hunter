@@ -237,14 +237,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return true;
     }
 
-    async tryWriteIfAbsentOrReplaceExpired(
-        resourceEntry: ResourceEntry
-    ): Promise<ResourceEntry | null> {
-        return this.writeIfAllObserved([{ expected: undefined, entry: resourceEntry }])
-            ? toResourceEntrySnapshot(resourceEntry)
-            : null;
-    }
-
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
         const releasedAt = this.now();
         const reserved = toValidatedResourceInboxReleases(releases).map((release) => ({

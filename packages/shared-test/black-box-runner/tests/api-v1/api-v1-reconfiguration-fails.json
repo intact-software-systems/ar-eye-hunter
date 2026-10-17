@@ -146,7 +146,11 @@
         "method": "PUT",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/sessions/{aliceSessionId}/requests/presence-alice-reconnect-{runId}",
         "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
-        "body": { "generationId": "generation-{runId}", "principalId": "{aliceClientId}" }
+        "body": {
+          "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
       },
       "expect": { "status": 200 }
     },
@@ -158,7 +162,11 @@
         "method": "PUT",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/sessions/{bobSessionId}/requests/presence-bob-reconnect-{runId}",
         "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
-        "body": { "generationId": "generation-{runId}", "principalId": "{bobClientId}" }
+        "body": {
+          "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
       },
       "expect": { "status": 200 }
     },

@@ -39,6 +39,7 @@ describe('room presence policy failures', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             requestedGroupId: 'group-1'
         })).rejects.toThrow('403');
 
@@ -65,7 +66,8 @@ describe('room presence policy failures', () => {
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',
-            generationId: 'generation-1'
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1'
         })).rejects.toThrow('403');
 
         expect(calls.filter((call) => call.url.endsWith('/groups/group-1/join'))).toHaveLength(1);
@@ -92,6 +94,7 @@ describe('room presence policy failures', () => {
             principalId: 'principal-1',
             sessionId: 'session-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             requestedGroupId: 'group-1'
         })).rejects.toThrow('403');
 

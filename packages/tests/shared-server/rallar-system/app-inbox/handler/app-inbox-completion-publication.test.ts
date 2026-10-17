@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { toAppInboxEntryCompletionAwaitability } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
@@ -26,6 +27,7 @@ import {
 import {
     createAtomicHarness,
     createRegisteredHandlerHarness,
+    dequeueExhaustedAtomicEntry,
     toExhaustion,
     toRecovery
 } from '../test-support/app-inbox-transaction-test-runtime.ts';
@@ -57,7 +59,7 @@ describe('Committed AppInbox completion publication', () => {
             replace: async (entry: typeof harness.entry) => entry,
             findByKey: async (key: typeof harness.entry.key) => harness.database.state.results.get(toKeyAsString(key))
         };
-        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -98,7 +100,7 @@ describe('Committed AppInbox completion publication', () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
-        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', completionNotifications });
+        const inboxQueueReader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, completionNotifications });
         const options = { waitRetryIntervalMsecs: 1000, waitMaxRetryIntervalMsecs: 1000, waitJitterRatio: 0, waitMaxElapsedMsecs: 5000 };
         const client = createAppInboxClientRuntime({
             inboxQueueReader,
@@ -231,18 +233,20 @@ describe('Committed AppInbox completion publication', () => {
         subscription.close();
     });
 
-    it.each(['exhaustion', 'recovery'] as const)('wakes after committed %s independently of release telemetry', async (lane) => {
+    it.each(['exhaustion', 'recovery'] as const)('wakes after committed %s through the dequeuer that owns the publish', async (lane) => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         const harness = createAtomicHarness({ attempts: lane === 'exhaustion' ? 20 : 21 });
         const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
-        const dependencies = { database: harness.database.sql, completionNotifications };
-        const finalizer = createAppInboxRetryFinalizer(dependencies);
         const subscription = completionNotifications.subscribe(harness.entry.key);
         let woke = false;
         const pending = subscription.wait(1000).then(() => {
             woke = true;
         });
-        await finalizer(lane === 'exhaustion' ? toExhaustion(harness.entry) : toRecovery(harness.entry, 21));
+        await dequeueExhaustedAtomicEntry({
+            harness,
+            lane: lane === 'exhaustion' ? 'initial' : 'recovery',
+            options: { completionNotifications }
+        });
         await vi.advanceTimersByTimeAsync(0);
         expect(woke).toBe(true);
         expect(JSON.parse(harness.database.state.results.get(toKeyAsString(harness.entry.key))!.resource)).toMatchObject({
@@ -284,12 +288,15 @@ describe('Committed AppInbox completion publication', () => {
             entryTopicId: type.startsWith('CLIENT_') ? 'app-inbox.client-state' : undefined
         });
         const relayed: ResourceInboxCompletionNotifications.Identity[] = [];
-        const finalizer = createAppInboxRetryFinalizer({
-            database: harness.database.sql,
-            completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key))
-        });
 
-        await finalizer(toExhaustion(harness.entry));
+        await dequeueExhaustedAtomicEntry({
+            harness,
+            lane: 'initial',
+            options: {
+                completionNotifications: ResourceInboxCompletionNotifications.createDefault((key) => relayed.push(key)),
+                toCompletionAwaitability: toAppInboxEntryCompletionAwaitability
+            }
+        });
 
         expect(relayed).toEqual(awaitable ? [harness.entry.key] : []);
     });

@@ -37,6 +37,7 @@ interface CreateAuthInboxTestRuntimeInput {
     readonly passwordDerivationAdmission?: AuthPasswordDerivationAdmission;
     readonly nowEpochMs?: () => number;
     readonly newAuthMessageId?: () => string;
+    readonly wakeOwningQueue?: () => void;
 }
 
 interface RunAuthInboxCommandInput<Result> {
@@ -65,11 +66,12 @@ export function createAuthInboxTestRuntime({
     credentialIssuer: credentialIssuerInput,
     passwordDerivationAdmission,
     nowEpochMs,
-    newAuthMessageId
+    newAuthMessageId,
+    wakeOwningQueue
 }: CreateAuthInboxTestRuntimeInput): AuthInboxTestRuntime {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const credentialIssuer = credentialIssuerInput ??
         createHmacAuthCredentialIssuer(credentialSecret);
     const database = createAppInboxTestDatabase(queue, results, {
@@ -90,7 +92,8 @@ export function createAuthInboxTestRuntime({
         {
             serviceId: serviceId,
             authFactNowEpochMs: nowEpochMs,
-            newAuthMessageId
+            newAuthMessageId,
+            wakeOwningQueue
         }
     );
     return { queue, results, reader, service, credentialIssuer, database };

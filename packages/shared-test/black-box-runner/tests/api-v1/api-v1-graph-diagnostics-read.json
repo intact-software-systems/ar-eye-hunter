@@ -227,6 +227,7 @@
         },
         "body": {
           "generationId": "graphdiag-generation-{runId}",
+          "connectionGenerationId": "graphdiag-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -247,6 +248,7 @@
         },
         "body": {
           "generationId": "graphdiag-generation-{runId}",
+          "connectionGenerationId": "graphdiag-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

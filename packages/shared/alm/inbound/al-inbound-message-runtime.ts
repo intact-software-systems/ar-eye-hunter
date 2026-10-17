@@ -141,6 +141,11 @@ export namespace ALInboundMessageRuntime {
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the supplied dispatcher is ready for every local message. */
         readonly canDispatchMessage?: (msg: ALMessage) => boolean;
+        /**
+         * Whether a volatile data message stays in the memory pair. Absence means every one does; a server beside
+         * other instances keeps there only what no other instance reads back from the shared store.
+         */
+        readonly keepsVolatileMessageInMemory?: (msg: ALMessage) => boolean;
         /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
         readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
         /** Answers `storage-unavailable` when the outbound store could not persist the control: a replay claim retries. */
@@ -171,8 +176,9 @@ export namespace ALInboundMessageRuntime {
  * admits, retains and delivers over its own store pair.
  *
  * - A data message goes to the lane `resolveALInboundStoreDurability(msg)` names: `durable` exactly
- *   when the envelope's normalized durability is `local-inbox`. The decision reads the envelope alone,
- *   so every copy and retry of one message resolves to the same lane.
+ *   when the envelope's normalized durability is `local-inbox`, or when `keepsVolatileMessageInMemory`
+ *   declines a volatile one. The decision reads the envelope alone, so every copy and retry of one
+ *   message resolves to the same lane.
  * - An acknowledgement of a message this peer originated is `not-handled` and reads no store: the
  *   origin keeps no inbound decision surface for its own message.
  * - Any other control goes to the volatile lane first, and to the durable lane when that lane answers
@@ -336,7 +342,8 @@ export class ALInboundMessageRuntime {
 
     /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */
     private resolveDataLane(msg: ALMessage): ALInboundStoreLane {
-        return this.volatile === undefined || resolveALInboundStoreDurability(msg) === 'durable'
+        return this.volatile === undefined || resolveALInboundStoreDurability(msg) === 'durable' ||
+                this.dependencies.keepsVolatileMessageInMemory?.(msg) === false
             ? this.durable
             : this.volatile;
     }

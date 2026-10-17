@@ -93,7 +93,8 @@ describe('room membership group-state HTTP workflows', () => {
                 groupId: 'group-1',
                 actorPrincipalId: 'member-1',
                 sessionId: 'member-session',
-                generationId: 'generation-1'
+                generationId: 'generation-1',
+                connectionGenerationId: 'ws-generation-1'
             })
         ).resolves.toMatchObject({ group: { groupId: 'group-1' } });
 

@@ -17,6 +17,7 @@ import {
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -36,6 +37,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
@@ -47,7 +49,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
                 formationEvents.push(event);
             }
         });
-        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
+        vi.spyOn(worker, 'read').mockResolvedValue(Either.ofRight([{}] as never));
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([
                 AppTopics.groupStateEvent
@@ -78,6 +80,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
@@ -86,7 +89,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
                 formationEvents.push(event);
             }
         });
-        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
+        vi.spyOn(worker, 'read').mockResolvedValue(Either.ofRight([{}] as never));
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry, 'held-by-policy')
         );
@@ -105,13 +108,14 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
             now: () => BASE_EPOCH_MS + 5_000,
             formationMetrics: (event) => formationEvents.push(event)
         });
-        vi.spyOn(worker, 'read').mockResolvedValue([{}] as never);
+        vi.spyOn(worker, 'read').mockResolvedValue(Either.ofRight([{}] as never));
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry)
         );

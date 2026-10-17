@@ -25,10 +25,6 @@ const COMMAND: AppInboxEnqueueInput = {
 
 describe('AppInboxCommandClient', () => {
     it('passes the durable queue identity to the result decoding boundary', async () => {
-        const entry = createAppInboxResourceEntry(COMMAND, 'server-12345678', {
-            creationNow: Temporal.Now.instant,
-            createMessage: createAppInboxQueueMessageFixture
-        });
         const decodedValues: JsonWireValue[] = [];
         const client = new AppInboxCommandClient(
             {
@@ -38,8 +34,7 @@ describe('AppInboxCommandClient', () => {
                             enqueue,
                             'server-12345678',
                             { creationNow: Temporal.Now.instant, createMessage: createAppInboxQueueMessageFixture }
-                        ),
-                    enqueueReplacingTerminal: async () => entry.key
+                        )
                 },
                 resultWaiter: {
                     waitForResult: async <Result>(

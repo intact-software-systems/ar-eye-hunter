@@ -1,4 +1,3 @@
-import { type AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -88,35 +87,6 @@ export async function requireApiAuthSession(
     }
 
     return session;
-}
-
-export async function requireWsAuthSession(
-    input: {
-        sessionId: string;
-        ticket?: string;
-    },
-    appAuthInbox: Pick<AppAuthInboxService, 'consumeWebSocketTicket'>,
-    facts: Readonly<{ requestId: string; }>
-): Promise<IssuedAuthSession> {
-    if (!input.ticket) {
-        throw unauthorized('Missing websocket auth ticket');
-    }
-
-    const consumed = await appAuthInbox.consumeWebSocketTicket({
-        ...facts,
-        ticket: input.ticket,
-        expectedSessionId: input.sessionId
-    });
-    if (consumed.left !== undefined || consumed.right === undefined) {
-        throw new RequestAuthFailure({
-            kind: 'authentication',
-            code: 'authentication-required',
-            status: 401,
-            message: 'Unauthorized: Invalid or expired websocket auth ticket',
-            details: { requestId: facts.requestId, sessionId: input.sessionId }
-        });
-    }
-    return consumed.right;
 }
 
 export function toAuthSession(session: IssuedAuthSession): AuthSession {

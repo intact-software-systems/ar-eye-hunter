@@ -376,6 +376,7 @@ function createGroupSnapshotSessions(
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: input.version,
         status: 'active',
         connectedAtEpochMs: input.version,

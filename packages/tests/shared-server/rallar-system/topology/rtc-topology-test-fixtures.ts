@@ -101,6 +101,7 @@ export function createRtcTopologyGroupSnapshot(
             sessionId,
             principalId: sessionId,
             generationId: `${sessionId}-generation`,
+            connectionGenerationId: `${sessionId}-ws-generation`,
             generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,

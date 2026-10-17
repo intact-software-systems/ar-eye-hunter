@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
+source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 
 RALLAR_REPO_URL="${RALLAR_REPO_URL:-https://github.com/intact-software-systems/ar-eye-hunter.git}"
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
@@ -68,6 +69,9 @@ if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" ==
 	install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 fi
 
+echo "==> Ensuring the API-v1 PostgreSQL server"
+install_rallar_api_postgres_server
+
 echo "==> Building rallar-black-box SPA"
 build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 
@@ -121,10 +125,25 @@ if ((${#RALLAR_AUTH_CREDENTIAL_SECRET} < 32)); then
 	exit 1
 fi
 
+RALLAR_API_DATABASE_URL="$(resolve_rallar_api_database_url /etc/rallar/api-v1.env)"
+RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="$(
+	resolve_rallar_api_operator_client_ids /etc/rallar/api-v1.env "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}"
+)"
+
 CO_LOCATED_AUTH_IP_RATE_LIMIT=200
+RALLAR_API_TIMING_LOGS=0
+RALLAR_API_APP_INBOX_PHASE_TIMING=false
+case "$(printf '%s' "${RALLAR_API_SERVER_TIMING:-0}" | tr '[:upper:]' '[:lower:]')" in
+1 | true | yes | on)
+	RALLAR_API_TIMING_LOGS=1
+	RALLAR_API_APP_INBOX_PHASE_TIMING=true
+	;;
+esac
 
 cat >/etc/rallar/api-v1.env <<EOF
-RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory
+RALLAR_API_CONFIGURATION_PROFILE=prod
+RALLAR_ICE_MODE=local
+DATABASE_URL=${RALLAR_API_DATABASE_URL}
 PORT=8080
 CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}
 RALLAR_API_BASE_URL=https://${RALLAR_API_HOST}
@@ -132,15 +151,15 @@ RALLAR_WS_BASE_URL=wss://${RALLAR_API_HOST}
 RALLAR_LOGIN_USER_RATE_LIMIT=100
 RALLAR_REGISTRATION_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}
 RALLAR_LOGIN_IP_RATE_LIMIT=${CO_LOCATED_AUTH_IP_RATE_LIMIT}
-RALLAR_TIMING_LOGS=1
-RALLAR_APP_INBOX_PHASE_TIMING=true
+RALLAR_TIMING_LOGS=${RALLAR_API_TIMING_LOGS}
+RALLAR_APP_INBOX_PHASE_TIMING=${RALLAR_API_APP_INBOX_PHASE_TIMING}
 RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET}
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}
 EOF
 chmod 0600 /etc/rallar/api-v1.env
-echo "WARNING: API-v1 uses the prod-in-memory profile; restarting rallar-api-v1 resets auth sessions and runtime state."
+echo "API-v1 uses the prod profile on this VM's Postgres store ${RALLAR_API_DATABASE_NAME}; every deploy and rollout wipes it."
 
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" && -r /etc/rallar/control-server.env ]]; then
 	RALLAR_CONTROL_ADMIN_TOKEN="$(
@@ -177,9 +196,10 @@ chmod 0600 /etc/rallar/control-server.env
 echo "==> Writing systemd services"
 cat >/etc/systemd/system/rallar-api-v1.service <<EOF
 [Unit]
-Description=Rallar API-v1 memory controller
-After=network-online.target
-Wants=network-online.target
+Description=Rallar API-v1 controller
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+ConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}
 
 [Service]
 Type=simple
@@ -225,8 +245,12 @@ EOF
 echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile
 
-echo "==> Starting services"
+echo "==> Resetting the API-v1 Postgres store"
 systemctl daemon-reload
+systemctl stop rallar-api-v1.service || true
+reset_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_DATABASE_URL}"
+
+echo "==> Starting services"
 systemctl enable --now rallar-api-v1.service
 systemctl enable --now rallar-black-box-control.service
 systemctl restart rallar-api-v1.service

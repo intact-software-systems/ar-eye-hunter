@@ -8,6 +8,9 @@ import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.
 import { createPostgresLiveWsNoticeTransport } from './create-postgres-live-ws-notice-transport.ts';
 import type { LocalQueuePubSubBus } from './local-queue-pubsub-bridge.ts';
 
+/** Its own channel, so the QueueBox key listener never parses a live signalling or room notice. */
+export const API_V1_LIVE_WS_NOTICE_CHANNEL = 'ws-live-notice';
+
 export interface CreateApiV1LiveWsNoticeTransportInput {
     readonly mode: ApiV1DatabaseConfiguration['pubSub'];
     readonly publisherId: string;

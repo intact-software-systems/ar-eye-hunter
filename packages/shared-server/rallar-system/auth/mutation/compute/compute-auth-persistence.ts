@@ -60,14 +60,6 @@ function computeAuthPersistenceOperations(
                 expireAtEpochMs: issueWsCommand.ticketRecord.expiresAtEpochMs,
                 expectedRevision: issueWsRead.expiredTicketEntry?.revision ?? null
             })];
-        case 'consume-ws-ticket': {
-            const ticket = requireTicketEntry(requireAuthRead(computed, kind).ticket);
-            return [runtimeDelete(
-                WS_AUTH_TICKETS_NAMESPACE,
-                ticket.entry.key,
-                ticket.entry.revision
-            )];
-        }
         case 'issue-agent-tickets': {
             const issueAgentRead = requireAuthRead(computed, kind);
             return computed.sessions.flatMap((session, index) => [

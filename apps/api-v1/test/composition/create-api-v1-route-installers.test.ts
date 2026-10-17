@@ -64,7 +64,11 @@ Deno.test('route installers mount representative API and websocket behavior in o
 
 const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime> = {
     requireApiAuthSession: rejectUnauthenticated,
-    requireWsAuthSession: rejectUnauthenticated
+    readWsConnectTicket: rejectUnusedOperation,
+    readWsConnectSession: rejectUnusedOperation,
+    upgradeWebSocket: () => {
+        throw new Error('route dependency not used');
+    }
 };
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {
@@ -83,7 +87,8 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             },
             passwordDerivationAdmission: new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 }),
             appClientInboxService: {
-                enqueueAuthorisedWsClientConnect: rejectUnusedOperation,
+                writeAuthorisedWsClientConnect: rejectUnusedOperation,
+                enqueueAuthorisedWsClientDisconnect: rejectUnusedOperation,
                 processAuthenticatedEntryUntilCompletion: rejectUnusedOperation
             },
             groupStateInboxService: {
@@ -189,10 +194,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         },
         strictReadAuthorization: false,
         nowEpochMs: () => 1_000,
-        createTokenId: () => 'token-id',
-        createWsAuthRequestFacts: () => ({
-            requestId: 'request-id'
-        })
+        createTokenId: () => 'token-id'
     };
 }
 

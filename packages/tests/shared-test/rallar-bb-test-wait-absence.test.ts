@@ -399,3 +399,129 @@ describe('rallar-bb-test wait absence', () => {
         }
     });
 });
+
+describe('rallar-bb-test wait timeout counted from an earlier epoch', () => {
+    const ACCEPTED_AT_REFERENCE = '{resultCache.readiness.value.formation.accepted.overlay.updatedAtEpochMs}';
+
+    function createRuntimeWithAcceptedLayout(acceptedAtEpochMs: number) {
+        const clock = { now: 10_000, sleptDurations: [] as number[] };
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            now: () => clock.now,
+            sleep: async (ms) => {
+                clock.sleptDurations.push(ms);
+                clock.now += ms;
+            },
+            commandExecutor: (command) =>
+                command.kind === 'formation.readiness'
+                    ? {
+                        status: 'ok',
+                        value: { formation: { accepted: { overlay: { updatedAtEpochMs: acceptedAtEpochMs } } } }
+                    }
+                    : undefined
+        });
+        return { runtime, clock };
+    }
+
+    function toQuietWait(commandId: string, timeoutFrom: string): RallarBlackBoxTestWaitCommand {
+        return {
+            kind: 'wait',
+            commandId,
+            absent: true,
+            timeoutMs: 3_500,
+            timeoutFrom,
+            match: { kind: 'diagnostic', topic: 'rallar.browser.formation.layout' }
+        };
+    }
+
+    async function readAcceptedLayout(runtime: ReturnType<typeof createRuntimeWithAcceptedLayout>['runtime']) {
+        await runtime.execute({ kind: 'formation.readiness', commandId: 'readiness', timeoutMs: 1_000 });
+    }
+
+    // A layout accepted 1.2 s ago has already been quiet that long, so only the rest of the window is held.
+    it('holds an absence only for the part of the window still to come', async () => {
+        const { runtime, clock } = createRuntimeWithAcceptedLayout(8_800);
+        await readAcceptedLayout(runtime);
+
+        const result = await runtime.execute(toQuietWait('quiet-rest', ACCEPTED_AT_REFERENCE));
+
+        expect(result.status).toBe('ok');
+        expect(result.value).toEqual({ matched: false, absent: true });
+        expect(clock.sleptDurations).toEqual([2_300]);
+    });
+
+    it('closes at once when the window ended before the wait, yet still fails on a buffered match', async () => {
+        const settled = createRuntimeWithAcceptedLayout(1_000);
+        await readAcceptedLayout(settled.runtime);
+        const quiet = await settled.runtime.execute(toQuietWait('quiet-settled', ACCEPTED_AT_REFERENCE));
+
+        const replanned = createRuntimeWithAcceptedLayout(1_000);
+        await readAcceptedLayout(replanned.runtime);
+        replanned.runtime.recordEvent({ kind: 'diagnostic', topic: 'rallar.browser.formation.layout' });
+        const violated = await replanned.runtime.execute(toQuietWait('quiet-replanned', ACCEPTED_AT_REFERENCE));
+
+        expect(quiet.status).toBe('ok');
+        expect(settled.clock.sleptDurations).toEqual([0]);
+        expect(violated.status).toBe('failed');
+        expect(violated.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
+    });
+
+    // An epoch ahead of the agent's clock never lengthens the wait beyond its own timeout.
+    it('counts from the wait start when the referenced epoch lies ahead of it', async () => {
+        const { runtime, clock } = createRuntimeWithAcceptedLayout(10_400);
+        await readAcceptedLayout(runtime);
+
+        const result = await runtime.execute(toQuietWait('quiet-ahead', ACCEPTED_AT_REFERENCE));
+
+        expect(result.status).toBe('ok');
+        expect(clock.sleptDurations).toEqual([3_500]);
+    });
+
+    it('refuses a timeoutFrom that names no numeric result value', async () => {
+        const { runtime } = createRuntimeWithAcceptedLayout(8_800);
+        await readAcceptedLayout(runtime);
+
+        const missing = await runtime.execute(
+            toQuietWait('quiet-missing', '{resultCache.readiness.value.formation.planned.overlay.updatedAtEpochMs}')
+        );
+        const textual = await runtime.execute(toQuietWait('quiet-text', 'at {resultCache.readiness.value.formation}'));
+
+        expect(missing.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+            details: { reference: 'resultCache.readiness.value.formation.planned.overlay.updatedAtEpochMs' }
+        });
+        expect(textual.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+            details: { timeoutFrom: 'at {resultCache.readiness.value.formation}' }
+        });
+    });
+
+    it('publishes timeoutFrom through the command schema and the control validation', () => {
+        const command = toQuietWait('quiet-schema', ACCEPTED_AT_REFERENCE);
+
+        expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
+        expect(formatJsonSchemaValidationErrors(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).errors))
+            .toBe('');
+        const loopKeyed = toQuietWait('quiet-loop', '{resultCache.stable:i{loop.iteration}:c1:readiness.value.acceptedHeldSinceEpochMs}');
+        expect(validateRallarBlackBoxTestCommand(loopKeyed)).toEqual({ ok: true });
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, loopKeyed).ok).toBe(true);
+        expect(validateRallarBlackBoxTestCommand({ ...command, timeoutFrom: 7 })).toMatchObject({
+            ok: false,
+            error: 'wait.timeoutFrom must be a string.'
+        });
+    });
+
+    // Inside a first-success loop a malformed reference would fail every iteration and surface only at the loop's
+    // deadline, so the recipe is refused when it is loaded.
+    it.each(['at {resultCache.readiness.value.epoch}', '{resultCache.readiness.value.epoch}ms', 'resultCache.readiness.value', '{other.value}'])(
+        'refuses timeoutFrom %s at the schema and the control validation',
+        (timeoutFrom) => {
+            const command = toQuietWait('quiet-malformed', timeoutFrom);
+
+            expect(validateRallarBlackBoxTestCommand(command)).toMatchObject({
+                ok: false,
+                error: 'wait.timeoutFrom must be exactly one {resultCache.<commandId>.<path>} reference.'
+            });
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+        }
+    );
+});

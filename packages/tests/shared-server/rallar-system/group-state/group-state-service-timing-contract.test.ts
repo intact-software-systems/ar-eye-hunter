@@ -202,6 +202,7 @@ describe('group presence summary phase timing', () => {
             runtimeRepository: producer.repository,
             outboxQueueReader: new OutboxQueueReader(new PSqlQueueBox(producer.resources, Temporal.Now.instant)),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             serviceId: 'producer-api',
             now: () => producer.now,
             timing: (event) => timingEvents.push(event)

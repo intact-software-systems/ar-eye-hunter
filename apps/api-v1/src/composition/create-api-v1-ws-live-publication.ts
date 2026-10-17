@@ -4,6 +4,7 @@ import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-type
 
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
+import { API_V1_LIVE_WS_NOTICE_CHANNEL } from '../db/api-v1-live-ws-notice-transport.ts';
 import { createPostgresLiveWsNoticeTransport } from '../db/create-postgres-live-ws-notice-transport.ts';
 import { myPublisherId } from '../runtime/runtime-identity.ts';
 
@@ -25,7 +26,7 @@ export function createApiV1WsLivePublication(
     }
     return {
         transport: createPostgresLiveWsNoticeTransport(input.notification, input.nowEpochMs),
-        channel: 'ws-channel',
+        channel: API_V1_LIVE_WS_NOTICE_CHANNEL,
         publisherId: myPublisherId,
         readPrincipalSessionIds: async (ref: ClientPrincipalRef) => {
             const snapshot = await input.readClientSnapshot(ref);

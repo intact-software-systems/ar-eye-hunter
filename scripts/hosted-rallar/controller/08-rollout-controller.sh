@@ -16,6 +16,10 @@ RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-
 RALLAR_ROLLOUT_CONTROL_STATE_DIR="${RALLAR_ROLLOUT_CONTROL_STATE_DIR:-/var/lib/rallar-black-box-control}"
 RALLAR_ROLLOUT_TMP_DIR="${RALLAR_ROLLOUT_TMP_DIR:-/tmp}"
 RALLAR_API_ENV_FILE="${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}"
+RALLAR_API_SERVER_TIMING="${RALLAR_API_SERVER_TIMING:-0}"
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 
 rallar_user_home() {
 	local user="${1:-rallar}"
@@ -189,7 +193,7 @@ repair_known_rollout_generated_checkout_changes() {
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
-	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|"
+	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|DATABASE_URL|"
 	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|RALLAR_APP_INBOX_PHASE_TIMING|"
 	allowed_names+="RALLAR_REGISTRATION_IP_RATE_LIMIT|RALLAR_LOGIN_IP_RATE_LIMIT|"
 	allowed_names+="RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET|"
@@ -209,7 +213,7 @@ sanitize_api_environment_file() {
 			printf '%s\n' "${line}" >>"${tmp_file}"
 		fi
 	done <"${env_file}"
-	printf 'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory\n' >>"${tmp_file}"
+	printf 'RALLAR_API_CONFIGURATION_PROFILE=prod\nRALLAR_ICE_MODE=local\n' >>"${tmp_file}"
 	install -m 0600 "${tmp_file}" "${env_file}"
 	rm -f "${tmp_file}"
 }
@@ -250,10 +254,46 @@ update_env_value() {
 	rm -f "${tmp_file}"
 }
 
-# Hosted runs are attributed from the API journal, so every rollout turns the timing lines on.
+# Acceptance runs are uninstrumented and diagnostic runs opt in; the API's timing lines default on, so off is explicit.
 write_api_timing_environment() {
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "1"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "true"
+	local server_timing
+	server_timing="$(printf '%s' "${RALLAR_API_SERVER_TIMING}" | tr '[:upper:]' '[:lower:]')"
+	if [[ "${server_timing}" == 1 || "${server_timing}" == true || "${server_timing}" == yes || "${server_timing}" == on ]]; then
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "1"
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "true"
+	else
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_TIMING_LOGS" "0"
+		update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_APP_INBOX_PHASE_TIMING" "false"
+	fi
+}
+
+write_api_prod_profile_environment() {
+	update_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL" \
+		"$(resolve_rallar_api_database_url "${RALLAR_API_ENV_FILE}")"
+	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" \
+		"$(resolve_rallar_api_operator_client_ids "${RALLAR_API_ENV_FILE}" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}")"
+}
+
+stopped_services=0
+
+restart_stopped_services_on_error() {
+	local exit_code="$?"
+	if [[ "${stopped_services}" == "1" ]]; then
+		echo
+		echo "Rollout failed after services were stopped. Attempting to start controller services again." >&2
+		if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
+			echo "::error::rallar-api-v1 stays stopped: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")" >&2
+		else
+			systemctl start rallar-api-v1.service || true
+		fi
+		systemctl start rallar-black-box-control.service || true
+		if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
+			systemctl start caddy.service || true
+		else
+			systemctl reload caddy.service || systemctl restart caddy.service || true
+		fi
+	fi
+	exit "${exit_code}"
 }
 
 run_rollout_self_test() {
@@ -283,10 +323,17 @@ run_rollout_self_test() {
 		write_api_timing_environment
 		echo "wroteApiTimingEnvironment=true"
 		;;
+	restart-after-failure)
+		stopped_services=1
+		restart_stopped_services_on_error
+		;;
+	write-api-prod-environment)
+		write_api_prod_profile_environment
+		echo "wroteApiProdEnvironment=true"
+		;;
 	write-api-optional-environment)
 		local name
 		local names=(
-			RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS
 			RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
 			RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
 			RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
@@ -314,7 +361,6 @@ if [[ "$(id -u)" != "0" ]]; then
 	exit 1
 fi
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
@@ -420,7 +466,6 @@ ensure_operator_token_secret() {
 
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
-	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}"
 	update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
@@ -490,30 +535,13 @@ if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
 fi
 
 previous_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
-stopped_services=0
-
-restart_stopped_services_on_error() {
-	local exit_code="$?"
-	if [[ "${stopped_services}" == "1" ]]; then
-		echo
-		echo "Rollout failed after services were stopped. Attempting to start controller services again." >&2
-		systemctl start rallar-api-v1.service || true
-		systemctl start rallar-black-box-control.service || true
-		if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
-			systemctl start caddy.service || true
-		else
-			systemctl reload caddy.service || systemctl restart caddy.service || true
-		fi
-	fi
-	exit "${exit_code}"
-}
 
 echo "==> Controlled rollout from ${previous_revision} to ${RALLAR_REPO_REF}"
 echo "Checkout: ${RALLAR_CHECKOUT_DIR}"
 echo "Services:"
 printf "  %s\n" "${services[@]}"
 echo
-echo "Note: stopping rallar-api-v1 resets its pglite-memory data."
+echo "Note: the rollout wipes the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} and applies the migrations before the API starts."
 
 trap restart_stopped_services_on_error ERR
 
@@ -549,6 +577,10 @@ fi
 echo "==> Building rallar-black-box SPA"
 rallar_playwright_operation_stage "rollout-spa-build"
 build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
+
+echo "==> Ensuring the API-v1 PostgreSQL server"
+rallar_playwright_operation_stage "rollout-postgres-server"
+install_rallar_api_postgres_server
 
 echo "==> Stopping services for publish/start"
 stopped_services=1
@@ -593,6 +625,12 @@ ensure_operator_token_secret
 
 echo "==> Ensuring stable API auth credential secret"
 ensure_api_auth_credential_secret
+
+echo "==> Writing API prod profile env"
+write_api_prod_profile_environment
+
+rallar_playwright_operation_stage "rollout-postgres-store"
+reset_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_env_value "${RALLAR_API_ENV_FILE}" "DATABASE_URL")"
 
 echo "==> Writing Caddyfile"
 write_rallar_controller_caddyfile

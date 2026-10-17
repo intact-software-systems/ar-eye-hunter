@@ -13,7 +13,6 @@ import { readAuthSessionEntries } from './read-auth-session-entries.ts';
 type AuthUserRegistrationRead = Extract<AuthMutationRead, { kind: 'register-user'; }>;
 type AuthSessionIssueRead = Extract<AuthMutationRead, { kind: 'issue-session'; }>;
 type AuthWebSocketTicketIssueRead = Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>;
-type AuthWebSocketTicketConsumeRead = Extract<AuthMutationRead, { kind: 'consume-ws-ticket'; }>;
 type AuthAgentTicketsIssueRead = Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }>;
 type AuthAgentTicketConsumeRead = Extract<AuthMutationRead, { kind: 'consume-agent-ticket'; }>;
 
@@ -31,8 +30,6 @@ export async function readAuthMutation(
             return { kind: command.kind, ...(await readAuthSessionEntries(sessions, command.expected)) };
         case 'issue-ws-ticket':
             return await readAuthWebSocketTicketIssue(sessions, command);
-        case 'consume-ws-ticket':
-            return await readAuthWebSocketTicketConsume(sessions, command);
         case 'issue-agent-tickets':
             return await readAuthAgentTicketsIssue(sessions, command);
         case 'consume-agent-ticket':
@@ -82,22 +79,6 @@ async function readAuthWebSocketTicketIssue(
         ticket: ticket.value ?? null,
         expiredTicketEntry: ticket.expiredEntry ?? null,
         session
-    };
-}
-
-async function readAuthWebSocketTicketConsume(
-    sessions: AuthSessionRepository,
-    command: Extract<AuthMutationCommand, { kind: 'consume-ws-ticket'; }>
-): Promise<AuthWebSocketTicketConsumeRead> {
-    const ticketRead = await sessions.readWebSocketTicketByDigestEntry(command.ticketDigest);
-    const ticket = ticketRead.value ?? null;
-    return {
-        kind: command.kind,
-        ticket,
-        expiredTicketEntry: ticketRead.expiredEntry ?? null,
-        session: ticket
-            ? ((await sessions.findSessionBySessionIdEntry(ticket.value.sessionId)) ?? null)
-            : null
     };
 }
 

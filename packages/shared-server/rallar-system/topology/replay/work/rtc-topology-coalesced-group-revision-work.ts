@@ -10,10 +10,11 @@ import {
     isPreserveOnlyCanonicalGroupTopologyConfigPatch,
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
-import type {
-    GroupRef,
-    GroupSnapshot,
-    GroupStateCausalRevision
+import {
+    toCanonicalGroupRef,
+    type GroupRef,
+    type GroupSnapshot,
+    type GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import {
     EntityStatus,
@@ -49,7 +50,12 @@ export interface TopologyReplanTiming {
      * layout is ageing.
      */
     readonly replanNotBeforeEpochMs: number | null;
+    /** This change brings the present members to the group's expected member count, so no arrival is left to coalesce (D288). */
+    readonly expectedMembersArrived: boolean;
 }
+
+/** The coalescing reason a series carries once its expected members have arrived; its due time no longer extends (D288). */
+export const TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON = 'expected-members-arrived';
 
 export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly aggregateRef: GroupRef;
@@ -65,26 +71,37 @@ export interface RtcTopologyCoalescedGroupRevisionInput {
 export interface ComputeTopologyReplanDueAtInput {
     readonly requestedAtEpochMs: number;
     /** The queued row this change extends; null for the first change of a series. */
-    readonly previous: Pick<CoalescedAppOutboxWorkMetadata, 'windowOpenedAtEpochMs' | 'dueAtEpochMs'> | null;
+    readonly previous:
+        | Pick<CoalescedAppOutboxWorkMetadata, 'windowOpenedAtEpochMs' | 'dueAtEpochMs' | 'reasons'>
+        | null;
     readonly timing: TopologyReplanTiming;
 }
 
 /**
  * The extending window keeps its coalescing benefit but cannot defer a replan
- * past the series' maximum wait (product decision 31); the layout-age floor
- * is applied last because it is short.
+ * past the series' maximum wait (product decision 31). The change that brings
+ * the expected members in is due at once, and later changes of that series no
+ * longer extend it (D288). The layout-age floor is applied last because it is
+ * short.
  */
 export function computeTopologyReplanDueAt(input: ComputeTopologyReplanDueAtInput): number {
+    return Math.max(computeTopologyReplanWindowDueAt(input), input.timing.replanNotBeforeEpochMs ?? 0);
+}
+
+function computeTopologyReplanWindowDueAt(input: ComputeTopologyReplanDueAtInput): number {
     const { timing, previous } = input;
+    if (timing.expectedMembersArrived) {
+        return Math.min(input.requestedAtEpochMs, previous?.dueAtEpochMs ?? input.requestedAtEpochMs);
+    }
+    if (previous?.reasons.includes(TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON)) {
+        return previous.dueAtEpochMs;
+    }
     const windowOpenedAtEpochMs = previous?.windowOpenedAtEpochMs ?? input.requestedAtEpochMs;
     const extended = Math.max(
         previous?.dueAtEpochMs ?? 0,
         input.requestedAtEpochMs + timing.window.debounceMs
     );
-    const bounded = timing.window.maxWaitMs === null
-        ? extended
-        : Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
-    return Math.max(bounded, timing.replanNotBeforeEpochMs ?? 0);
+    return Math.min(extended, windowOpenedAtEpochMs + timing.window.maxWaitMs);
 }
 
 export function toRtcTopologyCoalescedGroupRevisionResourceId(overlayId: string): string {
@@ -104,7 +121,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             incoming.sourceGroupStateCausalRevision
         ),
         data: incoming,
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0, nextTs: undefined },
         entryAudit: null,
         messageIdentity: null
     });
@@ -115,7 +132,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
                 input,
                 resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
                 data: incoming,
-                dequeueAudit: { attempts: 0 },
+                dequeueAudit: { attempts: 0, nextTs: undefined },
                 entryAudit: null,
                 messageIdentity: null
             }),
@@ -136,7 +153,7 @@ function toFreshCoalescedGroupRevisionData(
     return {
         kind: 'group-revision',
         overlayId,
-        groupSnapshot: input.groupSnapshot,
+        groupRef: toCanonicalGroupRef(input.aggregateRef),
         sourceGroupStateCausalRevision: readGroupCausalRevision(input.groupSnapshot),
         requestedAtEpochMs: input.requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
@@ -151,7 +168,9 @@ function toFreshCoalescedGroupRevisionData(
                 previous: null,
                 timing: input.timing
             }),
-            reasons: ['group-revision']
+            reasons: input.timing.expectedMembersArrived
+                ? ['group-revision', TOPOLOGY_EXPECTED_MEMBERS_ARRIVED_REASON]
+                : ['group-revision']
         }
     };
 }
@@ -181,9 +200,9 @@ function toMergedCoalescedGroupRevisionEntry(
         input,
         resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
         data: nextData,
-        dequeueAudit: {
-            attempts: carriesPreviousLifecycle ? previousEntry.dequeueAudit.attempts : 0
-        },
+        dequeueAudit: carriesPreviousLifecycle
+            ? { attempts: previousEntry.dequeueAudit.attempts, nextTs: previousEntry.dequeueAudit.nextTs }
+            : { attempts: 0, nextTs: undefined },
         entryAudit: previousEntry.audit,
         messageIdentity: previous.messageIdentity
     });
@@ -285,7 +304,6 @@ export function mergeRtcTopologyGroupRevisionWork(
     const selected = order === 'dominated' ? existing : incoming;
     return {
         ...incoming,
-        groupSnapshot: selected.groupSnapshot,
         sourceGroupStateCausalRevision: selected.sourceGroupStateCausalRevision,
         requestedAtEpochMs: Math.max(existing.requestedAtEpochMs, incoming.requestedAtEpochMs),
         origin: existing.origin === 'commanded' || incoming.origin === 'commanded'
@@ -371,7 +389,8 @@ interface ToCoalescedGroupRevisionEntryInput {
     readonly input: RtcTopologyCoalescedGroupRevisionInput;
     readonly resourceId: string;
     readonly data: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
-    readonly dequeueAudit: Pick<ResourceEntry['dequeueAudit'], 'attempts'>;
+    /** The attempts and retry time the row carries forward; a fresh row has neither. */
+    readonly dequeueAudit: Pick<ResourceEntry['dequeueAudit'], 'attempts' | 'nextTs'>;
     readonly entryAudit: ResourceEntry['audit'] | null;
     readonly messageIdentity: CoalescedMessageIdentity | null;
 }
@@ -390,8 +409,9 @@ function toCoalescedGroupRevisionEntry(
     const message = toCoalescedGroupRevisionMessage(entryInput, key, messageTsEpochMs);
     const metadata = data[COALESCED_APP_OUTBOX_WORK_FIELD];
     // NEW is the shape of a row no attempt has touched; a head that already
-    // failed an attempt keeps RETRY, immediately eligible through a past
-    // next_ts, when the bounded window makes a merge due at once.
+    // failed an attempt keeps RETRY, due at the later of the window's due
+    // time and its retry backoff, even when the bounded window makes a merge
+    // due at once.
     const isDue = metadata.dueAtEpochMs <= input.requestedAtEpochMs;
     const status = isDue && entryInput.dequeueAudit.attempts === 0 ? EntityStatus.NEW : EntityStatus.RETRY;
     const createdTs = Temporal.Instant.fromEpochMilliseconds(messageTsEpochMs)
@@ -412,9 +432,23 @@ function toCoalescedGroupRevisionEntry(
             attempts: entryInput.dequeueAudit.attempts,
             nextTs: status === EntityStatus.NEW
                 ? undefined
-                : Temporal.Instant.fromEpochMilliseconds(metadata.dueAtEpochMs)
+                : Temporal.Instant.fromEpochMilliseconds(
+                    computeCoalescedRetryAtEpochMs(metadata, entryInput.dequeueAudit)
+                )
         }
     };
+}
+
+/**
+ * A head that already failed an attempt keeps its retry backoff: the window may make the merged
+ * change due sooner, but never earlier than the failed recompute's next retry (D274).
+ */
+function computeCoalescedRetryAtEpochMs(
+    metadata: CoalescedAppOutboxWorkMetadata,
+    dequeueAudit: ToCoalescedGroupRevisionEntryInput['dequeueAudit']
+): number {
+    const backoffUntilEpochMs = dequeueAudit.attempts > 0 ? dequeueAudit.nextTs?.epochMilliseconds ?? 0 : 0;
+    return Math.max(metadata.dueAtEpochMs, backoffUntilEpochMs);
 }
 
 function toCoalescedGroupRevisionMessage(
@@ -435,7 +469,7 @@ function toCoalescedGroupRevisionMessage(
         senderId: createdBy,
         data
     };
-    const causalRevision = readGroupCausalRevision(data.groupSnapshot);
+    const causalRevision = data.sourceGroupStateCausalRevision;
     return {
         id: {
             v: AL_MESSAGE_ENVELOPE_VERSION,
@@ -489,7 +523,8 @@ function assertCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevis
 function isValidTopologyReplanTiming(timing: TopologyReplanTiming): boolean {
     const { window } = timing;
     return isNonNegativeSafeInteger(window.debounceMs) &&
-        (window.maxWaitMs === null || isNonNegativeSafeInteger(window.maxWaitMs)) &&
+        isNonNegativeSafeInteger(window.maxWaitMs) &&
+        typeof timing.expectedMembersArrived === 'boolean' &&
         (timing.replanNotBeforeEpochMs === null || isNonNegativeSafeInteger(timing.replanNotBeforeEpochMs));
 }
 

@@ -1130,6 +1130,7 @@ function createRoomSnapshot(principalIds: readonly string[] = ['alice', 'bob']):
             principalId: sessionId,
             sessionId,
             generationId: `generation-${sessionId}`,
+            connectionGenerationId: `ws-generation-${sessionId}`,
             generationVersion: 1,
             status: 'active',
             connectedAtEpochMs: 1,

@@ -321,12 +321,13 @@ In a weighted room graph an unmeasured pair weighs the worst measured RTT plus i
 spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
 the no-RTT tree rooted at it.
 
-Every work item reads the current durable group snapshot and selects its
-planning input causally. `group-revision` work keeps its embedded snapshot
-even when the current snapshot dominates it, so revision N is never replaced
-by N+1. `rtt-refresh` work adopts a dominating current snapshot. A dominated
-current snapshot never replaces the embedded one, and an incomparable tuple
-fails. Graph planning occurs outside the runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
+Every work item reads the current durable group snapshot. `group-revision`
+work carries only its `groupRef` and the `sourceGroupStateCausalRevision` that
+asked (D290), so it plans from the current durable snapshot, which is at or past
+that revision; a later revision folded into that plan leaves its own queued
+row nothing new to publish. `rtt-refresh` work embeds the snapshot it measured
+and adopts a dominating current snapshot. A dominated current snapshot never
+replaces the embedded one, and an incomparable tuple fails. Graph planning occurs outside the runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
 `validateTopologyMutation`, and `writeTopologyMutation` implement the current
 commit path. The write transaction CAS-guards the snapshot first, then inserts
 the compact work claim and immutable publication. A conflict persists nothing
@@ -360,7 +361,7 @@ Workers A and B both read topology predecessor `(groupRevision=20,
 topologyVersion=7)` and plan outside the transaction. A's conditional commit
 wins. B's compare-and-set observes a moved predecessor and persists no topology,
 publication, or work index. B rereads and replans against A's accepted snapshot.
-If B's embedded group snapshot is now causally older, B completes without
+If B's planning snapshot is now causally older, B completes without
 publishing. If it is newer, B conditionally commits one exact publication for
 its work identity. At no point is a rejected candidate returned as
 authoritative or sent to browsers.

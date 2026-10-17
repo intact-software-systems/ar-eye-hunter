@@ -1,5 +1,6 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
@@ -174,12 +175,32 @@ export class BrowserRtcCommands {
         recordRtcReadinessDiagnostic(connected, {
             topic: readiness.ready ? 'rallar.bb.rtc.readiness_ready' : 'rallar.bb.rtc.readiness_timeout',
             severity: readiness.ready ? 'info' : 'error',
-            payload: {
+            payload: readiness.ready ? { ...readiness } : {
                 ...readiness,
-                ...(readiness.ready ? {} : { message: toReadinessTimeoutMessage(connectionConfig) })
+                message: toReadinessTimeoutMessage(connectionConfig),
+                ...(await this.readOverlayAdoptionDiagnostics())
             }
         });
         return readiness;
+    }
+
+    /** The peer-free RTC diagnostics read: summary counters only, never per-peer stats. */
+    private async readOverlayAdoptionDiagnostics(): Promise<RallarBlackBoxTestRecord> {
+        try {
+            const health = decodeBrowserCommandRecord(
+                await requireBrowserCommandRuntime(this.environment).health({
+                    includeRtcDiagnostics: true,
+                    rtcDiagnosticsPeerIds: []
+                })
+            );
+            const overlayAdoption = decodeBrowserCommandRecord(
+                decodeBrowserCommandRecord(health?.rtcDiagnostics)?.overlayAdoption
+            );
+            return overlayAdoption === undefined ? {} : { overlayAdoption };
+        }
+        catch (error) {
+            return { overlayAdoptionError: toError(error).message };
+        }
     }
 
     private async readRtcSendInput(

@@ -4,7 +4,7 @@ import type {
     ALNackPayload,
     ALRepairPayload
 } from '../../../al-contracts/al-control.ts';
-import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALReadyable, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
@@ -33,11 +33,6 @@ import {
     captureALOutboundCreationExpiry,
     type ALOutboundMessageReference
 } from '../al-outbound-canonical-message.ts';
-import {
-    readALOutboundCanonicalWrites,
-    writeALOutboundCanonicalFacts,
-    type ALOutboundCanonicalFactWrite
-} from '../al-outbound-canonical-storage.ts';
 import type {
     ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
@@ -69,6 +64,12 @@ import {
 } from './al-outbound-admission-mutations.ts';
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
 import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import {
+    readALOutboundCanonicalFactSlots,
+    readALOutboundCanonicalWrites,
+    writeALOutboundCanonicalFacts,
+    type ALOutboundCanonicalFactWrite
+} from './al-outbound-canonical-fact-writes.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
@@ -278,6 +279,8 @@ export interface ALOutboundEffectSnapshot<TPrepared> {
 
 export interface ALOutboundCommitBundle<TPrepared> {
     readonly pendingAdmission?: ResourceEntry;
+    /** Present only for a dequeue: the canonical row as its claim returned it, which the commit fences instead of re-reading. */
+    readonly claimedCanonical?: ResourceEntry;
     readonly senderId: string;
     readonly expectedVersion?: number;
     readonly canonicalEntry?: ResourceEntry;
@@ -603,10 +606,11 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         session: ALAdmissionReadSession,
         bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<ALOutboundCommitObservation<TPrepared>> {
-        return {
-            effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
-            canonicalWrites: await this.readCanonicalWrites(session, bundle)
-        };
+        const [effects, canonicalWrites] = await Promise.all([
+            this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
+            this.readCanonicalWrites(session, bundle)
+        ]);
+        return { effects, canonicalWrites };
     }
 
     /** `writing` is one non-empty group, each bundle paired with the observation at its index. */
@@ -660,8 +664,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             queue: { getItem: (key) => session.readWork(key) },
             scope: this.canonicalScope,
             entry: bundle.canonicalEntry,
+            claimed: bundle.claimedCanonical,
             creationExpiry: captured ??
-                captureALOutboundCreationExpiry(decodePersistedALMessage(bundle.canonicalEntry.resource)),
+                captureALOutboundCreationExpiry(decodePersistedALMessageRow(bundle.canonicalEntry)),
             activatePendingCanonical: bundle.pendingAdmission !== undefined,
             nowMs: this.nowMs
         });
@@ -684,10 +689,13 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 if (this.hasExpiredWork(candidates)) {
                     return 'expired';
                 }
-                await this.assertCurrentCommitFence(tx, candidates);
+                const [, canonicalSlots] = await Promise.all([
+                    this.assertCurrentCommitFence(tx, candidates),
+                    readALOutboundCanonicalFactSlots(tx, canonicalWrites)
+                ]);
                 if (
                     this.hasExpiredWork(candidates) ||
-                    await writeALOutboundCanonicalFacts(tx, canonicalWrites, this.nowMs) === 'expired'
+                    writeALOutboundCanonicalFacts(tx, canonicalSlots, this.nowMs) === 'expired'
                 ) {
                     return 'expired';
                 }
@@ -718,47 +726,53 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     /**
-     * Every fence the commit owes, re-read inside the write: the one sender version of the group, then
-     * the fences of each bundle. One function owns the version throw, and the bundle fences throw the
-     * same way, so every fence leaves the write alike.
+     * Every fence the commit owes, re-read inside the write and all at once: the one sender version of
+     * the group, then the fences of each bundle. The version decides first and the bundles in order
+     * after it, so the read order never changes which fence leaves the write.
      */
     private async assertCurrentCommitFence(
         tx: ALAdmissionWorkWriteContext,
         candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
     ): Promise<void> {
         const { senderId, expectedVersion } = candidates[0]!.bundle;
-        const current = await this.reads.readClientRecord(tx, senderId);
+        const [current, bundleFences] = await Promise.all([
+            this.reads.readClientRecord(tx, senderId),
+            Promise.all(candidates.map((candidate) => this.readBundleFenceError(tx, candidate)))
+        ]);
         if (current?.version !== expectedVersion) {
             throw new ALAdmissionBackendConflictError('Outbound sender version changed');
         }
-        for (const candidate of candidates) {
-            await this.assertCurrentBundleFence(tx, candidate);
+        const failed = bundleFences.find((error) => error !== undefined);
+        if (failed !== undefined) {
+            throw failed;
         }
     }
 
     /** One bundle's pending-admission row, observed effect rows, shared supersedence observation and message identity. */
-    private async assertCurrentBundleFence(
+    private async readBundleFenceError(
         tx: ALAdmissionWorkWriteContext,
         candidate: ALOutboundCommitCandidate<TPrepared>
-    ): Promise<void> {
+    ): Promise<Error | undefined> {
         const { bundle, effects, mutations } = candidate;
-        if (bundle.pendingAdmission) {
-            const pending = await tx.readWork(bundle.pendingAdmission.key);
-            if (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission)) {
-                throw new ALAdmissionBackendConflictError('Outbound pending admission changed');
-            }
+        const [pending, issues, observationConflict, identityConflict] = await Promise.all([
+            bundle.pendingAdmission ? tx.readWork(bundle.pendingAdmission.key) : undefined,
+            this.effectStore.validateObservedWork(tx, effects),
+            this.mutations.readCurrentObservationConflict(tx, mutations),
+            this.mutations.readMessageIdentityConflict(tx, bundle.mutations)
+        ]);
+        if (bundle.pendingAdmission && (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission))) {
+            return new ALAdmissionBackendConflictError('Outbound pending admission changed');
         }
-        const issues = await this.effectStore.validateObservedWork(tx, effects);
         if (issues.length > 0) {
-            throw new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
+            return new ALAdmissionBackendConflictError(issues.map((issue) => issue.message).join('; '));
         }
-        const fenced = await this.mutations.readCurrentObservationConflict(tx, mutations) ??
-            await this.mutations.readMessageIdentityConflict(tx, bundle.mutations);
-        if (fenced !== undefined) {
-            throw fenced.kind === 'conflict'
-                ? new ALAdmissionBackendConflictError(fenced.message)
-                : new ALAdmissionCorruptionError(fenced.key, new TypeError(fenced.message));
+        const fenced = observationConflict ?? identityConflict;
+        if (fenced === undefined) {
+            return undefined;
         }
+        return fenced.kind === 'conflict'
+            ? new ALAdmissionBackendConflictError(fenced.message)
+            : new ALAdmissionCorruptionError(fenced.key, new TypeError(fenced.message));
     }
 
     async retainPendingAdmission(
