@@ -46,13 +46,13 @@ function createWorkerFixture(
     };
 }
 
-function readAcceptedWorker<Accepted>(
-    parsed: RtcBaselineResult<{ readonly mode: string; }>
-): Accepted {
+function readAcceptedWorker<Input>(
+    parsed: RtcBaselineResult<{ readonly mode: 'diagnostic'; } | RtcBaselineAcceptedWorker<Input>>
+): RtcBaselineAcceptedWorker<Input> {
     if (!parsed.ok || parsed.value.mode !== 'accepted') {
         throw new Error('Expected exact RTC-B04 accepted worker arguments.');
     }
-    return parsed.value as Accepted;
+    return parsed.value;
 }
 
 function expectPassedSamples(
@@ -151,7 +151,11 @@ async function expectNonFiniteNumbersRejected<Result extends object>(
         expect(samples.slice(1).map((sample) => sample.issues[0]?.message)).toEqual(
             Array(4).fill(fixture.sampleIds[0])
         );
-        expect((samples[0]?.rawEvidence as Record<string, unknown>)[String(mutation.key)]).toBe(null);
+        const rawEvidence = samples[0]?.rawEvidence;
+        if (rawEvidence === null || typeof rawEvidence !== 'object' || Array.isArray(rawEvidence)) {
+            throw new Error('Expected object evidence for a non-finite result.');
+        }
+        expect(rawEvidence[String(mutation.key)]).toBe(null);
         expect(() => JSON.parse(JSON.stringify(samples))).not.toThrow();
     }
 }
@@ -189,7 +193,7 @@ describe('RTC-B04 group cache fallback worker', () => {
     const { fixture, result } = cacheFallback;
 
     it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<CacheFallback.WebRtcGroupCacheFallbackInput>>(
+        const worker = readAcceptedWorker(
             CacheFallback.parseWebRtcGroupCacheFallbackArguments(fixture.arguments)
         );
         const samples = await CacheFallback.runWebRtcGroupCacheFallbackAcceptedSamples({
@@ -260,16 +264,26 @@ const managerState = {
 describe('RTC-B04 group manager state worker', () => {
     const { fixture, result } = managerState;
 
-    it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<ManagerState.WebRtcGroupManagerStateInput>>(
+    it('accepts real state lookups at the fixed workload size', async () => {
+        const worker = readAcceptedWorker(
             ManagerState.parseWebRtcGroupManagerStateArguments(fixture.arguments)
         );
         const samples = await ManagerState.runWebRtcGroupManagerStateAcceptedSamples({
             worker,
-            run: () => result
+            run: () => ManagerState.runWebRtcGroupManagerState(worker.input)
         });
         expectPassedSamples(samples, fixture, ['durationMs']);
-        expect(samples[0]?.rawEvidence).toEqual(result);
+        for (const sample of samples) {
+            expect(sample.rawEvidence).toMatchObject({
+                clientCount: 5000,
+                desiredPeerCount: 1000,
+                lookups: 20,
+                keysCalls: 20,
+                readCalls: 100000,
+                onlineDesiredPeerCount: 1000,
+                onlinePeerCount: 5000
+            });
+        }
     });
 
     it('rejects malformed workers and stops after invalid state evidence', async () => {
@@ -332,7 +346,7 @@ describe('RTC-B04 group peer ownership worker', () => {
     const { fixture, result } = peerOwners;
 
     it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<PeerOwners.WebRtcGroupManagerPeerOwnersInput>>(
+        const worker = readAcceptedWorker(
             PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments(fixture.arguments)
         );
         const samples = await PeerOwners.runWebRtcGroupManagerPeerOwnersAcceptedSamples({
@@ -392,7 +406,7 @@ describe('RTC-B04 heartbeat callback churn worker', () => {
     };
 
     it('emits exact samples from deterministic accepted results', async () => {
-        const worker = readAcceptedWorker<RtcBaselineAcceptedWorker<Heartbeat.WebRtcHeartbeatCallbackChurnInput>>(
+        const worker = readAcceptedWorker(
             Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments(fixture.arguments)
         );
         const samples = await Heartbeat.runWebRtcHeartbeatCallbackChurnAcceptedSamples({
