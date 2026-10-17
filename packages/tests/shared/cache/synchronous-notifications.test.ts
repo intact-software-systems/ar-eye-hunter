@@ -12,12 +12,16 @@ it('publishes a snapshot synchronously once, despite listener and reporter failu
     notifications.subscribe(() => {
         throw new Error('listener failed');
     });
-    const subscription = notifications.subscribe((value) => delivered.push(value));
+    const subscription = notifications.subscribe((value) => {
+        delivered.push(value);
+    });
     const changes = ['a', 'b'];
     const publication = notifications.capture(changes);
     changes.push('not captured');
     subscription.unsubscribe();
-    notifications.subscribe(() => delivered.push('late listener'));
+    notifications.subscribe(() => {
+        delivered.push('late listener');
+    });
     publication.publish();
     publication.publish();
     expect(delivered).toEqual(['a', 'b']);
