@@ -645,6 +645,10 @@ describe('RTC-B06 observation Deno runtime', () => {
                 envGet: () => ambient,
                 command: async (_executable: string, arguments_: readonly string[]) => {
                     observed.push(arguments_.find((argument) => argument.startsWith('RALLAR_BLACK_BOX_RTC_CAPTURE_MODE=')) ?? '<unset>');
+                    const release = arguments_.filter((argument) => argument.startsWith('RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE='));
+                    expect(release).toEqual(
+                        arguments_.includes('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1') ? ['RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE=true'] : []
+                    );
                     return { code: 0, stdout: new Uint8Array(), stderr: new Uint8Array() };
                 }
             },
@@ -856,6 +860,11 @@ function initializedProducerEnvironment() {
                 field: 'eventHistoryMaxEvents',
                 value: caseId === 'retention-100' ? 64 : 0,
                 source: 'default'
+            }, {
+                caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
+                field: 'releaseResultsAfterCapture',
+                value: caseId === 'retention-100',
+                source: caseId === 'retention-100' ? 'environment' : 'default'
             }, {
                 caseKey: { workloadId: 'RTC-B06', caseId, inputKey: `e3-memory-${caseId}` },
                 field: 'almDiagnostics',

@@ -7,6 +7,7 @@ const caseKey = { workloadId: 'RTC-B06', caseId: 'retention-100', inputKey: 'e3-
 const configuration: readonly RtcBaselineResolvedConfigurationValueDto[] = [
     { caseKey, field: 'eventHistoryMode', value: 'full', source: 'default' },
     { caseKey, field: 'eventHistoryMaxEvents', value: 0, source: 'default' },
+    { caseKey, field: 'releaseResultsAfterCapture', value: false, source: 'default' },
     { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'cli' },
     { caseKey, field: 'almDiagnostics', value: false, source: 'environment' },
     { caseKey, field: 'routineBrowserDiagnostics', value: 'enabled', source: 'default' }
@@ -37,6 +38,7 @@ function sample(almDiagnostics: boolean | undefined): RtcBaselineSampleDto {
         evidenceClass: 'local-full-stack',
         metrics: [],
         rawEvidence: {
+            resultRelease: { raw: null, enabled: false, status: 'verified', releasedRoots: 0, sources: [] },
             rtcConnectCaptures: ['a', 'b', 'c'].map((agentId) => ({ ...capture, agentId, ...(almDiagnostics === undefined ? {} : { almDiagnostics }) })),
             diagnostics: recordingCheckpoints(),
             retention: { checkpoints: recordingCheckpoints() }

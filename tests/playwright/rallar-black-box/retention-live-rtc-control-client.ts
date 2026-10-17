@@ -33,6 +33,25 @@ export class RetentionLiveRtcControlClient extends LiveRtcControlClient {
         return result;
     }
 
+    override async attachRunSummary(input: LiveRtcControlClient.RunSummaryInput): Promise<void> {
+        await super.attachRunSummary(input);
+        if (!this.releaseAfterCapture) {
+            return;
+        }
+        // Artifact reads drain the recorder, including the last cleanup release acknowledgement.
+        const response = await this.dependencies.request.get(
+            `${this.dependencies.baseUrl}/runs/${encodeURIComponent(input.runId)}/events.jsonl`
+        );
+        try {
+            if (!response.ok()) {
+                throw new Error('The owned release acknowledgement journal could not be drained.');
+            }
+        }
+        finally {
+            await response.dispose();
+        }
+    }
+
     private readonly fetchControl: typeof globalThis.fetch = async (url, init) => {
         const response = await this.dependencies.request.fetch(String(url), {
             method: init?.method,

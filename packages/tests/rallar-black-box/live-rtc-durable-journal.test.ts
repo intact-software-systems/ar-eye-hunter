@@ -318,6 +318,7 @@ it.each(
                 : []),
             { caseKey, field: 'eventHistoryMode', value: 'recent', source: 'default' as const },
             { caseKey, field: 'eventHistoryMaxEvents', value: 64, source: 'default' as const },
+            { caseKey, field: 'releaseResultsAfterCapture', value: false, source: 'default' as const },
             { caseKey, field: 'rtcCaptureMode', value: 'off', source: 'default' as const },
             { caseKey, field: 'almDiagnostics', value: false, source: 'default' as const },
             { caseKey, field: 'routineBrowserDiagnostics', value: 'disabled', source: 'default' as const }

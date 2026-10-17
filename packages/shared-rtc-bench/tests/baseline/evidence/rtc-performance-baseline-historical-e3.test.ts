@@ -93,7 +93,7 @@ const historicalSummary = {
     rawReferences: []
 };
 
-it('reads a literal historical absent-mode E3 artifact without inventing mode or accepting its failed outcome', async () => {
+it('reads a literal historical absent-mode E3 artifact without inventing mode or release selection or accepting its failed outcome', async () => {
     const files = new Map([
         ['environment.json', JSON.stringify(historicalEnvironment)],
         ['manifest.json', JSON.stringify(historicalManifest)],
@@ -114,4 +114,7 @@ it('reads a literal historical absent-mode E3 artifact without inventing mode or
     expect(structural.ok ? structural.value.environment.observation : structural).toEqual(historicalObservation);
     expect(await verifier.readVerifiedArtifacts(baselineId)).toMatchObject({ ok: false, issues: [{ code: 'non-passing-finalized-outcome' }] });
     expect(files.get('environment.json')).toBe(JSON.stringify(historicalEnvironment));
+    expect(historicalObservation.resolvedConfiguration).toEqual([]);
+    expect(historicalSample.rawEvidence).toBeNull();
+    expect(files.get('results/samples/sample.json')).toBe(JSON.stringify(historicalSample));
 });

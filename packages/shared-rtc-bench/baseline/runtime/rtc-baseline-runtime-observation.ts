@@ -60,6 +60,7 @@ type RtcBaselineDenoObservationAdapters = Pick<
 
 export const RTC_BASELINE_ENVIRONMENT_NAMES = [
     'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+    'RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE',
     'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
@@ -222,6 +223,7 @@ export function createRtcBaselineDenoObservation(
         const environment = adapters.environment.readAllowlisted(RTC_BASELINE_ENVIRONMENT_NAMES);
         const {
             RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: _ambientAlm,
+            RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: _ambientRelease,
             RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: _ambientRecording,
             ...remainingEnvironment
         } = environment;
@@ -244,6 +246,7 @@ export function createRtcBaselineDenoObservation(
             initializedDiagnosticEnvironment = Object.freeze(Object.fromEntries(
                 Object.entries(input.value.observation.allowlistedEnvironment).filter(([name]) =>
                     name === 'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS' ||
+                    name === 'RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE' ||
                     name === 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS'
                 )
             ));

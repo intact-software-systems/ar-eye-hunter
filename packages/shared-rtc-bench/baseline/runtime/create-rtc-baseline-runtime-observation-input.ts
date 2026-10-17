@@ -82,18 +82,23 @@ function resolveObservationConfiguration(
             entry.field === descriptor.field && JSON.stringify(entry.caseKey) === JSON.stringify(descriptor.caseKey)
         );
         const environmentName = descriptor.allowlistedEnvironmentVariable;
-        const resolved =
-            ['almDiagnostics', 'routineBrowserDiagnostics', 'eventHistoryMode', 'eventHistoryMaxEvents'].includes(
-                    descriptor.field
-                ) &&
+        const resolved = [
+                'almDiagnostics',
+                'routineBrowserDiagnostics',
+                'eventHistoryMode',
+                'eventHistoryMaxEvents',
+                'releaseResultsAfterCapture'
+            ].includes(
+                descriptor.field
+            ) &&
                 initialized !== undefined
-                ? { ok: true as const, value: initialized }
-                : descriptor.field === 'rtcCaptureMode'
-                ? resolveCaptureDescriptor(descriptor, initialized, selectedCapture.value)
-                : resolveRtcBaselineConfiguration(descriptor, {
-                    cliValue: initialized?.source === 'cli' ? initialized.value : undefined,
-                    environmentValue: environmentName ? environment[environmentName] : undefined
-                });
+            ? { ok: true as const, value: initialized }
+            : descriptor.field === 'rtcCaptureMode'
+            ? resolveCaptureDescriptor(descriptor, initialized, selectedCapture.value)
+            : resolveRtcBaselineConfiguration(descriptor, {
+                cliValue: initialized?.source === 'cli' ? initialized.value : undefined,
+                environmentValue: environmentName ? environment[environmentName] : undefined
+            });
         if (!resolved.ok) {
             return resolved;
         }
@@ -198,11 +203,16 @@ function resolveInitializedDiagnosticEnvironment(
     }
     const {
         RALLAR_BLACK_BOX_ALM_DIAGNOSTICS: _ambientAlm,
+        RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE: _ambientRelease,
         RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS: _ambientRecording,
         ...current
     } = environment;
     const selected = Object.fromEntries(
-        ['RALLAR_BLACK_BOX_ALM_DIAGNOSTICS', 'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS']
+        [
+            'RALLAR_BLACK_BOX_ALM_DIAGNOSTICS',
+            'RALLAR_BLACK_BOX_ROUTINE_BROWSER_DIAGNOSTICS',
+            'RALLAR_RTC_RELEASE_RESULTS_AFTER_CAPTURE'
+        ]
             .flatMap((name) =>
                 initialized.allowlistedEnvironment[name] === undefined
                     ? []
