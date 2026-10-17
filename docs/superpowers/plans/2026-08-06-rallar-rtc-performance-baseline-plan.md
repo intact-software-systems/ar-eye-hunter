@@ -87,11 +87,23 @@ four new noisy series. The descriptive baseline is inconclusive. Do not take a s
 repeat or drop quantized latency metrics after observing their variance. No canonical
 B07 controller admission or optimization claim follows from these successful workloads.
 
-The next two slices are fresh E1 acquisition on a quiet host and actual operator
-RUN Native application/attachment evidence. The remaining heap investigation and unchanged
-canonical E3 primary and conditional repeat remain the **final overall plan point**, after the other required outcomes are
-ready. Section 11 defines that sequencing. The B07 execution-environment amendment below
-does not alter B01–B06 acceptance or Section 12's overall completion gate.
+The admission commit/notification correction and shared write-set extraction are implemented.
+The complete queue/index, admission rows and volatile-row proof now commit before synchronous
+notifications; observer and reporter failures cannot interrupt committed state or remaining
+listeners. One shared keyed write-set owns staging and deterministic overlay algorithms for
+the memory and IndexedDB backends. Decoding, expiry, queue guards, durable conflict fences
+and volatile-row proof remain with their adapters. The duplicated buffers and inheritance
+are removed without legacy or migration paths. Queue expiry consistently uses its owner clock.
+
+The next outcomes are fresh E1 acquisition on a quiet host and canonical archive admission
+for the existing operator RUN Native evidence. Actual RUN Native application/attachment has
+diagnostic evidence, but oversized root-result rows still prevent canonical archived admission.
+These outcomes remain separate from the unchanged E3 acceptance gate.
+
+The remaining heap investigation and unchanged canonical E3 primary and conditional repeat
+remain the **final overall plan point**, after the other required outcomes are ready.
+Section 11 defines that sequencing. The B07 execution-environment amendment below does
+not alter B01–B06 acceptance or Section 12's overall completion gate.
 
 Prefer existing `packages/shared/**` libraries and one canonical implementation.
 Do not introduce legacy retention paths, duplicated policies, or migration scaffolding.
