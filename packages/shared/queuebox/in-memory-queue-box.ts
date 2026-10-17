@@ -577,9 +577,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         maxAttempts: number,
         isCandidate: (entry: ResourceEntry) => boolean
     ): boolean {
+        const now = this.now();
         for (const entry of this.data.values()) {
             if (
-                typeIds.has(entry.typeId) && !isExpiredResourceEntry(entry) &&
+                typeIds.has(entry.typeId) && !isExpiredResourceEntry(entry, now) &&
                 entry.dequeueAudit.attempts < maxAttempts && isCandidate(entry)
             ) {
                 return true;
@@ -594,7 +595,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             return undefined;
         }
 
-        if (isExpiredResourceEntry(entry)) {
+        if (isExpiredResourceEntry(entry, this.now())) {
             this.removeEntry(toKeyAsString(key));
             return undefined;
         }
@@ -626,10 +627,11 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async deleteExpired(): Promise<number> {
+        const now = this.now();
         let removed = 0;
 
         for (const [key, entry] of this.data.entries()) {
-            if (!isExpiredResourceEntry(entry)) {
+            if (!isExpiredResourceEntry(entry, now)) {
                 continue;
             }
 
