@@ -1,4 +1,3 @@
-import { decodeRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
 import type { ControlClientIdentity } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -10,15 +9,15 @@ import {
     type ControlArtifactOverflowCounts
 } from '@shared-test/rallar-bb-test/control/control-artifact-overflow.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import {
-    computeResultCaptureReceipt,
-    isResultCaptureReceipt,
-    type ResultCaptureReceipt
-} from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ResultCaptureReceipt } from '@shared-test/rallar-bb-test/result-release/result-release-protocol.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 
+import {
+    ControlArtifactStorage,
+    type ControlArtifactCaptureEntry,
+    type ControlArtifactRunWrite
+} from './control-artifact-storage.ts';
 import {
     controlEventArtifactJsonl,
     controlRunEventsJsonl,
@@ -65,11 +64,7 @@ export const DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG: ControlArtifactRecorderCo
 };
 
 /** One accepted envelope's rows: a result's two rows are kept or dropped together. */
-interface PendingArtifactEntry {
-    readonly identity: ControlClientIdentity;
-    readonly finish: (outcome: Either<string, readonly ResultCaptureReceipt[]>) => void;
-    readonly resultLine: string | undefined;
-    readonly eventLine: string;
+interface PendingArtifactEntry extends ControlArtifactCaptureEntry {
     readonly bytes: number;
 }
 
@@ -78,20 +73,12 @@ interface PendingRunArtifacts {
     readonly omitted: { omittedResults: number; omittedEventRows: number; omittedBytes: number; };
 }
 
-interface ArtifactRunWrite {
-    readonly runId: string;
-    readonly entries: readonly PendingArtifactEntry[];
-    readonly resultsText: string;
-    readonly eventsText: string;
-}
-
 const JSONL_CONTENT_TYPE = 'application/x-ndjson; charset=utf-8';
-const RUN_DIRECTORY_NAME_LITERAL_CHARACTER = /^[a-z0-9-]$/;
 
 /** Appends JSONL rows per run in batches; one batch, delete or read barrier runs at a time, in order. */
 export class ControlArtifactRecorder {
     private readonly dependencies: ControlArtifactRecorderDependencies;
-    private readonly failedCaptureRuns = new Set<string>();
+    private readonly storage: ControlArtifactStorage | undefined;
     private pendingByRun = new Map<string, PendingRunArtifacts>();
     private pendingBytes = 0;
     private writing = false;
@@ -100,6 +87,7 @@ export class ControlArtifactRecorder {
 
     constructor(dependencies: ControlArtifactRecorderDependencies) {
         this.dependencies = dependencies;
+        this.storage = dependencies.storageDir ? new ControlArtifactStorage(dependencies.storageDir) : undefined;
     }
 
     record(
@@ -109,7 +97,7 @@ export class ControlArtifactRecorder {
         if (envelope.kind === 'register' || envelope.kind === 'heartbeat') {
             return Promise.resolve(Either.ofRight([]));
         }
-        if (!this.dependencies.storageDir) {
+        if (!this.storage) {
             return Promise.resolve(Either.ofLeft('Durable artifact storage is not configured.'));
         }
         const commandId = toArtifactCommandId(envelope);
@@ -131,31 +119,16 @@ export class ControlArtifactRecorder {
         identity: ControlClientIdentity,
         commandIds: readonly string[]
     ): Promise<Either<string, readonly ResultCaptureReceipt[]>> {
-        if (!this.dependencies.storageDir) {
+        if (!this.storage) {
             return Either.ofLeft('Durable artifact storage is not configured.');
         }
         await this.stop();
-        if (this.failedCaptureRuns.has(identity.runId)) {
-            return Either.ofLeft('An artifact write failed during this run; complete capture cannot be certified.');
-        }
-        try {
-            const path = `${
-                toArtifactRunDirectory(this.dependencies.storageDir, identity.runId)
-            }/result-receipts.jsonl`;
-            const text = await Deno.readTextFile(path);
-            if (this.failedCaptureRuns.has(identity.runId)) {
-                return Either.ofLeft('Artifact capture became incomplete while reading durable receipts.');
-            }
-            return toSelectedCaptureReceipts(text, identity, commandIds);
-        }
-        catch (error) {
-            return Either.ofLeft(error instanceof Error ? error.message : String(error));
-        }
+        return await this.storage.readResultReceipts(identity, commandIds);
     }
 
     deleteRun(runId: string): void {
-        const storageDir = this.dependencies.storageDir;
-        if (!storageDir) {
+        const storage = this.storage;
+        if (!storage) {
             return;
         }
         const pending = this.pendingByRun.get(runId);
@@ -165,7 +138,7 @@ export class ControlArtifactRecorder {
         this.pendingBytes -= toPendingBytes(pending);
         this.pendingByRun.delete(runId);
         this.writeQueue = this.writeQueue
-            .then(() => Deno.remove(toArtifactRunDirectory(storageDir, runId), { recursive: true }))
+            .then(() => storage.deleteRun(runId))
             .catch(() => undefined);
     }
 
@@ -179,19 +152,11 @@ export class ControlArtifactRecorder {
 
     async response({ runId, kind, fallbackRun, corsOrigins }: ControlArtifactResponseInput): Promise<Response> {
         const headers = createControlResponseHeaders(undefined, { contentType: JSONL_CONTENT_TYPE, corsOrigins });
-        const storageDir = this.dependencies.storageDir;
-        const storedPath = storageDir ? `${toArtifactRunDirectory(storageDir, runId)}/${kind}.jsonl` : undefined;
-        if (storedPath) {
-            try {
-                await this.stop();
-                const file = await Deno.open(storedPath, { read: true });
-                return new Response(file.readable, { status: 200, headers });
-            }
-            catch (error) {
-                if (!(error instanceof Deno.errors.NotFound)) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    console.warn(`Could not read control artifact ${storedPath}: ${message}`);
-                }
+        if (this.storage) {
+            await this.stop();
+            const readable = await this.storage.openRunFile(runId, `${kind}.jsonl`);
+            if (readable) {
+                return new Response(readable, { status: 200, headers });
             }
         }
 
@@ -205,7 +170,7 @@ export class ControlArtifactRecorder {
         while (this.pendingBytes > this.dependencies.config.maxPendingBytes && dropCount < pending.entries.length) {
             const entry = pending.entries[dropCount];
             this.pendingBytes -= entry.bytes;
-            this.failedCaptureRuns.add(entry.identity.runId);
+            this.storage?.invalidateCapture(entry.identity.runId);
             entry.finish(Either.ofLeft('Artifact rows were dropped before durable capture.'));
             pending.omitted.omittedResults += entry.resultLine === undefined ? 0 : 1;
             pending.omitted.omittedEventRows += 1;
@@ -233,19 +198,19 @@ export class ControlArtifactRecorder {
     }
 
     private writePending(): Promise<void> {
-        const storageDir = this.dependencies.storageDir;
+        const storage = this.storage;
         const batch = toArtifactWriteBatch(this.pendingByRun, {
             maxPendingBytes: this.dependencies.config.maxPendingBytes,
             atEpochMs: this.dependencies.timers.nowMs()
         });
         this.pendingByRun = new Map();
         this.pendingBytes = 0;
-        if (!storageDir || batch.length === 0) {
+        if (!storage || batch.length === 0) {
             return this.writeQueue;
         }
         this.writing = true;
         this.writeQueue = this.writeQueue
-            .then(() => this.writeCapturedBatch(storageDir, batch))
+            .then(() => storage.writeBatch(batch))
             .catch((error) => {
                 const message = error instanceof Error ? error.message : String(error);
                 console.warn(`Could not append control artifact JSONL: ${message}`);
@@ -255,57 +220,6 @@ export class ControlArtifactRecorder {
             });
         return this.writeQueue;
     }
-
-    private async writeCapturedBatch(storageDir: string, batch: readonly ArtifactRunWrite[]): Promise<void> {
-        for (const write of batch) {
-            const runDirectory = toArtifactRunDirectory(storageDir, write.runId);
-            try {
-                await writeArtifactJsonl(runDirectory, [
-                    { fileName: 'results.jsonl', text: write.resultsText },
-                    { fileName: 'events.jsonl', text: write.eventsText }
-                ]);
-                const captures = await readEntryCaptureReceipts(write.entries);
-                const receipts = captures.flatMap((capture) => capture.receipts);
-                if (receipts.length > 0 && !this.failedCaptureRuns.has(write.runId)) {
-                    await writeArtifactJsonl(runDirectory, [{
-                        fileName: 'result-receipts.jsonl',
-                        text: receipts.map((receipt) => JSON.stringify(receipt)).join('\n') + '\n'
-                    }]);
-                }
-                for (const capture of captures) {
-                    capture.entry.finish(
-                        this.failedCaptureRuns.has(write.runId)
-                            ? Either.ofLeft(
-                                'An artifact write failed or rows were dropped; complete capture cannot be certified.'
-                            )
-                            : Either.ofRight(capture.receipts)
-                    );
-                }
-            }
-            catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                console.warn(`Could not append control artifact JSONL for ${write.runId}: ${message}`);
-                this.failedCaptureRuns.add(write.runId);
-                for (const entry of write.entries) {
-                    entry.finish(Either.ofLeft(message));
-                }
-            }
-        }
-    }
-}
-
-// Injective over every JS string, including lone surrogates: literal characters are drawn only
-// from [a-z0-9-], so the escaped `_` plus its fixed 4-hex-digit code unit can never be produced by
-// a run of literal characters, and no other run ID can therefore encode to the same output.
-export function toRunDirectoryName(runId: string): string {
-    let name = '';
-    for (let index = 0; index < runId.length; index += 1) {
-        const character = runId[index];
-        name += RUN_DIRECTORY_NAME_LITERAL_CHARACTER.test(character)
-            ? character
-            : `_${runId.charCodeAt(index).toString(16).padStart(4, '0')}`;
-    }
-    return name;
 }
 
 function toPendingArtifactEntry(
@@ -337,7 +251,7 @@ interface ArtifactOverflowFacts {
 function toArtifactWriteBatch(
     pendingByRun: ReadonlyMap<string, PendingRunArtifacts>,
     facts: ArtifactOverflowFacts
-): readonly ArtifactRunWrite[] {
+): readonly ControlArtifactRunWrite[] {
     return Array.from(pendingByRun, ([runId, pending]) => {
         const overflowLine = toArtifactOverflowLine(runId, {
             ...pending.omitted,
@@ -369,80 +283,6 @@ function toArtifactCommandId(envelope: ControlClientEnvelope): string | undefine
     return 'commandId' in envelope && typeof envelope.commandId === 'string' ? envelope.commandId : undefined;
 }
 
-/** Every file of a run, the recorder's JSONL and the completed run's rows, lives in this directory. */
-export function toArtifactRunDirectory(storageDir: string, runId: string): string {
-    return `${storageDir.replace(/\/+$/, '')}/runs/${toRunDirectoryName(runId)}`;
-}
-
-interface ArtifactJsonlWrite {
-    readonly fileName: 'events.jsonl' | 'results.jsonl' | 'result-receipts.jsonl';
-    readonly text: string;
-}
-
-async function writeArtifactJsonl(runDirectory: string, writes: readonly ArtifactJsonlWrite[]): Promise<void> {
-    await Deno.mkdir(runDirectory, { recursive: true });
-    for (const write of writes) {
-        if (write.text.length === 0) {
-            continue;
-        }
-        const path = `${runDirectory}/${write.fileName}`;
-        await Deno.writeTextFile(path, write.text, { append: true, create: true });
-        using file = await Deno.open(path, { write: true });
-        await file.sync();
-    }
-    const parent = runDirectory.slice(0, runDirectory.lastIndexOf('/'));
-    const storage = parent.slice(0, parent.lastIndexOf('/'));
-    for (const path of [runDirectory, parent, storage]) {
-        using directory = await Deno.open(path, { read: true });
-        await directory.sync();
-    }
-}
-
-interface ArtifactEntryCapture {
-    readonly entry: PendingArtifactEntry;
-    readonly receipts: readonly ResultCaptureReceipt[];
-}
-
-async function readEntryCaptureReceipts(
-    entries: readonly PendingArtifactEntry[]
-): Promise<readonly ArtifactEntryCapture[]> {
-    const captures: ArtifactEntryCapture[] = [];
-    for (const entry of entries) {
-        const receipts: ResultCaptureReceipt[] = [];
-        const row = JSON.parse(entry.resultLine ?? entry.eventLine);
-        await collectCaptureReceipts(entry.resultLine === undefined ? row : row.fullResult, entry.identity, receipts);
-        const unique = [...new Map(receipts.map((receipt) => [JSON.stringify(receipt.capture), receipt])).values()];
-        captures.push({ entry, receipts: unique });
-    }
-    return captures;
-}
-
-async function collectCaptureReceipts(
-    value: unknown,
-    identity: ControlClientIdentity,
-    receipts: ResultCaptureReceipt[]
-): Promise<void> {
-    if (Array.isArray(value)) {
-        for (const child of value) {
-            await collectCaptureReceipts(child, identity, receipts);
-        }
-        return;
-    }
-    if (!isJsonRecordValue(value)) {
-        return;
-    }
-    const result = decodeRallarBlackBoxTestResult(value).right;
-    if (result) {
-        const receipt = await computeResultCaptureReceipt(result, identity);
-        if (receipt && isResultCaptureReceipt(receipt)) {
-            receipts.push(receipt);
-        }
-    }
-    for (const child of Object.values(value)) {
-        await collectCaptureReceipts(child, identity, receipts);
-    }
-}
-
 function toFullResultArtifactLines(
     envelope: Extract<ControlClientEnvelope, { kind: 'result'; }>,
     command: ControlQueuedCommandSnapshot | undefined
@@ -454,41 +294,4 @@ function toFullResultArtifactLines(
         ...lines,
         resultLine: `${lines.resultLine.trimEnd().slice(0, -1)},"fullResult":${fullResultJson}}\n`
     };
-}
-
-function toSelectedCaptureReceipts(
-    text: string,
-    identity: ControlClientIdentity,
-    commandIds: readonly string[]
-): Either<string, readonly ResultCaptureReceipt[]> {
-    const receipts = new Map<string, ResultCaptureReceipt>();
-    for (const line of text.split('\n').filter(Boolean)) {
-        const receipt: unknown = JSON.parse(line);
-        if (!isResultCaptureReceipt(receipt)) {
-            return Either.ofLeft('Durable receipt journal contains an invalid receipt.');
-        }
-        if (
-            receipt.runId === identity.runId && receipt.agentId === identity.agentId &&
-            commandIds.includes(receipt.capture.rootCommandId)
-        ) {
-            receipts.set(JSON.stringify(receipt.capture), receipt);
-        }
-    }
-    if (
-        commandIds.some((commandId) => ![...receipts.values()].some((receipt) => receipt.commandId === commandId))
-    ) {
-        return Either.ofLeft('A selected command has no durable full-result capture.');
-    }
-    const latestRoots = new Map<string, ResultCaptureReceipt>();
-    for (const receipt of receipts.values()) {
-        if (receipt.commandId === receipt.capture.rootCommandId) {
-            latestRoots.set(receipt.commandId, receipt);
-        }
-    }
-    return Either.ofRight([...receipts.values()].filter((receipt) => {
-        const root = latestRoots.get(receipt.capture.rootCommandId)?.capture;
-        return root?.runtimeId === receipt.capture.runtimeId &&
-            root.generation === receipt.capture.generation &&
-            root.assignment === receipt.capture.assignment;
-    }));
 }

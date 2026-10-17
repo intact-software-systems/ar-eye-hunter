@@ -20,9 +20,9 @@ import { createManualTimers } from '../../../packages/tests/shared/resilience/ma
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
 import {
     ControlArtifactRecorder,
-    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
-    toRunDirectoryName
+    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
 } from '../src/control-artifact-recorder.ts';
+import { toRunDirectoryName } from '../src/control-artifact-storage.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
 import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
 import { toJsonPieces } from '../src/run-completion/control-sliced-json-file.ts';

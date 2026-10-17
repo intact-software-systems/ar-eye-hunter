@@ -9,9 +9,9 @@ import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime
 import { createManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import {
     ControlArtifactRecorder,
-    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
-    toRunDirectoryName
+    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
 } from '../src/control-artifact-recorder.ts';
+import { toRunDirectoryName } from '../src/control-artifact-storage.ts';
 
 const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
 

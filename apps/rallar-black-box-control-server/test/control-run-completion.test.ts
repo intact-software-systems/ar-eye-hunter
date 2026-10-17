@@ -8,9 +8,9 @@ import { assert, assertEquals } from '@std/assert';
 import { createManualTimers, type ManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import {
     ControlArtifactRecorder,
-    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG,
-    toRunDirectoryName
+    DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG
 } from '../src/control-artifact-recorder.ts';
+import { toRunDirectoryName } from '../src/control-artifact-storage.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
 import { ControlSnapshotPersistence } from '../src/control-snapshot-persistence.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
