@@ -20,101 +20,84 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current sequencing decision, 2026-10-17:** E3 is **conditionally completed for
-sequencing only**, as requested by the human after the bounded remaining-heap
-investigation produced limited actionable reductions. **Accepted E3 cohorts remain
-zero; heap acceptance is open.** This status permits independent plan work to continue;
-it is not a passing result, waiver, or completion of the overall baseline.
+**Current outcome, 2026-10-18:** E3 remains **conditionally completed for
+sequencing only**, as authorized by the human. The final canonical acquisition
+has now completed its full primary: three warmups and eleven retained attempts
+(five default, three all-scenarios, three retention). All fourteen individual
+attempts pass their correctness and evidence checks. **The retention cohort
+fails the unchanged heap criterion; accepted E3 cohorts remain zero.** All three
+retained attempts exceed both 110% of cycle-zero heap and cycle-zero plus 5 MiB.
+Their increases are 19.65, 22.00 and 21.68 MiB. No settled peer/lane/timer drift
+is recorded. The controller selected no repeat after the failed primary.
 
-The corrected 700-cycle diagnostic completed over 72.74 minutes with continuous
-profiling. Terminal message-owner cohorts turn over, dedup expires at its existing
-one-hour horizon, and released command payload history/cache remain bounded. Total
-heap still grows. Existing-function compilation tiers account for most of the early
-16.097 MiB code increase; no duplicated-module cause or safe production-code reduction
-was established. Replay metadata has modest private representation opportunities,
-not a safe shorter idempotency lifetime. Hidden diagnostic panels cannot simply be
-unmounted because they own resource and subscription lifetimes.
+Complete original artifacts, failure accounting and source/configuration identity
+are retained. Every retention attempt completed 100 cycles with continuous
+capture, recent/64 event history, routine browser diagnostics disabled and
+verified durable result release. The earlier reader and preflight failures
+remain separate failed attempts. The final result is a heap-acceptance failure,
+not another evidence-production failure. Independent review approves the evidence
+and analysis, with no actionable discrepancy. Performance acceptance remains failed.
 
-[PR #671](https://github.com/intact-software-systems/ar-eye-hunter/pull/671) publishes the
-retention and complete-artifact reader corrections with the inherited baseline work.
-Normal correctness review and checks remain distinct from performance acceptance.
-E1 recovery and E2 reconciliation have now completed their bounded investigation.
-Across registered repository artifact locations, 7,699 files including 798 ZIPs and
-focused GitHub queries did not recover the original E1 corpus. Historical Issue #267
-cannot replace those missing bytes: E1 acceptance remains unverified and fresh governed
-acquisition is required. The current catalog still requires 44 cases, 122 warmups and
-610 retained fresh processes (3,636 outcomes); a repeat is selected only by the existing
-controller and preserves its original doubled-sample rule.
+The earlier uninterrupted 700-cycle diagnostic lasted 72.74 minutes. It observed
+message-owner turnover, one-hour dedup expiry, two commandHistory entries per page
+and an empty resultCache. Heap did not plateau. Existing-function compilation
+tiers account for most of that diagnostic's early 16.097 MiB code increase; no
+module duplication or safe substantial code reduction was established. The new
+canonical packet measures total post-GC heap and does not establish a fresh
+code/non-code breakdown. Earlier code attribution must not be subtracted from
+its heap totals or pooled across source/environment populations.
 
-All 37 E2 archives match their indexed bytes and pass canonical verification. Recomputing
-448 metric summaries from raw samples produced zero mismatches. They form 35 strict
-source/environment/harness groups, not one pooled population. Eleven repeats retain
-noise in originally triggering metrics; a twelfth introduces other noisy metrics.
-Consequently 12 of 19 repeat cohorts contain CV-noisy metrics, and only 25 of 37
-observations have neither unresolved nor newly introduced CV noise. The provisional
-outcome is **no optimization justified yet**. Missing E1 and unaccepted E3 prevent final
-cross-tier ranking.
+Fresh E1 acquisition and its single controller-required repeat are complete:
+all 44 B01–B04 cases, 3,636 primary outcomes and 6,666 repeat outcomes pass
+correctness, accounting and canonical validation. All four workloads remain
+performance-inconclusive under the unchanged noise rule. No second repeat or
+optimization ranking is justified. The original missing E1 corpus and earlier
+failed replacement attempts remain historical limitations; they do not erase
+the independently reviewed fresh evidence.
 
-The human has now authorized starting RTC-B07, prefers **Run GitHub Free Distributed
-Recipe**, and prefers PostgreSQL over PGlite. Local PostgreSQL 05a preflight and one
-05c rehearsal passed unchanged (50/50 and 600/600 frames) on the published retention
-candidate. They are rehearsal evidence, not hosted acceptance; their full executable
-and source fingerprint was corroborated after capture. Hosted acquisition retains its
-own immutable source and environment. The human authorizes deployments from
-`codex/e3-retention-lifetimes` regardless of SHA, including the rollout's shared-service
-restart and PostgreSQL test-database reset. This authorization does not change cohort
-comparability: select one exact candidate, then reuse its deployment without resets
-between retained runs.
+E2 reconciliation is complete at its bounded scope: all 37 retained archives
+verify, all 448 raw-derived metric summaries reconcile, and the evidence forms
+35 strict source/environment/harness populations. Twelve of nineteen repeat
+cohorts contain unresolved or newly introduced CV noise. These populations must
+not be pooled or relabeled as stable. The provisional cross-tier conclusion
+remains **no optimization justified yet**, with final E3 acceptance unresolved.
 
-The first hosted 05a operation completed all 50 frames and six commands, but it is
-not admitted as green preflight: the fleet report counts an explicitly accepted
-HTTP 409 from concurrent group creation as a failed agent. The browser HTTP response
-diagnostic ignored the command's accepted-status policy. The corrected shared owner
-now reports explicitly accepted responses as informational and rejected responses as
-warnings, preserving native HTTP evidence and unrestricted defaults. Retain the original
-contradictory artifact unchanged. The corrected candidate passed fresh local PostgreSQL
-05a and 05c rehearsal with 100% fleet success, followed by green hosted preflight
-and three primary plus six controlled-repeat 05c runs on one unchanged deployment.
-Branch-wide deployment approval removes the need for another SHA-specific permission
-request, not the requirement for fresh evidence on a changed candidate.
+Authorized B07 PostgreSQL/GitHub Free acquisition is complete and descriptive.
+Three primary and six controlled-repeat runs each delivered 600/600 frames with
+100% fleet success. Six original noise triggers remain and four new series
+exceed the unchanged 20% CV rule. There is no second repeat, canonical B07
+controller-admission, geographic-diversity or receiver-latency claim. B07 does
+not replace B01–B06 or automatically select E4. No database-backed RTC hotspot
+has been proposed for this candidate, so conditional E4 remains unselected.
 
-The B07 hosted workloads all pass their unchanged per-agent thresholds: each retained
-run delivers 600/600 frames with 100% fleet success. Preserve the earlier registration
-failure as a pre-recipe attempt. The frozen descriptive projection has 66 complete
-run-level numeric series. Seven primary series exceed 20% CV, triggering one separate
-six-run repeat; ten repeat series exceed 20% CV, including six original triggers and
-four new noisy series. The descriptive baseline is inconclusive. Do not take a second
-repeat or drop quantized latency metrics after observing their variance. No canonical
-B07 controller admission or optimization claim follows from these successful workloads.
+The admission commit/notification correction and shared write-set extraction
+are implemented and independently reviewed. Complete queue/index and admission
+state commits before synchronous notifications; observer failures cannot undo
+committed state or interrupt remaining listeners. One shared keyed write-set
+and pure overlay algorithm serve the memory and IndexedDB adapters. Backend
+validation, lifetime and concurrency rules remain with their owners. Affected
+duplicated implementations and obsolete paths are removed without migration
+code. Result release preserves assignment-lifetime replay protection and
+cumulative statistics after verified durable capture.
 
-The admission commit/notification correction and shared write-set extraction are implemented.
-The complete queue/index, admission rows and volatile-row proof now commit before synchronous
-notifications; observer and reporter failures cannot interrupt committed state or remaining
-listeners. One shared keyed write-set owns staging and deterministic overlay algorithms for
-the memory and IndexedDB backends. Decoding, expiry, queue guards, durable conflict fences
-and volatile-row proof remain with their adapters. The duplicated buffers and inheritance
-are removed without legacy or migration paths. Queue expiry consistently uses its owner clock.
+The selected Console Copy/Load/repeat, native lifecycle, deployed HOST/RUN,
+Actions and generic no-spawn outcomes have independently reviewed evidence at
+their stated scopes. The successful unchanged two-agent no-spawn witness does
+not reclassify the two failed 50-agent diagnostics or establish capacity.
+Finite native coverage, source-origin and counter limitations remain disclosed.
 
-Canonical archive admission now uses the existing strict shared JSONL decoder through clean
-EOF. Both original operator RUN Native witnesses are admitted with matched receipts, current
-sessions/scopes and actual channel attachment; their original archive bytes remain unchanged.
-This finite supplied-source proof does not establish receiver delivery from the smoke manifest
-or E3 acceptance. The superseded app-local admission implementation is removed.
+[PR #671](https://github.com/intact-software-systems/ar-eye-hunter/pull/671) is the
+remote delivery record for source changes, reviews and validation evidence.
+Ordinary correctness checks do not supply E3 acceptance. The remaining heap
+investigation is now the final overall plan point. Conditional sequencing
+completion does not waive Section 12, authorize another primary/repeat to seek
+a favorable result, or justify deleting this plan as completed.
 
-The next outcomes are fresh E1 acquisition on a quiet host and actual Copy/Load/same-session
-Native repeat acceptance through the existing browser witness. That witness already checks
-old-channel retirement, fresh non-replayed invocations and exact received payloads. Its first
-current-source execution failed during receiver room setup before Copy or either repeat;
-preserve that failure and resolve its cause without weakening the oracle.
-
-The remaining heap investigation and unchanged canonical E3 primary and conditional repeat
-remain the **final overall plan point**, after the other required outcomes are ready.
-Section 11 defines that sequencing. The B07 execution-environment amendment below does
-not alter B01–B06 acceptance or Section 12's overall completion gate.
-
-Prefer existing `packages/shared/**` libraries and one canonical implementation.
-Do not introduce legacy retention paths, duplicated policies, or migration scaffolding.
-No code migration is required for the identified private representation opportunities.
+Prefer existing `packages/shared/**` libraries, single responsibility and one
+canonical implementation. Retain no affected obsolete code, duplicate policy
+or migration scaffolding. Prefer PostgreSQL where the selected environment
+allows it; E3 retains its required memory environment. Preserve every original
+failed attempt and continuous profiling session.
 
 **Historical checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
 is merged into `codex/rtc-baseline-refresh`; this is not evidence of a direct merge to `main`.
@@ -2793,92 +2776,63 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
-The human authorizes conditional E3 sequencing completion after the bounded code and
-replay-metadata investigation. E3's heap result remains open with zero accepted cohorts.
-Preserve every original failed attempt and diagnostic, their source/configuration
-identity, and all unchanged acceptance rules. A source merged after a measurement is
-a new candidate; earlier profiles do not qualify it automatically.
+The canonical E3 primary is now fully acquired and fails heap acceptance.
+Conditional sequencing completion remains conditional; zero E3 cohorts are
+accepted. Earlier implementation, operator and bounded E1/E2/B07 outcomes keep
+their independently reviewed scopes and limitations. They do not need another
+acquisition merely because final E3 failed.
 
-Keep only these next two independently testable slices concrete:
+Keep only these next two useful slices concrete:
 
-1. **Acquire fresh governed E1 evidence when the host is quiet.** The bounded recovery
-   search is exhausted for known repository locations and focused GitHub sources;
-   original bytes remain missing. Run the current benchmark package's correctness and
-   type gates before measurement, bind a clean immutable source/fingerprint, then use
-   its canonical initialize/capture/finalize/validate sequence for B01–B04. Preserve
-   all 44 cases, warmup/retained counts, raw units/checksums and complete attempt
-   accounting. Capture only the complete workload matrices selected by the existing
-   controlled-repeat decision, with exact primary-summary linkage. Do not run alongside
-   containers, builds, tests, browser matrices, other benchmarks or artifact analysis.
-   Existing unrelated workloads must not be stopped merely to manufacture quiet-host
-   evidence. A historical Issue report or synthetic fixture cannot satisfy acceptance.
-2. **Acquire actual Copy/Load/same-session Native repeat acceptance.** Local HOST
-   Native/Off/malformed correctness and finite supplied-source Actions RUN Native
-   application/attachment now have retained evidence. Canonical complete-EOF admission
-   accepts the original RUN archive; do not recreate its forwarding, selector or reader.
-   Use the existing browser witness for visible Manual Copy, Local Load and two ordinary
-   runs with the same authenticated sessions and unchanged copied body. Require actual
-   retirement of preceding native receive targets, distinct open targets for new exact
-   payload effects, fresh non-replayed invocations and applied Native/run receipts.
-   The current attempt stopped at receiver room setup, before those effects; diagnose
-   the actual SDK/create/presence boundary from its retained failure before selecting
-   any source correction. Run on isolated PostgreSQL with owned services, one worker
-   and zero retries; preserve partial failures and complete emitted evidence. No new
-   harness, payload discriminator, timeout relaxation or substitute sender-only proof
-   is selected.
+1. **Publish the independently reviewed E3 failure evidence.** Review confirms
+   the original archive, source/configuration identity, all warmup and retained
+   attempts, durable release/journal proof and the exact heap/state verdict.
+   Preserve the failed primary and no-repeat decision in the plan and semantic
+   PR explanation; ordinary CI success must not be presented as E3 acceptance.
+2. **Decide the remaining heap work from the reviewed evidence.** Present the
+   failed canonical result together with the bounded prior code-family and
+   replay-owner findings. Select further implementation only when a concrete
+   ownership/lifetime defect or safe reduction is established. If no such
+   reduction is established, present the unresolved E3 condition and a bounded
+   follow-up for the human decision required by Section 12. Moving an issue or
+   marking conditional sequencing complete cannot make dependent work pass.
 
-E2's bounded reconciliation is complete. Its 37 observations remain in separate
-source/environment/harness populations; 12 repeat cohorts contain CV-noisy metrics.
-No second repeat may seek a favorable result. Preserve the recorded local execution
-classification versus GitHub provenance limitation and absent physical-host/load
-attestation; future acquisition must state those facts truthfully.
+No new primary, selective repeat, longer plateau run, timeout relaxation,
+replay-horizon change or speculative production optimization is selected by
+this failure alone. Existing profiles remain bound to their original sources
+and uninterrupted sessions. The current canonical total-heap measurements do
+not identify the exact code/non-code contribution on this candidate.
 
-Fresh local HOST acquisition exposed a missing test prerequisite: capture initialization
-was followed immediately by send without requesting peer readiness. Preserve the failed
-Native and Off attempts. The existing witness now starts both Connect commands together,
-waits for their bounded outcomes and requests the canonical peer-ready condition within
-the unchanged command deadline. Native, Off and malformed HOST pass the corrected witness;
-Native has matching open-channel attachment and both valid modes deliver the exact scoped
-payload. This is local HOST correctness evidence, not Actions RUN or performance acceptance.
+If evidence later earns a source correction, preserve the required primary:
+three warmups plus eleven retained attempts (5 default, 3 all-scenarios,
+3 retention), 100 retention cycles and zero retries. Only the existing
+controller's passing-primary decision may select its single linked repeat:
+three warmups plus twenty-two retained attempts (10/6/6). Heap failure remains
+at least 2 of 3 retained runs above both 110% of cycle-zero heap and cycle-zero
+plus 5 MiB; the repeat fails at 4 of 6. Settled peer/lane/timer mismatches
+independently fail. No extra warmup, code-heap subtraction, favorable sample
+selection or changed baseline may replace this gate.
 
-The B07 controller supports no canonical B07 admission; that gap does not by itself
-justify extending the controller. Section 12 makes B07 conditional on the selected
-completion/distributed claim. Current B07 results remain descriptive and inconclusive.
-Likewise, using PostgreSQL for correctness does not automatically select E4 performance
-acceptance; assess its database-backed candidate condition before acquisition.
+Keep default/all-scenarios diagnostic selections and release-disabled behavior;
+retention remains recent/64 with routine/ALM diagnostics disabled and verified
+durable release enabled. Preserve complete original recovery artifacts,
+source/configuration fingerprints and attempt accounting. E3 uses its required
+memory environment. E4 remains conditional on an actual database-backed RTC
+candidate; prior PostgreSQL correctness evidence is not a substitute if that
+condition becomes selected. B07 remains descriptive and outside default
+completion unless separately required.
 
-Later required outcomes remain outcome-shaped: resolve remaining visible/operator,
-deployed HOST/RUN, actual Actions and Task65 acceptance gaps from current evidence;
-complete any candidate-required E4 evidence; and prepare final baseline reconciliation.
-B07 is now authorized; it does not substitute for any required B01–B06 evidence.
-Do not expand the next-two-slice horizon into speculative implementation tasks.
+Prefer existing shared libraries and direct ownership. Do not remove validation,
+replay tombstones or receipt evidence to obtain a heap pass. Optional metadata
+representation opportunities preserve every replay fact and assignment/reset
+lifetime; the prior approximately 0.395 MiB duplicate-string estimate is not a
+measured reclamation result. An inactive-view optimization still requires a
+resource-lifetime design and visible tab-switch regressions, rather than blanket
+conditional unmounting. No interning framework, parallel legacy store or
+protocol migration is selected.
 
-**Final overall plan point: remaining heap investigation and canonical E3 acceptance.**
-Revisit the code-family and run-lifetime replay owners only after the preceding required
-outcomes are ready. Safe optional metadata candidates are a membership-only Set and
-value sharing of already-verified equal receipt strings; they preserve every replay
-fact, exact duplicate-release behavior and reset/assignment lifetime. Their measured
-candidate duplicate-string footprint is only about 0.395 MiB at cycle 100, and no
-reclaimed-memory result is established. Use ordinary collections and existing shared
-libraries; do not add an interning framework, parallel legacy store or protocol migration.
-Do not remove validation, replay tombstones or receipt evidence to obtain a heap pass.
-An inactive-view optimization needs a resource-lifetime design and visible tab-switch
-regressions before measurement, rather than blanket conditional unmounting.
-
-Bind the exact reviewed candidate and canonical durable-release caller configuration,
-recent/64 and diagnostics-disabled actual receipts, complete durable journal and source
-proof before acquisition. Run the unchanged primary: three warmups plus eleven retained
-attempts (5 default, 3 all-scenarios, 3 retention), 100 retention cycles, zero retries.
-Only the existing controller's passing-primary decision may select the unchanged repeat:
-three warmups plus twenty-two retained attempts (10/6/6). Heap failure remains at least
-2 of 3 retained runs above both 110% of cycle-zero heap and cycle-zero plus 5 MiB;
-the repeat fails at 4 of 6. Settled peer/lane/timer mismatches independently fail.
-No new warmup, subtraction of code heap, relaxed baseline, shortened dedup horizon or
-long-run plateau criterion replaces this gate. Keep profiling continuity whenever
-performing a diagnostic, and serialize native measurement against other host work.
-
-Conditional sequencing completion does not satisfy Section 12. Final ranking and
-overall plan completion remain dependent on the original successful acceptance gates.
+Section 12 remains unchanged. The plan stays open until its required successful
+acceptance and human decision are actually satisfied.
 
 ### Earlier implementation horizon (historical)
 
