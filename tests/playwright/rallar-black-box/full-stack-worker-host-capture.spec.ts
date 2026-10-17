@@ -1,4 +1,9 @@
-import { expect, test, type APIRequestContext, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    test,
+    type APIRequestContext,
+    type TestInfo
+} from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -139,13 +144,21 @@ test.describe('actual default headless worker HOST capture', () => {
                     const issuedSessions = await ensureWorkerMemberships(run, agents);
                     expect(new Set(issuedSessions.map((session) => session.sessionId)).size).toBe(2);
                     expect(new Set(issuedSessions.map((session) => session.clientId)).size).toBe(2);
+                    const connectOutcomes = await Promise.allSettled(
+                        agents.map((agent) => connectWorkerAgent(run, agent, mode))
+                    );
+                    for (const outcome of connectOutcomes) {
+                        if (outcome.status === 'rejected') {
+                            throw toError(outcome.reason);
+                        }
+                        captures.push(outcome.value);
+                    }
                     for (const [index, agent] of agents.entries()) {
-                        const capture = await connectWorkerAgent(run, agent, mode);
+                        const capture = captures[index];
                         expect(capture.sessionId).toBe(issuedSessions[index].sessionId);
                         const restored = await readWorkerIssuedSession(run, agent, 'connected');
                         expect(restored).toEqual(issuedSessions[index]);
                         restoredSessions.push(restored);
-                        captures.push(capture);
                     }
                     expect(new Set(captures.map((capture) => capture.sessionId)).size).toBe(2);
                     for (const capture of captures) {
@@ -382,7 +395,8 @@ async function connectWorkerAgent(
         roomRef: { ...run.group },
         transport: 'realtime',
         rallar: { apiBaseUrl, restoreSession: true, logoutOnClose: false, leaveRoomOnClose: false },
-        timeoutMs: 45_000
+        timeoutMs: 45_000,
+        readiness: { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 }
     });
     return toWorkerCapturedConnection(run, agent, { ...connected, mode, commandId });
 }

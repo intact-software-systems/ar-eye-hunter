@@ -87,8 +87,8 @@ four new noisy series. The descriptive baseline is inconclusive. Do not take a s
 repeat or drop quantized latency metrics after observing their variance. No canonical
 B07 controller admission or optimization claim follows from these successful workloads.
 
-The next two slices are fresh E1 acquisition on a quiet host and reconciliation of
-the remaining non-heap acceptance gaps. The remaining heap investigation and unchanged
+The next two slices are fresh E1 acquisition on a quiet host and actual operator
+RUN Native application/attachment evidence. The remaining heap investigation and unchanged
 canonical E3 primary and conditional repeat remain the **final overall plan point**, after the other required outcomes are
 ready. Section 11 defines that sequencing. The B07 execution-environment amendment below
 does not alter B01–B06 acceptance or Section 12's overall completion gate.
@@ -2793,20 +2793,39 @@ Keep only these next two independently testable slices concrete:
    containers, builds, tests, browser matrices, other benchmarks or artifact analysis.
    Existing unrelated workloads must not be stopped merely to manufacture quiet-host
    evidence. A historical Issue report or synthetic fixture cannot satisfy acceptance.
-2. **Reconcile remaining non-heap acceptance gaps.** Inspect the current visible/operator,
-   deployed HOST/RUN, actual Actions and Task65 evidence against their existing
-   requirements, and determine which candidate-required E4 evidence is still missing.
-   Distinguish delivered behavior from measured acceptance and exact-candidate proof.
-   Check the B07 controller integration gap against the authorized completion contract;
-   descriptive hosted success alone does not prove canonical admission. Select the next
-   implementation or acquisition only from a demonstrated unmet requirement. This
-   reconciliation must not relax any acceptance gate or expand into speculative fixes.
+2. **Acquire actual operator RUN Native application and attachment evidence.** The
+   bounded non-heap reconciliation found that HOST environment forwarding, finite
+   operator RUN selection and visible controls already exist in current code; older
+   missing-forwarding notes are historical. Do not implement them again. First run
+   the existing PostgreSQL worker-capture correctness witness on an isolated scratch
+   database, preserving Native/Off/malformed HOST outcomes and exact received payloads.
+   Then use the supported GitHub Free workflow and existing two-agent RTC smoke
+   manifest with explicit Native RUN selection on one exact deployed candidate.
+   Verify applied receipt origin/mode, the acknowledged Connect, issued session and
+   current initialized scope, and actual channel attachment in retained native evidence.
+   A receipt alone is not attachment. The smoke manifest has no receiver assertion;
+   do not claim end-to-end reception from send success. Keep HOST and RUN witnesses
+   separate and preserve failures without retrying them into acceptance.
 
 E2's bounded reconciliation is complete. Its 37 observations remain in separate
 source/environment/harness populations; 12 repeat cohorts contain CV-noisy metrics.
 No second repeat may seek a favorable result. Preserve the recorded local execution
 classification versus GitHub provenance limitation and absent physical-host/load
 attestation; future acquisition must state those facts truthfully.
+
+Fresh local HOST acquisition exposed a missing test prerequisite: capture initialization
+was followed immediately by send without requesting peer readiness. Preserve the failed
+Native and Off attempts. The existing witness now starts both Connect commands together,
+waits for their bounded outcomes and requests the canonical peer-ready condition within
+the unchanged command deadline. Native, Off and malformed HOST pass the corrected witness;
+Native has matching open-channel attachment and both valid modes deliver the exact scoped
+payload. This is local HOST correctness evidence, not Actions RUN or performance acceptance.
+
+The B07 controller supports no canonical B07 admission; that gap does not by itself
+justify extending the controller. Section 12 makes B07 conditional on the selected
+completion/distributed claim. Current B07 results remain descriptive and inconclusive.
+Likewise, using PostgreSQL for correctness does not automatically select E4 performance
+acceptance; assess its database-backed candidate condition before acquisition.
 
 Later required outcomes remain outcome-shaped: resolve remaining visible/operator,
 deployed HOST/RUN, actual Actions and Task65 acceptance gaps from current evidence;
