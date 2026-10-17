@@ -5,23 +5,44 @@ import {
     type APIResponse,
     type Page
 } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
-import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
+import { toRtcNativeObservationProjection } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts';
+import { decodeRallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/composite-results.ts';
+import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    decodeJsonValue,
+    decodeNonBlankText,
+    decodeRecord
+} from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { decodeControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot
-} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     cleanupRallarPage,
+    decodeFullStackAuthSession,
     expectFullStackApiReady,
     FULL_STACK_SPA_ORIGIN,
     loginUser,
@@ -31,8 +52,11 @@ import {
     uniqueRunId,
     waitForControlRunAgent
 } from './full-stack-helpers.ts';
+import { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
 
 interface OperatorUrlInput {
+    readonly actor: string;
     readonly groupId: string;
     readonly controlRunId: string;
     readonly sessionId: string;
@@ -55,7 +79,27 @@ interface ArtifactExpectation {
     readonly controlRunId: string;
     readonly groupId: string;
     readonly agentIds: readonly string[];
+    readonly recipeId: string;
 }
+
+interface ExecuteRecipeExpectation {
+    readonly recipeId: string;
+    readonly providerMode: string;
+    readonly prerequisite: string;
+}
+
+interface ConsoleNativeAttachment {
+    readonly endpoint: string;
+    readonly completeness: 'complete';
+    readonly durableOrigin: 'unknown';
+    readonly event: ApiJsonObject;
+}
+
+const COMPOSITE_RECIPE: ExecuteRecipeExpectation = {
+    recipeId: 'composite-evidence-recipe',
+    providerMode: 'simulated',
+    prerequisite: 'Self-contained'
+};
 
 const CONFIGURED_LIVE_SKIP_REASON =
     'Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and apps/rallar-black-box available.';
@@ -91,6 +135,7 @@ test('completes the configured live distributed run lifecycle and exports its ar
     const operatorSessionId = `${controlRunId}-operator-session`;
     const agentPages: Page[] = [];
     let agentIds: readonly string[] = [];
+    let failure: Error | undefined;
 
     try {
         await loginUser({
@@ -104,7 +149,8 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await page.goto(operatorUrl({
             groupId,
             controlRunId,
-            sessionId: operatorSessionId
+            sessionId: operatorSessionId,
+            actor: CONFIGURED_POSTGRES.userC.actor
         }));
         await expect(page).toHaveURL(/(?:\?|&)provider=browser-rallar(?:&|$)/);
 
@@ -118,14 +164,14 @@ test('completes the configured live distributed run lifecycle and exports its ar
         agentIds = launched.agentIds;
         await Promise.all(agentIds.map((agentId) => waitForControlRunAgent(request, controlRunId, agentId)));
 
-        await assertLiveExecuteTargets(page, agentIds);
+        await assertLiveExecuteTargets(page, agentIds, COMPOSITE_RECIPE);
         const passedRunId = await createDraftThroughVisibleExecuteControls(page);
         await stageThroughVisibleExecuteControls(page);
         await startThroughVisibleExecuteControls(page);
         await navigateToMonitor(page, passedRunId, 'passed');
         assertSchemaV2Artifact(
-            await exportMonitorArtifact(page, passedRunId),
-            { distributedRunId: passedRunId, controlRunId, groupId, agentIds }
+            await exportMonitorArtifact(page, passedRunId, testInfo.outputPath('lifecycle-artifact.json')),
+            { distributedRunId: passedRunId, controlRunId, groupId, agentIds, recipeId: COMPOSITE_RECIPE.recipeId }
         );
 
         await page.getByRole('button', { name: 'Execute', exact: true }).click();
@@ -133,10 +179,11 @@ test('completes the configured live distributed run lifecycle and exports its ar
         await page.goto(operatorUrl({
             groupId,
             controlRunId,
-            sessionId: operatorSessionId
+            sessionId: operatorSessionId,
+            actor: CONFIGURED_POSTGRES.userC.actor
         }));
         await expect(page).not.toHaveURL(/(?:\?|&)distributedRunId=/);
-        await assertLiveExecuteTargets(page, agentIds);
+        await assertLiveExecuteTargets(page, agentIds, COMPOSITE_RECIPE);
         const cancelledRunId = await createDraftThroughVisibleExecuteControls(page);
         expect(cancelledRunId).not.toBe(passedRunId);
         await stageThroughVisibleExecuteControls(page);
@@ -173,18 +220,192 @@ test('completes the configured live distributed run lifecycle and exports its ar
             cancelledRunId
         );
     }
+    catch (error) {
+        failure = toError(error);
+        throw failure;
+    }
     finally {
-        try {
-            await Promise.allSettled([
-                cleanupRallarPage(page),
-                ...agentPages.map((agentPage) => cleanupRallarPage(agentPage))
-            ]);
-        }
-        finally {
-            await Promise.allSettled(
-                agentPages.map((agentPage) => agentPage.close())
+        await cleanupConsolePages(page, agentPages, failure);
+    }
+});
+
+test('applies Console Full native run intent through real browser agents', async ({ page, request }, testInfo) => {
+    test.skip(
+        !CONFIGURED_POSTGRES.enabled || !CONFIGURED_POSTGRES_MODE || !CONFIGURED_FRESH_POSTGRES_API,
+        CONFIGURED_LIVE_SKIP_REASON
+    );
+    test.skip(
+        (await configuredPostgresStackAvailability(request)) === 'unavailable',
+        CONFIGURED_LIVE_SKIP_REASON
+    );
+    test.setTimeout(240_000);
+    await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
+    const groupId = uniqueGroupId(testInfo);
+    const controlRunId = uniqueRunId(testInfo);
+    const operatorSessionId = `${controlRunId}-operator-session`;
+    const agentPages: Page[] = [];
+    const control = new LiveRtcControlClient({
+        request,
+        baseUrl: CONFIGURED_POSTGRES.controlBaseUrl,
+        monotonicNow: () => performance.now(),
+        epochNow: () => Date.now()
+    });
+    let failure: Error | undefined;
+    try {
+        await loginUser({
+            page,
+            config: CONFIGURED_POSTGRES,
+            user: CONFIGURED_POSTGRES.userB,
+            groupId,
+            sessionId: operatorSessionId,
+            tab: 'rallar-server'
+        });
+        await page.goto(
+            operatorUrl({ groupId, controlRunId, sessionId: operatorSessionId, actor: CONFIGURED_POSTGRES.userB.actor })
+        );
+        await page.locator('[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]').click();
+        const launched = await launchBrowserAgentsThroughVisibleControls(page, {
+            controlRunId,
+            groupId,
+            prefix: 'console-native-agent',
+            count: 2
+        });
+        agentPages.push(...launched.pages);
+        const agentIds = launched.agentIds;
+        await Promise.all(agentIds.map((agentId) => waitForControlRunAgent(request, controlRunId, agentId)));
+        await assertLiveExecuteTargets(page, agentIds, {
+            recipeId: 'rtc-realtime-stability',
+            providerMode: 'browser-rallar',
+            prerequisite: 'Live services'
+        });
+        const issued = await Promise.all(agentPages.map(async (agentPage, index) => {
+            await expect(agentPage).toHaveURL(/(?:\?|&)rallarAuthStorage=session(?:&|$)/);
+            const session = decodeFullStackAuthSession(
+                await agentPage.evaluate(() => JSON.parse(sessionStorage.getItem('auth.session') ?? 'null'))
             );
+            return { agentId: agentIds[index], sessionId: session.sessionId, clientId: session.clientId };
+        }));
+        expect(new Set(issued.map((agent) => agent.sessionId)).size).toBe(2);
+        const before = await readControlRun(request, controlRunId);
+        expect(before.results.filter((result) => result.result?.kind === 'recipe.run')).toEqual([]);
+        const original = await readVisibleExecuteManifest(page);
+        expect(original.rtcCaptureMode).toBeUndefined();
+        const authored = original.recipes[0]?.recipe;
+        if (!authored) {
+            throw new Error('Visible Stability selection omitted its authored recipe.');
         }
+        assertAuthoredStabilityRecipe(authored, original);
+        await writeFile(
+            testInfo.outputPath('console-native-original-manifest.json'),
+            JSON.stringify(original, null, 2)
+        );
+        const capture = page.getByRole('combobox', { name: 'Run RTC capture', exact: true });
+        await expect(capture).toHaveValue('');
+        await capture.selectOption({ label: 'Full native' });
+        expect((await readVisibleExecuteManifest(page)).recipes).toEqual(original.recipes);
+        const [resolution, distributedRunId] = await Promise.all([
+            page.waitForResponse((response) =>
+                new URL(response.url()).pathname === '/distributed-runs/resolve-targets' &&
+                response.request().method() === 'POST'
+            ),
+            createDraftThroughVisibleExecuteControls(page)
+        ]);
+        expect(resolution.ok()).toBe(true);
+        expect(resolution.request().postDataJSON()).toEqual({
+            manifest: { ...original, rtcCaptureMode: 'native' }
+        });
+        await expect(capture).toBeDisabled();
+        await expect(capture).toHaveValue('native');
+        const draft = await readDistributedRun(request, distributedRunId);
+        expect(draft.manifest).toEqual({ ...original, rtcCaptureMode: 'native' });
+        await stageThroughVisibleExecuteControls(page);
+        const staged = await readDistributedRun(request, distributedRunId);
+        expect(staged.manifest).toEqual(draft.manifest);
+        assertConsolePhaseOwnership(staged, await readControlRun(request, controlRunId), 'stage');
+        await startThroughVisibleExecuteControls(page);
+        expect((await readVisibleExecuteManifest(page)).recipes).toEqual(original.recipes);
+        await expect(capture).toBeDisabled();
+        const completed = await readDistributedRun(request, distributedRunId);
+        const current = await readControlRun(request, controlRunId);
+        expect(completed.manifest).toEqual(draft.manifest);
+        expect(completed.targetAgentIds).toEqual([...agentIds].sort());
+        assertConsolePhaseOwnership(completed, current, 'start');
+        const captures = completed.commandLinks.filter((link) => link.phase === 'start').map((link) => {
+            const roots = current.results.filter((result) => result.commandId === link.commandId);
+            expect(roots).toHaveLength(1);
+            const session = issued.find((agent) => agent.agentId === link.agentId);
+            expect(current.agents.find((agent) => agent.agentId === link.agentId)?.identity).toMatchObject({
+                applicationId: original.group.applicationId,
+                workspaceId: original.group.workspaceId,
+                groupId,
+                providerMode: 'browser-rallar',
+                clientId: session?.clientId,
+                sessionId: session?.sessionId
+            });
+            if (!session) {
+                throw new Error('Start root did not belong to a visibly launched issued session.');
+            }
+            return toConsoleNativeConnection(roots[0], authored, session.sessionId);
+        });
+        expect(new Set(captures.map((connection) => connection.recipeAttribution?.invocationId)).size).toBe(2);
+        expect(new Set(captures.map((connection) => connection.recipeAttribution?.recipeBodyId)).size).toBe(2);
+        await writeFile(
+            testInfo.outputPath('console-native-captures.json'),
+            JSON.stringify({ issued, captures }, null, 2)
+        );
+        const native = [];
+        for (const connection of captures) {
+            const proof = (await control.readRtcNativeAcquisition(connection)).fold(
+                (refused) => {
+                    throw new Error(`Console Native acquisition refused: ${refused.reason}`);
+                },
+                (accepted) => accepted
+            );
+            expect(proof.source).toMatchObject({ completeness: 'complete', durableOrigin: 'unknown' });
+            const peer = captures.find((candidate) => candidate.agentId !== connection.agentId);
+            if (!peer) {
+                throw new Error('Console Native attachment requires the other issued peer.');
+            }
+            native.push({ proof, attachment: await readConsoleNativeAttachment(connection, peer.sessionId) });
+        }
+        await navigateToMonitor(page, distributedRunId, 'passed');
+        const artifact = await exportMonitorArtifact(
+            page,
+            distributedRunId,
+            testInfo.outputPath('console-native-artifact.json')
+        );
+        assertSchemaV2Artifact(artifact, {
+            distributedRunId,
+            controlRunId,
+            groupId,
+            agentIds,
+            recipeId: authored.recipeId
+        });
+        expect(JSON.parse(artifact.files['manifest.json'])).toEqual(draft.manifest);
+        await writeFile(
+            testInfo.outputPath('console-native-observations.json'),
+            JSON.stringify(
+                {
+                    issued,
+                    original,
+                    draft,
+                    staged,
+                    completed,
+                    captures,
+                    native,
+                    limits: { receiverDelivery: 'not-measured', performanceAcceptance: false, durableOrigin: 'unknown' }
+                },
+                null,
+                2
+            )
+        );
+    }
+    catch (error) {
+        failure = toError(error);
+        throw failure;
+    }
+    finally {
+        await cleanupConsolePages(page, agentPages, failure);
     }
 });
 
@@ -204,6 +425,275 @@ function configuredServiceProbe(
     };
 }
 
+async function readVisibleExecuteManifest(page: Page): Promise<RallarBlackBoxDistributedRunManifest> {
+    const manifest = page.getByLabel('Generated distributed run manifest');
+    if (await manifest.count() === 0) {
+        await page.locator('[data-execute-manifest] summary').click();
+    }
+    const raw = await manifest.textContent();
+    return decodeDistributedRunManifest(JSON.parse(raw ?? 'null')).fold(
+        (issues) => {
+            throw new Error(`Invalid visible Execute manifest: ${JSON.stringify(issues)}`);
+        },
+        (decoded) => decoded
+    );
+}
+
+function assertAuthoredStabilityRecipe(
+    authored: RallarBlackBoxTestRecipe,
+    manifest: RallarBlackBoxDistributedRunManifest
+): void {
+    expect(authored.recipeId).toBe('rtc-realtime-stability');
+    expect(authored.rtcCaptureMode).toBeUndefined();
+    expect(authored.metadata).toMatchObject({ durationSeconds: 5, rateHz: 5, frameCount: 25, executionMode: 'stream' });
+    const connect = authored.commands.filter((command) => command.kind === 'rtc.connect');
+    expect(connect).toHaveLength(1);
+    expect(connect[0]).toMatchObject({
+        commandId: 'rtc-realtime-connect',
+        transport: 'realtime',
+        roomRef: manifest.group,
+        readiness: { minReadyPeers: 1, timeoutMs: 10_000 }
+    });
+    expect(connect[0].rallar?.rtcCaptureMode).toBeUndefined();
+    expect(authored.commands.find((command) => command.kind === 'rtc.stream')).toMatchObject({
+        commandId: 'rtc-realtime-position-stream',
+        count: 25,
+        intervalMs: 200,
+        maxInFlight: 8,
+        thresholds: { maxDroppedFrames: 2, minSendSuccessRatio: 0.95 }
+    });
+}
+
+function assertConsolePhaseOwnership(
+    distributedRun: ControlDistributedRunSnapshot,
+    controlRun: ControlRunSnapshot,
+    phase: 'stage' | 'start'
+): void {
+    const links = distributedRun.commandLinks.filter((link) => link.phase === phase);
+    expect(links.map((link) => link.agentId).sort()).toEqual([...distributedRun.targetAgentIds].sort());
+    expect(new Set(links.map((link) => link.commandId)).size).toBe(2);
+    for (const link of links) {
+        expect(link.recipeId).toBe('rtc-realtime-stability');
+        const commands = controlRun.commands.filter((command) => command.envelope.commandId === link.commandId);
+        expect(commands).toHaveLength(1);
+        const queued = commands[0];
+        const command = queued.envelope.command;
+        if (command.kind !== 'recipe.load' && command.kind !== 'recipe.run') {
+            throw new Error('Console stage/start link did not queue its recipe.');
+        }
+        expect(command.recipe).toEqual(distributedRun.manifest.recipes[0].recipe);
+        expect(queued).toMatchObject({
+            dispatchedAtEpochMs: expect.any(Number),
+            completedAtEpochMs: expect.any(Number),
+            envelope: {
+                runId: distributedRun.controlRunId,
+                agentId: link.agentId,
+                commandId: link.commandId,
+                command: { kind: phase === 'stage' ? 'recipe.load' : 'recipe.run' }
+            }
+        });
+        const results = controlRun.results.filter((result) => result.commandId === link.commandId);
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({ runId: distributedRun.controlRunId, agentId: link.agentId, ok: true });
+        expect(results[0].replayed).not.toBe(true);
+        if (phase === 'start') {
+            expect(queued.envelope.command).toMatchObject({ rtcCaptureMode: 'native' });
+        }
+        else {
+            const acknowledged = decodeRallarBlackBoxTestResult(results[0].result).fold(
+                (issues) => {
+                    throw new Error(`Console stage acknowledgment refused: ${issues.join(', ')}`);
+                },
+                (result) => result
+            );
+            expect(acknowledged).toMatchObject({
+                commandId: link.commandId,
+                kind: 'recipe.load',
+                ok: true,
+                status: 'ok',
+                value: {
+                    recipeId: 'rtc-realtime-stability',
+                    recipeBodyId: expect.stringMatching(/\S/),
+                    commandCount: distributedRun.manifest.recipes[0].recipe?.commands.length
+                }
+            });
+            expect(acknowledged.replayed).not.toBe(true);
+        }
+    }
+}
+
+function toConsoleNativeConnection(
+    root: ControlResultEnvelope,
+    authored: RallarBlackBoxTestRecipe,
+    sessionId: string
+): RtcNativeCapturedConnection {
+    const decoded = decodeRallarBlackBoxTestResult(root.result).fold(
+        (issues) => {
+            throw new Error(`Invalid Console root result: ${issues.join(', ')}`);
+        },
+        (result) => result
+    );
+    expect(decoded).toMatchObject({ commandId: root.commandId, kind: 'recipe.run', ok: true, status: 'ok' });
+    expect(decoded.replayed).not.toBe(true);
+    const recipe = decodeRecord(decoded.value);
+    const invocation = decodeRecord(recipe.invocation);
+    expect(recipe.recipeId).toBe(authored.recipeId);
+    expect(invocation).toMatchObject({
+        invocationId: expect.stringMatching(/\S/),
+        recipeBodyId: expect.stringMatching(/\S/),
+        run: 'native'
+    });
+    expect(invocation.recipe).toBeUndefined();
+    const childIndex = authored.commands.findIndex((command) => command.commandId === 'rtc-realtime-connect');
+    expect(Array.isArray(recipe.results)).toBe(true);
+    const children = Array.isArray(recipe.results) ? recipe.results : [];
+    expect(children).toHaveLength(authored.commands.length);
+    expect(children.filter((child) => decodeRecord(child).commandId === 'rtc-realtime-connect')).toHaveLength(1);
+    const connected = decodeRallarBlackBoxTestResult(children[childIndex]).fold(
+        (issues) => {
+            throw new Error(`Invalid immediate Console Connect result: ${issues.join(', ')}`);
+        },
+        (result) => result
+    );
+    expect(connected).toMatchObject({ commandId: 'rtc-realtime-connect', kind: 'rtc.connect', ok: true, status: 'ok' });
+    expect(connected.replayed).not.toBe(true);
+    const receipt = toConsoleCaptureReceipt(connected, sessionId);
+    const invocationId = decodeNonBlankText(invocation.invocationId);
+    const recipeBodyId = decodeNonBlankText(invocation.recipeBodyId);
+    if (invocationId === undefined || recipeBodyId === undefined) {
+        throw new Error('Console recipe omitted fresh invocation/body identity.');
+    }
+    return {
+        runId: root.runId,
+        agentId: root.agentId,
+        commandId: connected.commandId,
+        connection: 'rtcRealtime',
+        transport: 'realtime',
+        sessionId,
+        requestedConfiguration: { mode: 'native', origin: 'run' },
+        receipt,
+        recipeAttribution: {
+            rootCommandId: root.commandId,
+            recipeId: authored.recipeId,
+            invocationId,
+            recipeBodyId,
+            childIndex
+        }
+    };
+}
+
+function toConsoleCaptureReceipt(
+    connected: RallarBlackBoxTestResult,
+    sessionId: string
+): RtcSignalingDiagnostics.CaptureReceipt {
+    const value = decodeRecord(connected.value);
+    expect(value).toMatchObject({ sessionId, connection: 'rtcRealtime', transport: 'realtime' });
+    const readout = toRtcCaptureReadout(decodeJsonValue(value.rtcCapture)).fold(
+        (reason) => {
+            throw new Error(`Console capture receipt refused: ${reason}`);
+        },
+        (observed) => observed
+    );
+    if (readout.status !== 'observed') {
+        throw new Error(`Console capture receipt unavailable: ${readout.reason}`);
+    }
+    expect(readout.value).toMatchObject({
+        configuration: { mode: 'native', origin: 'run' },
+        application: { status: 'applied', mode: 'native' },
+        connectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+        nativeScopeId: { status: 'observed', value: expect.stringMatching(/\S/) },
+        nativeAvailability: { status: 'observed', value: 'enabled' },
+        nativeCoverage: expect.stringMatching(/^(attached|partial)$/)
+    });
+    return readout.value;
+}
+
+async function readConsoleNativeAttachment(
+    connection: RtcNativeCapturedConnection,
+    peerSessionId: string
+): Promise<ConsoleNativeAttachment> {
+    const endpoint = `${CONFIGURED_POSTGRES.controlBaseUrl}/runs/${encodeURIComponent(connection.runId)}/events.jsonl`;
+    let complete = false;
+    let latest: ApiJsonObject | undefined;
+    for await (const read of readLiveRtcRecorderRows(endpoint)) {
+        const record = read.fold(
+            (failure) => {
+                throw new Error(`Console attachment recorder refused: ${failure.code}`);
+            },
+            (accepted) => accepted
+        );
+        expect(complete).toBe(false);
+        if (record.kind === 'complete') {
+            complete = true;
+            continue;
+        }
+        const runtime = decodeRecord(record.row.value);
+        if (
+            record.row.kind !== 'rtc-diagnostic' || record.row.agentId !== connection.agentId ||
+            runtime.topic !== 'rallar.browser.rtc.signaling_diagnostics'
+        ) {
+            continue;
+        }
+        const projected = toRtcNativeObservationProjection(decodeRecord(runtime.payload).data);
+        if (projected.recognized) {
+            expect(projected.event).toBeDefined();
+        }
+        const event = projected.event;
+        if (
+            event?.localSessionId === connection.sessionId &&
+            jsonEquals(decodeRecord(event.capture).scopeId, connection.receipt.nativeScopeId)
+        ) {
+            expect(event.stage).not.toBe('disposed');
+        }
+        const native = decodeRecord(event?.native ?? decodeRecord(event?.service).native);
+        if (
+            event?.localSessionId === connection.sessionId && event.peerSessionId === peerSessionId &&
+            jsonEquals(decodeRecord(native.capture).scopeId, connection.receipt.nativeScopeId)
+        ) {
+            latest = event;
+        }
+    }
+    expect(complete).toBe(true);
+    assertConsoleNativeChannel(latest, connection);
+    return { endpoint, completeness: 'complete', durableOrigin: 'unknown', event: latest };
+}
+
+function assertConsoleNativeChannel(
+    event: ApiJsonObject | undefined,
+    connection: RtcNativeCapturedConnection
+): asserts event is ApiJsonObject {
+    if (!event) {
+        throw new Error('Console Native recorder omitted a matching current channel.');
+    }
+    expect(decodeRecord(event.native ?? decodeRecord(event.service).native)).toMatchObject({
+        capture: { scope: 'active', scopeId: connection.receipt.nativeScopeId },
+        identity: {
+            peerConnectionId: { status: 'observed', value: expect.stringMatching(/\S/) },
+            channelId: { status: 'observed', value: expect.stringMatching(/\S/) }
+        },
+        state: {
+            channelState: { status: 'observed', value: 'open' },
+            listenerCoverage: expect.stringMatching(/^(attached|partial)$/)
+        }
+    });
+    expect(event.action).not.toBe('retiring');
+    expect(decodeRecord(event.service).stage).not.toBe('terminating');
+}
+
+async function cleanupConsolePages(page: Page, agentPages: readonly Page[], failure: Error | undefined): Promise<void> {
+    const cleaned = await Promise.allSettled([cleanupRallarPage(page), ...agentPages.map(cleanupRallarPage)]);
+    const closed = await Promise.allSettled(agentPages.map((agentPage) => agentPage.close()));
+    const failures = [...cleaned, ...closed].filter((result) => result.status === 'rejected').map((result) =>
+        toError(result.reason)
+    );
+    if (failures.length > 0) {
+        throw new AggregateError(
+            failure === undefined ? failures : [failure, ...failures],
+            'Console acquisition or cleanup failed.'
+        );
+    }
+}
+
 function operatorUrl(
     input: OperatorUrlInput
 ): string {
@@ -219,7 +709,7 @@ function operatorUrl(
             workspaceId: CONFIGURED_POSTGRES.workspaceId,
             roomId: input.groupId,
             controlRunId: input.controlRunId,
-            actor: CONFIGURED_POSTGRES.userC.actor,
+            actor: input.actor,
             sessionId: input.sessionId
         }).toString()
     }`;
@@ -294,14 +784,15 @@ async function configuredReadinessJson(
 
 async function assertLiveExecuteTargets(
     page: Page,
-    agentIds: readonly string[]
+    agentIds: readonly string[],
+    expected: ExecuteRecipeExpectation
 ): Promise<void> {
     const recipe = page.locator(
-        '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]'
+        `[data-execute-recipe][data-recipe-id="${expected.recipeId}"]`
     );
     await expect(recipe).toHaveAttribute('aria-selected', 'true');
-    await expect(recipe).toContainText('simulated');
-    await expect(recipe).toContainText('Self-contained');
+    await expect(recipe).toContainText(expected.providerMode);
+    await expect(recipe).toContainText(expected.prerequisite);
 
     const targets = page.locator('[data-execute-targets]');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(
@@ -437,7 +928,8 @@ async function navigateToMonitor(
 
 async function exportMonitorArtifact(
     page: Page,
-    distributedRunId: string
+    distributedRunId: string,
+    outputPath: string
 ): Promise<ControlDistributedRunArtifactBundle> {
     const actions = page.getByRole('region', { name: 'Monitor actions' });
     const downloadPromise = page.waitForEvent('download');
@@ -450,6 +942,7 @@ async function exportMonitorArtifact(
     if (!downloadPath) {
         throw new Error('Artifact download path is unavailable.');
     }
+    await download.saveAs(outputPath);
     return decodeControlDistributedRunArtifactBundle(JSON.parse(await readFile(downloadPath, 'utf8'))).fold(
         (issue) => {
             throw new Error(`Invalid distributed artifact: ${issue}`);
@@ -482,7 +975,7 @@ function assertSchemaV2Artifact(
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         group: { groupId: input.groupId },
-        recipes: [{ recipeId: 'composite-evidence-recipe' }],
+        recipes: [{ recipeId: input.recipeId }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: [...input.agentIds].sort(),
