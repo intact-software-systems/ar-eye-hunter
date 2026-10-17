@@ -20,7 +20,7 @@ import {
     onTestFinished
 } from 'vitest';
 
-import { toRunDirectoryName } from '../../../apps/rallar-black-box-control-server/src/control-artifact-recorder.ts';
+import { toRunDirectoryName } from '../../../apps/rallar-black-box-control-server/src/control-artifact-storage.ts';
 import {
     buildLiveRtcExternalAttempt,
     writeLiveRtcPerformanceAttempt,

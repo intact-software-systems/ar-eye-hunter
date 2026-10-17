@@ -1,4 +1,3 @@
-import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 // @vitest-environment happy-dom
 
 import {
@@ -27,6 +26,7 @@ import { EventStreamPanel } from '../../../apps/rallar-black-box/src/legacy/diag
 import { RallarTracePanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/events/rallar-trace-panel.tsx';
 import { ReportPanel } from '../../../apps/rallar-black-box/src/legacy/runner/advanced/report-panel.tsx';
 import { RunnerAdvancedPanel } from '../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx';
+import { createRuntimeStateFixture } from '../shared-test/rallar-bb-runtime/create-runtime-state-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -219,6 +219,18 @@ function observedState(value: string): ObservedState {
         status: 'completed',
         currentConfig: { runId: 'observer', rallar: { provider: 'simulated' }, redaction: { secretValues: ['private-secret'] } },
         commandHistory: observe(results),
+        resultHistory: {
+            totalCommands: 1,
+            totalFailures: 0,
+            releasedResults: 0,
+            durationSumMs: 10,
+            minDurationMs: 10,
+            maxDurationMs: 10,
+            lastDurationMs: 10,
+            lastResultOk: true,
+            lastCommandId: `command-${value}`,
+            load: undefined
+        },
         events: observe(events),
         failures: [],
         resultCache: {}

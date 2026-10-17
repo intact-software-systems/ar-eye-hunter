@@ -173,6 +173,8 @@ function recordHttpResponse(
     received: BrowserHttpResponse
 ): RallarBlackBoxTestCommandOutcome {
     const { response, body, url } = received;
+    const acceptedStatusCodes = command.response?.acceptedStatusCodes;
+    const acceptedStatus = acceptedStatusCodes?.includes(response.status);
     const value = {
         url: response.url || url,
         status: response.status,
@@ -186,12 +188,11 @@ function recordHttpResponse(
         topic: 'rallar.bb.http.response',
         commandId: command.commandId,
         transport: 'http',
-        severity: response.ok ? 'info' : 'warning',
+        severity: (acceptedStatus ?? response.ok) ? 'info' : 'warning',
         payload: value
     });
 
-    const acceptedStatusCodes = command.response?.acceptedStatusCodes;
-    if (!acceptedStatusCodes || acceptedStatusCodes.includes(response.status)) {
+    if (!acceptedStatusCodes || acceptedStatus) {
         return { status: 'ok', value, nextStatus: context.state().status };
     }
     return {
