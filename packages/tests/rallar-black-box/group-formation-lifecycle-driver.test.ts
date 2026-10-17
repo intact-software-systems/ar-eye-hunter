@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import type { RtcNativeAcquisitionProof, RtcNativeCapturedConnection } from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -31,7 +32,7 @@ const appliedNativeCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnost
     }
 };
 
-const capturedReplacement: LiveRtcControlClient.CapturedConnection & { readonly almDiagnostics: boolean; } = {
+const capturedReplacement: RtcNativeCapturedConnection & { readonly almDiagnostics: boolean; } = {
     almDiagnostics: true,
     runId: 'retained-native-run',
     agentId: 'agent-c',
@@ -42,7 +43,7 @@ const capturedReplacement: LiveRtcControlClient.CapturedConnection & { readonly 
     requestedConfiguration: { mode: 'native' as const, origin: 'step' as const },
     receipt: appliedNativeCapture.value
 };
-const replacementNativeProof: LiveRtcControlClient.NativeAcquisitionProof = {
+const replacementNativeProof: RtcNativeAcquisitionProof = {
     connection: capturedReplacement,
     initialized: {
         kind: 'native-observation-status',
@@ -62,12 +63,10 @@ const replacementNativeProof: LiveRtcControlClient.NativeAcquisitionProof = {
         endpoint: '/runs/retained-native-run/events.jsonl',
         durableOrigin: 'unknown',
         bytesRead: 987,
-        retainedBytes: 987,
-        retainedPrefixDropped: false,
-        transportTruncated: false,
+        decodedRecords: 2,
         malformedRows: 0,
         oversizedRows: 0,
-        scanLimited: false
+        completeness: 'complete'
     }
 };
 const missingReplacementNativeStatus = {
@@ -520,7 +519,7 @@ describe('group formation lifecycle driver', () => {
             ...replacementCaptureInput,
             control,
             nativeAcquisition: {
-                readRtcNativeAcquisition: (_connection: LiveRtcControlClient.CapturedConnection) => {
+                readRtcNativeAcquisition: (_connection: RtcNativeCapturedConnection) => {
                     throw acquisitionFailure;
                 }
             }

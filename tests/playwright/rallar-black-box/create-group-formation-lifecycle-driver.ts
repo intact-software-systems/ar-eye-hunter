@@ -1,6 +1,11 @@
 import { expect } from '@playwright/test';
-import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 
+import type {
+    RtcNativeAcquisition,
+    RtcNativeAcquisitionFailure,
+    RtcNativeAcquisitionProof,
+    RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRtcConnectCommand
@@ -10,6 +15,7 @@ import {
     toBrowserRtcCaptureIntent
 } from '@shared-web/browser/connection/browser-rtc-capture-intent.ts';
 import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
+import { toRtcCaptureReadout } from '@shared-web/browser/connection/to-rtc-capture-readout.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -19,10 +25,7 @@ import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baselin
 
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import {
-    jsonRecord,
-    stringArrayValue
-} from './live-rtc-evidence-json.ts';
+import { jsonRecord, stringArrayValue } from './live-rtc-evidence-json.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
 type TransportUnderTest = 'realtime' | 'messages.rtc';
@@ -46,7 +49,7 @@ interface CreateGroupFormationLifecycleDriverConfig {
 
 interface RunGroupFormationLifecycleInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
+    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly agents: readonly [
         LiveRtcControlClient.FormationAgent,
@@ -63,13 +66,13 @@ interface GroupFormationLifecycleRun {
     readonly commandIds: readonly string[];
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly readinessDurations: Readonly<Partial<Record<AgentPrefix, number>>>;
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
 }
 
 interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
+    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
     readonly survivingAgents: readonly [
@@ -120,7 +123,7 @@ export interface SetupGroupMembershipInput {
 
 interface ConnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
+    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.FormationAgent;
     readonly transport: TransportUnderTest;
@@ -132,9 +135,9 @@ interface FormationAgentConnection {
     readonly commandId: string;
     readonly sessionId: string;
     /** Absent when the operation did not explicitly request diagnostics. */
-    readonly rtcCapture?: LiveRtcControlClient.CapturedConnection;
+    readonly rtcCapture?: RtcNativeCapturedConnection;
     /** Present only after this connection's specific acquisition completed. */
-    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisitionProof;
+    readonly nativeAcquisition?: RtcNativeAcquisitionProof;
 }
 
 interface InitialFormationPair {
@@ -231,7 +234,7 @@ interface WaitForCanonicalFormationReadinessInput {
     readonly startedAtMs: number;
 }
 
-interface AlmRecordedRtcConnection extends LiveRtcControlClient.CapturedConnection {
+interface AlmRecordedRtcConnection extends RtcNativeCapturedConnection {
     readonly almDiagnostics: boolean;
 }
 
@@ -262,17 +265,17 @@ export const MANUAL_TRIGGER_POLICY = {
 export namespace LiveRtcFormationFailure {
     export interface Input {
         readonly cause: Error;
-        readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-        readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
-        readonly nativeAcquisitionFailure: LiveRtcControlClient.NativeAcquisitionFailure | null;
+        readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+        readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
+        readonly nativeAcquisitionFailure: RtcNativeAcquisitionFailure | null;
     }
 }
 
 /** Completed diagnostic facts survive a later formation or delivery failure. */
 export class LiveRtcFormationFailure extends Error {
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
-    readonly nativeAcquisitionFailure: LiveRtcControlClient.NativeAcquisitionFailure | null;
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
+    readonly nativeAcquisitionFailure: RtcNativeAcquisitionFailure | null;
 
     constructor(input: LiveRtcFormationFailure.Input) {
         super(input.cause.message, { cause: input.cause });
@@ -715,9 +718,9 @@ function requireFormationCaptureReceipt(
 }
 
 async function acquireFormationNativeCapture(
-    acquisition: LiveRtcControlClient.NativeAcquisition,
-    connection: LiveRtcControlClient.CapturedConnection
-): Promise<LiveRtcControlClient.NativeAcquisitionProof> {
+    acquisition: RtcNativeAcquisition,
+    connection: RtcNativeCapturedConnection
+): Promise<RtcNativeAcquisitionProof> {
     const receipt = connection.receipt;
     if (
         receipt.nativeScopeId.status !== 'observed' || receipt.nativeScopeId.value.length === 0 ||
@@ -731,7 +734,7 @@ async function acquireFormationNativeCapture(
             cause: new Error('The admitted connection has no available Native capture scope.')
         }, connection);
     }
-    let result: Either<LiveRtcControlClient.NativeAcquisitionFailure, LiveRtcControlClient.NativeAcquisitionProof>;
+    let result: Either<RtcNativeAcquisitionFailure, RtcNativeAcquisitionProof>;
     try {
         result = await acquisition.readRtcNativeAcquisition(connection);
     }
@@ -750,8 +753,8 @@ async function acquireFormationNativeCapture(
 }
 
 function nativeFormationAcquisitionFailure(
-    failure: LiveRtcControlClient.NativeAcquisitionFailure,
-    connection: LiveRtcControlClient.CapturedConnection
+    failure: RtcNativeAcquisitionFailure,
+    connection: RtcNativeCapturedConnection
 ): LiveRtcFormationFailure {
     return new LiveRtcFormationFailure({
         cause: failure.cause,

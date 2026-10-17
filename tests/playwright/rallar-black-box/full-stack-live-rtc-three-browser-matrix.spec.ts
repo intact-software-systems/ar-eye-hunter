@@ -4,6 +4,10 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import type {
+    RtcNativeAcquisitionProof,
+    RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { LiveRtcFormationFailure } from './create-group-formation-lifecycle-driver.ts';
@@ -185,8 +189,8 @@ async function verifyGroupStateReadback(
 interface WriteAttemptEvidenceInput {
     readonly testInfo: TestInfo;
     readonly runId: string;
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
     readonly nativeAcquisitionFailures: readonly LiveRtcNativeAcquisitionFailureDiagnostic[];
     readonly context: LiveRtcPerformanceAttemptContext | null;
     readonly producerExitStatus: number;
@@ -414,8 +418,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
-        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
-        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
+        const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
         const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         let producerExitStatus = 0;
@@ -709,8 +713,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
-        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
-        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
+        const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
         const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         let producerExitStatus = 0;
         const attemptStartedAtEpochMs = Date.now();
@@ -1065,8 +1069,8 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const nativeAcquisition = rtcCaptureMode === 'native' && evidenceContext === null ? control : undefined;
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
-        const rtcConnectCaptures: LiveRtcControlClient.CapturedConnection[] = [];
-        const nativeAcquisitions: LiveRtcControlClient.NativeAcquisitionProof[] = [];
+        const rtcConnectCaptures: RtcNativeCapturedConnection[] = [];
+        const nativeAcquisitions: RtcNativeAcquisitionProof[] = [];
         const nativeAcquisitionFailures: LiveRtcNativeAcquisitionFailureDiagnostic[] = [];
         const checkpoints: LiveRtcRetentionCheckpoint[] = [];
         let currentRetentionCycle = 0;

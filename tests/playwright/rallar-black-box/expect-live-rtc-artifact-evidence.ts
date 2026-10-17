@@ -1,3 +1,6 @@
+import { toRecorderJsonlRow } from '@shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
     jsonRecord,
@@ -5,11 +8,9 @@ import {
     requiredJsonArray,
     requiredJsonRecord,
     requiredString,
-    stringValue,
     type LiveRtcJsonRecord
 } from './live-rtc-evidence-json.ts';
 import { readLiveRtcBrowserEvent, readLiveRtcRecorderRows } from './live-rtc-recorder-reader.ts';
-import { toLiveRtcRecorderRow } from './live-rtc-recorder-rows.ts';
 
 export async function expectLiveRtcArtifactEvidence(
     bundle: LiveRtcJsonRecord,
@@ -29,10 +30,13 @@ export async function expectLiveRtcArtifactEvidence(
         if (!read.right) {
             throw new Error(`Durable results unavailable: ${read.left?.code}.`);
         }
-        if (!isLiveRtcResultReceipt(read.right)) {
+        if (read.right.kind === 'complete') {
+            continue;
+        }
+        if (!isLiveRtcResultReceipt(read.right.row)) {
             throw new Error('Durable results contain malformed result evidence.');
         }
-        missing.delete(String(read.right.commandId));
+        missing.delete(String(read.right.row.commandId));
     }
     if (missing.size) {
         throw new Error(`Durable evidence missing executed commands: ${[...missing].join(', ')}.`);
@@ -72,7 +76,7 @@ function validateLiveRtcArtifactPreview(bundle: LiveRtcJsonRecord, runId: string
         const preview = files['events.jsonl'];
         if (
             typeof preview !== 'string' ||
-            preview.split('\n').some((line) => line.trim() && !toLiveRtcRecorderRow(line))
+            preview.split('\n').some((line) => line.trim() && !toRecorderJsonlRow(line))
         ) {
             issues.push('Artifact event preview must contain JSONL records.');
         }
@@ -83,12 +87,12 @@ function validateLiveRtcArtifactPreview(bundle: LiveRtcJsonRecord, runId: string
     }
 }
 
-function isLiveRtcResultReceipt(row: LiveRtcJsonRecord | null): boolean {
+function isLiveRtcResultReceipt(row: ApiJsonObject | null): boolean {
     if (!row || row.kind !== undefined) {
         return false;
     }
-    const commandId = stringValue(row.commandId);
-    const agentId = stringValue(row.agentId);
+    const commandId = typeof row.commandId === 'string' && row.commandId.length ? row.commandId : undefined;
+    const agentId = typeof row.agentId === 'string' && row.agentId.length ? row.agentId : undefined;
     return commandId !== undefined && agentId !== undefined &&
         row.name === commandId && row.resultKey === `${agentId}:${commandId}` &&
         typeof row.ok === 'boolean' && row.status === (row.ok ? 'SUCCESS' : 'FAILURE');

@@ -1,5 +1,10 @@
 import { expect, type TestInfo } from '@playwright/test';
 
+import type {
+    RtcNativeAcquisition,
+    RtcNativeAcquisitionProof,
+    RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
@@ -23,10 +28,7 @@ import type {
     LiveRtcNackProbeStage,
     LiveRtcPerformanceTiming
 } from './live-rtc-performance-evidence.ts';
-import {
-    hasLiveRtcNotYetInSyncNack,
-    type LiveRtcReceivedNackProbe
-} from './live-rtc-wire-observation.ts';
+import { hasLiveRtcNotYetInSyncNack, type LiveRtcReceivedNackProbe } from './live-rtc-wire-observation.ts';
 
 export type TransportUnderTest = 'realtime' | 'messages.rtc';
 
@@ -57,7 +59,7 @@ interface RunWebSocketOpenSendCloseMatrixInput {
 
 interface RunAllDeliveryPermutationsInput {
     readonly control: LiveRtcControlPort;
-    readonly nativeAcquisition?: LiveRtcControlClient.NativeAcquisition;
+    readonly nativeAcquisition?: RtcNativeAcquisition;
     readonly runId: string;
     readonly agents: readonly [
         LiveRtcControlClient.FormationAgent,
@@ -82,8 +84,8 @@ interface RunDeliveryMatrixResult {
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
     readonly timings: readonly LiveRtcPerformanceTiming[];
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
 }
 
 interface CompleteDeliveryCasesInput {

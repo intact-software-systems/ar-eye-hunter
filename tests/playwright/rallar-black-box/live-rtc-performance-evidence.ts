@@ -2,9 +2,13 @@ import type { Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import type {
+    RtcNativeAcquisitionFailure,
+    RtcNativeAcquisitionProof,
+    RtcNativeAcquisitionSource,
+    RtcNativeCapturedConnection
+} from '@shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-
-import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import { deriveRtcBaselineExternalAttempts } from '../../../packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts';
 import {
     decodeRtcBaselineEnvironment,
@@ -31,6 +35,7 @@ import type {
 } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { isRtcBaselineId } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-id.ts';
 
+import { readFullStackRtcAttemptServingProof } from '../../../apps/rallar-black-box/rtc-production-serving-proof.ts';
 import {
     compareLaneStates,
     decodeAgentDiagnostics,
@@ -200,9 +205,9 @@ export interface LiveRtcNackFailureDiagnostic {
 }
 
 export interface LiveRtcNativeAcquisitionFailureDiagnostic {
-    readonly reason: LiveRtcControlClient.NativeAcquisitionFailure['reason'];
-    readonly connection: LiveRtcControlClient.CapturedConnection;
-    readonly source: LiveRtcControlClient.NativeAcquisitionProof['source'] | null;
+    readonly reason: RtcNativeAcquisitionFailure['reason'];
+    readonly connection: RtcNativeCapturedConnection;
+    readonly source: RtcNativeAcquisitionSource | null;
     readonly failure: {
         readonly name: 'native-acquisition-refused';
         readonly message: 'RTC Native acquisition refused.';
@@ -210,7 +215,7 @@ export interface LiveRtcNativeAcquisitionFailureDiagnostic {
 }
 
 export function toLiveRtcNativeAcquisitionFailureDiagnostic(
-    failure: LiveRtcControlClient.NativeAcquisitionFailure
+    failure: RtcNativeAcquisitionFailure
 ): LiveRtcNativeAcquisitionFailureDiagnostic {
     return {
         reason: failure.reason,
@@ -221,8 +226,8 @@ export function toLiveRtcNativeAcquisitionFailureDiagnostic(
 }
 
 export interface LiveRtcPerformanceRawEvidence {
-    readonly rtcConnectCaptures: readonly LiveRtcControlClient.CapturedConnection[];
-    readonly nativeAcquisitions: readonly LiveRtcControlClient.NativeAcquisitionProof[];
+    readonly rtcConnectCaptures: readonly RtcNativeCapturedConnection[];
+    readonly nativeAcquisitions: readonly RtcNativeAcquisitionProof[];
     readonly nativeAcquisitionFailures: readonly LiveRtcNativeAcquisitionFailureDiagnostic[];
     identity: LiveRtcPerformanceIdentity;
     producer: LiveRtcPerformanceProducer;
