@@ -14,7 +14,10 @@ import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
-import { petitionGroupActivationStatus } from '@shared-server/rallar-system/topology/replay/work/group-activation-status-observer.ts';
+import {
+    petitionGroupActivationStatus,
+    type PetitionGroupActivationStatusInput
+} from '@shared-server/rallar-system/topology/replay/work/group-activation-status-observer.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     toCoalescedGroupRevisionKey
@@ -162,6 +165,24 @@ describe('activation status series settlement', () => {
         expect([...database.outboxEntries.values()]).toEqual([]);
     });
 
+    it('publishes a confirmed dwell without arming an evidence-expiry clock', async () => {
+        const fixture = withPartialStarCoverage(createFixture('basis', true));
+        const result = await observe(fixture, { satisfied: true, dueAtEpochMs: 2_000 });
+        expect(result.commands).toEqual([expect.objectContaining({
+            input: expect.objectContaining({ coverageRate: 0.92, evidenceWatermark: null, dwellSatisfied: true })
+        })]);
+        expect(result.clocks).toEqual([]);
+    });
+
+    it('publishes immediate evidence and arms its expiry in the same series', async () => {
+        const fixture = withPartialStarCoverage(createFixture('basis', false));
+        const result = await observe(fixture);
+        expect(result.commands).toEqual([expect.objectContaining({
+            input: expect.objectContaining({ coverageRate: 0.92, evidenceWatermark: { version: 23, createdAtEpochMs: 23 }, dwellSatisfied: false })
+        })]);
+        expect(result.clocks).toEqual([expect.objectContaining({ kind: 'evidence-expiry', formationEpoch: 2, coverageBasisLayoutIdentity: fixture.basis })]);
+    });
+
     it('suppresses a same-series zero-evidence petition', async () => {
         expect(await observe(createFixture('same', false))).toEqual({ commands: [], clocks: [] });
     });
@@ -194,16 +215,7 @@ describe('activation status series settlement', () => {
 
     it.each(['basis', 'epoch', 'same'] as const)('isolates observer hysteresis for %s', async (change) => {
         const fixture = createFixture(change, true);
-        const spokes = Array.from({ length: 23 }, (_, index) => `spoke-${index}`);
-        const measured = {
-            ...fixture,
-            authority: {
-                ...fixture.authority,
-                rttMeasurements: spokes.map((sessionIdTo, index) =>
-                    createRtcTopologyRttMeasurement({ sessionIdFrom: 'center', sessionIdTo, rttMs: 1, version: index + 1 })
-                )
-            }
-        };
+        const measured = withPartialStarCoverage(fixture);
         const petition = await observe(measured);
         expect(petition.commands).toEqual([]);
         expect(petition.clocks).toEqual([
@@ -267,7 +279,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean) {
     };
 }
 
-async function observe(fixture: ReturnType<typeof createFixture>) {
+async function observe(fixture: ReturnType<typeof createFixture>, dwell: PetitionGroupActivationStatusInput['dwell'] = null) {
     const commands: GroupMutationCommand[] = [];
     const clocks: GroupActivationStatusClockWork[] = [];
     await petitionGroupActivationStatus({
@@ -284,7 +296,18 @@ async function observe(fixture: ReturnType<typeof createFixture>) {
         },
         authority: fixture.authority,
         planned: fixture.planned,
-        dwell: null
+        dwell
     });
     return { commands, clocks };
+}
+
+function withPartialStarCoverage(fixture: ReturnType<typeof createFixture>) {
+    const rttMeasurements = Array.from({ length: 23 }, (_, index) =>
+        createRtcTopologyRttMeasurement({
+            sessionIdFrom: 'center',
+            sessionIdTo: `spoke-${index}`,
+            rttMs: 1,
+            version: index + 1
+        }));
+    return { ...fixture, authority: { ...fixture.authority, rttMeasurements } };
 }

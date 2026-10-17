@@ -8,7 +8,12 @@ import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/activ
 import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/activation-status/group-activation-coverage-hysteresis.ts';
 import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import { isSameGroupActivationSeries } from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
-import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import {
+    isSameGroupLayoutIdentity,
+    toGroupLayoutIdentity,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
@@ -29,6 +34,25 @@ import { assertActive } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 type UpdateActivationStatusCommand = Extract<GroupMutationCommand, { operation: 'updateGroupActivationStatus'; }>;
+
+interface ResolveActivationStatusSeriesInput {
+    readonly command: UpdateActivationStatusCommand;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly group: Group;
+}
+
+type ResolvedActivationStatusSeries =
+    | Readonly<{ status: 'rejected'; result: GroupMutationComputed; }>
+    | Readonly<{ status: 'current'; basis: GroupLayoutIdentity; policy: GroupLifecyclePolicy; }>;
+
+interface ComputeObservedActivationStatusInput {
+    readonly command: UpdateActivationStatusCommand;
+    readonly group: Group;
+    readonly basis: GroupLayoutIdentity;
+    readonly policy: GroupLifecyclePolicy;
+    readonly nowEpochMs: number;
+}
 
 /**
  * The observed-status write (product decision 3): derived, non-authoritative
@@ -51,72 +75,20 @@ export function computeUpdateGroupActivationStatus(
     const stored = requireGroup(read, command.aggregateRef);
     assertActive(stored.value, facts.nowEpochMs);
     const group = stored.value;
-    if (group.formationEpoch !== command.input.expectedFormationEpoch) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message:
-                `Activation status expected formation epoch ${command.input.expectedFormationEpoch}, found ${group.formationEpoch}`
-        });
-    }
-    const resolution = resolveGroupAuthorityPolicy(read);
-    if (resolution.status === 'corrupt') {
-        return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
-    }
-    const basis = resolveCoverageBasisLayoutIdentity({
-        lifecycleState: group.lifecycleState,
-        accepted: group.acceptedLayoutIdentity ?? undefined,
-        plannedCandidate: read.plannedLayoutRow === null
-            ? undefined
-            : toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)
-    });
-    if (basis === undefined || !isSameGroupLayoutIdentity(basis, command.input.expectedLayout)) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Activation status names a layout that no longer carries traffic'
-        });
+    const series = resolveActivationStatusSeries({ command, read, facts, group });
+    if (series.status === 'rejected') {
+        return series.result;
     }
     if (isSupersededByStoredEvidence(command, group.activationStatus)) {
         return noOp(command, read, facts);
     }
-    const business = resolveGroupBusinessLiveness(group, facts.nowEpochMs);
-    const attemptBudgetExhausted = isFormationAttemptBudgetExhausted({
-        activation: resolution.policy.activation,
-        formationAttemptCount: group.formationAttemptCount
+    const next = computeObservedActivationStatus({
+        command,
+        group,
+        basis: series.basis,
+        policy: series.policy,
+        nowEpochMs: facts.nowEpochMs
     });
-    const previousCondition = group.activationStatus !== null && isSameGroupActivationSeries(group.activationStatus, {
-            formationEpoch: group.formationEpoch,
-            coverageBasisLayoutIdentity: basis
-        })
-        ? group.activationStatus.condition
-        : undefined;
-    const next: GroupActivationStatus = {
-        condition: computeGroupActivationCondition({
-            business,
-            lifecycleState: group.lifecycleState,
-            attemptBudgetExhausted,
-            coverage: resolveGroupActivationCoverageWithHysteresis({
-                coverage: {
-                    coverageRate: command.input.coverageRate,
-                    successRate: resolution.policy.activation.successRate,
-                    minimumViableRate: resolution.policy.activation.minimumViableRate,
-                    dwellSatisfied: command.input.dwellSatisfied
-                },
-                previousCondition,
-                hysteresisWidth: GROUP_ACTIVATION_HYSTERESIS_WIDTH
-            })
-        }),
-        coverageRate: command.input.coverageRate,
-        coverageBasisLayoutIdentity: basis,
-        formationEpoch: group.formationEpoch,
-        evidenceWatermark: command.input.evidenceWatermark,
-        publishedAtEpochMs: facts.nowEpochMs
-    };
     if (isSamePublishedStatus(next, group.activationStatus)) {
         return noOp(command, read, facts);
     }
@@ -180,4 +152,87 @@ function isSamePublishedStatus(next: GroupActivationStatus, stored: GroupActivat
     return stored !== null &&
         stored.condition === next.condition &&
         isSameGroupActivationSeries(stored, next);
+}
+
+function resolveActivationStatusSeries(
+    { command, read, facts, group }: ResolveActivationStatusSeriesInput
+): ResolvedActivationStatusSeries {
+    if (group.formationEpoch !== command.input.expectedFormationEpoch) {
+        return {
+            status: 'rejected',
+            result: rejected({
+                command,
+                read,
+                facts,
+                rejectionCode: 'group-mutation-rejected',
+                message:
+                    `Activation status expected formation epoch ${command.input.expectedFormationEpoch}, found ${group.formationEpoch}`
+            })
+        };
+    }
+    const resolution = resolveGroupAuthorityPolicy(read);
+    if (resolution.status === 'corrupt') {
+        return {
+            status: 'rejected',
+            result: toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason })
+        };
+    }
+    const basis = resolveCoverageBasisLayoutIdentity({
+        lifecycleState: group.lifecycleState,
+        accepted: group.acceptedLayoutIdentity ?? undefined,
+        plannedCandidate: read.plannedLayoutRow === null
+            ? undefined
+            : toGroupLayoutIdentity(read.plannedLayoutRow.snapshot)
+    });
+    if (basis === undefined || !isSameGroupLayoutIdentity(basis, command.input.expectedLayout)) {
+        return {
+            status: 'rejected',
+            result: rejected({
+                command,
+                read,
+                facts,
+                rejectionCode: 'group-mutation-rejected',
+                message: 'Activation status names a layout that no longer carries traffic'
+            })
+        };
+    }
+    return { status: 'current', basis, policy: resolution.policy };
+}
+
+function computeObservedActivationStatus(
+    { command, group, basis, policy, nowEpochMs }: ComputeObservedActivationStatusInput
+): GroupActivationStatus {
+    const business = resolveGroupBusinessLiveness(group, nowEpochMs);
+    const attemptBudgetExhausted = isFormationAttemptBudgetExhausted({
+        activation: policy.activation,
+        formationAttemptCount: group.formationAttemptCount
+    });
+    const previousCondition = group.activationStatus !== null && isSameGroupActivationSeries(group.activationStatus, {
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis
+        })
+        ? group.activationStatus.condition
+        : undefined;
+    return {
+        condition: computeGroupActivationCondition({
+            business,
+            lifecycleState: group.lifecycleState,
+            attemptBudgetExhausted,
+            coverage: resolveGroupActivationCoverageWithHysteresis({
+                coverage: {
+                    coverageRate: command.input.coverageRate,
+                    successRate: policy.activation.successRate,
+                    minimumViableRate: policy.activation.minimumViableRate,
+                    dwellSatisfied: command.input.dwellSatisfied
+                },
+                previousCondition,
+                hysteresisWidth: GROUP_ACTIVATION_HYSTERESIS_WIDTH
+            })
+        }),
+        coverageRate: command.input.coverageRate,
+        coverageBasisLayoutIdentity: basis,
+        formationEpoch: group.formationEpoch,
+        evidenceWatermark: command.input.evidenceWatermark,
+        publishedAtEpochMs: nowEpochMs
+    };
 }
