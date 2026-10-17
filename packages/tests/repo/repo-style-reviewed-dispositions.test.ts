@@ -64,7 +64,15 @@ const reviewedTransformResolutionBoundaries = [
     { file: transformResolutionFile, symbol: 'readPathSegments', cap: 2 },
     { file: transformResolutionFile, symbol: 'readProperty', cap: 2 }
 ] as const;
-const reviewedCappedUnknownBoundaries = [...reviewedSchemaJsonBoundaries, ...reviewedTransformResolutionBoundaries];
+const reviewedCappedUnknownBoundaries = [
+    ...reviewedSchemaJsonBoundaries,
+    ...reviewedTransformResolutionBoundaries,
+    {
+        file: 'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
+        symbol: 'toRecorderJsonlRow',
+        cap: 1
+    }
+];
 
 afterEach(() => {
     for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -600,6 +608,14 @@ describe('reviewed repository style dispositions', () => {
     });
 
     it.each([
+        {
+            file: 'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            cap: 63,
+            prefix: 'File cognitive load ',
+            suffix: ''
+        },
         {
             file: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/rtc-native-observation-projection.ts',
             ruleId: 'file.cognitive-load',
