@@ -4527,6 +4527,36 @@ moved or changed test.
         "requiredConstraint": "Report each failed completion publication exactly once and never throw from the relay call.",
         "failureRationale": "A missing warning hides a broken pub/sub bridge (remote waiters silently fall back to the tick); repeated warnings flood the log under a sustained outage."
       }
+    },
+    {
+      "id": "indexeddb-admission-pending-observer-opens-no-transaction",
+      "domain": "IndexedDB admission operation observer storage gate",
+      "owner": "Rallar shared maintainers",
+      "summary": "Each of the five admission operations waits for its pending observer Promise before opening its storage transaction, including foreign-realm Promises",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#opens no storage transaction until its observer permits the operation",
+      "coverageRelation": "The test starts the real backend operation after initial storage readiness, leaves its first observer Promise pending through an event-loop turn, asserts no native transaction creation, then resolves the gate and waits for the operation and backend cleanup",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBDatabase.prototype.transaction, the native storage transaction-opening port used by IndexedDbAdmissionBackend",
+        "observableEffect": "Opening a transaction begins storage work and acquires an IndexedDB scheduling position even if it produces no durable mutation.",
+        "requiredConstraint": "After storage readiness, the selected admission operation opens zero transactions while its operation observer Promise remains pending.",
+        "failureRationale": "The observer contract explicitly holds the operation before transaction entry; returning the same eventual value or delaying its Promise does not prove that storage work did not start early."
+      }
+    },
+    {
+      "id": "indexeddb-admission-rejected-observer-opens-no-transaction",
+      "domain": "IndexedDB admission operation observer storage gate",
+      "owner": "Rallar shared maintainers",
+      "summary": "Each of the five admission operations propagates observer rejection without opening a storage transaction or authoring state, including foreign-realm rejection",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#fails before opening storage or authoring a mutation when the observer rejects",
+      "coverageRelation": "The test rejects the real operation's first observer Promise, asserts its caller-visible rejection and no native transaction opening, restores the storage spy, then independently reads back the absent authored row",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "IDBDatabase.prototype.transaction, the native storage transaction-opening port used by IndexedDbAdmissionBackend",
+        "observableEffect": "Rejected observation prevents the operation from starting any IndexedDB transaction, including readonly or ultimately rolled-back work.",
+        "requiredConstraint": "An admission operation whose observer Promise rejects opens zero storage transactions and rejects before authoring a mutation.",
+        "failureRationale": "The same rejection and unchanged stored rows could follow a prematurely opened or aborted transaction; the absence assertion separately proves the prescribed refusal-before-storage boundary."
+      }
     }
   ],
   "entries": [
@@ -9985,6 +10015,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The single captured warning proves a failed publication is reported once; that the relay call does not throw is asserted independently.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.test.ts#drops a notice whose publication fails, leaving the waiter its safety tick"
+    },
+    {
+      "id": "test-structure-coupling-556aa96485fe4bd5",
+      "path": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-admission-pending-observer-opens-no-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The assertion observes the native transaction-opening port while the observer decision is pending. A delayed caller-visible result or unchanged durable state alone would not exclude prematurely opened readonly, empty or rolled-back transactions",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#opens no storage transaction until its observer permits the operation"
+    },
+    {
+      "id": "test-structure-coupling-719cae31894ccaff",
+      "path": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "indexeddb-admission-rejected-observer-opens-no-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The assertion proves the rejection prevented storage entry, in addition to the separately asserted error and absent durable row. A transaction opened then aborted, or a readonly transaction, could satisfy both those other assertions while violating the observer gate",
+      "semanticCoverage": "packages/tests/shared/alm/indexed-db-admission-observer-gates.test.ts#fails before opening storage or authoring a mutation when the observer rejects"
     }
   ]
 }

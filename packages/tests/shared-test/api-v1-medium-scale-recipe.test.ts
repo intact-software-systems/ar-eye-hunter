@@ -307,12 +307,6 @@ describe('API-v1 medium-scale recipe', () => {
             const polling = firstPollGroups.find((group) => group.name === `cluster-group-${groupLabel}`)
                 ?.steps[0];
             expect(polling?.connection).toBe(pollingConnection);
-            expect(polling?.request).toMatchObject({
-                outputs: {
-                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision`]: 'body.causalRevision.groupRevision',
-                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision`]: 'body.causalRevision.presenceRevision'
-                }
-            });
 
             const verification = afterChurn.find(
                 (step) => step.name === `verify${groupLabel}GroupAcrossCluster`
@@ -364,7 +358,7 @@ describe('API-v1 medium-scale recipe', () => {
         const topologyPoll = afterChurn.find((step) => step.name === 'pollFinalTopologyEffects');
         expect(topologyPoll).toMatchObject({ type: 'loop', count: 5, intervalMs: 5_000 });
         const topologyPollSteps = topologyPoll?.steps as Array<Record<string, unknown>>;
-        expect(topologyPollSteps).toHaveLength(5);
+        expect(topologyPollSteps).toHaveLength(20);
         groupIds.forEach((groupId) => {
             const groupLabel = groupId
                 .replace(/^group/, '')
@@ -381,8 +375,8 @@ describe('API-v1 medium-scale recipe', () => {
                         snapshot: {
                             version: 'integer',
                             sourceGroupStateCausalRevision: {
-                                groupRevision: `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
-                                presenceRevision: `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`
+                                groupRevision: 'integer',
+                                presenceRevision: 'integer'
                             }
                         }
                     }

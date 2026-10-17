@@ -1,8 +1,6 @@
-// deno-lint-ignore-file no-explicit-any
-
 export interface SafeOutputTransformEvaluationInput {
-    readonly resolverRoot: Record<string, any>;
-    readonly result?: any;
+    readonly resolverRoot: Record<string, unknown>;
+    readonly result?: unknown;
     readonly operatorPath?: string;
     readonly createUuid: () => string;
     readonly readTimestamp: () => number;
@@ -10,9 +8,11 @@ export interface SafeOutputTransformEvaluationInput {
 
 export interface SafeOutputTransformDetails {
     readonly operator: string;
-    readonly path: any;
-    readonly [key: string]: any;
+    readonly path: unknown;
+    readonly [key: string]: unknown;
 }
+
+type PathResolution = Readonly<{ found: false; }> | Readonly<{ found: true; value: unknown; }>;
 
 export class SafeOutputTransformError extends Error {
     readonly details: SafeOutputTransformDetails;
@@ -25,9 +25,9 @@ export class SafeOutputTransformError extends Error {
 }
 
 export function resolveSafeOutputTransformPath(
-    path: any,
+    path: unknown,
     input: SafeOutputTransformEvaluationInput
-): any {
+): unknown {
     if (typeof path !== 'string' || path.trim().length <= 0) {
         return rejectSafeOutputTransform('Transform path must be a non-empty string.', {
             operator: 'path',
@@ -35,7 +35,8 @@ export function resolveSafeOutputTransformPath(
         });
     }
 
-    const resultRoots = [input.result, input.result?.actual, input.result?.actual?.body];
+    const actual = readProperty(input.result, 'actual');
+    const resultRoots = [input.result, actual, readProperty(actual, 'body')];
     for (const root of [...resultRoots, toTransformResolverRoot(input)]) {
         const resolved = tryResolvePath(path, root);
         if (resolved.found) {
@@ -52,7 +53,7 @@ export function resolveSafeOutputTransformPath(
 export function resolveSafeOutputTransformTemplate(
     value: string,
     input: SafeOutputTransformEvaluationInput
-): any {
+): unknown {
     const root = toTransformResolverRoot(input);
     const exactMatch = value.match(/^\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}$/u);
     if (exactMatch) {
@@ -65,7 +66,7 @@ export function resolveSafeOutputTransformTemplate(
     );
 }
 
-export function stringifySafeOutputTransformValue(value: any): string {
+export function stringifySafeOutputTransformValue(value: unknown): string {
     if (value === undefined || value === null) {
         return String(value);
     }
@@ -79,46 +80,62 @@ export function rejectSafeOutputTransform(
     throw new SafeOutputTransformError(message, details);
 }
 
-export function isSafeOutputTransformRecord(value: any): value is Record<string, any> {
+export function isSafeOutputTransformRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function toTransformResolverRoot(input: SafeOutputTransformEvaluationInput): any {
+function toTransformResolverRoot(input: SafeOutputTransformEvaluationInput): unknown {
+    const actual = readProperty(input.result, 'actual');
     return {
         ...input.resolverRoot,
         result: input.result,
-        actual: input.result?.actual,
-        body: input.result?.actual?.body
+        actual,
+        body: readProperty(actual, 'body')
     };
 }
 
-function resolvePath(path: string, root: any): any {
-    const resolved = path
-        .split('.')
-        .reduce(
-            (value, segment) => (value === undefined || value === null ? undefined : value[segment]),
-            root
-        );
-    if (resolved === undefined) {
+function resolvePath(path: string, root: unknown): unknown {
+    const resolved = tryResolvePath(path, root);
+    if (!resolved.found) {
         throw new Error(`Cannot resolve placeholder {${path}}`);
     }
-    return resolved;
+    return resolved.value;
 }
 
-function tryResolvePath(path: string, root: any): { found: boolean; value?: any; } {
+function tryResolvePath(path: string, root: unknown): PathResolution {
     const segments = path
         .replaceAll(/\[(\d+)]/g, '.$1')
         .split('.')
         .map((segment) => segment.trim())
         .filter((segment) => segment.length > 0);
-    let value = root;
+    return readPathSegments(segments, root);
+}
 
-    for (const segment of segments) {
-        if (value === undefined || value === null) {
+function readPathSegments(segments: readonly string[], value: unknown): PathResolution {
+    if (segments.length === 0) {
+        return value === undefined ? { found: false } : { found: true, value };
+    }
+    const [segment, ...remaining] = segments;
+    if (segment !== '*') {
+        return readPathSegments(remaining, readProperty(value, segment));
+    }
+    if (!Array.isArray(value)) {
+        return { found: false };
+    }
+    const projected: unknown[] = [];
+    for (const member of value) {
+        const resolved = readPathSegments(remaining, member);
+        if (!resolved.found) {
             return { found: false };
         }
-        value = value[segment];
+        projected.push(resolved.value);
     }
+    return { found: true, value: projected };
+}
 
-    return value === undefined ? { found: false } : { found: true, value };
+function readProperty(value: unknown, key: string): unknown {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    return Reflect.get(Object(value), key);
 }
