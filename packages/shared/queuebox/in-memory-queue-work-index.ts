@@ -20,6 +20,14 @@ export namespace InMemoryQueueWorkIndex {
 export class InMemoryQueueWorkIndex {
     private readonly rootsByTypeAndStatus = new Map<string, InMemoryQueueWorkIndex.Node>();
 
+    clone(): InMemoryQueueWorkIndex {
+        const copy = new InMemoryQueueWorkIndex();
+        for (const [scope, root] of this.rootsByTypeAndStatus) {
+            copy.rootsByTypeAndStatus.set(scope, root);
+        }
+        return copy;
+    }
+
     read(request: ResourceInboxWorkPage.Request): InMemoryQueueWorkIndex.Page {
         const validated = validateResourceInboxWorkPageRequest(request);
         if (validated.left) {

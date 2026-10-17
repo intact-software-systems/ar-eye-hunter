@@ -1,5 +1,6 @@
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import type { Unsubscribe } from '../../cache/RepositoryInterfaces.ts';
+import { SynchronousNotifications } from '../../cache/synchronous-notifications.ts';
 import type { InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 
 export namespace ALCheckpointDirtySet {
@@ -39,7 +40,9 @@ export class ALCheckpointDirtySet {
     private readonly nowMs: () => number;
     private readonly admissionRows = new LatestRepository<string, ALCheckpointDirtyRow>();
     private readonly queueRows = new LatestRepository<string, ALCheckpointDirtyRow>();
-    private readonly markedListeners = new Set<() => void>();
+    private readonly marks = new SynchronousNotifications<void>((error) =>
+        console.error('Checkpoint mark observer failed', error)
+    );
     private readonly subscriptions: readonly Unsubscribe[];
     private revision = 0;
     private loading = false;
@@ -55,8 +58,7 @@ export class ALCheckpointDirtySet {
 
     /** Called after every mark, in the turn of the change that made it. */
     onMarkedDo(listener: () => void): Unsubscribe {
-        this.markedListeners.add(listener);
-        return { unsubscribe: () => this.markedListeners.delete(listener) };
+        return this.marks.subscribe(listener);
     }
 
     isClean(): boolean {
@@ -129,9 +131,7 @@ export class ALCheckpointDirtySet {
         this.revision += 1;
         const dirtiedAtMs = rows.peek(key)?.dirtiedAtMs ?? this.nowMs();
         rows.set(key, { revision: this.revision, dirtiedAtMs });
-        for (const listener of this.markedListeners) {
-            listener();
-        }
+        this.marks.capture([undefined]).publish();
     }
 }
 

@@ -1,4 +1,5 @@
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
+import { SynchronousNotifications } from '../cache/synchronous-notifications.ts';
 import { requireLivePersistenceWrite } from '../persistence/persistence-write-deadline.ts';
 import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
 import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
@@ -53,6 +54,14 @@ export interface ALAdmissionWriteContext extends ALAdmissionReadContext {
     remove(key: string): Promise<void>;
 }
 
+interface ALAdmissionMemoryChanges {
+    readonly setRows: readonly ALAdmissionStoredValue[];
+    readonly removeKeys: readonly string[];
+    readonly unmarkRows: readonly ALAdmissionStoredValue[];
+    readonly terminalRows: readonly ALAdmissionStoredValue[];
+    readonly changedKeys: readonly string[];
+}
+
 export function createInMemoryALAdmissionState(workQueue = new InMemoryQueueBox()): ALAdmissionMemoryState {
     return {
         data: new Map<string, ALAdmissionStoredValue>(),
@@ -66,7 +75,9 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     private readonly state: ALAdmissionMemoryState;
     private readonly nowMs: () => number;
     private readonly terminalVolatileRows: WeakSet<ALAdmissionStoredValue>;
-    private readonly changeListeners = new Set<(key: string) => void>();
+    private readonly changes = new SynchronousNotifications<string>((error) =>
+        console.error('Admission change observer failed', error)
+    );
 
     constructor(
         state: ALAdmissionMemoryState,
@@ -85,8 +96,7 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
 
     /** Names, in the turn it happens, every admission key a write sets or removes or an expiry removes. */
     onChangeDo(listener: (key: string) => void): Unsubscribe {
-        this.changeListeners.add(listener);
-        return { unsubscribe: () => this.changeListeners.delete(listener) };
+        return this.changes.subscribe(listener);
     }
 
     /** The row as held now, expired or not; unlike `read` it removes nothing. */
@@ -111,13 +121,12 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         ) {
             return false;
         }
+        const publication = this.changes.capture(observed.map((row) => row.key));
         for (const row of observed) {
             this.state.data.delete(row.key);
             this.terminalVolatileRows.delete(row);
         }
-        for (const row of observed) {
-            this.notifyChange(row.key);
-        }
+        publication.publish();
         return true;
     }
 
@@ -199,23 +208,21 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
             await previous;
             const pending = new InMemoryAdmissionWorkWriteBuffer(this, this.nowMs, this.workQueue);
             const result = await fn(pending);
-            const mutations = pending.mutations();
+            const computed = computeALAdmissionMemoryChanges(
+                pending.mutations(),
+                this.state.data,
+                pending.terminalVolatileRows()
+            );
             const queueWrites = pending.queueWrites();
+            const publication = this.changes.capture(computed.changedKeys);
             requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
-            if (!this.workQueue.writeIfAllObserved(queueWrites)) {
+            const queuePublication = this.workQueue.writeObservedBatch(queueWrites);
+            if (queuePublication === null) {
                 throw new ALAdmissionBackendConflictError('In-memory AL admission work write conflicted');
             }
-            for (const row of pending.terminalVolatileRows()) {
-                this.terminalVolatileRows.add(row);
-            }
-            for (const [key, stored] of mutations) {
-                if (stored === undefined) {
-                    this.deleteStored(key);
-                }
-                else {
-                    this.setStored(key, stored);
-                }
-            }
+            this.applyMutations(computed);
+            queuePublication.publish();
+            publication.publish();
             return result;
         }
         finally {
@@ -225,25 +232,35 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
         }
     }
 
-    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
-    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
-        for (const row of rows) {
-            if (!this.state.data.has(row.key)) {
-                this.setStored(row.key, row);
-            }
+    private applyMutations(computed: ALAdmissionMemoryChanges): void {
+        for (const row of computed.unmarkRows) {
+            this.terminalVolatileRows.delete(row);
         }
-        for (const entry of entries) {
-            this.workQueue.writeIfAllObserved([{ expected: undefined, entry }]);
+        for (const key of computed.removeKeys) {
+            this.state.data.delete(key);
+        }
+        for (const row of computed.setRows) {
+            this.state.data.set(row.key, row);
+        }
+        for (const row of computed.terminalRows) {
+            this.terminalVolatileRows.add(row);
         }
     }
 
-    private setStored(key: string, stored: ALAdmissionStoredValue): void {
-        const previous = this.state.data.get(key);
-        if (previous !== undefined && previous !== stored) {
-            this.terminalVolatileRows.delete(previous);
+    /** Rows a checkpoint saved: a key the pair already holds keeps its own value. */
+    loadIfAbsent(rows: readonly ALAdmissionStoredValue[], entries: readonly ResourceEntry[]): void {
+        const mutations = new Map<string, ALAdmissionStoredValue>();
+        for (const row of rows) {
+            if (!this.state.data.has(row.key) && !mutations.has(row.key)) {
+                mutations.set(row.key, row);
+            }
         }
-        this.state.data.set(key, stored);
-        this.notifyChange(key);
+        const computed = computeALAdmissionMemoryChanges([...mutations], this.state.data, []);
+        const publication = this.changes.capture(computed.changedKeys);
+        const queuePublication = this.workQueue.loadIfAbsent(entries);
+        this.applyMutations(computed);
+        queuePublication.publish();
+        publication.publish();
     }
 
     private deleteStored(key: string): void {
@@ -257,10 +274,35 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     private notifyChange(key: string): void {
-        for (const listener of this.changeListeners) {
-            listener(key);
+        this.changes.capture([key]).publish();
+    }
+}
+
+function computeALAdmissionMemoryChanges(
+    mutations: readonly (readonly [key: string, stored: ALAdmissionStoredValue | undefined])[],
+    existing: ReadonlyMap<string, ALAdmissionStoredValue>,
+    terminalRows: readonly ALAdmissionStoredValue[]
+): ALAdmissionMemoryChanges {
+    const setRows: ALAdmissionStoredValue[] = [];
+    const removeKeys: string[] = [];
+    const unmarkRows: ALAdmissionStoredValue[] = [];
+    const changedKeys: string[] = [];
+    for (const [key, stored] of mutations) {
+        const previous = existing.get(key);
+        if (previous !== undefined && previous !== stored) {
+            unmarkRows.push(previous);
+        }
+        if (stored === undefined) {
+            removeKeys.push(key);
+        }
+        else {
+            setRows.push(stored);
+        }
+        if (stored !== undefined || previous !== undefined) {
+            changedKeys.push(key);
         }
     }
+    return { setRows, removeKeys, unmarkRows, terminalRows, changedKeys };
 }
 
 export function decodeALAdmissionStoredValue(value: unknown, key: string): ALAdmissionStoredValue {

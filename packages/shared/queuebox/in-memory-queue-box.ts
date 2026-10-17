@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
+import { SynchronousNotifications } from '../cache/synchronous-notifications.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -78,8 +79,10 @@ export namespace InMemoryQueueBox {
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
     private readonly now: () => Temporal.Instant;
-    private readonly workIndex = new InMemoryQueueWorkIndex();
-    private readonly changeListeners = new Set<(key: ResourceEntryKeyString) => void>();
+    private workIndex = new InMemoryQueueWorkIndex();
+    private readonly changes = new SynchronousNotifications<ResourceEntryKeyString>((error) =>
+        console.error('Queue change observer failed', error)
+    );
     private completedRetention: QueueBoxCompletedRetention = { typeIds: [], topicIds: [] };
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
@@ -113,8 +116,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     /** Names, in the turn it happens, every key a write, reservation, release, expiry or cleanup changes. */
     onChangeDo(listener: (key: ResourceEntryKeyString) => void): Unsubscribe {
-        this.changeListeners.add(listener);
-        return { unsubscribe: () => this.changeListeners.delete(listener) };
+        return this.changes.subscribe(listener);
     }
 
     /** The entry as held now, expired or not; unlike `getItem` it removes nothing. */
@@ -145,9 +147,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     private notifyChange(key: ResourceEntryKeyString): void {
-        for (const listener of this.changeListeners) {
-            listener(key);
-        }
+        this.changes.capture([key]).publish();
     }
 
     async cleanupAsync(): Promise<boolean> {
@@ -210,8 +210,20 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return toResourceEntrySnapshot(this.data.get(toKeyAsString(resourceEntry.key))!);
     }
 
-    /** The caller can commit its other in-memory state immediately after this synchronous batch. */
+    /** Standalone guarded writes publish synchronously after the complete queue/index batch. */
     writeIfAllObserved(writes: readonly InMemoryQueueBox.ComputedOperation[]): boolean {
+        const publication = this.writeObservedBatch(writes);
+        publication?.publish();
+        return publication !== null;
+    }
+
+    /**
+     * Validates and applies a complete queue/index batch without invoking observers. A joint memory
+     * owner must finish its already-computed state and then publish this receipt in the same turn.
+     */
+    writeObservedBatch(
+        writes: readonly InMemoryQueueBox.ComputedOperation[]
+    ): SynchronousNotifications.Publication | null {
         const observedAt = this.now();
         const observations = writes.map((write) => {
             const key = toKeyAsString('entry' in write ? write.entry.key : write.key);
@@ -224,17 +236,41 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         });
         const validated = validateInMemoryQueueWrites(observations, observedAt);
         if (validated.left === 'conflict') {
-            return false;
+            return null;
         }
         if (validated.left) {
             throw validated.left;
         }
-        for (const write of validated.right!) {
-            if (write.entry !== undefined) {
-                this.storeEntry(write.key, write.entry);
+        return this.applyEntries(
+            validated.right!.flatMap((write) => write.entry === undefined ? [] : [[write.key, write.entry] as const])
+        );
+    }
+
+    /** Checkpoint restoration keeps each live queue value and defers publication to its joint owner. */
+    loadIfAbsent(entries: readonly ResourceEntry[]): SynchronousNotifications.Publication {
+        const observedAt = this.now();
+        const replacements = new Map<string, ResourceEntry>();
+        for (const entry of entries) {
+            const key = toKeyAsString(entry.key);
+            const existing = this.data.get(key);
+            if (!replacements.has(key) && (existing === undefined || isExpiredResourceEntry(existing, observedAt))) {
+                replacements.set(key, toResourceEntrySnapshot(entry));
             }
         }
-        return true;
+        return this.applyEntries([...replacements]);
+    }
+
+    private applyEntries(entries: readonly (readonly [string, ResourceEntry])[]): SynchronousNotifications.Publication {
+        const workIndex = this.workIndex.clone();
+        for (const [key, entry] of entries) {
+            workIndex.replace(key, this.data.get(key), entry);
+        }
+        const publication = this.changes.capture(entries.map(([key]) => key));
+        for (const [key, entry] of entries) {
+            this.data.set(key, entry);
+        }
+        this.workIndex = workIndex;
+        return publication;
     }
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
@@ -244,6 +280,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             disposition: release.disposition
         }));
         const released = new Map<Key, ResourceEntry>();
+        const replacements: (readonly [string, ResourceEntry])[] = [];
 
         for (const { current, disposition } of reserved) {
             if (current.status !== EntityStatus.RESERVED) {
@@ -252,11 +289,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
             const updated = computeResourceInboxRelease(current, disposition, releasedAt);
-            this.storeEntry(toKeyAsString(current.key), updated);
+            replacements.push([toKeyAsString(current.key), updated]);
             const snapshot = toResourceEntrySnapshot(updated);
             released.set(snapshot.key, snapshot);
         }
 
+        this.applyEntries(replacements).publish();
         return released;
     }
 
