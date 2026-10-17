@@ -42,7 +42,7 @@ export class RtcNativeChannelAttachments {
             return;
         }
         const identity = toJsonObject(native.identity);
-        const pcId = readObservedString(identity?.peerConnectionId);
+        const pcId = resolveObservedString(identity?.peerConnectionId);
         if (pcId === undefined) {
             return;
         }
@@ -51,11 +51,11 @@ export class RtcNativeChannelAttachments {
             peer = { retired: false, channels: new Map() };
             this.#peers.set(pcId, peer);
         }
-        const channelId = readObservedString(identity?.channelId);
+        const channelId = resolveObservedString(identity?.channelId);
         const retiring = event.kind === 'native-lifetime' && event.action === 'retiring';
         if (
             service?.stage === 'terminating' ||
-            readObservedString(toJsonObject(native.state)?.connectionState) === 'closed' ||
+            resolveObservedString(toJsonObject(native.state)?.connectionState) === 'closed' ||
             (retiring && channelId === undefined)
         ) {
             peer.retired = true;
@@ -79,7 +79,7 @@ export class RtcNativeChannelAttachments {
         native: ApiJsonObject,
         event: ApiJsonObject
     ): void {
-        const channelId = readObservedString(toJsonObject(native.identity)?.channelId);
+        const channelId = resolveObservedString(toJsonObject(native.identity)?.channelId);
         if (channelId === undefined) {
             return;
         }
@@ -88,7 +88,7 @@ export class RtcNativeChannelAttachments {
             channel = { retired: false, sequence: -1, event: undefined };
             peer.channels.set(channelId, channel);
         }
-        const state = readObservedString(toJsonObject(native.state)?.channelState);
+        const state = resolveObservedString(toJsonObject(native.state)?.channelState);
         if (
             (event.kind === 'native-lifetime' && event.action === 'retiring') || state === 'closing' ||
             state === 'closed'
@@ -111,9 +111,9 @@ export class RtcNativeChannelAttachments {
         for (const value of service.channels) {
             const compact = toJsonObject(value);
             const identity = toJsonObject(compact?.identity);
-            const pcId = readObservedString(identity?.peerConnectionId);
-            const channelId = readObservedString(identity?.channelId);
-            const state = readObservedString(compact?.channelState);
+            const pcId = resolveObservedString(identity?.peerConnectionId);
+            const channelId = resolveObservedString(identity?.channelId);
+            const state = resolveObservedString(compact?.channelState);
             if (pcId === undefined || channelId === undefined || (state !== 'closing' && state !== 'closed')) {
                 continue;
             }
@@ -142,7 +142,7 @@ export class RtcNativeChannelAttachments {
     }
 }
 
-function readObservedString(value: ApiJsonValue | undefined): string | undefined {
+function resolveObservedString(value: ApiJsonValue | undefined): string | undefined {
     const readout = toJsonObject(value);
     return readout?.status === 'observed' && typeof readout.value === 'string' ? readout.value : undefined;
 }
