@@ -10,6 +10,7 @@ const canonicalEitherPath = path.join(repoRoot, 'packages/shared/resilience/Eith
 const finiteIceFixturePolicyPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts');
 const browserRecordingContractPath = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts');
 const eventHistoryOwnerPath = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/runtime/event-history.ts');
+const resultReleaseArtifactDecoderPath = path.join(repoRoot, 'packages/shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts');
 const productionFixturePaths = ['full-stack-rtc-production-proof.ts', 'full-stack-rtc-build-tool-provenance.ts'].map((name) =>
     path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/rtc-production', name)
 );
@@ -46,7 +47,7 @@ function readRtcPerformanceScriptSources(): string[] {
         .filter((file) => /(^|\/)(rtc|webrtc)/.test(path.relative(repoRoot, file)));
 }
 
-function parseImportSpecifiers(source: string): string[] {
+function toImportSpecifiers(source: string): string[] {
     const fromOrDynamicImports = [...source.matchAll(/(?:from\s+|import\s*\()(['"])([^'"]+)\1/g)];
     const sideEffectImports = [...source.matchAll(/\bimport\s+(['"])([^'"]+)\1/g)];
     return [...fromOrDynamicImports, ...sideEffectImports].map((match) => match[2]);
@@ -69,7 +70,7 @@ function isApprovedImport(file: string, specifier: string): boolean {
     }
     if (
         specifier.startsWith('.') &&
-        [finiteIceFixturePolicyPath, browserRecordingContractPath, eventHistoryOwnerPath, ...productionFixturePaths].includes(
+        [finiteIceFixturePolicyPath, browserRecordingContractPath, eventHistoryOwnerPath, resultReleaseArtifactDecoderPath, ...productionFixturePaths].includes(
             path.resolve(path.dirname(file), specifier)
         )
     ) {
@@ -92,7 +93,7 @@ function isApprovedImport(file: string, specifier: string): boolean {
 }
 
 function readUnapprovedImports(file: string): string[] {
-    return parseImportSpecifiers(fs.readFileSync(file, 'utf8'))
+    return toImportSpecifiers(fs.readFileSync(file, 'utf8'))
         .filter((specifier) => !isApprovedImport(file, specifier))
         .map((specifier) => `${path.relative(repoRoot, file)} -> ${specifier}`);
 }
@@ -117,7 +118,7 @@ function isForbiddenBenchmarkImport(file: string, specifier: string): boolean {
 }
 
 function readBenchmarkPackageUsage(file: string): boolean {
-    return parseImportSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => isForbiddenBenchmarkImport(file, specifier));
+    return toImportSpecifiers(fs.readFileSync(file, 'utf8')).some((specifier) => isForbiddenBenchmarkImport(file, specifier));
 }
 
 describe('shared RTC benchmark package boundaries', () => {
@@ -173,7 +174,7 @@ describe('shared RTC benchmark package boundaries', () => {
         const catalogFile = path.join(packageRoot, 'baseline/catalog/rtc-baseline-workload-catalog.ts');
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts')).toBe(true);
         expect(isApprovedImport(catalogFile, '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts')).toBe(false);
-        expect(parseImportSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
+        expect(toImportSpecifiers(fs.readFileSync(finiteIceFixturePolicyPath, 'utf8'))).toEqual([]);
     });
 
     it('admits the exact portable production proof/provenance owners while keeping other runner imports closed', () => {
@@ -183,7 +184,7 @@ describe('shared RTC benchmark package boundaries', () => {
             const dependencies = fixture.endsWith('/full-stack-rtc-production-proof.ts')
                 ? ['../../../../shared/api/api-json-value.ts', '../../../../shared/resilience/Either.ts']
                 : [];
-            expect(parseImportSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual(dependencies);
+            expect(toImportSpecifiers(fs.readFileSync(fixture, 'utf8'))).toEqual(dependencies);
         }
         expect(isApprovedImport(consumer, '../../../shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts')).toBe(
             false
@@ -195,7 +196,7 @@ describe('shared RTC benchmark package boundaries', () => {
         const consumer = path.join(packageRoot, 'baseline/acceptance/validate-rtc-b06-browser-recording.ts');
         const recording = path.join(repoRoot, 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts');
         expect(isApprovedImport(consumer, path.relative(path.dirname(consumer), recording))).toBe(true);
-        expect(parseImportSpecifiers(fs.readFileSync(recording, 'utf8'))).toEqual([
+        expect(toImportSpecifiers(fs.readFileSync(recording, 'utf8'))).toEqual([
             '../../../shared/api/api-json-value.ts'
         ]);
         for (
@@ -230,6 +231,24 @@ describe('shared RTC benchmark package boundaries', () => {
         }
         expect(isApprovedImport(consumer, '@shared-test/rallar-bb-test/runtime/event-history.ts')).toBe(false);
         expect(isApprovedImport(consumer, '../../../apps/rallar-black-box/event-history.ts')).toBe(false);
+    });
+
+    it('admits only the portable release artifact decoder while keeping protocol, runtime, runner and app composition closed', () => {
+        const consumer = path.join(packageRoot, 'baseline/acceptance/to-rtc-b06-journal-runtime-row.ts');
+        expect(isApprovedImport(consumer, '../../../shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts')).toBe(true);
+        for (
+            const forbidden of [
+                '../../../shared-test/rallar-bb-test/result-release/result-release-protocol.ts',
+                '../../../shared-test/rallar-bb-test/result-release/release-control-results.ts',
+                '../../../shared-test/rallar-bb-test/runtime/execute-runtime-command.ts',
+                '../../../shared-test/rallar-bb-test/schema/json-schema-validation.ts',
+                '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts',
+                '../../../../apps/rallar-black-box-control-server/src/control-artifacts.ts',
+                '@shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts'
+            ]
+        ) {
+            expect(isApprovedImport(consumer, forbidden)).toBe(false);
+        }
     });
 
     it('scans performance script roots that exist', () => {
