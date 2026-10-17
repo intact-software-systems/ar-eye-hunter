@@ -225,25 +225,27 @@ describe('RTC baseline workload catalog', () => {
         expect(fullStack.evidenceClass).toBe('local-full-stack');
     });
 
-    it('fingerprints evidence admission and the portable recording contract once per B06 case', () => {
+    it('fingerprints evidence admission, runtime ownership, and the portable recording contract once per B06 case', () => {
         const fullStack = RTC_BASELINE_WORKLOAD_CATALOG.find((workload) => workload.workloadId === 'RTC-B06')!;
         const evidenceOwner = 'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts';
         const recordingOwner = 'packages/shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
         const releaseOwner = 'packages/shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts';
+        const runtimeOwner = 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
         expect(
             fullStack.cases.map((entry) => [
                 entry.inputKey,
                 entry.sourcePaths.filter((path) => path === evidenceOwner).length,
                 entry.sourcePaths.filter((path) => path === recordingOwner).length,
-                entry.sourcePaths.filter((path) => path === releaseOwner).length
+                entry.sourcePaths.filter((path) => path === releaseOwner).length,
+                entry.sourcePaths.filter((path) => path === runtimeOwner).length
             ])
         ).toEqual([
-            ['e3-memory-default', 1, 1, 1],
-            ['e3-memory-all-scenarios', 1, 1, 1],
-            ['e3-memory-retention-100', 1, 1, 1],
-            ['e4-pg-default', 1, 1, 1],
-            ['e4-pg-all-scenarios', 1, 1, 1],
-            ['e4-pg-retention-100', 1, 1, 1]
+            ['e3-memory-default', 1, 1, 1, 1],
+            ['e3-memory-all-scenarios', 1, 1, 1, 1],
+            ['e3-memory-retention-100', 1, 1, 1, 1],
+            ['e4-pg-default', 1, 1, 1, 1],
+            ['e4-pg-all-scenarios', 1, 1, 1, 1],
+            ['e4-pg-retention-100', 1, 1, 1, 1]
         ]);
     });
 

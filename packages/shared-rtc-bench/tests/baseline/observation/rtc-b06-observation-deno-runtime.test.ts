@@ -611,6 +611,8 @@ describe('RTC-B06 observation Deno runtime', () => {
                 'apps/rallar-black-box/rtc-production-artifacts.ts',
                 'tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts',
                 'packages/shared-test/black-box-runner/artifacts/rtc-native-acquisition.ts',
+                'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
+                'packages/shared-test/rallar-bb-test/runtime/release-runtime-results.ts',
                 'packages/shared-test/black-box-runner/artifacts/read-recorder-jsonl-rows.ts',
                 'tests/playwright/rallar-black-box/live-rtc-recorder-reader.ts',
                 'tests/playwright/rallar-black-box/live-rtc-recorder-rows.ts',
@@ -625,6 +627,9 @@ describe('RTC-B06 observation Deno runtime', () => {
                 createHash('sha256').update(await readFile(path)).digest('hex')
             );
         }
+        expect(
+            result.value.sourceHashes.some((entry) => entry.path === 'packages/shared-test/rallar-bb-test/runtime/in-memory-rallar-black-box-test-runtime.ts')
+        ).toBe(false);
         expect(JSON.parse(JSON.stringify(result.value)).resolvedConfiguration).toEqual(result.value.resolvedConfiguration);
     });
 

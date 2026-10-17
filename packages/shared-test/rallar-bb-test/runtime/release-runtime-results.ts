@@ -1,3 +1,4 @@
+import type { ControlClientIdentity } from '../control-protocol.ts';
 import { canonicalControlRetentionJson } from '../control-retention-canonical.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -8,6 +9,7 @@ import type {
 import {
     computeResultCaptureReceipt,
     type ResultCaptureReceipt,
+    type ResultReleaseOutcome,
     type ResultReleaseRequest
 } from '../result-release/result-release-protocol.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
@@ -16,6 +18,43 @@ export interface RuntimeResultsReleased {
     readonly state: RallarBlackBoxTestState;
     readonly receipts: readonly ResultCaptureReceipt[];
     readonly ownedResultEvents: readonly RallarBlackBoxTestEvent[];
+}
+
+export interface RuntimeResultReleaseAdmission {
+    readonly controlIdentity: ControlClientIdentity | undefined;
+    readonly runtimeId: string;
+    readonly generation: number;
+    readonly assignment: number;
+    readonly activeExecutionCount: number;
+    readonly recipeLeaseCount: number;
+}
+
+export function resolveRuntimeResultReleaseRefusal(
+    request: ResultReleaseRequest,
+    admission: RuntimeResultReleaseAdmission
+): ResultReleaseOutcome | undefined {
+    if (
+        request.runId !== admission.controlIdentity?.runId || request.agentId !== admission.controlIdentity?.agentId ||
+        request.receipts.some((receipt) =>
+            receipt.capture.runtimeId !== admission.runtimeId ||
+            receipt.capture.generation !== admission.generation ||
+            receipt.capture.assignment !== admission.assignment
+        )
+    ) {
+        return toResultReleaseOutcome(
+            request.requestId,
+            'rejected',
+            'Result capture belongs to another runtime assignment or generation.'
+        );
+    }
+    if (admission.activeExecutionCount > 0 || admission.recipeLeaseCount > 0) {
+        return toResultReleaseOutcome(
+            request.requestId,
+            'deferred',
+            'Active executions or recipe leases still own runtime references.'
+        );
+    }
+    return undefined;
 }
 
 export async function readVerifiedRuntimeRelease(
@@ -156,4 +195,12 @@ export function toReleasedRuntimeReplay(
             message: 'The full result was released after durable capture and is unavailable.'
         }
     };
+}
+
+export function toResultReleaseOutcome(
+    requestId: string,
+    status: ResultReleaseOutcome['status'],
+    reason: string
+): ResultReleaseOutcome {
+    return { requestId, status, reason, releasedResults: 0 };
 }

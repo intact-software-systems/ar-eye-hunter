@@ -27,7 +27,7 @@ import {
 } from '@shared/queuebox/queue-box-types.ts';
 import {
     captureResourceEntryObservations,
-    validateResourceEntryObservation
+    resolveResourceEntryObservation
 } from '@shared/queuebox/resource-entry-observations.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -163,7 +163,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     if (reservedEntries.size >= options.maxToReserve) {
                         break;
                     }
-                    if (validateResourceEntryObservation(entry, observations).left) {
+                    if (resolveResourceEntryObservation(entry, observations).left) {
                         continue;
                     }
                     const reserved = await txRepo.reservations.startProcessingEntity(entry, options.maxAttempts);
@@ -211,7 +211,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     if (reservedEntries.size >= options.maxToReserve) {
                         break;
                     }
-                    if (validateResourceEntryObservation(entry, observations).left) {
+                    if (resolveResourceEntryObservation(entry, observations).left) {
                         continue;
                     }
                     const reserved = await txRepo.reservations.startProcessingEntity(entry, options.maxAttempts);

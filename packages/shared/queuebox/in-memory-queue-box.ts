@@ -4,7 +4,6 @@ import { EnqueuedType } from '../api/api-config.ts';
 import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
 import { SynchronousNotifications } from '../cache/synchronous-notifications.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
-import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import {
     computeResourceInboxRelease,
@@ -34,8 +33,9 @@ import {
 import {
     captureResourceEntryObservations,
     hasSameResourceEntryValue,
-    toResourceEntrySnapshot,
-    validateResourceEntryObservation
+    resolveResourceEntryObservation,
+    resolveResourceEntryObservedWrites,
+    toResourceEntrySnapshot
 } from './resource-entry-observations.ts';
 import { ResourceInboxClaimedContexts } from './resource-inbox/resource-inbox-claimed-contexts.ts';
 import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
@@ -232,7 +232,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 existing: this.data.get(key)
             };
         });
-        const validated = validateInMemoryQueueWrites(observations, observedAt);
+        const validated = resolveResourceEntryObservedWrites(observations, observedAt);
         if (validated.left === 'conflict') {
             return null;
         }
@@ -355,7 +355,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
             const key = toKeyAsString(candidate.key);
             const entry = this.data.get(key);
-            if (entry === undefined || validateResourceEntryObservation(entry, observations).left) {
+            if (entry === undefined || resolveResourceEntryObservation(entry, observations).left) {
                 continue;
             }
 
@@ -391,7 +391,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
             const key = toKeyAsString(candidate.key);
             const entry = this.data.get(key);
-            if (entry === undefined || validateResourceEntryObservation(entry, observations).left) {
+            if (entry === undefined || resolveResourceEntryObservation(entry, observations).left) {
                 continue;
             }
 
@@ -655,41 +655,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         return removed;
     }
-}
-
-interface InMemoryQueueWrite {
-    readonly key: ResourceEntryKeyString;
-    readonly expected: ResourceEntry | undefined;
-    readonly entry: ResourceEntry | undefined;
-    readonly existing: ResourceEntry | undefined;
-}
-
-function validateInMemoryQueueWrites(
-    writes: readonly InMemoryQueueWrite[],
-    observedAt: Temporal.Instant
-): Either<Error | 'conflict', readonly InMemoryQueueWrite[]> {
-    const keys = new Set<string>();
-    const issues: string[] = [];
-    for (const write of writes) {
-        if (keys.has(write.key)) {
-            issues.push('Queue writes contain a duplicate key');
-        }
-        if (write.expected !== undefined && toKeyAsString(write.expected.key) !== write.key) {
-            issues.push('Queue replacement key differs from its observation');
-        }
-        keys.add(write.key);
-    }
-    if (issues.length > 0) {
-        return Either.ofLeft(new TypeError(issues.join('; ')));
-    }
-    return writes.some(({ expected, existing }) =>
-            expected === undefined
-                ? existing !== undefined && !isExpiredResourceEntry(existing, observedAt)
-                : existing === undefined || isExpiredResourceEntry(existing, observedAt) ||
-                    !hasSameResourceEntryValue(existing, expected)
-        )
-        ? Either.ofLeft('conflict')
-        : Either.ofRight(writes);
 }
 
 function computeReservedResourceEntry(entry: ResourceEntry, now: Temporal.Instant): ResourceEntry {

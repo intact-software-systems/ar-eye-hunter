@@ -390,7 +390,7 @@ const fullStackSourcePaths = [
     'packages/shared-test/rallar-bb-test/redaction.ts',
     'packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts',
     'packages/shared-test/rallar-bb-test/distributed-artifact-evidence/compute-canonical-digest.ts',
-    'packages/shared-test/rallar-bb-test/runtime/in-memory-rallar-black-box-test-runtime.ts',
+    'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
     'packages/shared-test/rallar-bb-test/control-client.ts',
     'apps/rallar-black-box-control-server/src/control-artifact-storage.ts',
     'apps/rallar-black-box-control-server/src/control-agent-sockets.ts',

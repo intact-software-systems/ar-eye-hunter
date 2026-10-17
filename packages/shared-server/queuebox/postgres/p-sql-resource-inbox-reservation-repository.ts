@@ -7,7 +7,7 @@ import {
     type ResourceInboxReservationInput,
     type ResourceInboxWorkPage
 } from '@shared/queuebox/queue-box-types.ts';
-import { validateResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
+import { resolveResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
 import {
     EntityStatus,
     type Key,
@@ -38,6 +38,15 @@ export interface StartProcessingEntitySkipped {
     readonly key: Key;
 }
 
+/** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
+interface ClaimedResourceInboxRow extends ResourceInboxRow {
+    readonly selected_status: string;
+    readonly selected_attempts: bigint | null;
+    readonly selected_start_ts: string | null;
+    readonly selected_end_ts: string | null;
+    readonly selected_next_ts: string | null;
+}
+
 export namespace PSqlResourceInboxReservationRepository {
     export interface ReservationSelection {
         readonly typeIds: ReadonlySet<string>;
@@ -64,15 +73,6 @@ export namespace PSqlResourceInboxReservationRepository {
     }
 }
 
-/** The row after the claim plus the lifecycle it was selected with, which must have been valid to claim. */
-interface ClaimedResourceInboxRow extends ResourceInboxRow {
-    readonly selected_status: string;
-    readonly selected_attempts: bigint | null;
-    readonly selected_start_ts: string | null;
-    readonly selected_end_ts: string | null;
-    readonly selected_next_ts: string | null;
-}
-
 export class PSqlResourceInboxReservationRepository {
     private readonly sql: PSqlSql;
     private readonly now: () => Date;
@@ -84,11 +84,11 @@ export class PSqlResourceInboxReservationRepository {
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
         const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
-        const validated = validateResourceInboxWorkPageRequest(request);
+        const validated = resolveResourceInboxWorkPageRequest(request);
         if (validated.left) {
             throw validated.left;
         }
-        const validatedPosition = validateWorkPosition(request.cursor?.position ?? null);
+        const validatedPosition = resolveResourceInboxWorkPosition(request.cursor?.position ?? null);
         if (validatedPosition.left) {
             throw validatedPosition.left;
         }
@@ -371,7 +371,7 @@ function compareRowIds(left: bigint, right: bigint): number {
     return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
-function validateWorkPosition(
+function resolveResourceInboxWorkPosition(
     position: string | null
 ): Either<TypeError, PSqlResourceInboxReservationRepository.WorkPosition | null> {
     if (position === null) {

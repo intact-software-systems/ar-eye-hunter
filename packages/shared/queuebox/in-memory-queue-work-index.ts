@@ -1,5 +1,5 @@
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
-import { validateResourceInboxWorkPageRequest } from './resource-entry-observations.ts';
+import { resolveResourceInboxWorkPageRequest } from './resource-entry-observations.ts';
 import type { ResourceEntry } from './ResourceEntry.ts';
 
 export namespace InMemoryQueueWorkIndex {
@@ -29,7 +29,7 @@ export class InMemoryQueueWorkIndex {
     }
 
     read(request: ResourceInboxWorkPage.Request): InMemoryQueueWorkIndex.Page {
-        const validated = validateResourceInboxWorkPageRequest(request);
+        const validated = resolveResourceInboxWorkPageRequest(request);
         if (validated.left) {
             throw validated.left;
         }
