@@ -5,7 +5,7 @@ import {
     isALFreezeOfMessage,
     resolveALFrozenMulticastAudience
 } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, toALSequenceMintTrackKey } from '../../al-contracts/al-runtime.ts';
 import { fnv1a64 } from '../../queuebox/AppQueueIdentity.ts';
@@ -161,7 +161,7 @@ export function decodeALOutboundCanonicalMessage(
             throw new TypeError('Live outbound canonical message or identity fact is missing');
         }
         const identity = decodeALOutboundIdentityFact(JSON.parse(identityEntry.resource)).reference;
-        const message = decodePersistedALMessage(entry.resource);
+        const message = decodePersistedALMessageRow(entry);
         if (
             !isKeysEqual(identityEntry.key, toALOutboundIdentityKey(reference.key)) ||
             identityEntry.typeId !== 'AL_OUTBOUND_IDENTITY' || !jsonEquals(identity, reference) ||
@@ -194,7 +194,7 @@ export function isALOutboundCanonicalReplacement(
     if (expected === undefined || expected.resource === entry.resource) {
         return false;
     }
-    const candidate = decodePersistedALMessage(entry.resource);
+    const candidate = decodePersistedALMessageRow(entry);
     const freezes = resolveALFrozenMulticastAudience(candidate.targets) !== undefined;
     const mints = activatesPendingRow && expected.status === EntityStatus.COMPLETED &&
         candidate.ordering?.seq !== undefined;
@@ -208,7 +208,7 @@ export function isALOutboundCanonicalReplacement(
 
 function decodeALOutboundRetainedMessage(retained: ResourceEntry): ALMessage {
     try {
-        return decodePersistedALMessage(retained.resource);
+        return decodePersistedALMessageRow(retained);
     }
     catch (cause) {
         throw new ALAdmissionCorruptionError(JSON.stringify(retained.key), toError(cause));

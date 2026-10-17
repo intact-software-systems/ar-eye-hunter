@@ -46,12 +46,6 @@ const routingFixtures = [
         'client-session'
     ],
     [
-        { kind: 'consume-ws-ticket', ticketDigest: 'ws-digest', expectedSessionId: 'session-1' },
-        AppInboxType.AUTH_WS_TICKET_CONSUME,
-        'credential=ws-digest',
-        'ws-digest'
-    ],
-    [
         {
             kind: 'issue-agent-tickets',
             authority: session,

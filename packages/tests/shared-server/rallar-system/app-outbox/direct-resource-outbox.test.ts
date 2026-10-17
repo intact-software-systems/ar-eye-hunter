@@ -37,10 +37,11 @@ import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/ral
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type {
-    AuditStamp,
-    GroupPresenceSession,
-    GroupSnapshot
+import {
+    toCanonicalGroupRef,
+    type AuditStamp,
+    type GroupPresenceSession,
+    type GroupSnapshot
 } from '@shared/api/group-types.ts';
 import {
     EnqueuedType,
@@ -393,7 +394,7 @@ describe('direct resource outbox writes', () => {
             data: {
                 kind: 'group-revision',
                 sourceGroupStateCausalRevision: groupSnapshot.causalRevision,
-                groupSnapshot,
+                groupRef: toCanonicalGroupRef(groupSnapshot.group),
                 requestedAtEpochMs: CREATED_AT_EPOCH_MS
             }
         });
@@ -703,8 +704,9 @@ function createCoalescedTopologyWork(
         requestedAtEpochMs,
         expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
         timing: {
-            window: { debounceMs: 0, maxWaitMs: null },
-            replanNotBeforeEpochMs: null
+            window: { debounceMs: 0, maxWaitMs: 0 },
+            replanNotBeforeEpochMs: null,
+            expectedMembersArrived: false
         },
         senderId: 'server-1',
         origin: 'automatic',
@@ -783,6 +785,7 @@ function createGroupPresenceSession(): GroupPresenceSession {
         principalId: 'alice',
         sessionId: 'session-alice',
         generationId: 'generation-alice',
+        connectionGenerationId: 'ws-generation-alice',
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

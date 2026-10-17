@@ -83,14 +83,18 @@ describe('Hetzner SPA public env wiring', () => {
             'utf8'
         );
 
-        expect(deployScript).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+        expect(deployScript).toContain('\nRALLAR_API_CONFIGURATION_PROFILE=prod\n');
+        expect(deployScript).toContain('\nDATABASE_URL=${RALLAR_API_DATABASE_URL}\n');
+        // The prod profile owns Metered ICE; the controller keeps local ICE unless the Metered secret file overrides it.
+        expect(deployScript).toContain('\nRALLAR_ICE_MODE=local\n');
         expect(deployScript).toContain('chmod 0600 /etc/rallar/api-v1.env');
         expect(rolloutScript).toContain('normalize_api_environment_allowlist');
         expect(rolloutScript).toContain(
-            'printf \'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory\\n\''
+            'printf \'RALLAR_API_CONFIGURATION_PROFILE=prod\\nRALLAR_ICE_MODE=local\\n\''
         );
         expect(rolloutScript).toContain('install -m 0600 -o root -g root');
-        expect(statusScript).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+        expect(statusScript).toContain('RALLAR_API_CONFIGURATION_PROFILE');
+        expect(`${deployScript}${rolloutScript}${statusScript}`).not.toContain('prod-in-memory');
 
         for (
             const removedSettingName of [
@@ -100,7 +104,6 @@ describe('Hetzner SPA public env wiring', () => {
                 'RALLAR_PGLITE_DATA_DIR',
                 'RALLAR_PGLITE_SCHEMA_INIT',
                 'RALLAR_DB_PUBSUB',
-                'RALLAR_ICE_MODE',
                 'AUTH_REGISTRATION_MODE',
                 'AUTH_STATIC_CLIENTS_MODE'
             ]
@@ -115,13 +118,17 @@ describe('Hetzner SPA public env wiring', () => {
         const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
         const authSecret = 'auth-secret-that-must-not-be-logged';
+        const databaseUrl = `postgres://rallar:${'d'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
         await writeFile(
             apiEnvironmentFile,
             [
                 'ENVIRONMENT=production',
                 'RALLAR_SQL_BACKEND=pglite-memory',
+                'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+                'RALLAR_ICE_MODE=metered',
                 'UNKNOWN_SETTING=removed',
                 `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
+                `DATABASE_URL=${databaseUrl}`,
                 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=32',
                 ''
             ].join('\n')
@@ -144,13 +151,17 @@ describe('Hetzner SPA public env wiring', () => {
 
         expect(normalized).toBe([
             `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
+            `DATABASE_URL=${databaseUrl}`,
             'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=32',
-            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+            'RALLAR_API_CONFIGURATION_PROFILE=prod',
+            'RALLAR_ICE_MODE=local',
             ''
         ].join('\n'));
         expect((await stat(apiEnvironmentFile)).mode & 0o777).toBe(0o600);
-        expect(result.stdout).not.toContain(authSecret);
-        expect(result.stderr).not.toContain(authSecret);
+        for (const secret of [authSecret, databaseUrl]) {
+            expect(result.stdout).not.toContain(secret);
+            expect(result.stderr).not.toContain(secret);
+        }
     });
 
     it('admits the largest co-located agent cohort through the controller per-IP auth limits', async () => {
@@ -186,7 +197,8 @@ describe('Hetzner SPA public env wiring', () => {
         expect(await readFile(apiEnvironmentFile, 'utf8')).toBe([
             'RALLAR_REGISTRATION_IP_RATE_LIMIT=200',
             'RALLAR_LOGIN_IP_RATE_LIMIT=200',
-            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+            'RALLAR_API_CONFIGURATION_PROFILE=prod',
+            'RALLAR_ICE_MODE=local',
             ''
         ].join('\n'));
     });
@@ -199,7 +211,6 @@ describe('Hetzner SPA public env wiring', () => {
             'scripts/hosted-rallar/controller/08-rollout-controller.sh'
         );
         const optionalOverrides = {
-            RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS: 'operations-admin',
             RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '7',
             RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '6',
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '24',

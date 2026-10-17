@@ -148,7 +148,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'meshExitWidth',
         'treeExitWidth'
     ]),
-    'topology.recompute': new Set(['formationDebounceMs']),
+    'topology.recompute': new Set(['formationDebounceMs', 'formationMaxWaitMs']),
     'topology.rttRefinement': new Set(['minIntervalMs', 'vivaldiDeltaThresholdMs']),
     'topology.replay': new Set(['mode', 'queueWorkers']),
     'topology.queueResilience': new Set([
@@ -174,7 +174,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
         'reconnectBatchWindowMs',
         'consumerRetentionMs'
     ]),
-    appInbox: new Set(['phaseTiming', 'laneBudgetPolicy', 'completionWait']),
+    appInbox: new Set(['phaseTiming', 'laneBudgetPolicy', 'newLaneConcurrency', 'completionWait']),
     'appInbox.completionWait': new Set([
         'maxElapsedMs',
         'retryIntervalMs',
@@ -220,12 +220,14 @@ const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'topology.planning.meshExitWidth': 'RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH',
     'topology.planning.treeExitWidth': 'RALLAR_RTC_TOPOLOGY_TREE_EXIT_WIDTH',
     'topology.recompute.formationDebounceMs': 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS',
+    'topology.recompute.formationMaxWaitMs': 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_MAX_WAIT_MS',
     'topology.rttRefinement.minIntervalMs': 'RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS',
     'topology.rttRefinement.vivaldiDeltaThresholdMs': 'RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS',
     'topology.replay.mode': 'RALLAR_RTC_TOPOLOGY_REPLAY',
     'topology.replay.queueWorkers': 'RALLAR_API_QUEUE_WORKERS',
     'appInbox.phaseTiming': 'RALLAR_APP_INBOX_PHASE_TIMING',
     'appInbox.laneBudgetPolicy': 'RALLAR_APP_INBOX_LANE_BUDGET_POLICY',
+    'appInbox.newLaneConcurrency': 'RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY',
     'appInbox.completionWait.maxElapsedMs': 'RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS',
     'appInbox.completionWait.retryIntervalMs': 'RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS',
     'appInbox.completionWait.maxRetryIntervalMs': 'RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS',

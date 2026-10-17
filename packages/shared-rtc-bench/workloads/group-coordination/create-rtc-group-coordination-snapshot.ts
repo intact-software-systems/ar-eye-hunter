@@ -102,6 +102,7 @@ function createSessions(input: CreateRtcGroupCoordinationSnapshotInput): readonl
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: input.membershipVersion,
         status: 'active',
         connectedAtEpochMs: input.connectedAtEpochMs,

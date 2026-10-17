@@ -69,7 +69,6 @@ export function validateAuthMutation(
             issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, computed }));
             break;
         case 'issue-ws-ticket':
-        case 'consume-ws-ticket':
             issues.push(...validateAuthTicketMutation({ kind: commandKind, command, read }));
             break;
         case 'issue-agent-tickets':

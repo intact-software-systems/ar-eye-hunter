@@ -37,6 +37,7 @@ import {
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox authentication', () => {
@@ -146,7 +147,7 @@ describe('AppClientInbox authentication', () => {
 
     it('returns the exact terminal left for a malformed completed client result', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const database = createAppInboxTestDatabase(queue, results);
         const service = new AppClientInboxService(
@@ -155,7 +156,8 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -218,11 +220,12 @@ describe('AppClientInbox authentication', () => {
         const expired = { ...live, expiresAtEpochMs: Date.now() - 1 };
         const service = new AppClientInboxService(
             {
-                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -284,11 +287,12 @@ describe('AppClientInbox authentication', () => {
         const authority = issuedSession('alice', 'alice-session');
         const service = new AppClientInboxService(
             {
-                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
+                inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createClientStateServiceFixture()
+                clientStateService: createClientStateServiceFixture(),
+                wsTickets: createEmptyWsTicketReader()
             },
             { serviceId: 'server-12345678' }
         );
@@ -358,7 +362,7 @@ describe('AppClientInbox authentication', () => {
 
     it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
         const database = createAppInboxTestDatabase(queue, results, {
@@ -377,7 +381,8 @@ describe('AppClientInbox authentication', () => {
                     runtimeRepository,
                     clientStateEventStore: new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
-                })
+                }),
+                wsTickets: new AuthSessionRepository(runtimeRepository)
             },
             {
                 serviceId: 'server-12345678'
@@ -457,7 +462,7 @@ interface RevokedAuthorityRetryHarness {
 
 async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Promise<RevokedAuthorityRetryHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
@@ -500,7 +505,8 @@ async function createRevokedAuthorityRetryHarness(nowEpochMs: () => number): Pro
                 runtimeRepository,
                 clientStateEventStore: new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
-            })
+            }),
+            wsTickets: new AuthSessionRepository(runtimeRepository)
         },
         { serviceId: 'server-12345678' }
     );

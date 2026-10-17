@@ -9,7 +9,7 @@ import {
 import type { ALAckPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
-    decodePersistedALMessage,
+    decodePersistedALMessageRow,
     decodePersistedALMessageValue,
     type ALMessageRejection
 } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -57,6 +57,7 @@ import type { InboxOutboxEngine } from '../inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerCapturedSendInput } from './scope/to-ws-queue-box-server-captured-send-input.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -129,6 +130,8 @@ export namespace WsQueueBoxServerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         /** The memory pair a volatile message is admitted and delivered from; `undefined`, every message takes `inboundStores`. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores | undefined;
+        /** Absent on a single instance: every volatile message then stays in `inboundVolatileStores`. */
+        readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
@@ -181,6 +184,7 @@ export namespace WsQueueBoxServerService {
         readonly targetResolver: WsServerTargetResolver;
         readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
+        readonly keepsVolatileMessageInMemory?: (message: ALMessage) => boolean;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
@@ -389,7 +393,7 @@ export class WsQueueBoxServerService {
                     WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
                     this.creationNow()
                 ),
-            readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            readMessageFromEntry: (entry) => decodePersistedALMessageRow(entry),
             readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
@@ -413,7 +417,10 @@ export class WsQueueBoxServerService {
                     sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
-            afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
+            afterDequeueAdmission: async (message, entry) => {
+                await this.clusterPublication.writeDequeuedRow(message, entry);
+                await this.deferUnpublishedRowToAwaitedRecipients(message, entry);
+            },
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: (message, request) =>
@@ -432,6 +439,7 @@ export class WsQueueBoxServerService {
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.inboundDelivery.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.inboundDelivery.hasInboxConsumer(message),
+            keepsVolatileMessageInMemory: dependencies.keepsVolatileMessageInMemory,
             dispatchInboxEntry: (entry, plan, source) => this.inboundDelivery.dispatchInboxEntry(entry, plan, source),
             sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
@@ -722,6 +730,33 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargetsWithResult(input);
     }
 
+    /**
+     * Without a cluster publisher the prepared sends reach only sockets already open, so a session whose upgrade
+     * committed here but has not opened is held for (D269); with one, the publisher's local send holds instead.
+     */
+    private async deferUnpublishedRowToAwaitedRecipients(message: ALMessage, entry: ResourceEntry): Promise<void> {
+        if (this.clusterPublication.hasPublisher() || !this.socket.expectedConnections.hasExpectations()) {
+            return;
+        }
+        const policy = await this.dequeueAuthority.readCapturedPolicy(message, entry);
+        const awaited = this.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
+            expiresAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+            send: (sessionId) =>
+                this.liveDelivery.sendToTargetsWithResult(toWsQueueBoxServerCapturedSendInput({
+                    message,
+                    key: entry.key,
+                    policy: { ...policy, admittedAudience: [sessionId] },
+                    eligibleSessionIds: undefined
+                }))
+        });
+        if (awaited.evictedCount > 0) {
+            console.warn('WS outbox hold evicted older rows for awaited sessions', {
+                messageId: message.id.msgId,
+                evictedCount: awaited.evictedCount
+            });
+        }
+    }
+
     private async sendPreparedMessage(
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
@@ -862,6 +897,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX, creationNow())
         }),
+        keepsVolatileMessageInMemory: input.keepsVolatileMessageInMemory,
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
             canonicalQueue: input.outbox,

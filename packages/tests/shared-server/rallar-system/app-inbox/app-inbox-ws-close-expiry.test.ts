@@ -42,6 +42,7 @@ it('bounds a lost-close group guard to the shared retry retention horizon', asyn
             request: {
                 principalId: harness.authSession.clientId,
                 generationId: 'lost-close-presence',
+                connectionGenerationId: facts.generationId,
                 connectedAtEpochMs,
                 lastHeartbeatAtEpochMs: connectedAtEpochMs,
                 expiresAtEpochMs: 253_402_300_799_999,

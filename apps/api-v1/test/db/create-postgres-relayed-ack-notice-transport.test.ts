@@ -6,6 +6,7 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 
 import { createApiV1LiveWsNoticeTransport } from '../../src/db/api-v1-live-ws-notice-transport.ts';
 import {
+    API_V1_RELAYED_ACK_CHANNEL,
     createApiV1RelayedAckNotices,
     createPostgresRelayedAckNoticeTransport
 } from '../../src/db/create-postgres-relayed-ack-notice-transport.ts';
@@ -65,7 +66,6 @@ Deno.test('relayed ACK notices exist only for PostgreSQL pub/sub', () => {
             createApiV1RelayedAckNotices({
                 mode,
                 notification,
-                channel: 'ws-channel',
                 publisherId: 'server-b'
             }),
             undefined
@@ -74,10 +74,9 @@ Deno.test('relayed ACK notices exist only for PostgreSQL pub/sub', () => {
     const postgres = createApiV1RelayedAckNotices({
         mode: 'postgres',
         notification,
-        channel: 'ws-channel',
         publisherId: 'server-b'
     });
-    assert.equal(postgres?.channel, 'ws-channel');
+    assert.equal(postgres?.channel, API_V1_RELAYED_ACK_CHANNEL);
     assert.equal(postgres?.publisherId, 'server-b');
 });
 

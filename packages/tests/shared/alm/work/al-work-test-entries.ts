@@ -87,6 +87,7 @@ export function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
     const pending = input.claims.map((effectId) => toFakeALWorkClaim(effectId));
     let exhausted = (input.finalizeExhausted ?? []).map((effectId) => toFakeALWorkClaim(effectId));
     return {
+        workTypes: new Set(['AL_TEST']),
         retainIfAbsent: async (entry) => entry,
         readPage: async () => ({ entries: [], nextCursor: null }),
         readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),

@@ -631,6 +631,7 @@ function toSyntheticActionsContext(mode: string | undefined): Readonly<Record<st
         'inputs.operator_phase': 'full',
         'inputs.agent_prefix': 'actions-agent',
         'inputs.register_before_login': 'true',
+        'inputs.server_timing': 'false',
         'inputs.browser_log_level': 'debug',
         'inputs.headless_entry': 'headless',
         'inputs.browser_engine': 'firefox',

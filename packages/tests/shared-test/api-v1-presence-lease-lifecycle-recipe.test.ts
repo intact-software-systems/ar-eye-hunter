@@ -193,6 +193,7 @@ describe('API-v1 presence lease lifecycle recipe', () => {
         expect(report.resultsByName.bobCanTakeAFreshLeaseWithoutRejoining[0].status).toBe('SUCCESS');
         expect(JSON.parse(http.requests[4].body ?? '')).toEqual({
             generationId: 'presencelease-generation-two-semantic',
+            connectionGenerationId: 'presencelease-connection-generation-two-semantic',
             principalId: 'bob'
         });
     });

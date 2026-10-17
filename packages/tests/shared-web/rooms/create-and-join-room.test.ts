@@ -61,6 +61,7 @@ describe('room create operations', () => {
                 principalId: 'principal-1',
                 sessionId: 'session-1',
                 generationId: 'generation-session-1',
+                connectionGenerationId: 'ws-generation-session-1',
                 scope,
                 policies: { command: { timeoutMs: 55 } },
                 requestedGroupId: 'custom-room',

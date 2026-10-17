@@ -32,16 +32,6 @@ const validDurableResults = [
         expiresAtEpochMs: 2_000
     },
     {
-        requestId: 'ws-consume-request',
-        kind: 'ws-ticket-consumed',
-        clientId: 'client-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessTokenDigest: 'digest-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000
-    },
-    {
         requestId: 'agent-consume-request',
         kind: 'agent-ticket-consumed',
         clientId: 'client-1',
@@ -98,7 +88,7 @@ it('strictly rejects every malformed durable auth result variant', () => {
             { ...validDurableResults[2], unexpected: true },
             {
                 kind: 'agent-tickets-issued',
-                tickets: [{ ...validDurableResults[6].tickets![0], ticket: 'x' }]
+                tickets: [{ ...validDurableResults[5].tickets![0], ticket: 'x' }]
             },
             { kind: 'agent-tickets-issued', tickets: [null] },
             { ...validDurableResults[3], expiresAtEpochMs: Number.NaN },

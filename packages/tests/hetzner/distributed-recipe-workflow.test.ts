@@ -123,6 +123,8 @@ interface RemoteRecipeScenario {
     readonly sourceHash: string;
     readonly topology: Readonly<Record<string, string>>;
     readonly recipeExit: number;
+    /** Server timing selection and the API env file the controller reads it back from. */
+    readonly serverTiming?: Readonly<{ requested: string; apiEnvFile: string; }>;
 }
 
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -415,7 +417,10 @@ function toRemoteRecipeEnvironment(fixture: RemoteRecipeFixture, scenario: Remot
         RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '',
         RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '',
         RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '',
-        ...scenario.topology
+        ...scenario.topology,
+        ...(scenario.serverTiming === undefined
+            ? {}
+            : { RALLAR_API_SERVER_TIMING: scenario.serverTiming.requested, RALLAR_API_ENV_FILE: scenario.serverTiming.apiEnvFile })
     };
 }
 
@@ -575,7 +580,8 @@ describe('Hetzner workflow contracts and effects', () => {
                 RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2',
                 RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '',
                 RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: ''
-            }
+            },
+            serverTiming: 'false'
         });
         await writeFile(fixture.manifestPath, '{"materializedIdentity":"run"}\n');
         await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false });
@@ -588,6 +594,60 @@ describe('Hetzner workflow contracts and effects', () => {
             'exit_code=0',
             'exit_code=1'
         ]);
+    });
+
+    // A diagnostic run leaves the API instrumented; a later prepare without a rollout must not inherit that.
+    it.for([
+        { applied: 'RALLAR_TIMING_LOGS=1', requested: 'false', effects: ['stop', 'rollout||||'] },
+        { applied: '', requested: 'false', effects: ['stop', 'rollout||||'] },
+        { applied: 'RALLAR_TIMING_LOGS=0', requested: 'false', effects: [] },
+        { applied: 'RALLAR_TIMING_LOGS=0', requested: 'true', effects: ['stop', 'rollout||||'] },
+        { applied: 'RALLAR_TIMING_LOGS=1', requested: 'true', effects: [] }
+    ])('complete remote prepare body rolls out when the API env $applied differs from server timing $requested', async (input, context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        const apiEnvFile = path.join(fixture.directory, 'api-v1.env');
+        await writeFile(apiEnvFile, `PORT=8080\n${input.applied}\n`);
+
+        await runRemoteRecipe(context, fixture, {
+            phase: 'prepare',
+            agentSource: 'external',
+            rollout: false,
+            sourceHash: 'owned-source-hash',
+            recipeExit: 0,
+            topology: {},
+            serverTiming: { requested: input.requested, apiEnvFile }
+        });
+
+        const effects = await readFile(fixture.effectsPath, 'utf8').catch(() => '');
+        expect(effects.trim().split('\n').filter((line) => line !== '')).toEqual(input.effects);
+        expect(JSON.parse(await readFile(fixture.markerPath, 'utf8'))).toMatchObject({ serverTiming: input.requested });
+    });
+
+    it('complete remote run body refuses a server timing other than the one its prepare phase applied', async (context) => {
+        const fixture = await createRemoteRecipeFixture(context);
+        const apiEnvFile = path.join(fixture.directory, 'api-v1.env');
+        await writeFile(apiEnvFile, 'RALLAR_TIMING_LOGS=1\n');
+        const scenario: RemoteRecipeScenario = {
+            phase: 'prepare',
+            agentSource: 'external',
+            rollout: true,
+            sourceHash: 'owned-source-hash',
+            recipeExit: 0,
+            topology: {},
+            serverTiming: { requested: 'true', apiEnvFile }
+        };
+        await runRemoteRecipe(context, fixture, scenario);
+
+        await runRemoteRecipe(context, fixture, { ...scenario, phase: 'run', rollout: false, serverTiming: { requested: 'false', apiEnvFile } });
+
+        expect(await readFile(path.join(fixture.directory, 'hetzner-operation.log'), 'utf8')).toContain(
+            'The prepare phase applied server_timing=true, but this run requests server_timing=false'
+        );
+        expect((await readFile(path.join(fixture.directory, 'run-output.txt'), 'utf8')).match(/exit_code=\d+/g)).toEqual([
+            'exit_code=0',
+            'exit_code=1'
+        ]);
+        expect((await readFile(fixture.effectsPath, 'utf8')).trim().split('\n')).not.toContain('recipe');
     });
 
     it('complete remote body records a failed recipe exit and preserves its operation evidence', async (context) => {
@@ -941,6 +1001,14 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(manual.on.workflow_dispatch?.inputs?.register_before_login).toMatchObject({ default: true });
         expect(runner.on.workflow_call?.inputs?.register_before_login).toMatchObject({ default: true });
         expect(manual.jobs.run.with?.register_before_login).toBe('${{ inputs.register_before_login }}');
+    });
+
+    it('leaves the API uninstrumented unless a caller selects server timing for the rollout', async () => {
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        const render = runner.jobs.run.steps?.find((step) => step.name === 'Render remote run env');
+        expect(runner.on.workflow_call?.inputs?.server_timing).toMatchObject({ type: 'boolean', default: false });
+        expect(render?.env?.RALLAR_API_SERVER_TIMING).toBe('${{ inputs.server_timing }}');
+        expect(render?.run).toContain('printf \'RALLAR_API_SERVER_TIMING=%s\\n\' "$(quote "${RALLAR_API_SERVER_TIMING}")"');
     });
 
     it('binds external-agent and split prepare/run operator modes at their public workflow fields', async () => {

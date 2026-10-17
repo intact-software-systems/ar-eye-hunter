@@ -193,6 +193,7 @@ export type ConnectGroupPresenceSessionRequest =
     & Readonly<{
         principalId: string;
         generationId: string;
+        connectionGenerationId: string;
         connectedAtEpochMs?: number;
         lastHeartbeatAtEpochMs?: number;
         expiresAtEpochMs?: number;

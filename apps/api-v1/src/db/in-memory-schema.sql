@@ -81,11 +81,11 @@ CREATE TABLE IF NOT EXISTS runtime_state_store
     CONSTRAINT runtime_state_store_pk PRIMARY KEY (store_namespace, store_key)
 );
 
-CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_ix
-    ON runtime_state_store (store_namespace);
-
 CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_key_c_ix
     ON runtime_state_store (store_namespace, store_key COLLATE "C");
+
+CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_reversed_key_c_ix
+    ON runtime_state_store (store_namespace, (reverse(store_key)) COLLATE "C");
 
 CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_expire_at_ix
     ON runtime_state_store (store_namespace, expire_at_ts);

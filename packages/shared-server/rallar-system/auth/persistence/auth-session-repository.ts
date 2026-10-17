@@ -25,10 +25,6 @@ export class AuthSessionRepository extends AuthSessionPersistence {
         await this.tickets.putWebSocketTicket(ticket);
     }
 
-    async consumeWebSocketTicket(ticket: string): Promise<PersistedAuthSession | undefined> {
-        return await this.tickets.consumeWebSocketTicket(ticket);
-    }
-
     async putAgentSessionTicket(ticket: IssuedAgentSessionTicket): Promise<void> {
         await this.tickets.putAgentSessionTicket(ticket);
     }

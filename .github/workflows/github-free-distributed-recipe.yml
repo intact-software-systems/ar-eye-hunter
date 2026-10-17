@@ -75,6 +75,10 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: true
+      server_timing:
+        description: Roll the API out with its timing and AppInbox phase timing logs (diagnostic runs); off leaves it uninstrumented
+        type: boolean
+        default: false
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: choice
@@ -285,6 +289,7 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: prepare
       rollout_before_run: ${{ inputs.rollout_control_plane }}
+      server_timing: ${{ inputs.server_timing }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}
@@ -381,6 +386,45 @@ jobs:
             printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"
           done
 
+      - name: Register shard agent users
+        if: inputs.register_before_login
+        shell: bash
+        env:
+          RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
+          RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
+          RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
+          RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
+          RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # The recipe's sign-in then logs in only: one password derivation per agent instead of two.
+          api_base_url="${RALLAR_API_BASE_URL%/}"
+          for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
+            ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
+            agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
+            request_id="$(printf 'register-%s-%s' "${agent_id}" "${RALLAR_BLACK_BOX_RUN_ID}" | tr -c 'A-Za-z0-9_-' '-')"
+            response_file="${RUNNER_TEMP}/rallar-register-${agent_id}.json"
+            if ! status="$(AGENT_ID="${agent_id}" jq -nc '{username: env.AGENT_ID, password: env.RALLAR_BLACK_BOX_PASSWORD}' |
+              curl -sS --max-time 60 -o "${response_file}" -w '%{http_code}' -X POST \
+                -H 'content-type: application/json' --data @- \
+                "${api_base_url}/api/auth/register/requests/${request_id:0:128}")"; then
+              rm -f "${response_file}"
+              echo "::error::Registering ${agent_id} failed before an HTTP response." >&2
+              exit 1
+            fi
+            code="$(jq -r '.code // empty' "${response_file}" 2>/dev/null || true)"
+            rm -f "${response_file}"
+            if [[ "${status}" == 201 ]]; then
+              echo "Registered ${agent_id}."
+            elif [[ "${status}" == 409 && "${code}" == auth-user-exists ]]; then
+              echo "${agent_id} is already registered."
+            else
+              echo "::error::Registering ${agent_id} returned HTTP ${status}." >&2
+              exit 1
+            fi
+          done
+
       - name: Run headless worker shard
         run: |
           set -euo pipefail
@@ -406,7 +450,6 @@ jobs:
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
-          RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
           RALLAR_BLACK_BOX_HEADLESS_ENTRY: headless
           RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}
@@ -426,6 +469,7 @@ jobs:
       ref: ${{ github.sha }}
       operator_phase: run
       rollout_before_run: false
+      server_timing: ${{ inputs.server_timing }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}

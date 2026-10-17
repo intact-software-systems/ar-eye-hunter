@@ -231,6 +231,31 @@ it('includes browser RTC diagnostics counters in health snapshots when requested
     });
 });
 
+it('reads the peer-free RTC diagnostics summary when health names no peers', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+
+    await runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            transport: 'realtime',
+            laneId: 'control-lane'
+        }
+    });
+
+    await runtime.health({ includeRtcDiagnostics: true, rtcDiagnosticsPeerIds: [] });
+
+    // An empty peer list reads no per-peer stats: only the summary counters.
+    expect(facade.records.rtcDiagnosticsReads).toEqual([[{ laneIds: ['control-lane'], peerIds: [] }]]);
+});
+
 it('bridges relevant browser console warnings into structured diagnostics', async () => {
     const runtime = await loadRuntime();
     const originalWarn = console.warn;

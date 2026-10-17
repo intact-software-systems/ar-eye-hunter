@@ -203,11 +203,7 @@ function createIngressCaptureOperations(
         captureActivationStatusMutationIngress: async (command, atEpochMs) =>
             captureInternalMutationIngress(command, 'activation-status', atEpochMs),
         captureSessionCleanupMutationIngresses: async (input) => {
-            const candidates = await readGroupSessionCleanupCandidates(
-                repositoryFor(runtime),
-                dependencies.authSessionRepository,
-                input
-            );
+            const candidates = await readGroupSessionCleanupCandidates(repositoryFor(runtime), input);
             return candidates.map((session) =>
                 captureInternalMutationIngress(
                     toSessionCleanupCommand(session, input.disconnectedAtEpochMs),

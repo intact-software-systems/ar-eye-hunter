@@ -58,13 +58,6 @@ const intents: readonly AuthMutationIntent[] = [
     },
     {
         version: 1,
-        kind: 'consume-ws-ticket',
-        requestId: 'consume-ws-request',
-        ticketDigest: 'ws-ticket-digest',
-        expectedSessionId: 'session-1'
-    },
-    {
-        version: 1,
         kind: 'issue-agent-tickets',
         requestId: 'agent-ticket-request',
         authority,
@@ -80,7 +73,7 @@ const intents: readonly AuthMutationIntent[] = [
 ];
 
 describe('auth mutation intent codec', () => {
-    it('decodes all seven credential-safe semantic intent variants', () => {
+    it('decodes all six credential-safe semantic intent variants', () => {
         for (const intent of intents) {
             const decoded = decodeAuthMutationIntent(intent);
 

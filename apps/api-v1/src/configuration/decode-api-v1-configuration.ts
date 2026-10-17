@@ -386,7 +386,8 @@ function decodeTopology(
             formationDebounceMs: decoder.integer(
                 'topology.recompute.formationDebounceMs',
                 0
-            )
+            ),
+            formationMaxWaitMs: decoder.integer('topology.recompute.formationMaxWaitMs', 0)
         },
         rttRefinement: {
             minIntervalMs: decoder.integer('topology.rttRefinement.minIntervalMs', 0),
@@ -458,6 +459,7 @@ function decodeAppInbox(
     return {
         phaseTiming: decoder.boolean('appInbox.phaseTiming'),
         laneBudgetPolicy: decoder.enumeration('appInbox.laneBudgetPolicy', InboxQueueReader.LANE_BUDGET_POLICIES),
+        newLaneConcurrency: decoder.integer('appInbox.newLaneConcurrency', 1, InboxQueueReader.NEW_CONTEXTS_PER_PASS),
         completionWait: {
             maxElapsedMs: decoder.integer('appInbox.completionWait.maxElapsedMs', 0),
             retryIntervalMs: decoder.integer(

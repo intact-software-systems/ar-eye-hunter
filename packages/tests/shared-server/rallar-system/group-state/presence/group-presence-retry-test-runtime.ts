@@ -43,6 +43,7 @@ export async function seedPresenceSession(
     }).connectPresenceSession(SCOPE, groupId, 'session-1', {
         principalId: 'alice',
         generationId: 'generation-session-1',
+        connectionGenerationId: 'ws-generation-session-1',
         actorPrincipalId: 'alice',
         connectedAtEpochMs: 2_000,
         lastHeartbeatAtEpochMs,

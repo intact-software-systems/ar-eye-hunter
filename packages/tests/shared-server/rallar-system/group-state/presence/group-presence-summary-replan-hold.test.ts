@@ -22,6 +22,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
@@ -39,7 +40,16 @@ interface HoldScenario {
     /** Passed once the group expires, for the inactive case; the summary runs at BASE_EPOCH_MS + 1 000. */
     readonly expiresAtEpochMs?: number;
     readonly plannedLayout: 'active' | 'absent' | 'corrupt';
+    /** A capacity the seeded roster fills, with the owner's session connected too; absent leaves the group unbounded. */
+    readonly fullAtMaxMembers?: number;
 }
+
+interface ServerReplanWindow {
+    readonly recomputeDebounceMs: number;
+    readonly recomputeMaxWaitMs: number;
+}
+
+const SERVER_WINDOW: ServerReplanWindow = { recomputeDebounceMs: 500, recomputeMaxWaitMs: 2_000 };
 
 interface SeededScenario {
     readonly runtime: GroupBarrierRepository;
@@ -97,7 +107,7 @@ describe('group presence summary replan hold', () => {
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null },
+            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
             senderId: 'reconfigure',
             origin: 'commanded',
             previousEntry: null
@@ -111,6 +121,60 @@ describe('group presence summary replan hold', () => {
             throw new Error('unreachable');
         }
         expect(merged.topologyReplan.work.expectedEntry?.key).toEqual(commandedHead.entryWrite.entry.key);
+    });
+
+    it('bounds an auto group\'s merge into a pending replan by the server maximum wait', async () => {
+        const seeded = await seedScenario({
+            groupId: 'bounded-auto-merge',
+            policy: resolveGroupLifecyclePolicyPreset('optimistic'),
+            lifecycleState: 'active',
+            plannedLayout: 'absent'
+        });
+        const before = await readComputedSummary(seeded, SERVER_WINDOW);
+        // A head whose series opened 4 s before the summary and whose due time still lies ahead of it.
+        const pendingHead = computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: seeded.ref,
+            groupSnapshot: before.snapshot,
+            requestedAtEpochMs: BASE_EPOCH_MS - 3_000,
+            expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
+            timing: { window: { debounceMs: 4_500, maxWaitMs: 60_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
+            senderId: 'summary-worker',
+            origin: 'automatic',
+            previousEntry: null
+        });
+        await seeded.queueBox.enqueue(pendingHead.entryWrite.entry);
+
+        const merged = await readComputedSummary(seeded, SERVER_WINDOW);
+
+        if (merged.topologyReplan.decision !== 'enqueue') {
+            throw new Error('Expected the auto group to enqueue its replan');
+        }
+        expect(merged.topologyReplan.work.expectedEntry?.key).toEqual(pendingHead.entryWrite.entry.key);
+        expect(merged.topologyReplan.work.entryWrite.entry.status).toBe(EntityStatus.NEW);
+        expect(merged.topologyReplan.work.entryWrite.entry.dequeueAudit.nextTs).toBeUndefined();
+    });
+
+    it.each(
+        [
+            ['makes the replan due at once when the present members fill the group\'s capacity', 2, EntityStatus.NEW],
+            ['keeps the debounce while the group has no expected member count', undefined, EntityStatus.RETRY]
+        ] as const
+    )('%s (D288)', async (name, fullAtMaxMembers, status) => {
+        const seeded = await seedScenario({
+            groupId: `expected-count-${fullAtMaxMembers ?? 'unbounded'}`,
+            policy: resolveGroupLifecyclePolicyPreset('optimistic'),
+            lifecycleState: 'active',
+            plannedLayout: 'absent',
+            ...(fullAtMaxMembers === undefined ? {} : { fullAtMaxMembers })
+        });
+
+        const computed = await readComputedSummary(seeded, SERVER_WINDOW);
+
+        if (computed.topologyReplan.decision !== 'enqueue') {
+            throw new Error(`Expected the auto group to enqueue its replan: ${name}`);
+        }
+        expect(computed.snapshot.onlineMemberCount).toBe(fullAtMaxMembers ?? 1);
+        expect(computed.topologyReplan.work.entryWrite.entry.status).toBe(status);
     });
 });
 
@@ -135,10 +199,21 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
     await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-bob-session`, {
         principalId: 'bob',
         generationId: `${input.groupId}-bob-generation`,
+        connectionGenerationId: `${input.groupId}-bob-ws-generation`,
         actorPrincipalId: 'bob',
         expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
         requestId: `connect-${input.groupId}-bob`
     });
+    if (input.fullAtMaxMembers !== undefined) {
+        await service.connectPresenceSession(SCOPE, input.groupId, `${input.groupId}-alice-session`, {
+            principalId: 'alice',
+            generationId: `${input.groupId}-alice-generation`,
+            connectionGenerationId: `${input.groupId}-alice-ws-generation`,
+            actorPrincipalId: 'alice',
+            expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+            requestId: `connect-${input.groupId}-alice`
+        });
+    }
     const repository = createTestGroupStateRepository(runtime);
     const stored = await repository.findGroupEntry(ref);
     if (!stored) {
@@ -150,10 +225,11 @@ async function seedScenario(input: HoldScenario): Promise<SeededScenario> {
         ...stored.value,
         lifecycleState: input.lifecycleState,
         acceptedLayoutIdentity: PLANNED_IDENTITY,
-        expiresAtEpochMs: input.expiresAtEpochMs ?? stored.value.expiresAtEpochMs
+        expiresAtEpochMs: input.expiresAtEpochMs ?? stored.value.expiresAtEpochMs,
+        maxMembers: input.fullAtMaxMembers ?? stored.value.maxMembers
     });
     await seedPlannedLayout(runtime, ref, input.plannedLayout);
-    const event = (await repository.listEvents(ref)).find(
+    const event = (await repository.listEvents(ref)).findLast(
         (candidate: GroupEvent) => candidate.eventType === 'session-connected'
     );
     if (!event) {
@@ -193,10 +269,13 @@ async function seedPlannedLayout(
     }
 }
 
-async function readComputedSummary(seeded: SeededScenario): Promise<GroupPresenceSummaryComputedWork> {
+async function readComputedSummary(
+    seeded: SeededScenario,
+    window: ServerReplanWindow = { recomputeDebounceMs: 0, recomputeMaxWaitMs: 0 }
+): Promise<GroupPresenceSummaryComputedWork> {
     const work = new GroupPresenceSummaryWork({
         outboxQueueReader: new OutboxQueueReader(seeded.queueBox),
-        recomputeDebounceMs: 0,
+        ...window,
         runtimeRepository: seeded.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'

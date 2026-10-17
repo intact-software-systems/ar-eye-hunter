@@ -1,4 +1,8 @@
-import { adoptOverlayTopology } from '@shared-web/browser/state-cache/overlay-topology-message-dispatch.ts';
+import { DeferredOverlayTopologies } from '@shared-web/browser/state-cache/deferred-overlay-topologies.ts';
+import {
+    adoptDeferredOverlayTopology,
+    adoptOverlayTopology
+} from '@shared-web/browser/state-cache/overlay-topology-message-dispatch.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -33,14 +37,31 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('browser overlay topology role adoption', () => {
+    let deferredTopologies: DeferredOverlayTopologies;
+    // Mirrors the state-cache observer: cache write, RTC sync, then the deferred layout re-attempt.
+    async function acceptObservedSnapshot(
+        snapshot: GroupSnapshot,
+        manager: ReturnType<typeof webRtcGroupManager>
+    ): Promise<void> {
+        groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
+        await acceptGroupSnapshotUpdate(snapshot, manager, { localSessionId: 'session-a', bootstrapDegree: 5 });
+        await adoptDeferredOverlayTopology({
+            groupRef: snapshot.group,
+            sessionId: 'session-a',
+            webRtcGroupManager: manager,
+            deferredTopologies
+        });
+    }
+
     beforeEach(() => {
+        deferredTopologies = new DeferredOverlayTopologies();
         configureTestCacheRepositories();
         resetOverlayAdoptionDiagnostics();
         setOverlayAdoptionDiagnosticsSink(undefined);
     });
 
-    it('allows a planned publication before the group has ever been observed', async () => {
-        const group = groupSnapshot(1);
+    it('allows a planned publication that does not name the own session before the group has ever been observed', async () => {
+        const group = groupSnapshot(1, undefined, ['session-b', 'session-c']);
         const topology = topologySnapshot(
             group,
             { groupRevision: 2, presenceRevision: 2 },
@@ -50,6 +71,7 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: webRtcGroupManager(),
             adoption: 'publication'
         })).resolves.toMatchObject({
@@ -57,6 +79,51 @@ describe('browser overlay topology role adoption', () => {
             changed: true
         });
         expect(findPlannedOverlayById(topology.overlayId)?.overlayVersion).toBe(2);
+    });
+
+    it('holds a layout that beats the own join response and accepts it once the group names it', async () => {
+        const manager = webRtcGroupManager();
+        const layout = topologySnapshot(
+            groupAt({ groupRevision: 33, presenceRevision: 17 }),
+            { groupRevision: 33, presenceRevision: 17 },
+            2
+        );
+        await adoptOverlayTopology({
+            topology: layout,
+            sessionId: 'session-a',
+            deferredTopologies,
+            webRtcGroupManager: manager,
+            adoption: 'publication'
+        });
+
+        // The join response predates the own presence; the next snapshot names it.
+        await acceptObservedSnapshot(groupAt({ groupRevision: 33, presenceRevision: 16 }, undefined, ['session-b', 'session-c']), manager);
+        await acceptObservedSnapshot(groupAt({ groupRevision: 33, presenceRevision: 17 }), manager);
+        await acceptObservedSnapshot(groupAt({ groupRevision: 34, presenceRevision: 17 }, toGroupLayoutIdentity(layout)), manager);
+
+        expect(findAcceptedOverlayById(layout.overlayId)).toEqual(toOverlayInfoForSession(layout, 'session-a'));
+    });
+
+    it('accepts a layout deferred behind a join response that arrived first', async () => {
+        const manager = webRtcGroupManager();
+        const layout = topologySnapshot(
+            groupAt({ groupRevision: 33, presenceRevision: 17 }),
+            { groupRevision: 33, presenceRevision: 17 },
+            2
+        );
+        await acceptObservedSnapshot(groupAt({ groupRevision: 33, presenceRevision: 16 }, undefined, ['session-b', 'session-c']), manager);
+        await adoptOverlayTopology({
+            topology: layout,
+            sessionId: 'session-a',
+            deferredTopologies,
+            webRtcGroupManager: manager,
+            adoption: 'publication'
+        });
+
+        await acceptObservedSnapshot(groupAt({ groupRevision: 33, presenceRevision: 17 }), manager);
+        await acceptObservedSnapshot(groupAt({ groupRevision: 34, presenceRevision: 17 }, toGroupLayoutIdentity(layout)), manager);
+
+        expect(findAcceptedOverlayById(layout.overlayId)).toEqual(toOverlayInfoForSession(layout, 'session-a'));
     });
 
     it.each(['publication', 'current-state'] as const)(
@@ -75,6 +142,7 @@ describe('browser overlay topology role adoption', () => {
                 await expect(adoptOverlayTopology({
                     topology,
                     sessionId: 'session-a',
+                    deferredTopologies,
                     webRtcGroupManager: manager,
                     adoption
                 })).resolves.toMatchObject({ role: 'planned', changed: true });
@@ -83,6 +151,7 @@ describe('browser overlay topology role adoption', () => {
             await expect(adoptOverlayTopology({
                 topology: active,
                 sessionId: 'session-a',
+                deferredTopologies,
                 webRtcGroupManager: manager,
                 adoption
             })).resolves.toMatchObject({ outcome: 'dominated-dropped', changed: false });
@@ -99,6 +168,7 @@ describe('browser overlay topology role adoption', () => {
         const publication = await adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         });
@@ -169,6 +239,7 @@ describe('browser overlay topology role adoption', () => {
         const publication = await adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         });
@@ -199,6 +270,7 @@ describe('browser overlay topology role adoption', () => {
         await adoptOverlayTopology({
             topology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         });
@@ -256,12 +328,14 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology: superseded,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({ role: 'superseded', changed: false });
         await expect(adoptOverlayTopology({
             topology: incomparable,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({ role: 'incomparable', changed: false });
@@ -351,6 +425,7 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
@@ -377,6 +452,7 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology: currentTopology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
@@ -389,9 +465,10 @@ describe('browser overlay topology role adoption', () => {
     it('drops a delayed publication after membership loss without recreating either role', async () => {
         const joined = groupSnapshot(1);
         const lostMembership = groupSnapshot(2, undefined, ['session-b', 'session-c']);
+        // Planned before the loss: the cache has passed its revision without the own session.
         const delayedTopology = topologySnapshot(
             joined,
-            { groupRevision: 3, presenceRevision: 3 },
+            { groupRevision: 1, presenceRevision: 1 },
             3
         );
         const manager = webRtcGroupManager();
@@ -415,6 +492,7 @@ describe('browser overlay topology role adoption', () => {
         await expect(adoptOverlayTopology({
             topology: delayedTopology,
             sessionId: 'session-a',
+            deferredTopologies,
             webRtcGroupManager: manager,
             adoption: 'publication'
         })).resolves.toMatchObject({
@@ -437,6 +515,23 @@ function webRtcGroupManager(
         ensureAllGroupsConnected: async () => undefined,
         delete: async () => false,
         has: () => true
+    };
+}
+
+function groupAt(
+    causalRevision: GroupStateCausalRevision,
+    acceptedLayoutIdentity?: ReturnType<typeof toGroupLayoutIdentity>,
+    sessionIds?: readonly string[]
+): GroupSnapshot {
+    const snapshot = groupSnapshot(causalRevision.groupRevision, acceptedLayoutIdentity, sessionIds);
+    return {
+        ...snapshot,
+        causalRevision,
+        group: {
+            ...snapshot.group,
+            snapshotVersion: causalRevision.groupRevision,
+            presenceVersion: causalRevision.presenceRevision
+        }
     };
 }
 
@@ -469,6 +564,7 @@ function activeSession(sessionId: string): GroupSnapshot['activeSessions'][numbe
         principalId: sessionId,
         sessionId,
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

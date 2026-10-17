@@ -14,6 +14,7 @@ import {
     toCreateRoomInviteGroupStateRequest,
     toRemoveRoomMemberGroupStateRequest,
     toRevokeRoomInviteGroupStateRequest,
+    toRoomPresenceLeaseExpiresAtEpochMs,
     toRotateRoomJoinCodeGroupStateRequest,
     toSetRoomMemberRoleGroupStateRequest,
     toTransferRoomOwnershipGroupStateRequest,
@@ -53,6 +54,7 @@ export interface RevokeStateGroupInviteWorkflowInput extends TargetRoomActorWork
 
 export interface AcceptStateGroupInviteWorkflowInput extends RoomActorWorkflowInput {
     readonly generationId: string;
+    readonly connectionGenerationId: string;
 }
 
 export interface RotateStateGroupJoinCodeWorkflowInput extends RoomActorWorkflowInput<GroupJoinCodeResponse> {
@@ -143,6 +145,8 @@ export async function acceptStateGroupInvite(
                     request: toConnectRoomPresenceGroupStateRequest({
                         principalId: input.actorPrincipalId,
                         generationId: input.generationId,
+                        connectionGenerationId: input.connectionGenerationId,
+                        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
                         actorPrincipalId: input.actorPrincipalId,
                         actorSessionId: input.sessionId
                     }),

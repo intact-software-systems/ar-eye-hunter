@@ -10,7 +10,12 @@ import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import {
+    toCanonicalGroupRef,
+    type GroupRef,
+    type GroupSnapshot,
+    type GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -55,10 +60,15 @@ export type ComputedRtcTopologyOutbox =
         }>
     );
 
+/**
+ * A change of the group's membership or presence to plan for (D290): the group and the revision
+ * that asked, never the snapshot itself, so the worker plans from the group's current stored
+ * state and a 50-member room's queued row stays a few hundred bytes.
+ */
 export interface RtcTopologyGroupRevisionWork {
     readonly kind: 'group-revision';
     readonly overlayId: string;
-    readonly groupSnapshot: GroupSnapshot;
+    readonly groupRef: GroupRef;
     readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
     readonly requestedAtEpochMs: number;
     readonly requestOptions: CanonicalGroupTopologyConfigPatch;
@@ -101,7 +111,6 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
     });
     const commonWork = {
         overlayId,
-        groupSnapshot: computed.groupSnapshot,
         requestedAtEpochMs: computed.createdAtEpochMs,
         requestOptions: computed.requestOptions,
         publish: computed.publish
@@ -110,6 +119,7 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
         ? {
             ...commonWork,
             kind: 'rtt-refresh',
+            groupSnapshot: computed.groupSnapshot,
             requestedGroupStateCausalRevision: sourceGroupStateCausalRevision,
             requestedRttVersion: computed.rtt.version,
             rtt: computed.rtt,
@@ -118,6 +128,7 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
         : {
             ...commonWork,
             kind: 'group-revision',
+            groupRef: toCanonicalGroupRef(computed.aggregateRef),
             sourceGroupStateCausalRevision,
             origin: computed.origin
         };

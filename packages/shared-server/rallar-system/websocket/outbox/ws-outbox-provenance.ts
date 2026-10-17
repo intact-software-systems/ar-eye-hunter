@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
@@ -117,7 +117,7 @@ export class WsOutboxProvenanceReader {
                 throw new TypeError('WS producer provenance is missing or in the wrong slot');
             }
             const proof = decodeWsOutboxProvenance(JSON.parse(stored.value));
-            if (!jsonEquals(decodePersistedALMessage(entry.resource), message)) {
+            if (!jsonEquals(decodePersistedALMessageRow(entry), message)) {
                 throw new TypeError('Observed WS message differs from its serialized row');
             }
             const issues = validateWsOutboxProvenance({ message, entry, proof, nowMs: this.dependencies.nowMs() });

@@ -906,6 +906,7 @@ function recordALOutboundCommits(
                     await tx.remove(key);
                 },
                 readWork: (key) => tx.readWork(key),
+                readClaimedWork: (claimed) => tx.readClaimedWork(claimed),
                 writeWork: (entry) => {
                     commit.workKinds.push(
                         decodeALOutboundWorkEntry(entry, namespace, {

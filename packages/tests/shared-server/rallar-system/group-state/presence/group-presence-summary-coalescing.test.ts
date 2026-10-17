@@ -131,6 +131,7 @@ async function createCoalescingFixture(): Promise<CoalescingFixture> {
         runtimeRepository: repository,
         outboxQueueReader: new OutboxQueueReader(queue),
         recomputeDebounceMs: 0,
+        recomputeMaxWaitMs: 0,
         serviceId: 'coalescing-api',
         now: () => now
     });
@@ -207,6 +208,7 @@ async function seedConnectedGroup(
         await service.connectPresenceSession(SCOPE, groupId, `${groupId}-${principalId}-session`, {
             principalId,
             generationId: `${groupId}-${principalId}-generation`,
+            connectionGenerationId: `${groupId}-${principalId}-ws-generation`,
             actorPrincipalId: principalId,
             expiresAtEpochMs: now + 60_000,
             requestId: `connect-${groupId}-${principalId}`

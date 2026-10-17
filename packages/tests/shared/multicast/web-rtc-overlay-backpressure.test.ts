@@ -267,7 +267,7 @@ describe('what never reads backpressure (D184)', () => {
             ...entry,
             dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
         });
-        fixture.resources.queueEngine.wakeAfterExternalWrite();
+        fixture.resources.queueEngine.wakeAfterExternalWrite(new Set([EnqueuedType.RTC_OUTBOX]));
         await vi.advanceTimersByTimeAsync(100);
         holdBuffered(fixture.channels.b!, 0);
         holdBuffered(fixture.channels.c!, 0);

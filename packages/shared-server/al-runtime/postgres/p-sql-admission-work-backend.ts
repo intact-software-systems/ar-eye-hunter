@@ -15,15 +15,20 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '../../queuebox/postgres/p-sql-queue-box.ts';
 import {
+    computeResourceInboxObservation,
     computeResourceInboxObservedReplacement,
     PSqlResourceInboxEntryRepository
 } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import type { ResourceInboxObservedReplacement } from '../../queuebox/postgres/replace-observed-resource-inbox-entry.ts';
+import type {
+    ResourceInboxObservation,
+    ResourceInboxObservedReplacement
+} from '../../queuebox/postgres/replace-observed-resource-inbox-entry.ts';
 import {
     computeResourceInboxEntryInsertValues,
     type ResourceInboxEntryInsertValues
@@ -33,6 +38,7 @@ import {
     createTransactionBoundPSqlRuntimeStateRepository,
     PSqlRuntimeStateRepository
 } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateEntry } from '../../runtime-state/runtime-state-repository.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
 export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
@@ -41,6 +47,8 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     private readonly repository: PSqlRuntimeStateRepository;
     private readonly namespace: string;
     private readonly nowMs: () => number;
+    private readonly stateReads: TurnBatchedReads<string, RuntimeStateEntry | undefined>;
+    private readonly workReads: TurnBatchedReads<Key, ResourceEntry | undefined>;
 
     constructor(
         sql: PSqlSql,
@@ -55,6 +63,15 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
             () => Temporal.Instant.fromEpochMilliseconds(this.nowMs())
         );
         this.namespace = namespace;
+        this.stateReads = new TurnBatchedReads({
+            toKeyId: (key) => key,
+            readBatch: (keys) => readPSqlAdmissionStateEntries(this.repository, namespace, keys)
+        });
+        const workEntries = new PSqlResourceInboxEntryRepository(sql, () => new Date(this.nowMs()));
+        this.workReads = new TurnBatchedReads({
+            toKeyId: toKeyAsString,
+            readBatch: (keys) => readPSqlAdmissionWorkEntries(workEntries, keys)
+        });
     }
 
     async ready(): Promise<void> {}
@@ -63,7 +80,8 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
      * Autocommit gives each statement its own snapshot, never one across the chain, so the backend
      * is its own read session and every read is a fresh query. A chain that deliberately re-reads a
      * row -- the repair read, after it has captured the sender version that fences it -- must see
-     * the row as it is now, not as some earlier statement found it. It returns the chain's own
+     * the row as it is now, not as some earlier statement found it. Reads issued in one turn share
+     * one statement, which answers each of them no earlier than it asked. It returns the chain's own
      * promise rather than awaiting it: a session must not cost a caller an extra turn.
      */
     readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
@@ -71,23 +89,15 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 
     async readWork(key: Key): Promise<ResourceEntry | undefined> {
-        return await this.workQueue.getItem(key);
+        return await this.workReads.read(key);
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        return await new PSqlAdmissionMutationCollector(
-            this.repository,
-            this.namespace,
-            this.nowMs
-        ).read(key, decode);
+        return await new PSqlAdmissionMutationCollector(this.toCollectorDependencies()).read(key, decode);
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        return await new PSqlAdmissionMutationCollector(
-            this.repository,
-            this.namespace,
-            this.nowMs
-        ).list(prefix, decode);
+        return await new PSqlAdmissionMutationCollector(this.toCollectorDependencies()).list(prefix, decode);
     }
 
     async write<T>(
@@ -95,16 +105,14 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
         const collector = new PSqlAdmissionWorkWriteBuffer({
-            repository: this.repository,
-            namespace: this.namespace,
-            workQueue: this.workQueue,
-            nowMs: this.nowMs
+            collector: this.toCollectorDependencies(),
+            readWork: (key) => this.workReads.read(key)
         });
         const result = await fn(collector);
         const mutations = collector.mutations();
         const workWrites = collector.workWrites();
         requireLivePersistenceWrite(executionExpiresAtMs, this.nowMs());
-        if (mutations.length === 0 && workWrites.length === 0) {
+        if (mutations.length === 0 && workWrites.every((write) => write.kind === 'hold-claimed')) {
             return result;
         }
         try {
@@ -114,10 +122,7 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
                 const work = new PSqlResourceInboxEntryRepository(sql, () => new Date(this.nowMs()));
                 await collector.writeMutations(transaction, mutations);
                 for (const write of workWrites) {
-                    const committed = write.kind === 'insert'
-                        ? await work.tryWriteComputedIfAbsentOrReplaceExpired(write.values)
-                        : await work.writeObservedReplacement(write.computed);
-                    if (committed === null) {
+                    if (!await writePSqlAdmissionWork(work, write)) {
                         throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
                     }
                 }
@@ -135,29 +140,38 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
         }
         return result;
     }
+
+    private toCollectorDependencies(): PSqlAdmissionMutationCollector.Dependencies {
+        return {
+            repository: this.repository,
+            readEntry: (key) => this.stateReads.read(key),
+            namespace: this.namespace,
+            nowEpochMs: this.nowMs
+        };
+    }
 }
 
 type PSqlAdmissionWorkWrite =
     | { readonly kind: 'insert'; readonly values: ResourceInboxEntryInsertValues; }
-    | { readonly kind: 'replace'; readonly computed: ResourceInboxObservedReplacement; };
+    | { readonly kind: 'replace'; readonly computed: ResourceInboxObservedReplacement; }
+    | { readonly kind: 'hold-claimed'; readonly observation: ResourceInboxObservation; };
 
 namespace PSqlAdmissionWorkWriteBuffer {
     export interface Input {
-        readonly repository: PSqlRuntimeStateRepository;
-        readonly namespace: string;
-        readonly workQueue: PSqlQueueBox;
-        readonly nowMs: () => number;
+        readonly collector: PSqlAdmissionMutationCollector.Dependencies;
+        readonly readWork: (key: Key) => Promise<ResourceEntry | undefined>;
     }
 }
 
 class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implements ALAdmissionWorkWriteContext {
-    private readonly workQueue: PSqlQueueBox;
+    private readonly readStoredWork: (key: Key) => Promise<ResourceEntry | undefined>;
     private readonly workObservations = new Map<string, ResourceEntry | undefined>();
+    private readonly claimedSlots = new Map<string, ResourceEntry>();
     private readonly pendingWork = new Map<string, ResourceEntry>();
 
     constructor(input: PSqlAdmissionWorkWriteBuffer.Input) {
-        super(input.repository, input.namespace, input.nowMs);
-        this.workQueue = input.workQueue;
+        super(input.collector);
+        this.readStoredWork = input.readWork;
     }
 
     async readWork(key: Key): Promise<ResourceEntry | undefined> {
@@ -167,10 +181,21 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
             return toResourceEntrySnapshot(pending);
         }
         if (!this.workObservations.has(keyString)) {
-            this.workObservations.set(keyString, await this.workQueue.getItem(key));
+            this.workObservations.set(keyString, await this.readStoredWork(key));
         }
         const observed = this.workObservations.get(keyString);
         return observed === undefined ? undefined : toResourceEntrySnapshot(observed);
+    }
+
+    /** Autocommit holds no snapshot to compare a re-read with, so the claim is the observation the commit fences. */
+    async readClaimedWork(claimed: ResourceEntry): Promise<ResourceEntry | undefined> {
+        const keyString = toKeyAsString(claimed.key);
+        if (!this.workObservations.has(keyString)) {
+            const snapshot = toResourceEntrySnapshot(claimed);
+            this.workObservations.set(keyString, snapshot);
+            this.claimedSlots.set(keyString, snapshot);
+        }
+        return await this.readWork(claimed.key);
     }
 
     writeWork(entry: ResourceEntry): void {
@@ -181,12 +206,59 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
         this.pendingWork.set(key, toResourceEntrySnapshot(entry));
     }
 
+    /** A hold on each claimed row the commit does not rewrite, then every pending write. */
     workWrites(): readonly PSqlAdmissionWorkWrite[] {
-        return [...this.pendingWork].map(([key, entry]) => {
-            const expected = this.workObservations.get(key);
-            return expected === undefined
-                ? { kind: 'insert', values: computeResourceInboxEntryInsertValues(entry) }
-                : { kind: 'replace', computed: computeResourceInboxObservedReplacement(expected, entry) };
-        });
+        const holds: PSqlAdmissionWorkWrite[] = [...this.claimedSlots]
+            .filter(([key]) => !this.pendingWork.has(key))
+            .map(([, claimed]) => ({ kind: 'hold-claimed', observation: computeResourceInboxObservation(claimed) }));
+        return [
+            ...holds,
+            ...[...this.pendingWork].map(([key, entry]): PSqlAdmissionWorkWrite => {
+                const expected = this.workObservations.get(key);
+                return expected === undefined
+                    ? { kind: 'insert', values: computeResourceInboxEntryInsertValues(entry) }
+                    : { kind: 'replace', computed: computeResourceInboxObservedReplacement(expected, entry) };
+            })
+        ];
     }
+}
+
+async function writePSqlAdmissionWork(
+    work: PSqlResourceInboxEntryRepository,
+    write: PSqlAdmissionWorkWrite
+): Promise<boolean> {
+    switch (write.kind) {
+        case 'insert':
+            return await work.tryWriteComputedIfAbsentOrReplaceExpired(write.values) !== null;
+        case 'replace':
+            return await work.writeObservedReplacement(write.computed) !== null;
+        case 'hold-claimed':
+            return await work.lockObserved(write.observation);
+    }
+}
+
+/** One key reads its row alone; several share the repository's batch read, one selector per key. */
+async function readPSqlAdmissionStateEntries(
+    repository: PSqlRuntimeStateRepository,
+    namespace: string,
+    keys: readonly string[]
+): Promise<readonly (RuntimeStateEntry | undefined)[]> {
+    if (keys.length === 1) {
+        return [await repository.findEntry(namespace, keys[0]!)];
+    }
+    const selections = await repository.readRuntimeStateBatch(
+        keys.map((key, index) => ({ selectorId: String(index), kind: 'key', namespace, key }))
+    );
+    const entries = new Map(selections.map((selection) => [selection.selectorId, selection.entries[0]]));
+    return keys.map((_key, index) => entries.get(String(index)));
+}
+
+async function readPSqlAdmissionWorkEntries(
+    entries: PSqlResourceInboxEntryRepository,
+    keys: readonly Key[]
+): Promise<readonly (ResourceEntry | undefined)[]> {
+    if (keys.length === 1) {
+        return [await entries.findByKey(keys[0]!) ?? undefined];
+    }
+    return await entries.findByKeys(keys);
 }

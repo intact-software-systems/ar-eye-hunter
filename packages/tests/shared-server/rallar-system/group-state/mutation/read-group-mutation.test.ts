@@ -137,6 +137,7 @@ describe('GroupStateService mutation exact reads', () => {
         await service.connectPresenceSession(SCOPE, ref.groupId, 'presence-session', {
             principalId: 'owner',
             generationId: 'presence-generation',
+            connectionGenerationId: 'presence-ws-generation',
             expiresAtEpochMs: 20_000,
             actorPrincipalId: 'owner',
             requestId: 'presence-request'

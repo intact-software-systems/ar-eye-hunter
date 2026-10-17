@@ -15,6 +15,11 @@ export const INBOX_OUTBOX_ENGINE_MAX_IDLE_MS = 3_000;
 /** The share by which the engine stretches or shortens each scheduled pass, so owners sharing a clock drift apart. */
 export const INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO = 0.2;
 
+interface InboxOutboxEngineWakeListener {
+    readonly typeIds: ReadonlySet<string>;
+    readonly listener: () => void;
+}
+
 const defaultInboxOutboxEngineDependencies: InboxOutboxEngine.Dependencies = {
     nowEpochMs: () => Date.now(),
     random: () => Math.random(),
@@ -68,7 +73,7 @@ export class InboxOutboxEngine {
 
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
     private readonly readyAtByTask = new Map<string, number>();
-    private readonly wakeListeners = new Map<string, () => void>();
+    private readonly wakeListeners = new Map<string, InboxOutboxEngineWakeListener>();
 
     private readonly dependencies: InboxOutboxEngine.Dependencies;
 
@@ -97,15 +102,15 @@ export class InboxOutboxEngine {
     }
 
     /**
-     * Registers a listener for every external-write wake. Such a wake is the announcement that a
-     * writer this engine does not own may have written work its tasks own, so a task that answers
-     * readiness from memory drops that memory here instead of waiting out the idle ceiling. The
-     * owners' own progress reaches `wake` instead and notifies nobody. A listener runs synchronously
-     * during the wake and must not wake the engine. One that throws is reported and skipped: the
-     * announcement is one every other owner still needs.
+     * Registers a listener for the external-write wakes of its queue types. Such a wake is the
+     * announcement that a writer this engine does not own may have written rows of those types, so a
+     * task that answers readiness from memory drops that memory here instead of waiting out the idle
+     * ceiling. The owners' own progress reaches `wake` instead and notifies nobody. A listener runs
+     * synchronously during the wake and must not wake the engine. One that throws is reported and
+     * skipped: the announcement is one every other owner of those types still needs.
      */
-    includeWakeListener(id: string, listener: () => void): InboxOutboxEngine {
-        this.wakeListeners.set(id, listener);
+    includeWakeListener(id: string, typeIds: ReadonlySet<string>, listener: () => void): InboxOutboxEngine {
+        this.wakeListeners.set(id, { typeIds, listener });
         return this;
     }
 
@@ -172,12 +177,13 @@ export class InboxOutboxEngine {
     }
 
     /**
-     * The announcement that a writer this engine does not own put work in a queue: a server AppInbox
-     * transaction or a pub/sub requeue; no browser code makes it. Such a writer cannot say which owner
-     * the row belongs to, so every owner drops its remembered readiness and re-reads storage once.
+     * The announcement that a writer this engine does not own put rows of `typeIds` in a queue: a server
+     * AppInbox transaction or a pub/sub requeue; no browser code makes it. Such a writer cannot say
+     * which owner a row belongs to, so every owner of those types drops its remembered readiness and
+     * re-reads storage once; an owner of other types keeps its answer.
      */
-    wakeAfterExternalWrite(): void {
-        this.notifyWake();
+    wakeAfterExternalWrite(typeIds: ReadonlySet<string>): void {
+        this.notifyWake(typeIds);
         this.rescheduleNow();
     }
 
@@ -233,8 +239,11 @@ export class InboxOutboxEngine {
         return this.execution;
     }
 
-    private notifyWake(): void {
-        for (const [id, listener] of this.wakeListeners) {
+    private notifyWake(typeIds: ReadonlySet<string>): void {
+        for (const [id, { typeIds: listenedTypeIds, listener }] of this.wakeListeners) {
+            if (![...listenedTypeIds].some((typeId) => typeIds.has(typeId))) {
+                continue;
+            }
             try {
                 listener();
             }

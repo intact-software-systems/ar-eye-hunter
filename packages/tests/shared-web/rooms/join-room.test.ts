@@ -77,6 +77,7 @@ describe('room join operations', () => {
                 principalId: 'principal-1',
                 sessionId: 'session-1',
                 generationId: 'generation-session-1',
+                connectionGenerationId: 'ws-generation-session-1',
                 scope: undefined,
                 policies: { command: { signal, timeoutMs: 44 } },
                 intent: { inviteToken: 'invite-1', joinCode: 'code-1' }

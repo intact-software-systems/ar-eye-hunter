@@ -10,6 +10,7 @@ import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-view
 
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import { toRuntimeStateReadBatchSelectedKey } from '../../../runtime-state/read-batch/to-runtime-state-read-batch-selected-key.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -131,9 +132,7 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
         );
         if (resolved.status === 'changed') {
-            throw new StateSnapshotReadConflictError(
-                selectors[0].kind === 'key' ? selectors[0].key : selectors[0].keyPrefix
-            );
+            throw new StateSnapshotReadConflictError(toRuntimeStateReadBatchSelectedKey(selectors[0]));
         }
         return resolved.selections.map((selection) => selection.entries);
     }

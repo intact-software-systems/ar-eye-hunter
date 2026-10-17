@@ -41,8 +41,7 @@ export function createActivationStatusClockWorkHandler(
             const [authority, planned] = await Promise.all([
                 options.topologyPlanning.readTopologyPlanningAuthority({
                     groupRef: work.groupRef,
-                    knownGroup: snapshot,
-                    snapshotSelection: 'prefer-current'
+                    knownGroup: snapshot
                 }),
                 options.readPlannedTopology(work.groupRef)
             ]);

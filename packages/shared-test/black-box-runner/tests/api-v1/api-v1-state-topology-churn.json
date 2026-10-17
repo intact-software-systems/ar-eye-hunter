@@ -235,6 +235,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{ownerClientId}"
         }
       },
@@ -257,6 +258,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{ownerClientId}"
         }
       },
@@ -398,6 +400,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{primaryClientId}"
                     },
                     "outputs": {
@@ -425,6 +428,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
                   },
@@ -469,6 +473,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{primaryClientId}"
                     },
                     "outputs": {
@@ -613,6 +618,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
                     "outputs": {
@@ -640,6 +646,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
                   },
@@ -684,6 +691,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{secondaryClientId}"
                     },
                     "outputs": {
@@ -828,6 +836,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },
                     "outputs": {
@@ -855,6 +864,7 @@
                     },
                     "body": {
                       "generationId": "generation-{runId}",
+                      "connectionGenerationId": "connection-generation-{runId}",
                       "principalId": "{tertiaryClientId}"
                     }
                   },
@@ -899,6 +909,7 @@
                     },
                     "body": {
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "connectionGenerationId": "reconnect-connection-generation-{loop.iteration}-{runId}",
                       "principalId": "{tertiaryClientId}"
                     },
                     "outputs": {

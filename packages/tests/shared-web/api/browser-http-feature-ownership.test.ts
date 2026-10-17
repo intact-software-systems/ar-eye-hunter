@@ -187,7 +187,13 @@ describe('browser HTTP feature ownership characterization', () => {
         await refreshStateHeartbeat(
             { clientId: 'owner-1', sessionId: 'session-1', isOnline: true },
             [group],
-            { generationId: 'generation-1', clientSnapshot: undefined, scope, policies: { command: { maxAttempts: 2 } } }
+            {
+                generationId: 'generation-1',
+                wsConnectionGenerationId: undefined,
+                clientSnapshot: undefined,
+                scope,
+                policies: { command: { maxAttempts: 2 } }
+            }
         );
 
         const heartbeatCalls = observations.filter((call) => call.url.includes('/heartbeat/requests/'));
@@ -341,6 +347,7 @@ function createGroupBody() {
 function connectGroupPresenceBody() {
     return {
         generationId: 'generation-1',
+        connectionGenerationId: 'ws-generation-1',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'session-1',

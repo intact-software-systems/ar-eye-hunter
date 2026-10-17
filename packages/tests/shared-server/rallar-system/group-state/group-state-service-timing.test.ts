@@ -16,6 +16,12 @@ import { createTestGroupStateRuntime } from './group-state-test-runtime.ts';
 
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
+class UnreadableRuntimeStateRepository extends FakeRuntimeStateRepository {
+    override readRuntimeStateBatch(): never {
+        throw new Error('Runtime state is unreadable');
+    }
+}
+
 describe('group-state service timing boundary', () => {
     it('times one asynchronous service call with its exact return value and details', async () => {
         const timingEvents: RallarTimingEvent[] = [];
@@ -58,7 +64,7 @@ describe('group-state service timing boundary', () => {
     it('propagates a service rejection and records one matching error timing event', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const runtime = createTestGroupStateRuntime({
-            runtimeRepository: new FakeRuntimeStateRepository(),
+            runtimeRepository: new UnreadableRuntimeStateRepository(),
             now: () => 1_000,
             serviceId: 'timing-service',
             timing: (event) => timingEvents.push(event)
@@ -75,9 +81,10 @@ describe('group-state service timing boundary', () => {
                     expiresAtEpochMs: 253_402_300_799_999
                 },
                 principalId: 'missing-owner',
+                connectionGenerationId: 'timing-ws-generation',
                 disconnectedAtEpochMs: 1_000
             })
-        ).rejects.toThrow('Group session cleanup authority is no longer valid');
+        ).rejects.toThrow('Runtime state is unreadable');
         expect(timingEvents).toEqual([
             expect.objectContaining({
                 component: 'group-state-service',
@@ -152,6 +159,7 @@ async function invokeIngressCaptureOperations(runtime: ServiceTimingRuntime) {
                 expiresAtEpochMs: 253_402_300_799_999
             },
             principalId: 'owner',
+            connectionGenerationId: 'timing-ws-generation',
             disconnectedAtEpochMs: 1_000
         })
     ).resolves.toEqual([]);

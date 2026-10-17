@@ -81,7 +81,8 @@
       "treeExitWidth": 0
     },
     "recompute": {
-      "formationDebounceMs": 500
+      "formationDebounceMs": 500,
+      "formationMaxWaitMs": 4500
     },
     "rttRefinement": {
       "minIntervalMs": 30000,
@@ -118,6 +119,7 @@
   "appInbox": {
     "phaseTiming": false,
     "laneBudgetPolicy": "fixed-retry-two",
+    "newLaneConcurrency": 4,
     "completionWait": {
       "maxElapsedMs": 30000,
       "retryIntervalMs": 250,

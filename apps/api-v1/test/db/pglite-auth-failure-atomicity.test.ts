@@ -32,7 +32,10 @@ Deno.test(
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+                laneBudgetPolicy: 'fixed-retry-two',
+                newLaneConcurrency: 1
+            });
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-logout-secret-0123456789abcdef'
             );
@@ -125,7 +128,10 @@ Deno.test(
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+                laneBudgetPolicy: 'fixed-retry-two',
+                newLaneConcurrency: 1
+            });
             const credentialIssuer = createHmacAuthCredentialIssuer(
                 'pglite-fence-secret-0123456789abcdef'
             );

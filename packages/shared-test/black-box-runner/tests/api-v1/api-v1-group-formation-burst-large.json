@@ -492,6 +492,7 @@
             },
             "body": {
               "generationId": "generation-{runId}",
+              "connectionGenerationId": "connection-generation-{runId}",
               "principalId": "{client{i}ClientId}"
             },
             "retry": {

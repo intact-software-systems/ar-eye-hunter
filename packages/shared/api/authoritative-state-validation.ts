@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from './api-json-value.ts';
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
@@ -135,6 +136,7 @@ const GROUP_SESSION_KEYS = [
     'principalId',
     'generationId',
     'generationVersion',
+    'connectionGenerationId',
     'status',
     'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs',
@@ -211,7 +213,7 @@ export function parseAuthoritativeClientSnapshot(
     serialized: string,
     scope?: StateScope
 ): ClientSnapshot {
-    const value: unknown = JSON.parse(serialized);
+    const value: WireValue = JSON.parse(serialized);
     validateAuthoritativeClientSnapshot(value, scope);
     return value;
 }
@@ -220,7 +222,7 @@ export function parseAuthoritativeGroupSnapshot(
     serialized: string,
     scope?: StateScope
 ): GroupSnapshot {
-    const value: unknown = JSON.parse(serialized);
+    const value: WireValue = JSON.parse(serialized);
     validateAuthoritativeGroupSnapshot(value, scope);
     return value;
 }
@@ -229,7 +231,7 @@ export function parseAuthoritativeOverlayTopologySnapshot(
     serialized: string,
     scope?: StateScope
 ): RallarOverlayTopologySnapshot {
-    const value: unknown = JSON.parse(serialized);
+    const value: WireValue = JSON.parse(serialized);
     validateAuthoritativeOverlayTopologySnapshot(value, scope);
     return value;
 }
@@ -238,7 +240,7 @@ export function validateAuthoritativeClientSnapshot(
     value: unknown,
     scope?: StateScope
 ): asserts value is ClientSnapshot {
-    const snapshot = record(value, 'ClientSnapshot');
+    const snapshot = decodeRecord(value, 'ClientSnapshot');
     exact(
         snapshot,
         [
@@ -253,7 +255,7 @@ export function validateAuthoritativeClientSnapshot(
         'ClientSnapshot'
     );
     nonNegativeInteger(snapshot.stateRevision, 'ClientSnapshot.stateRevision');
-    const principal = record(snapshot.principal, 'ClientSnapshot.principal');
+    const principal = decodeRecord(snapshot.principal, 'ClientSnapshot.principal');
     exact(principal, CLIENT_PRINCIPAL_KEYS, 'ClientSnapshot.principal');
     const ref = clientRef(principal, 'ClientSnapshot.principal', scope);
     enumValue(principal.status, ['active', 'disabled', 'deleted'], 'ClientSnapshot.principal.status');
@@ -261,8 +263,8 @@ export function validateAuthoritativeClientSnapshot(
     for (const key of ['displayName', 'avatarUrl', 'authProvider', 'externalSubjectId'] as const) {
         nullableString(principal[key], `ClientSnapshot.principal.${key}`);
     }
-    stringArray(principal.roles, 'ClientSnapshot.principal.roles');
-    record(principal.metadata, 'ClientSnapshot.principal.metadata');
+    decodeStringArray(principal.roles, 'ClientSnapshot.principal.roles');
+    decodeRecord(principal.metadata, 'ClientSnapshot.principal.metadata');
     for (const key of ['snapshotVersion', 'profileVersion', 'presenceVersion'] as const) {
         positiveInteger(principal[key], `ClientSnapshot.principal.${key}`);
     }
@@ -290,10 +292,10 @@ export function validateAuthoritativeClientSnapshot(
         principalLastSeenAtEpochMs,
         'ClientSnapshot.principal.lastSeenAtEpochMs'
     );
-    const instances = array(snapshot.instances, 'ClientSnapshot.instances');
+    const instances = decodeArray(snapshot.instances, 'ClientSnapshot.instances');
     const instanceIds = new Set<string>();
     for (const item of instances) {
-        const instance = record(item, 'ClientSnapshot.instance');
+        const instance = decodeRecord(item, 'ClientSnapshot.instance');
         exact(instance, CLIENT_INSTANCE_KEYS, 'ClientSnapshot.instance');
         sameClientRef(instance, ref, 'ClientSnapshot.instance');
         nonEmptyString(instance.clientInstanceId, 'ClientSnapshot.instance.clientInstanceId');
@@ -310,7 +312,7 @@ export function validateAuthoritativeClientSnapshot(
         for (const key of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
             nullableString(instance[key], `ClientSnapshot.instance.${key}`);
         }
-        stringArray(instance.capabilities, 'ClientSnapshot.instance.capabilities');
+        decodeStringArray(instance.capabilities, 'ClientSnapshot.instance.capabilities');
         validateAudit(instance.registered, 'ClientSnapshot.instance.registered');
         validateAudit(instance.updated, 'ClientSnapshot.instance.updated');
         nullableAudit(instance.revoked, 'ClientSnapshot.instance.revoked');
@@ -318,11 +320,11 @@ export function validateAuthoritativeClientSnapshot(
             fail('ClientSnapshot instance lifecycle is invalid');
         }
     }
-    const sessions = array(snapshot.activeSessions, 'ClientSnapshot.activeSessions');
+    const sessions = decodeArray(snapshot.activeSessions, 'ClientSnapshot.activeSessions');
     const sessionIds = new Set<string>();
     const activeSessionHeartbeats: Array<{ lastHeartbeatAtEpochMs: number; }> = [];
     for (const item of sessions) {
-        const session = record(item, 'ClientSnapshot.session');
+        const session = decodeRecord(item, 'ClientSnapshot.session');
         exact(session, CLIENT_SESSION_KEYS, 'ClientSnapshot.session');
         sameClientRef(session, ref, 'ClientSnapshot.session');
         nonEmptyString(session.clientInstanceId, 'ClientSnapshot.session.clientInstanceId');
@@ -387,9 +389,7 @@ export function validateAuthoritativeClientSnapshot(
     }
 }
 
-type ValidatedRecord = Readonly<Record<string, unknown>>;
-
-function validateGroupSnapshotMemberPolicy(memberPolicy: ValidatedRecord): void {
+function validateGroupSnapshotMemberPolicy(memberPolicy: WireObject): void {
     exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'GroupSnapshot.group.memberPolicy');
     positiveInteger(
         memberPolicy.maxConcurrentEdgeSetups,
@@ -409,7 +409,7 @@ export function validateAuthoritativeGroupSnapshot(
     value: unknown,
     scope?: StateScope
 ): asserts value is GroupSnapshot {
-    const snapshot = record(value, 'GroupSnapshot');
+    const snapshot = decodeRecord(value, 'GroupSnapshot');
     exact(
         snapshot,
         [
@@ -424,7 +424,7 @@ export function validateAuthoritativeGroupSnapshot(
     );
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
-    const group = record(snapshot.group, 'GroupSnapshot.group');
+    const group = decodeRecord(snapshot.group, 'GroupSnapshot.group');
     exact(group, GROUP_KEYS, 'GroupSnapshot.group');
     const ref = groupRef(group, 'GroupSnapshot.group', scope);
     enumValue(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
@@ -436,7 +436,7 @@ export function validateAuthoritativeGroupSnapshot(
     nullablePositiveInteger(group.maxMembers, 'GroupSnapshot.group.maxMembers');
     nullablePositiveInteger(group.maxSessionsPerMember, 'GroupSnapshot.group.maxSessionsPerMember');
     nonEmptyString(group.ownerPrincipalId, 'GroupSnapshot.group.ownerPrincipalId');
-    record(group.metadata, 'GroupSnapshot.group.metadata');
+    decodeRecord(group.metadata, 'GroupSnapshot.group.metadata');
     nonNegativeInteger(group.activeMemberCount, 'GroupSnapshot.group.activeMemberCount');
     for (const key of ['snapshotVersion', 'metadataVersion', 'rosterVersion'] as const) {
         positiveInteger(group[key], `GroupSnapshot.group.${key}`);
@@ -472,7 +472,7 @@ export function validateAuthoritativeGroupSnapshot(
     nonNegativeInteger(group.formationEpoch, 'GroupSnapshot.group.formationEpoch');
     nonNegativeInteger(group.formationAttemptCount, 'GroupSnapshot.group.formationAttemptCount');
     if (group.lastFormationOutcome !== null) {
-        const outcome = record(group.lastFormationOutcome, 'GroupSnapshot.group.lastFormationOutcome');
+        const outcome = decodeRecord(group.lastFormationOutcome, 'GroupSnapshot.group.lastFormationOutcome');
         exact(
             outcome,
             ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'],
@@ -501,7 +501,7 @@ export function validateAuthoritativeGroupSnapshot(
         group.establishmentStartedAtEpochMs,
         'GroupSnapshot.group.establishmentStartedAtEpochMs'
     );
-    const electorate = array(group.formationElectorate, 'GroupSnapshot.group.formationElectorate');
+    const electorate = decodeArray(group.formationElectorate, 'GroupSnapshot.group.formationElectorate');
     if (new Set(electorate).size !== electorate.length) {
         fail('GroupSnapshot.group.formationElectorate must not repeat principal ids');
     }
@@ -512,7 +512,7 @@ export function validateAuthoritativeGroupSnapshot(
     }
     if (group.acceptedLayoutIdentity !== null) {
         validateGroupSnapshotLayoutIdentity(
-            record(group.acceptedLayoutIdentity, 'GroupSnapshot.group.acceptedLayoutIdentity'),
+            decodeRecord(group.acceptedLayoutIdentity, 'GroupSnapshot.group.acceptedLayoutIdentity'),
             'GroupSnapshot.group.acceptedLayoutIdentity'
         );
     }
@@ -521,20 +521,20 @@ export function validateAuthoritativeGroupSnapshot(
         GROUP_TRANSPORT_STATES,
         'GroupSnapshot.group.transportState'
     );
-    validateGroupSnapshotMemberPolicy(record(group.memberPolicy, 'GroupSnapshot.group.memberPolicy'));
+    validateGroupSnapshotMemberPolicy(decodeRecord(group.memberPolicy, 'GroupSnapshot.group.memberPolicy'));
     if (group.activationStatus !== null) {
         validateGroupActivationStatusPayload(
-            record(group.activationStatus, 'GroupSnapshot.group.activationStatus'),
+            decodeRecord(group.activationStatus, 'GroupSnapshot.group.activationStatus'),
             'GroupSnapshot.group.activationStatus'
         );
     }
-    const members = array(snapshot.members, 'GroupSnapshot.members');
+    const members = decodeArray(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();
     const activeOwnerIds = new Set<string>();
     for (const item of members) {
         validateGroupMember(item, ref);
-        const member = record(item, 'GroupSnapshot.member');
+        const member = decodeRecord(item, 'GroupSnapshot.member');
         nonEmptyString(member.principalId, 'GroupSnapshot.member.principalId');
         if (memberIds.has(member.principalId)) {
             fail('GroupSnapshot has duplicate members');
@@ -547,14 +547,14 @@ export function validateAuthoritativeGroupSnapshot(
             }
         }
     }
-    const sessions = array(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
+    const sessions = decodeArray(snapshot.activeSessions, 'GroupSnapshot.activeSessions');
     const sessionIds = new Set<string>();
     const onlinePrincipalIds = new Set<string>();
     for (const item of sessions) {
-        const session = record(item, 'GroupSnapshot.session');
+        const session = decodeRecord(item, 'GroupSnapshot.session');
         exact(session, GROUP_SESSION_KEYS, 'GroupSnapshot.session');
         sameGroupRef(session, ref, 'GroupSnapshot.session');
-        for (const key of ['sessionId', 'principalId', 'generationId'] as const) {
+        for (const key of ['sessionId', 'principalId', 'generationId', 'connectionGenerationId'] as const) {
             nonEmptyString(session[key], `GroupSnapshot.session.${key}`);
         }
         const principalId = session.principalId;
@@ -610,7 +610,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
     value: unknown,
     scope?: StateScope
 ): asserts value is RallarOverlayTopologySnapshot {
-    const topology = record(value, 'RallarOverlayTopologySnapshot');
+    const topology = decodeRecord(value, 'RallarOverlayTopologySnapshot');
     exact(
         topology,
         [
@@ -635,7 +635,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         'RallarOverlayTopologySnapshot.sourceGroupStateCausalRevision'
     );
     const ref = groupRef(
-        record(topology.groupRef, 'RallarOverlayTopologySnapshot.groupRef'),
+        decodeRecord(topology.groupRef, 'RallarOverlayTopologySnapshot.groupRef'),
         'RallarOverlayTopologySnapshot.groupRef',
         scope,
         true
@@ -650,7 +650,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
     nonEmptyString(topology.name, 'RallarOverlayTopologySnapshot.name');
     enumValue(topology.topology, ['star', 'tree', 'mesh'], 'RallarOverlayTopologySnapshot.topology');
     nonEmptyString(topology.createdByClientId, 'RallarOverlayTopologySnapshot.createdByClientId');
-    const activeSessionIds = stringArray(
+    const activeSessionIds = decodeStringArray(
         topology.activeSessionIds,
         'RallarOverlayTopologySnapshot.activeSessionIds'
     );
@@ -659,7 +659,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         'RallarOverlayTopologySnapshot.activeSessionIds'
     );
     const activeSessionIdSet = new Set(activeSessionIds);
-    const nextHops = record(
+    const nextHops = decodeRecord(
         topology.nextHopsBySessionId,
         'RallarOverlayTopologySnapshot.nextHopsBySessionId'
     );
@@ -671,7 +671,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         fail('RallarOverlayTopologySnapshot routing keys differ from active sessions');
     }
     for (const [sessionId, peers] of Object.entries(nextHops)) {
-        const peerIds = stringArray(
+        const peerIds = decodeStringArray(
             peers,
             `RallarOverlayTopologySnapshot.nextHopsBySessionId.${sessionId}`
         );
@@ -715,7 +715,7 @@ function assertCanonicalTopologyIdentifiers(values: readonly string[], label: st
 }
 
 function validateActiveTopologyGraph(
-    nextHops: ValidatedRecord,
+    nextHops: WireObject,
     activeSessionIds: ReadonlySet<string>,
     degreeLimit: number
 ): void {
@@ -759,7 +759,7 @@ export function validateAuthoritativeClientSnapshotList(
     value: unknown,
     scope: StateScope
 ): asserts value is ClientSnapshot[] {
-    const snapshots = array(value, 'ClientSnapshot list');
+    const snapshots = decodeArray(value, 'ClientSnapshot list');
     for (const snapshot of snapshots) {
         validateAuthoritativeClientSnapshot(snapshot, scope);
     }
@@ -769,7 +769,7 @@ export function validateAuthoritativeGroupSnapshotList(
     value: unknown,
     scope: StateScope
 ): asserts value is GroupSnapshot[] {
-    const snapshots = array(value, 'GroupSnapshot list');
+    const snapshots = decodeArray(value, 'GroupSnapshot list');
     for (const snapshot of snapshots) {
         validateAuthoritativeGroupSnapshot(snapshot, scope);
     }
@@ -779,7 +779,7 @@ export function validateAuthoritativeClientEvent(
     value: unknown,
     expected?: StateScope & Readonly<{ principalId?: string; }>
 ): asserts value is ClientEvent {
-    const event = record(value, 'ClientEvent');
+    const event = decodeRecord(value, 'ClientEvent');
     exact(event, CLIENT_EVENT_KEYS, 'ClientEvent');
     const ref = clientRef(event, 'ClientEvent', expected);
     if (expected?.principalId !== undefined && ref.principalId !== expected.principalId) {
@@ -795,14 +795,14 @@ export function validateAuthoritativeClientEvent(
     nullableString(event.reason, 'ClientEvent.reason');
     nullableString(event.traceId, 'ClientEvent.traceId');
     nullableString(event.requestId, 'ClientEvent.requestId');
-    record(event.payload, 'ClientEvent.payload');
+    decodeRecord(event.payload, 'ClientEvent.payload');
 }
 
 export function validateAuthoritativeGroupEvent(
     value: unknown,
     expected?: StateScope & Readonly<{ groupId?: string; }>
 ): asserts value is GroupEvent {
-    const event = record(value, 'GroupEvent');
+    const event = decodeRecord(value, 'GroupEvent');
     exact(event, GROUP_EVENT_KEYS, 'GroupEvent');
     const ref = groupRef(event, 'GroupEvent', expected);
     if (expected?.groupId !== undefined && ref.groupId !== expected.groupId) {
@@ -817,14 +817,14 @@ export function validateAuthoritativeGroupEvent(
     nullableString(event.reason, 'GroupEvent.reason');
     nullableString(event.traceId, 'GroupEvent.traceId');
     nullableString(event.requestId, 'GroupEvent.requestId');
-    record(event.payload, 'GroupEvent.payload');
+    decodeRecord(event.payload, 'GroupEvent.payload');
 }
 
 export function validateAuthoritativeClientEventList(
     value: unknown,
     expected: StateScope & Readonly<{ principalId?: string; }>
 ): asserts value is ClientEvent[] {
-    const events = array(value, 'ClientEvent list');
+    const events = decodeArray(value, 'ClientEvent list');
     for (const event of events) {
         validateAuthoritativeClientEvent(event, expected);
     }
@@ -834,7 +834,7 @@ export function validateAuthoritativeGroupEventList(
     value: unknown,
     expected: StateScope & Readonly<{ groupId?: string; }>
 ): asserts value is GroupEvent[] {
-    const events = array(value, 'GroupEvent list');
+    const events = decodeArray(value, 'GroupEvent list');
     for (const event of events) {
         validateAuthoritativeGroupEvent(event, expected);
     }
@@ -844,7 +844,7 @@ export function validateAuthoritativeClientEventPage(
     value: unknown,
     expected: StateScope & Readonly<{ principalId?: string; }>
 ): asserts value is StateEventPage<ClientEvent> {
-    validateEventPage(
+    decodeEventPage(
         value,
         (event) => validateAuthoritativeClientEvent(event, expected),
         'ClientEventPage'
@@ -855,33 +855,33 @@ export function validateAuthoritativeGroupEventPage(
     value: unknown,
     expected: StateScope & Readonly<{ groupId?: string; }>
 ): asserts value is StateEventPage<GroupEvent> {
-    validateEventPage(
+    decodeEventPage(
         value,
         (event) => validateAuthoritativeGroupEvent(event, expected),
         'GroupEventPage'
     );
 }
 
-function validateEventPage(
+function decodeEventPage(
     value: unknown,
-    validateEvent: (event: unknown) => void,
+    decodeEvent: (event: WireValue) => void,
     label: string
 ): void {
-    const page = record(value, label);
+    const page = decodeRecord(value, label);
     exact(
         page,
         Object.hasOwn(page, 'nextCursor') ? ['events', 'nextCursor', 'hasMore'] : ['events', 'hasMore'],
         label
     );
-    const events = array(page.events, `${label}.events`);
+    const events = decodeArray(page.events, `${label}.events`);
     for (const event of events) {
-        validateEvent(event);
+        decodeEvent(event);
     }
     if (typeof page.hasMore !== 'boolean') {
         fail(`${label}.hasMore is invalid`);
     }
     if (Object.hasOwn(page, 'nextCursor')) {
-        const cursor = record(page.nextCursor, `${label}.nextCursor`);
+        const cursor = decodeRecord(page.nextCursor, `${label}.nextCursor`);
         exact(cursor, ['snapshotVersion', 'occurredAtEpochMs', 'eventId'], `${label}.nextCursor`);
         nonNegativeInteger(cursor.snapshotVersion, `${label}.nextCursor.snapshotVersion`);
         nonNegativeInteger(cursor.occurredAtEpochMs, `${label}.nextCursor.occurredAtEpochMs`);
@@ -889,8 +889,8 @@ function validateEventPage(
     }
 }
 
-function validateGroupMember(value: unknown, ref: GroupRef): void {
-    const member = record(value, 'GroupSnapshot.member');
+function validateGroupMember(value: WireValue, ref: GroupRef): void {
+    const member = decodeRecord(value, 'GroupSnapshot.member');
     exact(member, GROUP_MEMBER_KEYS, 'GroupSnapshot.member');
     sameGroupRef(member, ref, 'GroupSnapshot.member');
     nonEmptyString(member.principalId, 'GroupSnapshot.member.principalId');
@@ -930,8 +930,8 @@ function validateGroupMember(value: unknown, ref: GroupRef): void {
     }
 }
 
-function validateAudit(value: unknown, label: string): void {
-    const audit = record(value, label);
+function validateAudit(value: WireValue, label: string): void {
+    const audit = decodeRecord(value, label);
     exact(audit, AUDIT_KEYS, label);
     nonNegativeInteger(audit.atEpochMs, `${label}.atEpochMs`);
     validateActor(audit.actor, `${label}.actor`);
@@ -940,8 +940,8 @@ function validateAudit(value: unknown, label: string): void {
     nullableString(audit.requestId, `${label}.requestId`);
 }
 
-function validateActor(value: unknown, label: string): void {
-    const actor = record(value, label);
+function validateActor(value: WireValue, label: string): void {
+    const actor = decodeRecord(value, label);
     if (actor.kind === 'principal') {
         exact(actor, ['kind', 'principalId'], label);
         nonEmptyString(actor.principalId, `${label}.principalId`);
@@ -961,14 +961,14 @@ function validateActor(value: unknown, label: string): void {
     fail(`${label}.kind is invalid`);
 }
 
-function nullableAudit(value: unknown, label: string): void {
+function nullableAudit(value: WireValue, label: string): void {
     if (value !== null) {
         validateAudit(value, label);
     }
 }
 
 function clientRef(
-    value: Record<string, unknown>,
+    value: WireObject,
     label: string,
     scope?: StateScope
 ): Readonly<{ applicationId: string; workspaceId: string; principalId: string; }> {
@@ -984,7 +984,7 @@ function clientRef(
 }
 
 function groupRef(
-    value: Record<string, unknown>,
+    value: WireObject,
     label: string,
     scope?: StateScope,
     exactObject = false
@@ -1002,7 +1002,7 @@ function groupRef(
 }
 
 function sameClientRef(
-    value: Record<string, unknown>,
+    value: WireObject,
     ref: Readonly<{ applicationId: string; workspaceId: string; principalId: string; }>,
     label: string
 ): void {
@@ -1015,7 +1015,7 @@ function sameClientRef(
     }
 }
 
-function sameGroupRef(value: Record<string, unknown>, ref: GroupRef, label: string): void {
+function sameGroupRef(value: WireObject, ref: GroupRef, label: string): void {
     if (
         value.applicationId !== ref.applicationId ||
         value.workspaceId !== ref.workspaceId ||
@@ -1026,7 +1026,7 @@ function sameGroupRef(value: Record<string, unknown>, ref: GroupRef, label: stri
 }
 
 function requireScope(
-    value: Record<string, unknown>,
+    value: WireObject,
     scope: StateScope | undefined,
     label: string
 ): void {
@@ -1039,10 +1039,10 @@ function requireScope(
 }
 
 function causalRevision(
-    value: unknown,
+    value: WireValue,
     label: string
 ): Readonly<{ groupRevision: number; presenceRevision: number; }> {
-    const causal = record(value, label);
+    const causal = decodeRecord(value, label);
     exact(causal, ['groupRevision', 'presenceRevision'], label);
     nonNegativeInteger(causal.groupRevision, `${label}.groupRevision`);
     nonNegativeInteger(causal.presenceRevision, `${label}.presenceRevision`);
@@ -1052,7 +1052,7 @@ function causalRevision(
     };
 }
 
-function validateGroupSnapshotLayoutIdentity(identity: NarrowedWireObject, label: string): void {
+function validateGroupSnapshotLayoutIdentity(identity: WireObject, label: string): void {
     exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
         nonNegativeInteger(identity[key], `${label}.${key}`);
@@ -1065,7 +1065,7 @@ function validateGroupSnapshotLayoutIdentity(identity: NarrowedWireObject, label
  * status and both fail the same way, so one check serves them.
  */
 export function validateGroupActivationStatusPayload(
-    status: NarrowedWireObject,
+    status: WireObject,
     label: string
 ): void {
     exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
@@ -1077,11 +1077,11 @@ export function validateGroupActivationStatusPayload(
     nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
     nonNegativeInteger(status.publishedAtEpochMs, `${label}.publishedAtEpochMs`);
     validateGroupSnapshotLayoutIdentity(
-        record(status.coverageBasisLayoutIdentity, `${label}.coverageBasisLayoutIdentity`),
+        decodeRecord(status.coverageBasisLayoutIdentity, `${label}.coverageBasisLayoutIdentity`),
         `${label}.coverageBasisLayoutIdentity`
     );
     if (status.evidenceWatermark !== null) {
-        const watermark = record(status.evidenceWatermark, `${label}.evidenceWatermark`);
+        const watermark = decodeRecord(status.evidenceWatermark, `${label}.evidenceWatermark`);
         exact(watermark, GROUP_EVIDENCE_WATERMARK_KEYS, `${label}.evidenceWatermark`);
         for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
             nonNegativeInteger(watermark[key], `${label}.evidenceWatermark.${key}`);
@@ -1089,29 +1089,26 @@ export function validateGroupActivationStatusPayload(
     }
 }
 
-/** Whatever `record` narrows an untrusted value to; the helpers below consume it. */
-type NarrowedWireObject = ReturnType<typeof record>;
+/** A field of a decoded wire object; undefined when its key is absent. */
+export type WireValue = ApiJsonValue | undefined;
+export type WireObject = Readonly<Record<string, WireValue>>;
 
-function record(value: unknown, label: string): Record<string, unknown> {
-    if (!isRecord(value)) {
+function decodeRecord(value: unknown, label: string): WireObject {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         fail(`${label} must be an object`);
     }
-    return value;
+    return value as WireObject;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function array(value: unknown, label: string): unknown[] {
+function decodeArray(value: unknown, label: string): readonly WireValue[] {
     if (!Array.isArray(value)) {
         fail(`${label} must be an array`);
     }
     return value;
 }
 
-function stringArray(value: unknown, label: string): string[] {
-    const values = array(value, label);
+function decodeStringArray(value: unknown, label: string): string[] {
+    const values = decodeArray(value, label);
     const strings: string[] = [];
     for (const item of values) {
         nonEmptyString(item, `${label} item`);
@@ -1120,14 +1117,14 @@ function stringArray(value: unknown, label: string): string[] {
     return strings;
 }
 
-function enumValue(value: unknown, allowed: readonly string[], label: string): void {
+function enumValue(value: WireValue, allowed: readonly string[], label: string): void {
     if (typeof value !== 'string' || !allowed.includes(value)) {
         fail(`${label} is invalid`);
     }
 }
 
 function exact(
-    value: Record<string, unknown>,
+    value: WireObject,
     keys: readonly string[],
     label: string,
     rejectExtras = true
@@ -1145,37 +1142,37 @@ function exact(
     }
 }
 
-function nonEmptyString(value: unknown, label: string): asserts value is string {
+function nonEmptyString(value: WireValue, label: string): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         fail(`${label} is invalid`);
     }
 }
 
-function nullableString(value: unknown, label: string): void {
+function nullableString(value: WireValue, label: string): void {
     if (value !== null) {
         nonEmptyString(value, label);
     }
 }
 
-function nullableNonNegativeInteger(value: unknown, label: string): asserts value is number | null {
+function nullableNonNegativeInteger(value: WireValue, label: string): asserts value is number | null {
     if (value !== null) {
         nonNegativeInteger(value, label);
     }
 }
 
-function nullablePositiveInteger(value: unknown, label: string): void {
+function nullablePositiveInteger(value: WireValue, label: string): void {
     if (value !== null) {
         positiveInteger(value, label);
     }
 }
 
-function nonNegativeInteger(value: unknown, label: string): asserts value is number {
+function nonNegativeInteger(value: WireValue, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || Number(value) < 0) {
         fail(`${label} is invalid`);
     }
 }
 
-function positiveInteger(value: unknown, label: string): asserts value is number {
+function positiveInteger(value: WireValue, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || Number(value) < 1) {
         fail(`${label} is invalid`);
     }

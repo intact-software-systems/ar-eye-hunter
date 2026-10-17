@@ -37,6 +37,7 @@ import {
     type RallarRtcTopologyServiceOptions
 } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -159,16 +160,11 @@ export function createApiV1TopologyServices(
         outboxWriter,
         formationMetrics: input.groupFormationRttMutation,
         readPolicyInputs: async (command) => {
-            const sessionsByGroupKey = await readActiveSessionsByGroup(
+            const groupRefs = await readReportingPairGroupRefs(
                 groupStateRepository,
+                command.rtt,
                 nowEpochMs()
             );
-            const groupRefs = [...sessionsByGroupKey.values()]
-                .filter(({ sessionIds }) =>
-                    sessionIds.has(command.rtt.sessionIdFrom) &&
-                    sessionIds.has(command.rtt.sessionIdTo)
-                )
-                .map(({ ref }) => ref);
             // Acceptance judges pair liveness durably: AppInbox executes RTT
             // submits on any cluster server, and a server-local cache can lag
             // the joins it is judging, permanently rejecting valid evidence.
@@ -236,26 +232,24 @@ export function createApiV1TopologyServices(
     };
 }
 
-async function readActiveSessionsByGroup(
+async function readReportingPairGroupRefs(
     repository: GroupStateRepository,
+    rtt: RttMeasurementInfo,
     nowEpochMs: number
-): Promise<ReadonlyMap<string, Readonly<{ ref: GroupRef; sessionIds: Set<string>; }>>> {
-    const sessionsByGroupKey = new Map<string, Readonly<{ ref: GroupRef; sessionIds: Set<string>; }>>();
-    for (const session of await repository.listAllPresenceSessions()) {
-        if (session.status !== 'active' || session.expiresAtEpochMs <= nowEpochMs) {
-            continue;
-        }
-        const key = toWebRtcGroupKey(session);
-        const current = sessionsByGroupKey.get(key) ?? {
-            ref: {
-                applicationId: session.applicationId,
-                workspaceId: session.workspaceId,
-                groupId: session.groupId
-            },
-            sessionIds: new Set<string>()
-        };
-        current.sessionIds.add(session.sessionId);
-        sessionsByGroupKey.set(key, current);
-    }
-    return sessionsByGroupKey;
+): Promise<readonly GroupRef[]> {
+    const activeSessions = (
+        await repository.listPresenceSessionsForSessionIds([rtt.sessionIdFrom, rtt.sessionIdTo])
+    ).filter((session) => session.status === 'active' && session.expiresAtEpochMs > nowEpochMs);
+    const fromGroupKeys = new Set(
+        activeSessions
+            .filter((session) => session.sessionId === rtt.sessionIdFrom)
+            .map((session) => toWebRtcGroupKey(session))
+    );
+    return activeSessions
+        .filter((session) => session.sessionId === rtt.sessionIdTo && fromGroupKeys.has(toWebRtcGroupKey(session)))
+        .map((session) => ({
+            applicationId: session.applicationId,
+            workspaceId: session.workspaceId,
+            groupId: session.groupId
+        }));
 }

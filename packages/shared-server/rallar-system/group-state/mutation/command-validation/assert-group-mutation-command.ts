@@ -49,7 +49,8 @@ export function assertGroupMutationCommand(
         requireNonEmptyString(value.requestId, 'Group mutation requestId');
     }
     validateGroupRef(value.aggregateRef);
-    const input = requireRecord(value.input, 'Group mutation input');
+    // The command already passed requireJsonSafe, so its input record holds JSON values only.
+    const input = requireRecord(value.input, 'Group mutation input') as JsonWireObject;
     assertExactKeys(input, GROUP_MUTATION_INPUT_KEYS[operation], `Group ${operation} input`);
     for (const key of ['actorPrincipalId', 'actorSessionId', 'reason', 'traceId']) {
         if (input[key] !== null) {
@@ -70,7 +71,7 @@ export function assertGroupMutationCommand(
 
 function assertOperationInput(
     operation: GroupMutationCommand['operation'],
-    input: Readonly<Record<string, unknown>>
+    input: JsonWireObject
 ): void {
     // The valve carries no operation field at all (product decision 25), so
     // the exact-key assertion above is its whole input contract and there is
@@ -82,10 +83,7 @@ function assertOperationInput(
         if (isGroupLifecycleTransitionOperation(operation) || operation === 'applyPlannedLayout') {
             assertLifecycleGroupMutationCommandInput({
                 operation,
-                // The enclosing command already passed requireJsonSafe before
-                // this record boundary, so lifecycle validation reads JSON-only
-                // input rather than propagating an untrusted record type.
-                input: input as JsonWireObject,
+                input,
                 requiredInputKeys: GROUP_MUTATION_INPUT_KEYS[operation]
             });
             return;
@@ -102,7 +100,7 @@ function assertOperationInput(
 
 function assertAggregateOperationInput(
     operation: GroupMutationCommand['operation'],
-    input: Readonly<Record<string, unknown>>
+    input: JsonWireObject
 ): void {
     switch (operation) {
         case 'createGroup':
@@ -157,7 +155,7 @@ function assertAggregateOperationInput(
 
 function assertMembershipOperationInput(
     operation: GroupMutationCommand['operation'],
-    input: Readonly<Record<string, unknown>>
+    input: JsonWireObject
 ): void {
     switch (operation) {
         case 'joinGroup':
@@ -198,10 +196,11 @@ function assertMembershipOperationInput(
 
 function assertPresenceOperationInput(
     operation: GroupMutationCommand['operation'],
-    input: Readonly<Record<string, unknown>>
+    input: JsonWireObject
 ): void {
     if (operation === 'connectPresence') {
         requireNonEmptyString(input.principalId, 'Group presence principalId');
+        requireNonEmptyString(input.connectionGenerationId, 'Group presence connectionGenerationId');
         assertNullableInteger(input, 'connectedAtEpochMs', true);
     }
     else {
@@ -216,14 +215,14 @@ function assertPresenceOperationInput(
     assertNullableInteger(input, 'expiresAtEpochMs', true);
 }
 
-function assertNullableString(input: Readonly<Record<string, unknown>>, key: string): void {
+function assertNullableString(input: JsonWireObject, key: string): void {
     if (input[key] !== null) {
         requireNonEmptyString(input[key], `Group ${key}`);
     }
 }
 
 function assertNullableInteger(
-    input: Readonly<Record<string, unknown>>,
+    input: JsonWireObject,
     key: string,
     positive = false
 ): void {
@@ -379,6 +378,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         ...ACTOR_INPUT_KEYS,
         'principalId',
         'generationId',
+        'connectionGenerationId',
         'connectedAtEpochMs',
         'lastHeartbeatAtEpochMs',
         'expiresAtEpochMs'

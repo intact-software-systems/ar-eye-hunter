@@ -4,6 +4,13 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import {
+    readAuthWsTicketConsumption,
+    writeAuthWsTicketConsumption,
+    type AuthWsTicketConsumption,
+    type AuthWsTicketConsumptionClaim,
+    type AuthWsTicketConsumptionReader
+} from '../../auth/ws-ticket/auth-ws-ticket-consumption.ts';
 import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
 import {
     type WsSessionGenerationCloseFacts,
@@ -37,7 +44,8 @@ import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-pr
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
-    ClientAuthorisedWsSessionDisconnectAppInboxPayload
+    ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+    ClientAuthorisedWsTicketConnectAppInboxPayload
 } from './app-client-inbox-contracts.ts';
 import { readClientMutationAuthority } from './authenticated-client-mutation-ingress.ts';
 import {
@@ -73,6 +81,8 @@ interface MissingSessionDisconnectAttemptInput extends ComputeMissingSessionDisc
 interface WriteClientMutationOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly computed: Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>;
+    /** An authorised connect's first guard; every other client mutation has none. */
+    readonly ticketConsumption: AuthWsTicketConsumption | null;
 }
 
 interface WriteExpiredSessionsOperationInput {
@@ -83,6 +93,7 @@ interface WriteExpiredSessionsOperationInput {
 export namespace ClientStateInboxHandler {
     export interface Input {
         readonly mutationService: ClientStateMutationService;
+        readonly wsTickets: AuthWsTicketConsumptionReader;
         readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
         readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
         readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
@@ -117,22 +128,27 @@ export class ClientStateInboxHandler {
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        const result = await this.writeMutationOperation({ context, computed });
+        const result = await this.writeMutationOperation({ context, computed, ticketConsumption: null });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
 
     async processAuthorisedWsConnect(
-        connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+        ticketConnect: ClientAuthorisedWsTicketConnectAppInboxPayload,
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>
     ): Promise<AuthorisedWsClientMutationResult> {
+        const { connection } = ticketConnect;
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
+        const ticketClaim = toAuthWsTicketConsumptionClaim(ticketConnect, context.message.id.ts);
+        const ticketRead = await readAuthWsTicketConsumption(this.dependencies.wsTickets, ticketClaim);
         const lifecycleFacts = toWsSessionGenerationFacts(connection);
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
         const command = this.toAuthorisedWsConnectCommand(context, connection);
         const read = await this.dependencies.mutationService.read(command);
         const computed = this.measureAuthorisedConnectComputation({
             connection,
+            ticketClaim,
+            ticketRead,
             command,
             read,
             lifecycleFacts,
@@ -142,16 +158,41 @@ export class ClientStateInboxHandler {
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        if (computed.outcome === 'inactive') {
-            return await this.dependencies.transactionWriter.writeComputedMutation(
-                context,
-                computed.completion,
-                async () => {}
-            );
+        return await this.writeAuthorisedConnectOperation(context, computed);
+    }
+
+    /** The ticket's guarded delete is the first write of every connect that presented a live ticket. */
+    private async writeAuthorisedConnectOperation(
+        context: AppInboxMessageContext<AuthorisedWsClientMutationResult>,
+        computed: Exclude<AuthorisedWsConnectOperationComputed, { outcome: 'idempotency-conflict'; }>
+    ): Promise<AuthorisedWsClientMutationResult> {
+        switch (computed.outcome) {
+            case 'ticket-rejected':
+                console.warn('Authorised WebSocket connect rejected its ticket', {
+                    ...computed.durableResult,
+                    issues: computed.issues
+                });
+                return await this.dependencies.transactionWriter.writeComputedMutation(
+                    context,
+                    computed.completion,
+                    async () => {}
+                );
+            case 'inactive':
+                return await this.dependencies.transactionWriter.writeComputedMutation(
+                    context,
+                    computed.completion,
+                    async (transaction) => await writeAuthWsTicketConsumption(transaction, computed.ticketConsumption)
+                );
+            case 'completed': {
+                const result = await this.writeMutationOperation({
+                    context,
+                    computed,
+                    ticketConsumption: computed.ticketConsumption
+                });
+                await this.observeCommittedSnapshots(computed.committedSnapshots);
+                return result;
+            }
         }
-        const result = await this.writeMutationOperation({ context, computed });
-        await this.observeCommittedSnapshots(computed.committedSnapshots);
-        return result;
     }
 
     async processAuthorisedWsDisconnect(
@@ -188,7 +229,7 @@ export class ClientStateInboxHandler {
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
-        const result = await this.writeMutationOperation({ context, computed });
+        const result = await this.writeMutationOperation({ context, computed, ticketConsumption: null });
         await this.observeCommittedSnapshots(computed.committedSnapshots);
         return result;
     }
@@ -317,7 +358,7 @@ export class ClientStateInboxHandler {
     }
 
     private async writeMutationOperation(input: WriteClientMutationOperationInput): Promise<ClientStateWritten> {
-        const { context, computed } = input;
+        const { context, computed, ticketConsumption } = input;
         return await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
             async () =>
@@ -325,6 +366,9 @@ export class ClientStateInboxHandler {
                     context,
                     computed.completion,
                     async (transaction) => {
+                        if (ticketConsumption !== null) {
+                            await writeAuthWsTicketConsumption(transaction, ticketConsumption);
+                        }
                         if (computed.lifecycleComputed) {
                             await this.dependencies.sessionGenerationLifecycle.write(
                                 transaction,
@@ -483,6 +527,21 @@ function toClientMutationPersistedFacts(
         }`,
         attemptCount: context.entry.dequeueAudit.attempts,
         expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds)
+    };
+}
+
+function toAuthWsTicketConsumptionClaim(
+    ticketConnect: ClientAuthorisedWsTicketConnectAppInboxPayload,
+    capturedAtEpochMs: number
+): AuthWsTicketConsumptionClaim {
+    const { authSession } = ticketConnect.connection;
+    return {
+        ticketDigest: ticketConnect.ticketDigest,
+        clientId: authSession.clientId,
+        sessionId: authSession.sessionId,
+        sessionIssuedAtEpochMs: authSession.issuedAtEpochMs,
+        sessionExpiresAtEpochMs: authSession.expiresAtEpochMs,
+        capturedAtEpochMs
     };
 }
 

@@ -256,6 +256,7 @@
         },
         "body": {
           "generationId": "cmdrace-generation-{runId}",
+          "connectionGenerationId": "cmdrace-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -281,6 +282,7 @@
         },
         "body": {
           "generationId": "cmdrace-generation-{runId}",
+          "connectionGenerationId": "cmdrace-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

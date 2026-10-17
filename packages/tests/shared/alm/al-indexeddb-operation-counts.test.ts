@@ -220,7 +220,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
         // The row reaches the queue without this runtime's admission: only the external-write wake
         // announces it.
         await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[1], 'external-write'));
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(new Set([WORK_TYPES[1]]));
         await engine.executeOnce();
 
         await vi.waitFor(() => expect(claimed).toEqual(['external-write']));
@@ -600,7 +600,7 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
         await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[0], `batched-${index}`));
     }
     // The rows reach the queue behind the handler's back, so only this wake announces them.
-    engine.wakeAfterExternalWrite();
+    engine.wakeAfterExternalWrite(new Set([WORK_TYPES[0]]));
     const before = observer.getCounts().byKind['work-release'] ?? 0;
     await engine.executeOnce();
     await batchSettled;

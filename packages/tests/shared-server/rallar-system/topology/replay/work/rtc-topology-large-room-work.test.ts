@@ -12,9 +12,8 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodeALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -33,7 +32,7 @@ const EXPIRES_AT_MS = CREATED_AT_MS + 3_600_000;
 
 describe('durable topology work for large rooms', () => {
     it.each([EntityStatus.RETRY, EntityStatus.COMPLETED])(
-        'coalesces a 1500-member %s snapshot across servers while preserving its durable identity',
+        'coalesces a 1500-member %s change across servers while preserving its durable identity',
         (status) => {
             const first = computeCoalescedRtcTopologyGroupRevisionWork(createWorkInput(null));
             const previous = { ...first.entryWrite.entry, status };
@@ -50,21 +49,25 @@ describe('durable topology work for large rooms', () => {
             expect(message.id.ts).toBe(CREATED_AT_MS);
             expect(message.id.senderId).toBe('server-1');
             expect(message.constraints?.expiresAtMs).toBe(EXPIRES_AT_MS);
-            expect(decodeALMessage(next.resource).left?.code).toBe('oversized');
         }
     );
 
-    it('replays a large internal snapshot without treating it as a network packet', () => {
+    it('stores a 1500-member room\'s change as its group ref and causal revision in under 2 KB (D290)', () => {
         const entry = computeCoalescedRtcTopologyGroupRevisionWork(createWorkInput(null)).entryWrite.entry;
         const message: ALMessage = JSON.parse(entry.resource);
         const work = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
 
-        expect(work.data.groupSnapshot.memberCount).toBe(1500);
-        expect(work.data.groupSnapshot.activeSessions.at(-1)?.principalId).toBe('member-1499');
+        expect(new TextEncoder().encode(entry.resource).length).toBeLessThan(2_048);
+        expect(work.data).toMatchObject({
+            kind: 'group-revision',
+            groupRef: GROUP_REF,
+            sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 3 }
+        });
+        expect(Object.hasOwn(work.data, 'groupSnapshot')).toBe(false);
         expect(isCanonicalRtcTopologyWorkEntry({ ...entry, status: EntityStatus.COMPLETED })).toBe(true);
     });
 
-    it('dispatches large work through the existing outbox queue and completes the reservation', async () => {
+    it('dispatches large-room work through the existing outbox queue and completes the reservation', async () => {
         const input = createWorkInput(null);
         const entry = computeCoalescedRtcTopologyGroupRevisionWork({
             ...input,
@@ -72,11 +75,13 @@ describe('durable topology work for large rooms', () => {
         }).entryWrite.entry;
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
-        const deliveredSnapshots: GroupSnapshot[] = [];
+        const deliveredRevisions: GroupStateCausalRevision[] = [];
         reader.onOutboxMessageDo(AppOutboxType.RTC_TOPOLOGY_RECOMPUTE, {
             onMessage: async (message) => {
                 const work = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
-                deliveredSnapshots.push(work.data.groupSnapshot);
+                if (work.data.kind === 'group-revision') {
+                    deliveredRevisions.push(work.data.sourceGroupStateCausalRevision);
+                }
             }
         });
         await queue.enqueueIfAbsent(entry);
@@ -92,7 +97,7 @@ describe('durable topology work for large rooms', () => {
             })
         );
 
-        expect(deliveredSnapshots.map((snapshot) => snapshot.memberCount)).toEqual([1500]);
+        expect(deliveredRevisions).toEqual([{ groupRevision: 4, presenceRevision: 3 }]);
         expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 
@@ -106,7 +111,6 @@ describe('durable topology work for large rooms', () => {
             .toThrow(/scope/);
         expect(() => readRtcTopologyWorkMessage({ ...message, route: { ...message.route, topicId: 'ordinary-topic' } }))
             .toThrow(/scope/);
-        expect(decodeALMessage(entry.resource).left?.code).toBe('oversized');
     });
 
     it('keeps internal payload and serialized-entry byte limits finite', () => {
@@ -129,7 +133,7 @@ function createWorkInput(previousEntry: ResourceEntry | null): RtcTopologyCoales
         groupSnapshot: createLargeGroupSnapshot(),
         requestedAtEpochMs: CREATED_AT_MS,
         expireAtEpochMs: EXPIRES_AT_MS,
-        timing: { window: { debounceMs: 500, maxWaitMs: 2000 }, replanNotBeforeEpochMs: null },
+        timing: { window: { debounceMs: 500, maxWaitMs: 2000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'server-1',
         origin: 'automatic',
         previousEntry
@@ -188,6 +192,7 @@ function createActiveSessions(principalIds: readonly string[]): GroupSnapshot['a
         principalId,
         sessionId: `session-${principalId}`,
         generationId: `generation-${principalId}`,
+        connectionGenerationId: `ws-generation-${principalId}`,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

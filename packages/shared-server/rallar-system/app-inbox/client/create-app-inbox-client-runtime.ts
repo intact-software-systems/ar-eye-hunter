@@ -51,11 +51,9 @@ export function createAppInboxClientRuntime(
     const options = normalizeAppInboxOptions(input.options ?? {});
     const queueEntryWriter = new AppInboxQueueEntryWriter(
         {
-            creationNow,
             newResourceId,
             createMessage,
-            inboxQueueReader: input.inboxQueueReader,
-            repository: input.resourceInboxRepository
+            inboxQueueReader: input.inboxQueueReader
         },
         {
             serviceId: input.serviceId,

@@ -14,6 +14,7 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRuntimeDiagnosticsEvent
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
 import {
     createCountingIndexedDbOperationObserver,
@@ -174,8 +175,8 @@ it.each(['memory', 'indexeddb'] as const)(
         }
         expect(probesOf(diagnostics)).toHaveLength(1);
 
-        // The announcement another writer makes to every owner on the engine, not this owner's work.
-        engine.wakeAfterExternalWrite();
+        // The announcement another writer makes to every owner of its rows' type, not this owner's work.
+        engine.wakeAfterExternalWrite(new Set([toALOutboundWorkType('outbound-readiness-probe')]));
         await runProbedRound(engine, diagnostics);
 
         clock.atMs += AL_WORK_READINESS_MEMORY_MS;

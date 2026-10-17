@@ -116,6 +116,8 @@ interface EnsureGroupInput {
     readonly actor?: string;
     readonly groupRequestId?: string;
     readonly memberRequestId?: string;
+    /** The cohort the group is created for; absent creates it under the server's default capacity. */
+    readonly maxMembers?: number;
     readonly timeoutMs: number;
 }
 
@@ -143,7 +145,8 @@ function toEnsureGroupCommand(context: EnsureGroupCommandInput): RallarBlackBoxT
                 groupId: input.group.groupId,
                 displayName: input.group.groupId,
                 kind: 'room',
-                joinMode: 'open'
+                joinMode: 'open',
+                ...(input.maxMembers === undefined ? {} : { maxMembers: input.maxMembers })
             }
         },
         response: {

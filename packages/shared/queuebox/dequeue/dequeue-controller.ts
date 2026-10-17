@@ -15,6 +15,8 @@ export namespace DequeueController {
     export interface LaneBudget {
         readonly maxToReserve: number;
         readonly maxNumToDequeue: number;
+        /** How many rows of one round's reservation compute together; 1 computes them in turn. */
+        readonly maxConcurrentComputes: number;
     }
 
     export type LaneBudgets = Readonly<Record<Reservator, LaneBudget>>;
@@ -35,6 +37,12 @@ export namespace DequeueController {
     }
 }
 
+/** One reservation round's rows and how many of them compute together. */
+interface DequeueReservedRound<K, V> {
+    readonly reserved: Map<K, V>;
+    readonly maxConcurrentComputes: number;
+}
+
 export class DequeueController<K, V, T> {
     public static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
     public static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
@@ -50,7 +58,8 @@ export class DequeueController<K, V, T> {
 
     private maxNumToReserve: () => number = () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE;
     private typesToDequeue: () => Set<string> = () => new Set<string>();
-    private checkIsTypesToDequeue: (types: Set<string>) => boolean = () => true;
+    private admitsRound: (types: Set<string>) => boolean = () => true;
+    private toExclusionKey: ((key: K, value: V) => string | undefined) | undefined;
 
     private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
     private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
@@ -112,8 +121,15 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    onCheckIsTypesToDequeueDo(checkIsTypesToDequeue: (types: Set<string>) => boolean): this {
-        this.checkIsTypesToDequeue = requireNonNull(checkIsTypesToDequeue);
+    /** Rows of one round with one exclusion key compute one after another; the round's other rows still run together. */
+    withComputeExclusion(toExclusionKey: ((key: K, value: V) => string | undefined) | undefined): this {
+        this.toExclusionKey = toExclusionKey;
+        return this;
+    }
+
+    /** Asked before every reservation round of a lane; false ends the lane, and the rows already reserved still finish. */
+    onRoundAdmissionDo(admitsRound: (types: Set<string>) => boolean): this {
+        this.admitsRound = requireNonNull(admitsRound);
         return this;
     }
 
@@ -252,7 +268,9 @@ export class DequeueController<K, V, T> {
             entries: reserved,
             computer: this.finalizationComputer,
             log: this.log,
-            purpose: 'finalization-recovery'
+            purpose: 'finalization-recovery',
+            maxConcurrentComputes: 1,
+            toExclusionKey: undefined
         });
         return this.returnDequeuedEntries ? finalized : new Map();
     }
@@ -270,7 +288,7 @@ export class DequeueController<K, V, T> {
         const maxNumDequeue = budget?.maxNumToDequeue ?? this.maxNumDequeue;
         let claimedCount = 0;
         const allComputed = new Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>();
-        while (this.checkIsTypesToDequeue(this.typesToDequeue()) && claimedCount < maxNumDequeue) {
+        while (this.admitsRound(this.typesToDequeue()) && claimedCount < maxNumDequeue) {
             const numToReserve = Math.min(
                 budget?.maxToReserve ?? this.maxNumToReserve(),
                 maxNumDequeue - claimedCount
@@ -283,7 +301,11 @@ export class DequeueController<K, V, T> {
             }
             const reserved = await reservator(this.typesToDequeue(), numToReserve) ?? new Map<K, V>();
             claimedCount += reserved.size;
-            const computedCount = await this.computeAndReleaseReserved(reserved, computer, allComputed);
+            const computedCount = await this.computeAndReleaseReserved(
+                { reserved, maxConcurrentComputes: budget?.maxConcurrentComputes ?? 1 },
+                computer,
+                allComputed
+            );
             if (computedCount === 0 || reserved.size < numToReserve) {
                 return allComputed;
             }
@@ -292,12 +314,20 @@ export class DequeueController<K, V, T> {
     }
 
     private async computeAndReleaseReserved(
-        reserved: Map<K, V>,
+        round: DequeueReservedRound<K, V>,
         computer: (key: K, value: V) => Promise<T>,
         retained: Map<K, Either<DequeueController.Failure<K, V>, DequeueController.Success<K, V, T>>>
     ): Promise<number> {
+        const { reserved, maxConcurrentComputes } = round;
         const entries = this.onPreProcessingReserved ? await this.onPreProcessingReserved(reserved) : reserved;
-        const computed = await computeDequeueBatch({ entries, computer, log: this.log, purpose: 'processing' });
+        const computed = await computeDequeueBatch({
+            entries,
+            computer,
+            log: this.log,
+            purpose: 'processing',
+            maxConcurrentComputes,
+            toExclusionKey: this.toExclusionKey
+        });
         await releaseDequeueBatch(computed, {
             successReleaser: requireNonNull(this.successReleaser),
             failureReleaser: requireNonNull(this.failureReleaser),
@@ -322,13 +352,16 @@ function toValidatedLaneBudgets(budgets: DequeueController.LaneBudgets): Dequeue
         const budget = budgets?.[lane];
         const snapshot = budget && {
             maxToReserve: budget.maxToReserve,
-            maxNumToDequeue: budget.maxNumToDequeue
+            maxNumToDequeue: budget.maxNumToDequeue,
+            maxConcurrentComputes: budget.maxConcurrentComputes
         };
         if (
             !snapshot ||
-            ![snapshot.maxToReserve, snapshot.maxNumToDequeue].every(isPositiveSafeInteger)
+            ![snapshot.maxToReserve, snapshot.maxNumToDequeue, snapshot.maxConcurrentComputes].every(
+                isPositiveSafeInteger
+            )
         ) {
-            throw new TypeError(`Lane ${lane} requires positive safe-integer reservation and dequeue budgets`);
+            throw new TypeError(`Lane ${lane} requires positive safe-integer reservation, dequeue and compute budgets`);
         }
         return [lane, snapshot] as const;
     });

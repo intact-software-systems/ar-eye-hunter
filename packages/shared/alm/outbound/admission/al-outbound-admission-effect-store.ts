@@ -1,4 +1,4 @@
-import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '../../../al-contracts/al-message-persistence-validation.ts';
 
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
@@ -153,28 +153,25 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         return issues;
     }
 
-    /** Re-reads each candidate's queue slot inside the write; a moved row is a conflict, never a throw. */
+    /** Re-reads every candidate's queue slot inside the write at once; a moved row is a conflict, never a throw. */
     async validateObservedWork(
         tx: ALAdmissionWorkWriteContext,
         candidates: readonly ALOutboundEffectCandidate<TPrepared>[]
     ): Promise<readonly ALOutboundEffectIssue[]> {
-        const issues: ALOutboundEffectIssue[] = [];
-        for (const candidate of candidates) {
-            const existing = await tx.readWork(candidate.entry.key);
+        const current = await Promise.all(candidates.map((candidate) => tx.readWork(candidate.entry.key)));
+        return candidates.flatMap((candidate, index): readonly ALOutboundEffectIssue[] => {
+            const existing = current[index];
             const expected = candidate.read.existing;
-            if (
-                existing === undefined || expected === undefined
+            return (existing === undefined || expected === undefined
                     ? existing !== expected
-                    : !hasSameResourceEntryValue(existing, expected)
-            ) {
-                issues.push({
+                    : !hasSameResourceEntryValue(existing, expected))
+                ? [{
                     code: 'observation-changed',
                     effectId: candidate.read.effect.effectId,
                     message: 'Outbound queue observation changed'
-                });
-            }
-        }
-        return issues;
+                }]
+                : [];
+        });
     }
 
     writeEffects(
@@ -223,7 +220,7 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
     /** A canonical row already in hand, checked against the reference exactly as a stored pair is. */
     private decodeCandidateMessage(reference: ALOutboundMessageReference, candidate: ResourceEntry): ALMessage {
         this.assertOwnCanonicalScope(reference);
-        const creationExpiry = captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource));
+        const creationExpiry = captureALOutboundCreationExpiry(decodePersistedALMessageRow(candidate));
         return decodeALOutboundCanonicalMessage(
             reference,
             candidate,

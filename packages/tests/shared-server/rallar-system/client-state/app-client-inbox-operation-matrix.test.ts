@@ -7,6 +7,7 @@ import {
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
     ClientInstanceUpsertAppInboxPayload,
@@ -29,6 +30,7 @@ import {
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
+import { createEmptyWsTicketReader } from './authorised-ws-test-ticket.ts';
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox operation matrix', () => {
@@ -44,11 +46,12 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
     const results = new TestResourceInboxResults();
     return new AppClientInboxService(
         {
-            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' }),
+            inboxQueueReader: new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 }),
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createClientStateServiceFixture()
+            clientStateService: createClientStateServiceFixture(),
+            wsTickets: createEmptyWsTicketReader()
         },
         {
             serviceId: 'client-registration-service'
@@ -79,7 +82,7 @@ describe('AppClientInbox mutation processing', () => {
             'with a non-retryable error',
         async () => {
             const queue = new TestResourceInbox();
-            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
             const results = new TestResourceInboxResults();
             const service = new AppClientInboxService(
                 {
@@ -92,7 +95,8 @@ describe('AppClientInbox mutation processing', () => {
                         read: vi.fn(async () => {
                             throw new NonRetryableException('Client principal update failed');
                         })
-                    }
+                    },
+                    wsTickets: createEmptyWsTicketReader()
                 },
                 {
                     serviceId: 'server-12345678'
@@ -132,7 +136,7 @@ interface MutationProcessingHarness {
 
 function createMutationProcessingHarness(): MutationProcessingHarness {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
@@ -145,7 +149,8 @@ function createMutationProcessingHarness(): MutationProcessingHarness {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: database,
-                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database)
+                clientStateService: createAutoAuthorizingClientStateService(runtimeRepository, database),
+                wsTickets: new AuthSessionRepository(runtimeRepository)
             },
             {
                 serviceId: 'server-12345678'

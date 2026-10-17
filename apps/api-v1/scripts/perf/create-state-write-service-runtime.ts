@@ -112,7 +112,8 @@ export function createStateWriteServiceRuntime(input: CreateStateWriteServiceRun
     const client = new AppClientInboxService(
         {
             ...appInboxDependencies,
-            clientStateService: clientState
+            clientStateService: clientState,
+            wsTickets: new AuthSessionRepository(runtimeRepository)
         },
         {
             serviceId,

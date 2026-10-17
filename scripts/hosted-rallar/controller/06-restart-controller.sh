@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 
 echo "Restarting controller services"
-echo "Note: restarting rallar-api-v1 resets its pglite-memory data."
+echo "Note: the API-v1 Postgres store survives a restart; only a rollout or deploy wipes it."
 
 systemctl restart rallar-api-v1.service
 systemctl restart rallar-black-box-control.service

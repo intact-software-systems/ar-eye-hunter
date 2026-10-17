@@ -269,6 +269,8 @@ export type RallarBlackBoxTestWaitCommand =
     & Readonly<{
         match: RallarBlackBoxTestWaitMatch;
         absent?: true;
+        /** A `{resultCache…}` epoch the timeout counts from when it precedes the wait's start. */
+        timeoutFrom?: string;
     }>;
 
 /**

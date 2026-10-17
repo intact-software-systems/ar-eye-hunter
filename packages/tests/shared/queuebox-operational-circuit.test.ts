@@ -7,7 +7,10 @@ import {
 } from 'vitest';
 
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { ResourceInboxHandlerFinalizedRejection } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import {
+    ResourceInboxHandlerFinalizedRejection,
+    ResourceInboxHandlerRetryableConflict
+} from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -107,6 +110,50 @@ describe('QueueBox operational failure circuit', () => {
         }
         finally {
             errorLog.mockRestore();
+        }
+    });
+
+    it('keeps a handler conflict value neutral for the admission rate, as a thrown conflict was', async () => {
+        const duration = Temporal.Duration.from({ seconds: 10 });
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+            initialRate: 1,
+            maxRate: 10,
+            concurrencyIncreaseStep: 1,
+            concurrencyReduceStep: 1
+        });
+        const signals: string[] = [];
+        resilience.success = () => {
+            signals.push('success');
+        };
+        resilience.failure = () => {
+            signals.push('failure');
+        };
+        const queue = new InMemoryQueueBox();
+        const conflicted = toResourceEntry('write-conflict', { value: 1 });
+        await queue.enqueue(conflicted);
+        const infoLog = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            await QueueBoxUtilities.defaultDequeue({
+                qbox: queue,
+                typesToDequeue: new Set(['write-conflict']),
+                newLaneClaimOrder: 'queue',
+                resilience,
+                onDequeuedDo: async (entry) =>
+                    new ResourceInboxHandlerRetryableConflict(
+                        entry,
+                        'runtime-state-write-conflict',
+                        Object.assign(new Error('Runtime state conditional write conflict'), {
+                            code: 'runtime-state-write-conflict'
+                        })
+                    ),
+                options: { jitterUnit: () => 0.5 }
+            });
+            expect((await queue.getItem(conflicted.key))?.status).toBe(EntityStatus.RETRY);
+            expect(signals).toEqual([]);
+        }
+        finally {
+            infoLog.mockRestore();
         }
     });
 });

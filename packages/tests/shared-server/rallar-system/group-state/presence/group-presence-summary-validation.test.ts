@@ -30,6 +30,7 @@ describe('group presence summary validation', () => {
         await service.connectPresenceSession(SCOPE, 'inactive-summary-filter', 'filter-bob-session', {
             principalId: 'bob',
             generationId: 'filter-bob-generation',
+            connectionGenerationId: 'filter-bob-ws-generation',
             actorPrincipalId: 'bob',
             expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
             requestId: 'connect-filter-bob'
@@ -60,6 +61,7 @@ describe('group presence summary validation', () => {
         const summaryWork = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'
@@ -126,6 +128,7 @@ describe('group presence summary validation', () => {
             {
                 principalId: 'alice',
                 generationId: 'alice-corrupt-generation',
+                connectionGenerationId: 'alice-corrupt-ws-generation',
                 actorPrincipalId: 'alice',
                 expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
                 requestId: `connect-corrupt-summary-${namespace}`
@@ -137,6 +140,7 @@ describe('group presence summary validation', () => {
         const summaryWork = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'

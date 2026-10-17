@@ -1,5 +1,5 @@
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
-import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { WriteThroughObservableLatestRepository } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,
@@ -128,11 +128,13 @@ describe('WriteThroughObservableLatestRepository', () => {
     });
 
     it('rejection on write does not break the chain for subsequent writes', async () => {
-        const setItem = vi.fn<PersistenceProvider<string, number>['setItem']>();
-        setItem
-            .mockResolvedValueOnce(undefined)
-            .mockRejectedValueOnce(new Error('boom'))
-            .mockResolvedValueOnce(undefined);
+        const stored: number[] = [];
+        const setItem: PersistenceProvider<string, number>['setItem'] = async (_key, value) => {
+            if (value === 2) {
+                throw new Error('boom');
+            }
+            stored.push(value);
+        };
 
         const persistence: PersistenceProvider<string, number> = {
             getAllKeys: async () => [],
@@ -151,7 +153,8 @@ describe('WriteThroughObservableLatestRepository', () => {
         await repository.set('a', 3);
 
         expect(repository.read('a')).toBe(3);
-        expect(setItem).toHaveBeenCalledTimes(3);
+        // The write after the rejected one still reaches the store.
+        expect(stored).toEqual([1, 3]);
     });
 
     it('get returns RAM hit without touching disk', async () => {
@@ -160,10 +163,10 @@ describe('WriteThroughObservableLatestRepository', () => {
             persistence
         });
         await repository.set('a', 1);
+        // A store-side change the cache never wrote: a RAM hit must not read it back.
+        await persistence.setItem('a', 99, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
 
-        const getItem = vi.spyOn(persistence, 'getItem');
         expect(await repository.get('a')).toBe(1);
-        expect(getItem).not.toHaveBeenCalled();
     });
 
     it('get falls back to disk on cache miss and populates RAM', async () => {
@@ -299,9 +302,10 @@ describe('WriteThroughObservableLatestRepository', () => {
         expect(repository.read('a')).toBe(1);
         expect(repository.read('b')).toBe(2);
 
-        const getAllKeys = vi.spyOn(persistence, 'getAllKeys');
+        // A row the store gains after the first hydrate stays cold: the second hydrate reads nothing.
+        await persistence.setItem('c', 3, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
         await repository.hydrate();
-        expect(getAllKeys).not.toHaveBeenCalled();
+        expect(repository.read('c')).toBeUndefined();
         expect(repository.isHydrated()).toBe(true);
     });
 

@@ -25,8 +25,6 @@ import {
 
 interface ConsumeExpiredTicketsInput {
     readonly auth: AuthInboxTestRuntime;
-    readonly session: IssuedAuthSession;
-    readonly wsTicket: string;
     readonly agentTickets: readonly string[];
 }
 
@@ -116,7 +114,7 @@ async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> 
     const wsTicket = await issueRoutedWebSocketTicket(auth, session);
     const agentTickets = await issueRoutedAgentTickets(auth, session);
     clock.now = now + 30_001;
-    await consumeExpiredRoutedTickets({ auth, session, wsTicket, agentTickets });
+    await consumeExpiredRoutedTickets({ auth, agentTickets });
     await logoutRoutedSession({ auth, runtimeRepository, session });
     await expectNoPlaintextCredentials(auth, [
         session.accessToken,
@@ -252,21 +250,8 @@ async function issueRoutedAgentTickets(
 
 async function consumeExpiredRoutedTickets({
     auth,
-    session,
-    wsTicket,
     agentTickets
 }: ConsumeExpiredTicketsInput): Promise<void> {
-    const expiredWs = await runAuthInboxCommand({
-        pending: auth.service.consumeWebSocketTicket({
-            requestId: 'ws-expired-consume',
-            expectedSessionId: session.sessionId,
-            ticket: wsTicket
-        }),
-        queue: auth.queue,
-        reader: auth.reader,
-        minimumEntries: 5
-    });
-    expect(expiredWs.left?.status).toBe(410);
     const expiredAgent = await runAuthInboxCommand({
         pending: auth.service.consumeAgentSessionTicket({
             requestId: 'agent-expired-consume',
@@ -274,7 +259,7 @@ async function consumeExpiredRoutedTickets({
         }),
         queue: auth.queue,
         reader: auth.reader,
-        minimumEntries: 6
+        minimumEntries: 5
     });
     expect(expiredAgent.left?.status).toBe(410);
 }
@@ -291,7 +276,7 @@ async function logoutRoutedSession({
         }),
         queue: auth.queue,
         reader: auth.reader,
-        minimumEntries: 7
+        minimumEntries: 6
     });
     expect(logout.right).toEqual({ loggedOut: true });
     expect(
@@ -318,7 +303,7 @@ async function expectNoPlaintextCredentials(
 it('rechecks the parent session before issuing agent credentials', async () => {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const runtime = new FakeRuntimeStateRepository();
     const credentialIssuer = createHmacAuthCredentialIssuer(
         'agent-authority-secret-0123456789abcdef'

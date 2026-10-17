@@ -235,6 +235,7 @@ function connectCommand(): GroupStateMutationCommand {
             input: {
                 principalId: 'owner',
                 generationId: 'generation-1',
+                connectionGenerationId: 'ws-generation-1',
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 61_000,

@@ -19,6 +19,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { putAuthorisedWsTestTicket } from '../../rallar-system/client-state/authorised-ws-test-ticket.ts';
 import {
     createRuntimeStatePostgresSql,
     requirePostgresClient,
@@ -87,10 +88,12 @@ describe('Postgres client snapshot provenance transaction', () => {
                     trace: createPostgresAppInboxWorkerTrace()
                 });
                 await runtime.authSessions.putSession(authSession);
+                const ticketDigest = await putAuthorisedWsTestTicket(runtime.authSessions, authSession);
                 const result = await runtime.runUntilCompletion(() =>
-                    runtime.client.processAuthorisedWsClientConnect({
+                    runtime.client.writeAuthorisedWsClientConnect({
                         authSession,
                         generationId: 'proof-generation',
+                        ticketDigest,
                         input: { ...scope, clientInstanceId: 'browser', connectedAtEpochMs: now, expiresAtEpochMs: now + 60_000 }
                     })
                 );

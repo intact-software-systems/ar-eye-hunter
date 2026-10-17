@@ -19,6 +19,7 @@ import type { ClientExpiredSessionPageInput } from '../client-state-service-cont
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+    ClientAuthorisedWsTicketConnectAppInboxPayload,
     ClientInstanceUpsertAppInboxPayload,
     ClientPrincipalUpsertAppInboxPayload,
     ClientSessionConnectAppInboxPayload,
@@ -140,6 +141,19 @@ export function decodeClientAuthorisedWsSessionConnectAppInboxPayload(
         platform: requireOneOf(payload.platform, CLIENT_PLATFORMS, 'Authorised WebSocket platform'),
         capabilities: readStringArray(payload.capabilities, 'Authorised WebSocket capabilities'),
         expiresAtEpochMs: readEpoch(payload.expiresAtEpochMs, 'Authorised WebSocket expiry time')
+    };
+}
+
+export function decodeClientAuthorisedWsTicketConnectAppInboxPayload(
+    value: JsonWireValue
+): ClientAuthorisedWsTicketConnectAppInboxPayload {
+    const payload = requireJsonWireObject(value, 'Authorised WebSocket ticket connect AppInbox payload');
+    requireExactKeys(payload, ['connection', 'ticketDigest'], 'Authorised WebSocket ticket connect AppInbox payload');
+    return {
+        connection: decodeClientAuthorisedWsSessionConnectAppInboxPayload(
+            requireJsonWireValue(payload.connection, 'Authorised WebSocket connection')
+        ),
+        ticketDigest: readString(payload.ticketDigest, 'Authorised WebSocket ticket digest')
     };
 }
 

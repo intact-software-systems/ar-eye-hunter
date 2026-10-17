@@ -284,19 +284,47 @@ paths:
       description: |
         Upgrades the connection to a websocket after validating the `sessionId`
         path parameter against a short-lived one-time `ticket` query parameter.
+        A ticket that is unknown, expired or bound to another session is refused
+        before any work is queued. Otherwise the ticket is consumed inside the
+        authorised connect's own transaction, and the upgrade waits for that
+        connect to commit: the socket registers only after it, so a consumed
+        ticket is never upgraded.
       security:
         - wsTicket: []
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
         '101':
-          description: Websocket upgrade accepted.
+          description: Websocket upgrade accepted after the connect committed.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '426':
           description: '`Upgrade: websocket` header missing.'
         '400':
           description: Invalid websocket upgrade request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The connect found its socket generation already closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: |
+            The connect committed but the upgrade failed or the client left
+            before it; the generation is closed behind it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            The connect's result was unavailable within the completion wait;
+            the generation is closed behind it. A failed connect answers with
+            its own failure status instead.
           content:
             application/json:
               schema:
@@ -5212,6 +5240,7 @@ components:
         - status
         - generationId
         - generationVersion
+        - connectionGenerationId
         - connectedAtEpochMs
         - lastHeartbeatAtEpochMs
         - expiresAtEpochMs
@@ -5251,6 +5280,10 @@ components:
           type: integer
           format: int64
           minimum: 1
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: WebSocket connection generation of the socket this presence belongs to.
         connectedAtEpochMs:
           type: integer
           format: int64
@@ -5904,10 +5937,16 @@ components:
           type: string
     ConnectGroupPresenceSessionRequest:
       type: object
-      required: [generationId]
+      required: [generationId, connectionGenerationId]
       properties:
         generationId:
           type: string
+        connectionGenerationId:
+          type: string
+          minLength: 1
+          description: |
+            WebSocket connection generation of the caller's socket, as its own session entry in the client
+            snapshot names it. The socket's close cleans only presence rows that carry its generation.
         connectedAtEpochMs:
           type: integer
           format: int64

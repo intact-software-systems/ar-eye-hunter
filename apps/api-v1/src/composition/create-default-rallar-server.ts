@@ -9,10 +9,12 @@ import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-sys
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../configuration/to-api-v1-public-configuration.ts';
 import { createCrdtAdminMutations, type CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import type { ApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
+import { API_V1_QUEUE_BOX_KEY_CHANNEL } from '../db/api-v1-queue-pubsub-bridge.ts';
 import { createLocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import { createApiV1MiddlewareResilience } from '../middleware-resilience.ts';
 import {
@@ -21,6 +23,7 @@ import {
     myServerId
 } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
+import { startEventLoopLagTiming } from '../services/start-event-loop-lag-timing.ts';
 import { createApiTimingSink, toApiAppInboxServiceOptions } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
 import {
@@ -78,6 +81,13 @@ function constructDefaultRallarServer(
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
     const timing = createApiTimingSink(configuration.observability);
+    if (configuration.observability.timingLogs) {
+        backgroundTasks.register(startEventLoopLagTiming({
+            timers: createDefaultTimers(),
+            timing,
+            serviceId: myServerId
+        }));
+    }
     const runtime = createConfiguredApiV1Runtime({ input, backgroundTasks, nowEpochMs, timing });
 
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
@@ -103,7 +113,8 @@ function constructDefaultRallarServer(
         topology,
         crdtLogRepository,
         crdtPolicies: configuration.crdt.documentTypePolicies,
-        livePublication: wsOptions.livePublication
+        livePublication: wsOptions.livePublication,
+        timing
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -180,7 +191,7 @@ function createConfiguredApiV1Runtime(
         serviceId: myServerId,
         publisherStreamId: myRtcTopologyStreamId,
         queuePubSubPublisherId: myPublisherId,
-        queuePubSubChannel: 'ws-channel',
+        queuePubSubChannel: API_V1_QUEUE_BOX_KEY_CHANNEL,
         queuePubSubLocalBus: createLocalQueuePubSubBus(),
         wsRuntimeName: 'default-qbox-server',
         authCredentialSecret: configuration.authentication.credentialSecret,
@@ -195,10 +206,12 @@ function createConfiguredApiV1Runtime(
         }),
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
         appInboxLaneBudgetPolicy: configuration.appInbox.laneBudgetPolicy,
+        appInboxNewLaneConcurrency: configuration.appInbox.newLaneConcurrency,
         groupCapacity: {
             defaultMaxMembers: configuration.group.defaultMaxMembers
         },
         groupFormationRecomputeDebounceMs: configuration.topology.recompute.formationDebounceMs,
+        groupFormationRecomputeMaxWaitMs: configuration.topology.recompute.formationMaxWaitMs,
         topologyReplay: configuration.topology.replay,
         topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,
@@ -313,9 +326,6 @@ function createDefaultApiV1RouteInstallers({
         groupAdmission: configuration.group.admission,
         strictReadAuthorization: configuration.stateApi.strictReadAuthorization,
         nowEpochMs,
-        createTokenId: () => crypto.randomUUID(),
-        createWsAuthRequestFacts: () => ({
-            requestId: crypto.randomUUID()
-        })
+        createTokenId: () => crypto.randomUUID()
     });
 }

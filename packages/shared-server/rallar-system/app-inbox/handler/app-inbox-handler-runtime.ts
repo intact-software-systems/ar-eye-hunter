@@ -1,3 +1,4 @@
+import { createDefaultTimers, type Timers } from '@shared/resilience/timers.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
@@ -20,6 +21,8 @@ export interface CreateAppInboxHandlerRuntimeInput {
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
     readonly options?: AppInboxOptions;
+    /** The timer seam of the attempt deadlines; absent, the process timers. */
+    readonly timers?: Timers;
 }
 
 export function createAppInboxHandlerRuntime(
@@ -42,7 +45,9 @@ export function createAppInboxHandlerRuntime(
             resultRepository: input.resultRepository,
             transactionWriter,
             database: input.database,
-            nowEpochMs
+            nowEpochMs,
+            dequeueNowEpochMs: input.inboxQueueReader.nowEpochMs,
+            timers: input.timers ?? createDefaultTimers()
         },
         {
             serviceId: input.serviceId,

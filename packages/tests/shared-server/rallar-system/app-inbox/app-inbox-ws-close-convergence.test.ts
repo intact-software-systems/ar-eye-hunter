@@ -12,6 +12,7 @@ import { requireGroupStateWritten } from '@shared-server/rallar-system/group-sta
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type { ConnectGroupPresenceSessionRequest, StateScope } from '@shared/api/state-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import {
@@ -48,7 +49,7 @@ describe('AppInbox websocket close convergence', () => {
         const facts = closeFacts(harness.authSession, 'client-interleaved-close', 5);
         const pause = pauseNextLifecycleRead(harness.clientState);
 
-        const connectEntry = await harness.client.enqueueAuthorisedWsClientConnect({
+        const connectEntry = await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -61,7 +62,8 @@ describe('AppInbox websocket close convergence', () => {
         pause.resume();
         await staleConnect;
 
-        expect(authoritativeWrites[0]).toBe('ws-session-close-high-water');
+        // The ticket's guarded delete comes first; the lifecycle guard behind it conflicts and rolls both back.
+        expect(authoritativeWrites.slice(0, 2)).toEqual(['auth-sessions:ws-tickets', 'ws-session-close-high-water']);
         expect(rollbacks).toBe(1);
         expect(
             (
@@ -133,7 +135,7 @@ describe('AppInbox websocket close convergence', () => {
         const harness = await createHarness();
         const facts = closeFacts(harness.authSession, 'client-connect-first', 10);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -154,7 +156,7 @@ describe('AppInbox websocket close convergence', () => {
         const harness = await createHarness();
         const facts = closeFacts(harness.authSession, 'client-disconnect-first', 20);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: facts.authSession,
             generationId: facts.generationId,
             input: facts.input
@@ -203,6 +205,59 @@ describe('AppInbox websocket close convergence', () => {
         expect(await activeGroupSessionCount(harness, 'connect-first-room')).toBe(0);
     });
 
+    it('closes the presence of a session whose auth session was revoked before its cleanup ran', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'revoked-session-room');
+        const facts = closeFacts(harness.authSession, 'group-revoked-session', 35);
+        const presence = groupPresenceFacts(facts, 'presence-revoked-session', -50);
+        const pending = enqueueGroupConnect({ harness, groupId: 'revoked-session-room', facts, presence });
+        await waitForQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_CONNECT);
+        await processNext(harness.reader);
+        expect((await pending).right).toBeDefined();
+        await harness.revokeAuthSession();
+
+        await enqueueGroupClose(harness.group, facts);
+        await processNext(harness.reader);
+
+        expect((await requireQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP)).status)
+            .toBe(EntityStatus.COMPLETED);
+        expect(await activeGroupSessionCount(harness, 'revoked-session-room')).toBe(0);
+    });
+
+    it('does not let an older socket\'s late cleanup close the presence its reconnected socket owns', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'reconnected-socket-room');
+        const socketA = closeFacts(harness.authSession, 'group-socket-a', 37);
+        const socketB = closeFacts(harness.authSession, 'group-socket-b', 38);
+        await connectGroupPresence(harness, 'reconnected-socket-room', socketA, groupPresenceFacts(socketA, 'presence-a', -50));
+        // Socket B joins the same group on the same auth session before socket A's close is processed.
+        await connectGroupPresence(harness, 'reconnected-socket-room', socketB, groupPresenceFacts(socketA, 'presence-b', -10));
+
+        expect(await enqueueGroupClose(harness.group, socketA)).toBe(1);
+        await processNext(harness.reader);
+
+        expect(await activeGroupSessionCount(harness, 'reconnected-socket-room')).toBe(1);
+    });
+
+    it('relabels a same-generation presence for the reconnected socket, so the older socket\'s cleanup leaves it', async () => {
+        const harness = await createHarness();
+        await createRoom(harness, 'relabelled-socket-room');
+        const socketA = closeFacts(harness.authSession, 'group-relabel-socket-a', 39);
+        const socketB = closeFacts(harness.authSession, 'group-relabel-socket-b', 40);
+        // A browser keeps one heartbeat generation across sockets, so socket B's join repeats socket A's presence.
+        const presence = groupPresenceFacts(socketA, 'presence-one-heartbeat-generation', -50);
+        await connectGroupPresence(harness, 'relabelled-socket-room', socketA, presence);
+        await connectGroupPresence(harness, 'relabelled-socket-room', socketB, presence);
+
+        expect(await enqueueGroupClose(harness.group, socketA)).toBe(1);
+        await processNext(harness.reader);
+
+        const sessions = (await harness.groups.listAllPresenceSessions()).filter(
+            (session) => session.groupId === 'relabelled-socket-room' && session.disconnectedAtEpochMs === null
+        );
+        expect(sessions.map((session) => session.connectionGenerationId)).toEqual([socketB.generationId]);
+    });
+
     it(
         'processes group cleanup before delayed presence connect ' + 'without orphan presence',
         async () => {
@@ -239,12 +294,12 @@ describe('AppInbox websocket close convergence', () => {
             const harness = await createHarness();
             const older = closeFacts(harness.authSession, 'client-generation-a', 50);
             const newer = closeFacts(harness.authSession, 'client-generation-b', 60);
-            const olderConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+            const olderConnect = await harness.startAuthorisedWsConnect({
                 authSession: older.authSession,
                 generationId: older.generationId,
                 input: older.input
             });
-            const newerConnect = await harness.client.enqueueAuthorisedWsClientConnect({
+            const newerConnect = await harness.startAuthorisedWsConnect({
                 authSession: newer.authSession,
                 generationId: newer.generationId,
                 input: newer.input
@@ -272,7 +327,7 @@ describe('AppInbox websocket close convergence', () => {
         const older = closeFacts(harness.authSession, 'client-generation-a', 70);
         const newer = closeFacts(harness.authSession, 'client-generation-b', 80);
 
-        await harness.client.enqueueAuthorisedWsClientConnect({
+        await harness.startAuthorisedWsConnect({
             authSession: newer.authSession,
             generationId: newer.generationId,
             input: newer.input
@@ -364,7 +419,7 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
     const presence = input.presence;
     return harness.group.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
-        resourceId: `presence-${groupId}-${presence.generationId}`,
+        resourceId: `presence-${groupId}-${presence.generationId}-${facts.generationId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
         senderId: harness.authSession.clientId,
         data: {
@@ -374,15 +429,28 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<Ap
             request: {
                 principalId: facts.authSession.clientId,
                 generationId: presence.generationId,
+                connectionGenerationId: facts.generationId,
                 connectedAtEpochMs: presence.connectedAtEpochMs,
                 lastHeartbeatAtEpochMs: presence.connectedAtEpochMs,
                 expiresAtEpochMs: presence.expiresAtEpochMs,
                 actorPrincipalId: facts.authSession.clientId,
                 actorSessionId: facts.authSession.sessionId,
-                requestId: `presence-${groupId}-${presence.generationId}`
+                requestId: `presence-${groupId}-${presence.generationId}-${facts.generationId}`
             }
         }
     }, harness.authSession);
+}
+
+async function connectGroupPresence(
+    harness: AppInboxWsCloseHarness,
+    groupId: string,
+    facts: AuthorisedWsCloseFacts,
+    presence: EnqueueGroupConnectInput['presence']
+): Promise<void> {
+    const pending = enqueueGroupConnect({ harness, groupId, facts, presence });
+    await waitForQueuedType(harness.queue, AppInboxType.GROUP_PRESENCE_CONNECT);
+    await processNext(harness.reader);
+    expect((await pending).right).toBeDefined();
 }
 
 async function activeGroupSessionCount(

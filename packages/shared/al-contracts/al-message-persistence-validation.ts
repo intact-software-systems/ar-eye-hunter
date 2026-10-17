@@ -42,6 +42,19 @@ const MESSAGE_SECTIONS = [
     'diagnostics'
 ] as const;
 
+/** A row that stores one serialized AL message, as a queue row does. */
+export interface ALSerializedMessageRow {
+    readonly resource: string;
+}
+
+interface DecodedALMessageRow {
+    readonly resource: string;
+    readonly message: ALMessage;
+}
+
+/** Rows are immutable values: one row object decodes once, and every later decode of it shares that frozen message. */
+const decodedMessageRows = new WeakMap<ALSerializedMessageRow, DecodedALMessageRow>();
+
 interface ALMessageEnvelopeValueInput {
     readonly value: unknown;
     readonly byteLimits: ALMessageByteLimits;
@@ -113,6 +126,35 @@ export function decodeALMessageEnvelope(input: ALMessageEnvelopeInput): Either<A
         return Either.ofLeft({ code: 'malformed', message: 'AL envelope must contain valid JSON' });
     }
     return decodeALMessageEnvelopeValue({ value, byteLimits });
+}
+
+/** The decode of a row's message, parsed and validated once per row object; the message is deeply frozen. */
+export function decodeALMessageRow(row: ALSerializedMessageRow): Either<ALMessageRejection, ALMessage> {
+    const held = decodedMessageRows.get(row);
+    if (held !== undefined && held.resource === row.resource) {
+        return Either.ofRight(held.message);
+    }
+    const decoded = decodeALMessage(row.resource);
+    if (decoded.right === undefined) {
+        return decoded;
+    }
+    const message = freezeDecodedALValue(decoded.right);
+    decodedMessageRows.set(row, { resource: row.resource, message });
+    return Either.ofRight(message);
+}
+
+/** The row with `changes` applied; while its resource stays the same string, the copy shares the row's decode. */
+export function toChangedALMessageRow<T extends ALSerializedMessageRow>(row: T, changes: Partial<T>): T {
+    const changed = { ...row, ...changes };
+    const held = decodedMessageRows.get(row);
+    if (held !== undefined && held.resource === changed.resource) {
+        decodedMessageRows.set(changed, held);
+    }
+    return changed;
+}
+
+export function decodePersistedALMessageRow(row: ALSerializedMessageRow): ALMessage {
+    return decodeALMessageRow(row).fold(throwPersistedALMessageCorruption, (message) => message);
 }
 
 /** Persisted invalid envelopes are invariant corruption, not a recoverable live-ingress rejection. */
@@ -217,4 +259,15 @@ function assertPayload(value: PersistedALValue): void {
 
 function throwPersistedALMessageCorruption(rejection: ALMessageRejection): never {
     throw new TypeError(rejection.message);
+}
+
+/** A decoded value is plain JSON: freezing every object and array in it makes the shared decode read-only. */
+function freezeDecodedALValue<T>(value: T): T {
+    if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+        Object.freeze(value);
+        for (const child of Object.values(value)) {
+            freezeDecodedALValue(child);
+        }
+    }
+    return value;
 }

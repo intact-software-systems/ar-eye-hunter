@@ -58,6 +58,7 @@ export function presenceConnectEnqueue(
             request: {
                 principalId,
                 generationId: `${principalId}-generation`,
+                connectionGenerationId: `${principalId}-ws-generation`,
                 connectedAtEpochMs: nowEpochMs,
                 lastHeartbeatAtEpochMs: nowEpochMs,
                 expiresAtEpochMs: nowEpochMs + 60_000,

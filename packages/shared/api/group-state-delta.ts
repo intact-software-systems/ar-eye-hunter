@@ -1,6 +1,8 @@
 import {
     validateAuthoritativeGroupEvent,
-    validateGroupActivationStatusPayload
+    validateGroupActivationStatusPayload,
+    type WireObject,
+    type WireValue
 } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
@@ -114,6 +116,7 @@ const GROUP_SESSION_KEYS = [
     'principalId',
     'generationId',
     'generationVersion',
+    'connectionGenerationId',
     'status',
     'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs',
@@ -127,7 +130,7 @@ export function validateGroupStateDeltaEnvelope(
     value: unknown,
     expected?: StateScope & Readonly<{ groupId?: string; }>
 ): asserts value is GroupStateDeltaEnvelope {
-    const envelope = record(value, 'GroupStateDeltaEnvelope');
+    const envelope = decodeRecord(value, 'GroupStateDeltaEnvelope');
     exact(envelope, ENVELOPE_KEYS, 'GroupStateDeltaEnvelope');
     validateAuthoritativeGroupEvent(envelope.event, expected);
     const ref = {
@@ -165,15 +168,13 @@ export function validateGroupStateDeltaEnvelope(
     }
 }
 
-type DeltaRecord = Record<string, unknown>;
-
 function validateDeltaGroup(
-    value: unknown,
+    value: WireValue,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>,
     resulting: GroupStateCausalRevision
 ): Readonly<{ activeMemberCount: number; status: string; }> {
     const label = 'GroupStateDeltaEnvelope.group';
-    const group = record(value, label);
+    const group = decodeRecord(value, label);
     exact(group, GROUP_KEYS, label);
     sameGroupRef(group, ref, label);
     nullableString(group.slug, `${label}.slug`);
@@ -184,7 +185,7 @@ function validateDeltaGroup(
     enumValue(group.joinMode, ['invite-only', 'code', 'open'], `${label}.joinMode`);
     nullablePositiveInteger(group.maxMembers, `${label}.maxMembers`);
     nullablePositiveInteger(group.maxSessionsPerMember, `${label}.maxSessionsPerMember`);
-    record(group.metadata, `${label}.metadata`);
+    decodeRecord(group.metadata, `${label}.metadata`);
     nonNegativeInteger(group.activeMemberCount, `${label}.activeMemberCount`);
     nonEmptyString(group.ownerPrincipalId, `${label}.ownerPrincipalId`);
     for (const key of ['snapshotVersion', 'metadataVersion', 'rosterVersion'] as const) {
@@ -213,7 +214,7 @@ function validateDeltaGroup(
     nonNegativeInteger(group.formationEpoch, `${label}.formationEpoch`);
     nonNegativeInteger(group.formationAttemptCount, `${label}.formationAttemptCount`);
     if (group.lastFormationOutcome !== null) {
-        const outcome = record(group.lastFormationOutcome, `${label}.lastFormationOutcome`);
+        const outcome = decodeRecord(group.lastFormationOutcome, `${label}.lastFormationOutcome`);
         exact(
             outcome,
             ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'],
@@ -239,7 +240,7 @@ function validateDeltaGroup(
         group.establishmentStartedAtEpochMs,
         `${label}.establishmentStartedAtEpochMs`
     );
-    const electorate = array(group.formationElectorate, `${label}.formationElectorate`);
+    const electorate = decodeArray(group.formationElectorate, `${label}.formationElectorate`);
     const electoratePrincipalIds = new Set(electorate);
     if (electoratePrincipalIds.size !== electorate.length) {
         fail(`${label}.formationElectorate must not repeat principal ids`);
@@ -251,22 +252,22 @@ function validateDeltaGroup(
     }
     if (group.acceptedLayoutIdentity !== null) {
         validateDeltaGroupLayoutIdentity(
-            record(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`),
+            decodeRecord(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`),
             `${label}.acceptedLayoutIdentity`
         );
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
-    validateDeltaGroupMemberPolicy(record(group.memberPolicy, `${label}.memberPolicy`), `${label}.memberPolicy`);
+    validateDeltaGroupMemberPolicy(decodeRecord(group.memberPolicy, `${label}.memberPolicy`), `${label}.memberPolicy`);
     if (group.activationStatus !== null) {
         validateGroupActivationStatusPayload(
-            record(group.activationStatus, `${label}.activationStatus`),
+            decodeRecord(group.activationStatus, `${label}.activationStatus`),
             `${label}.activationStatus`
         );
     }
     return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 
-function validateDeltaGroupLayoutIdentity(identity: DeltaRecord, label: string): void {
+function validateDeltaGroupLayoutIdentity(identity: WireObject, label: string): void {
     exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
         nonNegativeInteger(identity[key], `${label}.${key}`);
@@ -274,7 +275,7 @@ function validateDeltaGroupLayoutIdentity(identity: DeltaRecord, label: string):
     enumValue(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.state`);
 }
 
-function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string): void {
+function validateDeltaGroupMemberPolicy(memberPolicy: WireObject, label: string): void {
     exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, label);
     positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.maxConcurrentEdgeSetups`);
     if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
@@ -283,7 +284,7 @@ function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string
     enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.transports`);
 }
 
-function validateGroupLifecycle(group: DeltaRecord, label: string): void {
+function validateGroupLifecycle(group: WireObject, label: string): void {
     if (group.status === 'active' && (group.archived !== null || group.deleted !== null)) {
         fail(`${label} lifecycle is invalid`);
     }
@@ -296,10 +297,10 @@ function validateGroupLifecycle(group: DeltaRecord, label: string): void {
 }
 
 function validateDeltaMembers(
-    envelope: Record<string, unknown>,
+    envelope: WireObject,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
 ): void {
-    const members = array(envelope.members, 'GroupStateDeltaEnvelope.members');
+    const members = decodeArray(envelope.members, 'GroupStateDeltaEnvelope.members');
     const memberPrincipalIds = new Set<string>();
     for (const item of members) {
         const principalId = validateDeltaMember(item, ref);
@@ -320,11 +321,11 @@ function validateDeltaMembers(
 }
 
 function validateDeltaMember(
-    value: unknown,
+    value: WireValue,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
 ): string {
     const label = 'GroupStateDeltaEnvelope.member';
-    const member = record(value, label);
+    const member = decodeRecord(value, label);
     exact(member, GROUP_MEMBER_KEYS, label);
     sameGroupRef(member, ref, label);
     nonEmptyString(member.principalId, `${label}.principalId`);
@@ -359,13 +360,13 @@ function validateDeltaMember(
 }
 
 function validateDeltaSessionIdentitySets(
-    envelope: Record<string, unknown>,
+    envelope: WireObject,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
 ): ReadonlySet<string> {
     const activeSessionIds = new Set(
         uniqueStringArray(envelope.activeSessionIds, 'GroupStateDeltaEnvelope.activeSessionIds')
     );
-    const sessions = array(envelope.sessions, 'GroupStateDeltaEnvelope.sessions');
+    const sessions = decodeArray(envelope.sessions, 'GroupStateDeltaEnvelope.sessions');
     const sessionIds = new Set<string>();
     for (const item of sessions) {
         const sessionId = validateDeltaSession(item, ref);
@@ -391,16 +392,17 @@ function validateDeltaSessionIdentitySets(
 }
 
 function validateDeltaSession(
-    value: unknown,
+    value: WireValue,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
 ): string {
     const label = 'GroupStateDeltaEnvelope.session';
-    const session = record(value, label);
+    const session = decodeRecord(value, label);
     exact(session, GROUP_SESSION_KEYS, label);
     sameGroupRef(session, ref, label);
     nonEmptyString(session.sessionId, `${label}.sessionId`);
     nonEmptyString(session.principalId, `${label}.principalId`);
     nonEmptyString(session.generationId, `${label}.generationId`);
+    nonEmptyString(session.connectionGenerationId, `${label}.connectionGenerationId`);
     positiveInteger(session.generationVersion, `${label}.generationVersion`);
     positiveInteger(session.connectedAtEpochMs, `${label}.connectedAtEpochMs`);
     positiveInteger(session.lastHeartbeatAtEpochMs, `${label}.lastHeartbeatAtEpochMs`);
@@ -421,8 +423,8 @@ function validateDeltaSession(
     return session.sessionId;
 }
 
-function validateAudit(value: unknown, label: string): void {
-    const audit = record(value, label);
+function validateAudit(value: WireValue, label: string): void {
+    const audit = decodeRecord(value, label);
     exact(audit, AUDIT_KEYS, label);
     nonNegativeInteger(audit.atEpochMs, `${label}.atEpochMs`);
     validateActor(audit.actor, `${label}.actor`);
@@ -431,8 +433,8 @@ function validateAudit(value: unknown, label: string): void {
     nullableString(audit.requestId, `${label}.requestId`);
 }
 
-function validateActor(value: unknown, label: string): void {
-    const actor = record(value, label);
+function validateActor(value: WireValue, label: string): void {
+    const actor = decodeRecord(value, label);
     if (actor.kind === 'principal') {
         exact(actor, ['kind', 'principalId'], label);
         nonEmptyString(actor.principalId, `${label}.principalId`);
@@ -452,14 +454,14 @@ function validateActor(value: unknown, label: string): void {
     fail(`${label}.kind is invalid`);
 }
 
-function nullableAudit(value: unknown, label: string): void {
+function nullableAudit(value: WireValue, label: string): void {
     if (value !== null) {
         validateAudit(value, label);
     }
 }
 
 function sameGroupRef(
-    value: Record<string, unknown>,
+    value: WireObject,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>,
     label: string
 ): void {
@@ -472,8 +474,8 @@ function sameGroupRef(
     }
 }
 
-function causalRevision(value: unknown, label: string): GroupStateCausalRevision {
-    const revision = record(value, label);
+function causalRevision(value: WireValue, label: string): GroupStateCausalRevision {
+    const revision = decodeRecord(value, label);
     exact(revision, ['groupRevision', 'presenceRevision'], label);
     nonNegativeInteger(revision.groupRevision, `${label}.groupRevision`);
     nonNegativeInteger(revision.presenceRevision, `${label}.presenceRevision`);
@@ -483,8 +485,8 @@ function causalRevision(value: unknown, label: string): GroupStateCausalRevision
     };
 }
 
-function uniqueStringArray(value: unknown, label: string): readonly string[] {
-    const values = array(value, label);
+function uniqueStringArray(value: WireValue, label: string): readonly string[] {
+    const values = decodeArray(value, label);
     const strings: string[] = [];
     for (const item of values) {
         nonEmptyString(item, `${label} item`);
@@ -496,14 +498,14 @@ function uniqueStringArray(value: unknown, label: string): readonly string[] {
     return strings;
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function decodeRecord(value: unknown, label: string): WireObject {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         fail(`${label} must be an object`);
     }
-    return value as Record<string, unknown>;
+    return value as WireObject;
 }
 
-function array(value: unknown, label: string): unknown[] {
+function decodeArray(value: unknown, label: string): readonly WireValue[] {
     if (!Array.isArray(value)) {
         fail(`${label} must be an array`);
     }
@@ -511,7 +513,7 @@ function array(value: unknown, label: string): unknown[] {
 }
 
 function enumValue(
-    value: unknown,
+    value: WireValue,
     allowed: readonly string[],
     label: string
 ): asserts value is string {
@@ -520,7 +522,7 @@ function enumValue(
     }
 }
 
-function exact(value: Record<string, unknown>, keys: readonly string[], label: string): void {
+function exact(value: WireObject, keys: readonly string[], label: string): void {
     const missing = keys.find((key) => !Object.hasOwn(value, key));
     if (missing) {
         fail(`${label} is missing ${missing}`);
@@ -532,31 +534,31 @@ function exact(value: Record<string, unknown>, keys: readonly string[], label: s
     }
 }
 
-function nonEmptyString(value: unknown, label: string): asserts value is string {
+function nonEmptyString(value: WireValue, label: string): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         fail(`${label} is invalid`);
     }
 }
 
-function nullableString(value: unknown, label: string): void {
+function nullableString(value: WireValue, label: string): void {
     if (value !== null) {
         nonEmptyString(value, label);
     }
 }
 
-function nullablePositiveInteger(value: unknown, label: string): void {
+function nullablePositiveInteger(value: WireValue, label: string): void {
     if (value !== null) {
         positiveInteger(value, label);
     }
 }
 
-function nonNegativeInteger(value: unknown, label: string): asserts value is number {
+function nonNegativeInteger(value: WireValue, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || Number(value) < 0) {
         fail(`${label} is invalid`);
     }
 }
 
-function positiveInteger(value: unknown, label: string): asserts value is number {
+function positiveInteger(value: WireValue, label: string): asserts value is number {
     if (!Number.isSafeInteger(value) || Number(value) < 1) {
         fail(`${label} is invalid`);
     }

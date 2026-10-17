@@ -1,6 +1,6 @@
 import { toBrowserDiagnosticsReceipt } from '@shared-test/black-box-runner/fixtures/browser-diagnostics-recording.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
-import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
+import { toFormationReadinessCapturedFacts } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-readiness-rejection.ts';
 import {
     RTC_NATIVE_OBSERVATION_KINDS,
     toRtcNativeIdentity,

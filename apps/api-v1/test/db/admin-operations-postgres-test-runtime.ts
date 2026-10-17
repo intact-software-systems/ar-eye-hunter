@@ -349,6 +349,7 @@ export function canonicalSessionRuntimeValue(
         principalId: 'admin-test-owner',
         generationId: `${identity.sessionId}-generation`,
         generationVersion: connectedAtEpochMs,
+        connectionGenerationId: `${identity.sessionId}-ws-generation`,
         status: 'active',
         connectedAtEpochMs,
         lastHeartbeatAtEpochMs: connectedAtEpochMs,

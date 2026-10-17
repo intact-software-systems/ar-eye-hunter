@@ -587,6 +587,7 @@ function createGroupSnapshot(
                 sessionId: 'session-1',
                 principalId: overrides.sessionPrincipalId ?? 'principal-1',
                 generationId: 'presence-generation',
+                connectionGenerationId: 'presence-ws-generation',
                 generationVersion: 1,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: 1,

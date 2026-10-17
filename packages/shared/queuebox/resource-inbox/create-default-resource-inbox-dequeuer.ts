@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { RateLimiter } from '../../resilience/Resilience.ts';
-import { toErrorSummary } from '../../resilience/to-error.ts';
+import { toErrorSummaryLine } from '../../resilience/to-error.ts';
 import { toDequeuedKeyText } from '../dequeue/dequeue-batch.ts';
 import { DequeueController, Reservator } from '../dequeue/dequeue-controller.ts';
 import {
@@ -26,15 +26,21 @@ import {
     type ResourceInboxRetryPolicy
 } from '../ResourceInboxRetryPolicy.ts';
 import { isNotReadyException, NotReadyException } from './not-ready-exception.ts';
+import { releaseResourceInboxRound } from './release-resource-inbox-round.ts';
 import {
     computeResourceInboxAttempt,
     recordResourceInboxAttemptRelease,
     toResourceInboxAttemptFailureCause,
     type ResourceInboxAttempt,
-    type ResourceInboxAttemptFailureCause,
     type ResourceInboxAttemptReleaseTelemetry
 } from './resource-inbox-attempt-telemetry.ts';
 import type { ResourceInboxCompletionNotifications } from './resource-inbox-completion-notifications.ts';
+import {
+    isResourceInboxHandlerFinalized,
+    ResourceInboxHandlerRetryableConflict,
+    toHandlerFinalizedResourceInboxRelease,
+    toReleasedResourceInboxSuccess
+} from './resource-inbox-handler-outcome.ts';
 import { ResourceInboxResilience } from './resource-inbox-resilience.ts';
 
 const RESOURCE_INBOX_COMPLETION_STATUSES: ReadonlySet<EntityStatus> = new Set([
@@ -116,38 +122,6 @@ export class ResourceInboxHandlerEntryError extends Error {
     }
 }
 
-/**
- * A handler success whose own transaction already committed the terminal entry, so the queue releases nothing and
- * publishes no completion notice: the committer published it.
- */
-export class ResourceInboxHandlerFinalizedSuccess {
-    readonly entry: ResourceEntry;
-
-    constructor(entry: ResourceEntry) {
-        this.entry = entry;
-    }
-}
-
-/**
- * A handler's typed rejection whose own transaction already committed the terminal entry: a value, not an operational
- * failure. The queue releases nothing, records the attempt as non-retryable and logs the rejection's cause chain.
- */
-export class ResourceInboxHandlerFinalizedRejection {
-    readonly entry: ResourceEntry;
-    readonly code: string;
-    readonly cause: Error;
-
-    constructor(entry: ResourceEntry, code: string, cause: Error) {
-        this.entry = entry;
-        this.code = code;
-        this.cause = cause;
-    }
-}
-
-export type ResourceInboxHandlerFinalized =
-    | ResourceInboxHandlerFinalizedSuccess
-    | ResourceInboxHandlerFinalizedRejection;
-
 export interface ResourceInboxDequeuerInput {
     readonly repository: DequeueResourceEntryRepository;
     readonly typesToDequeue: () => Set<string>;
@@ -168,6 +142,11 @@ export interface DequeueResourceEntryOptions {
     readonly toCompletionAwaitability?: (entry: ResourceEntry) => ResourceInboxCompletionNotifications.Awaitability;
     /** Recognizes an expected optimistic conflict: it retries the entry without counting as an operational failure. */
     readonly isRetryableConflict?: (error: Error) => boolean;
+    /**
+     * Entries of one round that would only conflict on one shared row: they compute one after another instead of
+     * together. Absent, every entry of a round computes concurrently up to the lane's budget.
+     */
+    readonly toComputeExclusionKey?: (key: Resource.Key, attempt: ResourceInboxAttempt) => string | undefined;
     readonly jitterUnit?: () => number;
     readonly nowEpochMs?: () => number;
     readonly onReservationTelemetry?: (event: ResourceInboxFairnessTelemetry) => void;
@@ -194,13 +173,6 @@ interface ResourceInboxReservationSelection {
     readonly lane: typeof Reservator.NEW | typeof Reservator.RETRY;
     /** Absent claims in queue order. */
     readonly contextClaim: ResourceInboxContextClaim | undefined;
-}
-
-interface ResourceInboxReleasedSuccess<V> {
-    readonly original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>;
-    readonly entry: ResourceEntry;
-    readonly classification: 'accepted' | 'non-retryable';
-    readonly failure: ResourceInboxAttemptFailureCause | undefined;
 }
 
 interface ResourceInboxFailureDecision {
@@ -265,6 +237,9 @@ function createResourceInboxFinalizationController<V>(
 ): DequeueController<Resource.Key, ResourceInboxAttempt, V> {
     return DequeueController.create<Resource.Key, ResourceInboxAttempt, V>()
         .withInboxTypesToDequeue(input.typesToDequeue)
+        // A round that tripped the breaker releases what it claimed and starts no other round of the pass.
+        .onRoundAdmissionDo(() => !dependencies.resilience.isNotAllowedThroughToDequeue())
+        .withComputeExclusion(dependencies.options.toComputeExclusionKey)
         .withMaxNumToDequeue(input.maxNumToDequeue)
         .withLaneBudgets(input.readLaneBudgets)
         .withWorkAdvertisement(input.workAdvertisement)
@@ -394,7 +369,8 @@ async function finalizeResourceInboxRecovery(
         dependencies.resilience.retryPolicy.maxAttempts,
         dependencies.nowEpochMs()
     );
-    await dependencies.options.onRetryExhaustionRecovery!(recovery);
+    const finalized = await dependencies.options.onRetryExhaustionRecovery!(recovery);
+    publishResourceInboxCompletion(dependencies.options, finalized);
     dependencies.options.onRetryExhaustionTelemetry?.(recovery);
 }
 
@@ -402,14 +378,19 @@ async function releaseResourceInboxSuccesses<V>(
     dependencies: ResourceInboxDequeueDependencies,
     successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
 ): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
-    const reserved = [...successes.values()].filter((success) => !isHandlerFinalized(success.computedValue));
-    const released = reserved.length === 0 ? new Map<Resource.Key, ResourceEntry>() : await dependencies.repository
-        .releaseEntries(reserved.map((success) => ({
+    const reserved = [...successes.values()].filter((success) =>
+        !isResourceInboxHandlerFinalized(success.computedValue) &&
+        !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
+    );
+    const { released, lost } = await releaseResourceInboxRound(
+        dependencies.repository,
+        reserved.map((success) => ({
             entry: success.value.entry,
             disposition: { status: EntityStatus.COMPLETED, delayMs: null }
-        })));
+        }))
+    );
     const handlerFinalized = [...successes.values()].flatMap((success) =>
-        isHandlerFinalized(success.computedValue)
+        isResourceInboxHandlerFinalized(success.computedValue)
             ? [toHandlerFinalizedResourceInboxRelease(success, success.computedValue)]
             : []
     );
@@ -418,7 +399,7 @@ async function releaseResourceInboxSuccesses<V>(
         publishResourceInboxCompletion(dependencies.options, entry);
     }
     const releases = [...handlerFinalized, ...releasedByQueue];
-    const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
+    const result = await releaseResourceInboxConflicts(dependencies, successes);
     for (const { original, entry, classification, failure } of releases) {
         recordResourceInboxAttemptRelease(dependencies.options.onAttemptReleaseTelemetry, {
             attempt: original.value,
@@ -431,6 +412,37 @@ async function releaseResourceInboxSuccesses<V>(
             value: { ...original.value, entry },
             computedValue: original.computedValue
         });
+    }
+    if (lost !== undefined) {
+        throw lost;
+    }
+    return result;
+}
+
+/** A conflict value follows the failure release of the entry it carries, so it retries or exhausts like a thrown one. */
+async function releaseResourceInboxConflicts<V>(
+    dependencies: ResourceInboxDequeueDependencies,
+    successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
+): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
+    const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
+    for (const success of successes.values()) {
+        const conflict = success.computedValue;
+        if (!(conflict instanceof ResourceInboxHandlerRetryableConflict)) {
+            continue;
+        }
+        console.info(
+            `Handler conflicted on dequeued key ${
+                toDequeuedKeyText(success.key)
+            } as ${conflict.code}; it is redelivered. ${toErrorSummaryLine(conflict.cause)}`
+        );
+        const released = await releaseResourceInboxFailure(dependencies, {
+            key: success.key,
+            value: success.value,
+            exception: new ResourceInboxHandlerEntryError(conflict.entry, conflict.cause)
+        }, conflict.retryDelayMs);
+        if (released !== undefined) {
+            result.set(success.key, { key: success.key, value: released.value, computedValue: success.computedValue });
+        }
     }
     return result;
 }
@@ -451,7 +463,8 @@ async function releaseResourceInboxFailures(
 
 async function releaseResourceInboxFailure(
     dependencies: ResourceInboxDequeueDependencies,
-    original: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>
+    original: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>,
+    retryDelayMs: number | null = null
 ): Promise<DequeueController.Failure<Resource.Key, ResourceInboxAttempt> | undefined> {
     const failure = toHandlerEntryFailure(original);
     if (
@@ -466,11 +479,12 @@ async function releaseResourceInboxFailure(
         });
         return failure;
     }
-    const decision = computeResourceInboxFailureDecision(
+    const decision = computeResourceInboxFailureDecision({
         failure,
-        dependencies.resilience.retryPolicy,
-        dependencies.jitterUnit()
-    );
+        policy: dependencies.resilience.retryPolicy,
+        jitterUnit: dependencies.jitterUnit(),
+        retryDelayMs
+    });
     const entry = decision.exhausted && dependencies.options.onRetryExhausted
         ? await finalizeResourceInboxFailure(dependencies, failure)
         : [...(await dependencies.repository.releaseEntries([
@@ -507,11 +521,18 @@ async function finalizeResourceInboxFailure(
     return finalized;
 }
 
+interface ComputeResourceInboxFailureDecisionInput {
+    readonly failure: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>;
+    readonly policy: ResourceInboxRetryPolicy;
+    readonly jitterUnit: number;
+    /** A retryable conflict's ceiling on the backoff; null keeps the backoff. */
+    readonly retryDelayMs: number | null;
+}
+
 function computeResourceInboxFailureDecision(
-    failure: DequeueController.Failure<Resource.Key, ResourceInboxAttempt>,
-    policy: ResourceInboxRetryPolicy,
-    jitterUnit: number
+    input: ComputeResourceInboxFailureDecisionInput
 ): ResourceInboxFailureDecision {
+    const { failure, policy, jitterUnit } = input;
     if (isNotReadyException(failure.exception)) {
         return {
             classification: 'not-ready',
@@ -530,10 +551,15 @@ function computeResourceInboxFailureDecision(
     return {
         classification: 'retryable',
         disposition: retry.status === 'retry'
-            ? { status: EntityStatus.RETRY, delayMs: retry.delayMs }
+            ? { status: EntityStatus.RETRY, delayMs: toConflictRetryDelayMs(retry.delayMs, input.retryDelayMs) }
             : { status: EntityStatus.FAILED, delayMs: null },
         exhausted: retry.status === 'failed'
     };
+}
+
+/** The backoff's short early delays stand; a conflict's ceiling replaces only the long ones. */
+function toConflictRetryDelayMs(backoffDelayMs: number, retryDelayMs: number | null): number {
+    return retryDelayMs === null ? backoffDelayMs : Math.min(backoffDelayMs, retryDelayMs);
 }
 
 function toResourceInboxAttempts(
@@ -638,51 +664,4 @@ function publishResourceInboxCompletion(options: DequeueResourceEntryOptions, en
             options.toCompletionAwaitability?.(entry) ?? 'awaitable'
         );
     }
-}
-
-function isHandlerFinalized(computedValue: unknown): computedValue is ResourceInboxHandlerFinalized {
-    return computedValue instanceof ResourceInboxHandlerFinalizedSuccess ||
-        computedValue instanceof ResourceInboxHandlerFinalizedRejection;
-}
-
-function toHandlerFinalizedResourceInboxRelease<V>(
-    original: DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>,
-    finalized: ResourceInboxHandlerFinalized
-): ResourceInboxReleasedSuccess<V> {
-    const { entry } = finalized;
-    const expectedStatuses: readonly EntityStatus[] = finalized instanceof ResourceInboxHandlerFinalizedSuccess
-        ? [EntityStatus.COMPLETED]
-        : [EntityStatus.FAILED, EntityStatus.NON_RETRYABLE];
-    if (
-        !isKeysEqual(entry.key, original.key) ||
-        entry.dequeueAudit.attempts !== original.value.entry.dequeueAudit.attempts ||
-        !expectedStatuses.includes(entry.status)
-    ) {
-        throw new Error('Handler-finalized entry does not finalize the claimed reservation');
-    }
-    if (finalized instanceof ResourceInboxHandlerFinalizedSuccess) {
-        return { original, entry, classification: 'accepted', failure: undefined };
-    }
-    console.error(
-        `Handler rejected dequeued key ${toDequeuedKeyText(original.key)} as ${finalized.code}.`,
-        toErrorSummary(finalized.cause)
-    );
-    return {
-        original,
-        entry,
-        classification: 'non-retryable',
-        failure: { code: finalized.code, name: finalized.cause.name }
-    };
-}
-
-function toReleasedResourceInboxSuccess<V>(
-    key: Resource.Key,
-    entry: ResourceEntry,
-    successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
-): ResourceInboxReleasedSuccess<V> {
-    const original = [...successes.values()].find((success) => isKeysEqual(success.key, key));
-    if (original === undefined || !isKeysEqual(entry.key, key)) {
-        throw new Error(`Missing success dto for key: ${String(key)}`);
-    }
-    return { original, entry, classification: 'accepted', failure: undefined };
 }

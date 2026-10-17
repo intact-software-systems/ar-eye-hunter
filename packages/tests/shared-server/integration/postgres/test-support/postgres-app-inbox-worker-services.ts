@@ -92,7 +92,10 @@ export function createPostgresAppInboxWorkerServices(
         database: input.transactionSql
     };
     const handlerOptions = { serviceId: input.serviceId, timing: undefined, options: inboxOptions };
-    const client = new AppClientInboxService({ ...inboxDependencies, clientStateService: clientState }, handlerOptions);
+    const client = new AppClientInboxService(
+        { ...inboxDependencies, clientStateService: clientState, wsTickets: authSessions },
+        handlerOptions
+    );
     const group = new GroupStateInboxService({
         ...inboxDependencies,
         groupStateService: groupState,
@@ -186,6 +189,7 @@ function createPostgresAppInboxWorkerInbox(
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
         laneBudgetPolicy: 'adaptive-retry',
+        newLaneConcurrency: 1,
         onAttemptReleaseTelemetry: (event) =>
             trace.attempts.push({
                 resourceId: event.key.resourceId,

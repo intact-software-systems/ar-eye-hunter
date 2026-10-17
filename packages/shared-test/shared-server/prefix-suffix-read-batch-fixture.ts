@@ -21,6 +21,7 @@ const SCOPE_PREFIX = 'app=bench:ws=w1:';
 /**
  * Keys a SQL LIKE pattern, a locale sort or an overlapping prefix and suffix would get wrong. Every
  * suffix is matched literally: `%` and `_` are ordinary characters, and results are in UTF-8 byte order.
+ * The suffix-only selectors cover the reversed-key range, including a code point outside the BMP.
  */
 export function createPrefixSuffixReadBatchFixture(
     namespace: string
@@ -59,7 +60,11 @@ export function createPrefixSuffixReadBatchFixture(
             prefixSuffix(namespace, 'unicode-raw', ':member=ünï😀'),
             prefixSuffix(namespace, 'alice', ':member=alice'),
             prefixSuffix(namespace, 'ali', ':member=ali'),
-            { selectorId: 'prefix', kind: 'prefix', namespace, keyPrefix: key('group=g3:') }
+            { selectorId: 'prefix', kind: 'prefix', namespace, keyPrefix: key('group=g3:') },
+            suffix(namespace, 'suffix-alice', ':member=alice'),
+            suffix(namespace, 'suffix-percent', ':member=50%25_off'),
+            suffix(namespace, 'suffix-unicode-raw', ':member=ünï😀'),
+            suffix(namespace, 'suffix-ali', ':member=ali')
         ],
         expectedSelections: [
             {
@@ -82,7 +87,22 @@ export function createPrefixSuffixReadBatchFixture(
                 ]
             },
             { selectorId: 'ali', keys: [] },
-            { selectorId: 'prefix', keys: [key('group=g3:member=a_c'), key('group=g3:member=abc')] }
+            { selectorId: 'prefix', keys: [key('group=g3:member=a_c'), key('group=g3:member=abc')] },
+            {
+                selectorId: 'suffix-alice',
+                keys: [
+                    key('group=%25:member=alice'),
+                    key('group=B:member=alice'),
+                    key('group=_:member=alice'),
+                    key('group=a:member=alice'),
+                    key('group=g7:member=alice'),
+                    'app=bench:ws=w1:member=alice',
+                    'app=bench:ws=w1x:group=g1:member=alice'
+                ]
+            },
+            { selectorId: 'suffix-percent', keys: [key('group=g1:member=50%25_off')] },
+            { selectorId: 'suffix-unicode-raw', keys: [key('group=g6:member=ünï😀')] },
+            { selectorId: 'suffix-ali', keys: [] }
         ]
     };
 }
@@ -93,4 +113,8 @@ function prefixSuffix(
     keySuffix: string
 ): RuntimeStateReadBatchSelector {
     return { selectorId, kind: 'prefix-suffix', namespace, keyPrefix: SCOPE_PREFIX, keySuffix };
+}
+
+function suffix(namespace: string, selectorId: string, keySuffix: string): RuntimeStateReadBatchSelector {
+    return { selectorId, kind: 'suffix', namespace, keySuffix };
 }

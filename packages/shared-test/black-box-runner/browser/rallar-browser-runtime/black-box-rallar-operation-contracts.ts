@@ -474,6 +474,8 @@ export interface BlackBoxRallarHealthDiagnostics {
 
 export interface BlackBoxRallarHealthInput {
     readonly includeRtcDiagnostics?: boolean;
+    /** Absent reads every known peer; an empty list reads only the summary counters, with no per-peer stats. */
+    readonly rtcDiagnosticsPeerIds?: readonly string[];
 }
 
 export interface BlackBoxRallarCrdtScopeInput extends BlackBoxRallarScope {
@@ -798,6 +800,11 @@ export interface BlackBoxRallarFormationCommandDiagnostics {
 export interface BlackBoxRallarFormationReadinessDiagnostics {
     readonly readyAtEpochMs: number;
     readonly formation: BlackBoxRallarFormationSummary;
+    /**
+     * The page's clock when it first held the reported accepted layout at the reported group revision; absent when
+     * no layout is accepted.
+     */
+    readonly acceptedHeldSinceEpochMs?: number;
 }
 
 export interface BlackBoxRallarFormationRuntime {

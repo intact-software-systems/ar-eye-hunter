@@ -32,10 +32,15 @@ import {
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { TurnBatchedReads } from '@shared/resilience/turn-batched-reads.ts';
 
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
 import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-entry-repository.ts';
+import type {
+    ResourceInboxWorkPresence,
+    ResourceInboxWorkPresenceRead
+} from './read-resource-inbox-work-presences.ts';
 import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 import { computeResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
 
@@ -47,6 +52,8 @@ interface PSqlQueueReleaseCandidate {
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
     private readonly now: () => Temporal.Instant;
+    /** Every lane's probe of one engine round is one statement. */
+    private readonly workPresenceReads: TurnBatchedReads<ResourceInboxWorkPresenceRead, ResourceInboxWorkPresence>;
 
     constructor(
         resourceInbox: PSqlResourceInboxRepository,
@@ -54,6 +61,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     ) {
         this.resourceInbox = resourceInbox;
         this.now = now;
+        this.workPresenceReads = new TurnBatchedReads({
+            toKeyId: (read) => JSON.stringify([[...read.typeIds].sort(), toWorkPresenceDurations(read)]),
+            readBatch: (reads) => resourceInbox.reservations.readWorkPresences(reads)
+        });
     }
 
     cleanup(): void {
@@ -81,7 +92,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     ): Promise<DequeueController.WorkAdvertisement> {
         const { maxAttempts, finalizationStaleAfterMs, reservationLeaseMs, staleDueThresholdMs } =
             toResourceInboxWorkAdvertisementOptions(workInput);
-        const presence = await this.resourceInbox.reservations.readWorkPresence({
+        const presence = await this.workPresenceReads.read({
             typeIds,
             maxAttempts,
             reservationLeaseMs,
@@ -409,4 +420,8 @@ function toPSqlQueueReleaseCandidates(
             computeResourceInboxRelease(release.entry, release.disposition, releasedAt)
         )
     }));
+}
+
+function toWorkPresenceDurations(read: ResourceInboxWorkPresenceRead): readonly number[] {
+    return [read.maxAttempts, read.reservationLeaseMs, read.finalizationStaleAfterMs, read.staleDueThresholdMs];
 }

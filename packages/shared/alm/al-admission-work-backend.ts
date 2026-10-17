@@ -22,7 +22,13 @@ export interface ALAdmissionReadSession extends ALAdmissionReadContext {
 }
 
 export interface ALAdmissionWorkWriteContext extends ALAdmissionWriteContext, ALAdmissionReadSession {
-    /** Records a computed entry against the exact slot already captured by readWork. */
+    /**
+     * Captures the slot of a row this caller claimed, as its claim returned it. A backend may answer
+     * from the claim instead of reading the row; it then fences the commit on every column of exactly
+     * that value, inside the commit, whether or not the commit also writes the row.
+     */
+    readClaimedWork(claimed: ResourceEntry): Promise<ResourceEntry | undefined>;
+    /** Records a computed entry against the exact slot already captured by readWork or readClaimedWork. */
     writeWork(entry: ResourceEntry): void;
 }
 

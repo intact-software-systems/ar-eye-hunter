@@ -145,6 +145,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
             now: Date.now,
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             serviceId: 'summary-handler'
         });
@@ -175,6 +176,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
         const worker = new GroupPresenceSummaryWork({
             outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
             recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: Object.assign(async () => undefined, { begin }) as never,
             serviceId: 'summary-handler',

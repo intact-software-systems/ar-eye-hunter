@@ -1,7 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
-import { isALWorldBroadcast } from '@shared/al-contracts/is-al-world-broadcast.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
@@ -20,11 +19,12 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import {
-    isWsQueueBoxServerDirectScopedBroadcastRow,
-    validateWsQueueBoxServerRecipientAuthority
-} from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
+import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
+import {
+    isWsQueueBoxServerCapturedSessionRow,
+    toWsQueueBoxServerCapturedSendInput
+} from '@shared/services/ws-queue-box-server/scope/to-ws-queue-box-server-captured-send-input.ts';
 import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
@@ -34,6 +34,8 @@ import {
     type WsQueueBoxServerReceiptObserver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-observation.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
+import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -51,6 +53,7 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
+    readonly socket: Pick<JsonWebSocketServer, 'expectedConnections'>;
     onOutboxClusterPublishDo(
         publisher: (
             message: ALMessage,
@@ -230,6 +233,7 @@ async function writeQueueBoxOutboxPublication(
         directCall = 'invoked';
         result = sendToCapturedLocalTargets({ message, entry, policy }, options);
         directCall = 'returned';
+        const awaited = deferAwaitedCapturedRecipients({ message, entry, policy }, result, options);
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -239,7 +243,9 @@ async function writeQueueBoxOutboxPublication(
                 deliveryStatus: result.status,
                 recipientCount: result.recipientCount,
                 sentCount: result.sentCount,
-                failedCount: result.failedCount
+                failedCount: result.failedCount,
+                deferredCount: awaited.heldCount,
+                deferEvictedCount: awaited.evictedCount
             }
         });
         if (result.failedCount > 0) {
@@ -333,11 +339,13 @@ async function sendRemoteQueueBoxOutboxEntry(
     entry: ResourceEntry,
     options: SendRemoteQueueBoxOutboxEntryDependencies
 ): Promise<void> {
-    const remoteMessage = decodePersistedALMessage(entry.resource);
+    const remoteMessage = decodePersistedALMessageRow(entry);
     let result: WsServerLiveSendResult;
+    let awaited: ExpectedConnectionHolds.AudienceHold;
     try {
         const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, remoteMessage, entry);
         result = sendToCapturedLocalTargets({ message: remoteMessage, entry, policy }, options);
+        awaited = deferAwaitedCapturedRecipients({ message: remoteMessage, entry, policy }, result, options);
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -360,7 +368,9 @@ async function sendRemoteQueueBoxOutboxEntry(
             deliveryStatus: result.status,
             recipientCount: result.recipientCount,
             sentCount: result.sentCount,
-            failedCount: result.failedCount
+            failedCount: result.failedCount,
+            deferredCount: awaited.heldCount,
+            deferEvictedCount: awaited.evictedCount
         }
     });
     if (result.failedCount === 0) {
@@ -410,6 +420,24 @@ async function readCapturedPublicationPolicy(
         : await service.readCapturedPolicy(message, entry);
 }
 
+/** A row with failed sends is retried, and its redelivery reaches the awaited session; only a settled row is held. */
+function deferAwaitedCapturedRecipients(
+    input: SendToCapturedLocalTargetsInput,
+    result: Pick<WsServerLiveSendResult, 'failedCount'>,
+    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+): ExpectedConnectionHolds.AudienceHold {
+    const { policy } = input;
+    if (result.failedCount > 0 || policy === undefined) {
+        return { heldCount: 0, evictedCount: 0 };
+    }
+    return options.wsQBoxServerService.socket.expectedConnections.holdForAudience(policy.admittedAudience ?? [], {
+        expiresAtEpochMs: input.entry.audit.expiryTs.epochMilliseconds,
+        send: (sessionId) => {
+            sendToCapturedLocalTargets({ ...input, policy: { ...policy, admittedAudience: [sessionId] } }, options);
+        }
+    });
+}
+
 function sendToCapturedLocalTargets(
     input: SendToCapturedLocalTargetsInput,
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
@@ -425,33 +453,17 @@ function sendToCapturedLocalTargets(
         );
     }
     const captured = policy?.admittedAudience;
-    const recipientScope = resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope);
-    const sessionInvalidation = policy?.sessionInvalidation;
-    if (sessionInvalidation !== undefined) {
-        return options.wsQBoxServerService.sendToTargetsWithResult({
-            message,
-            sessionInvalidation
-        });
-    }
-    const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
-    const eligible = (message.targets?.mode !== 'unicast' && !directBroadcast) ||
-            captured === undefined || options.filterEligibleCapturedSessionIds === undefined
+    const eligible = !isWsQueueBoxServerCapturedSessionRow(message, entry.key) || captured === undefined ||
+            options.filterEligibleCapturedSessionIds === undefined || policy?.sessionInvalidation !== undefined
         ? undefined
         : options.filterEligibleCapturedSessionIds({
             message,
             candidateSessionIds: captured,
-            recipientScope
+            recipientScope: resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope)
         });
-    return options.wsQBoxServerService.sendToTargetsWithResult({
-        message,
-        recipientSessionIds: eligible,
-        admittedPeerIds: captured,
-        inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
-        recipientPrincipalId: policy?.principalTargetId,
-        recipientScope: directBroadcast || isALWorldBroadcast(message) || policy?.principalTargetId !== undefined
-            ? recipientScope
-            : undefined
-    });
+    return options.wsQBoxServerService.sendToTargetsWithResult(
+        toWsQueueBoxServerCapturedSendInput({ message, key: entry.key, policy, eligibleSessionIds: eligible })
+    );
 }
 
 export interface ToPubSubMessageInput {
@@ -466,7 +478,7 @@ export function toPubSubMessage(input: ToPubSubMessageInput): QueueBoxPubSubMess
         throw new TypeError('QueueBox cluster notifications require admitted WS outbox work');
     }
 
-    const message = decodePersistedALMessage(entry.resource);
+    const message = decodePersistedALMessageRow(entry);
     const expiresAtMs = resolveALMessageExpireAtMs(message);
     if (
         expiresAtMs === undefined || !Number.isSafeInteger(expiresAtMs) ||
@@ -510,7 +522,7 @@ async function resolveResourceEntryFromPubSubMessage(
             new TypeError('Live cluster canonical message is missing')
         );
     }
-    const canonical = decodePersistedALMessage(entry.resource);
+    const canonical = decodePersistedALMessageRow(entry);
     if (
         !isKeysEqual(entry.key, message.key) || entry.typeId !== message.typeId ||
         resolveALMessageExpireAtMs(canonical) !== message.expiresAtMs ||

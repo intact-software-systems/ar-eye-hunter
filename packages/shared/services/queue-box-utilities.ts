@@ -7,14 +7,17 @@ import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository, ResourceInboxClaimOrder } from '../queuebox/queue-box-types.ts';
 import {
     createDefaultResourceInboxDequeuer,
-    type DequeueResourceEntryOptions,
-    type ResourceInboxHandlerFinalized
+    type DequeueResourceEntryOptions
 } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import type {
     ResourceInboxAttempt,
     ResourceInboxAttemptTelemetry
 } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import {
+    ResourceInboxHandlerRetryableConflict,
+    type ResourceInboxHandlerOutcome
+} from '../queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
@@ -39,7 +42,7 @@ export namespace QueueBoxUtilities {
         readonly onDequeuedDo: (
             entry: ResourceEntry,
             attemptTelemetry: ResourceInboxAttemptTelemetry
-        ) => Promise<void | ResourceInboxHandlerFinalized>;
+        ) => Promise<void | ResourceInboxHandlerOutcome>;
         readonly options: DequeueResourceEntryOptions;
         readonly readLaneBudgets?: DequeueController.ReadLaneBudgets;
         /** The probe that preceded this pass; without one every lane is offered a reservation. */
@@ -76,7 +79,7 @@ export class QueueBoxUtilities {
         }
 
         let claimedCount = 0;
-        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerFinalized | undefined>({
+        await createDefaultResourceInboxDequeuer<ResourceInboxHandlerOutcome | undefined>({
             repository: qbox,
             typesToDequeue: () => typesToDequeue,
             newLaneClaimOrder,
@@ -95,8 +98,13 @@ export class QueueBoxUtilities {
             })
             .onCompletedEntries((completed) => {
                 claimedCount += completed.size;
-                // A typed rejection is a completed entry: the queue worked, so it is a resilience success.
-                if (completed.size > 0) {
+                // A typed rejection is a completed entry: the queue worked, so it is a resilience success. A conflict
+                // value is redelivered, neither a success nor an operational failure.
+                if (
+                    [...completed.values()].some((success) =>
+                        !(success.computedValue instanceof ResourceInboxHandlerRetryableConflict)
+                    )
+                ) {
                     resilience.success();
                 }
             })

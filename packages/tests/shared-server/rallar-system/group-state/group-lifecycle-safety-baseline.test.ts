@@ -210,6 +210,7 @@ function connectPresenceCommand(): GroupMutationCommand {
             traceId: null,
             principalId: 'alice',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
             connectedAtEpochMs: 2_000,
             lastHeartbeatAtEpochMs: 2_000,
             expiresAtEpochMs: 62_000

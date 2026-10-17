@@ -403,12 +403,16 @@ describe('room request translation', () => {
         const presence = {
             principalId: 'member-1',
             generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
+            expiresAtEpochMs: 121_000,
             ...actor
         } as const;
 
         expect(toConnectRoomPresenceGroupStateRequest(presence)).toEqual(presence);
         expect(toDisconnectRoomPresenceGroupStateRequest(presence)).toEqual({
-            ...presence,
+            principalId: presence.principalId,
+            generationId: presence.generationId,
+            ...actor,
             reason: 'left-group'
         });
         expect(toLeaveRoomMemberGroupStateRequest(actor)).toEqual({

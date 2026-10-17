@@ -125,11 +125,13 @@ export class GroupStateInboxService {
             formationMetrics: config.formationMetrics,
             captureAuthenticatedMutationIngress: (descriptor, authority) =>
                 this.groupStateService.captureAppInboxMutationIngress(descriptor, authority),
-            persistMutationIngress: (context, ingress) =>
-                this.reservationClient.persistAuthority(
+            persistMutationIngress: async (context, ingress) => {
+                this.transactionWriter.requireUnexpiredAttempt(context);
+                return await this.reservationClient.persistAuthority(
                     context,
                     encodeAppInboxCommand(ingress, 'Group mutation AppInbox authority')
-                )
+                );
+            }
         });
         this.registerMessageHandlers();
         this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);

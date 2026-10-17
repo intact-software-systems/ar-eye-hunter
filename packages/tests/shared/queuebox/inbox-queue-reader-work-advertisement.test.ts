@@ -158,6 +158,7 @@ function createObservedReader(dequeueOptions: DequeueResourceEntryOptions = {}):
     const reader = new InboxQueueReader(queue, {
         ...dequeueOptions,
         laneBudgetPolicy: 'adaptive-retry',
+        newLaneConcurrency: 1,
         nowEpochMs: () => Number(now.epochMilliseconds)
     });
     const events: string[] = [];

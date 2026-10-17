@@ -9,6 +9,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import { toRuntimeStateReadBatchSelectedKey } from '../../../runtime-state/read-batch/to-runtime-state-read-batch-selected-key.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -193,9 +194,7 @@ async function readLiveSelections(
         async (_namespace, entry) => await toLiveGroupStateEntryValue(entry)
     );
     if (resolved.status === 'changed') {
-        throw new StateSnapshotReadConflictError(
-            selectors[0].kind === 'key' ? selectors[0].key : selectors[0].keyPrefix
-        );
+        throw new StateSnapshotReadConflictError(toRuntimeStateReadBatchSelectedKey(selectors[0]));
     }
     return resolved.selections.map((selection) => selection.entries);
 }

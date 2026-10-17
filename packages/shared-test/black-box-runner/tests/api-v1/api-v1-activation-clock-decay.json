@@ -360,6 +360,7 @@
         },
         "body": {
           "generationId": "activationdecay-generation-{runId}",
+          "connectionGenerationId": "activationdecay-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -380,6 +381,7 @@
         },
         "body": {
           "generationId": "activationdecay-generation-{runId}",
+          "connectionGenerationId": "activationdecay-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

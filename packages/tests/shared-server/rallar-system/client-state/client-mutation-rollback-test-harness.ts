@@ -3,6 +3,7 @@ import { expect } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { ClientSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
@@ -49,7 +50,7 @@ interface RollbackDatabaseInput {
 
 export async function createRollbackHarness(): Promise<RollbackHarness> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+    const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const eventStore = new TestClientStateEventStore();
@@ -84,7 +85,8 @@ export async function createRollbackHarness(): Promise<RollbackHarness> {
                 runtimeRepository,
                 database,
                 { eventStore }
-            )
+            ),
+            wsTickets: new AuthSessionRepository(runtimeRepository)
         },
         {
             serviceId: 'server-12345678'

@@ -148,11 +148,12 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             undefined
         );
 
-        const admission = new PSqlAdmissionMutationCollector(
-            runtime,
-            'al-admission-rollback',
-            () => nowEpochMs
-        );
+        const admission = new PSqlAdmissionMutationCollector({
+            repository: runtime,
+            readEntry: (key) => runtime.findEntry('al-admission-rollback', key),
+            namespace: 'al-admission-rollback',
+            nowEpochMs: () => nowEpochMs
+        });
         await admission.set('sibling-a', { value: 'a' }, FUTURE_MS);
         await admission.set('sibling-b', { value: 'b' }, FUTURE_MS);
         const mutations = admission.mutations();

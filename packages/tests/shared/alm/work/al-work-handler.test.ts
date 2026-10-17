@@ -314,6 +314,7 @@ describe('ALWorkHandler', () => {
         const pending: ALWorkClaim[] = [];
         let dueAtMs: number | undefined;
         const port: ALWorkQueuePort = {
+            workTypes: AL_TEST_TYPES,
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
             readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
@@ -435,6 +436,7 @@ describe('ALWorkHandler', () => {
             signalFirstClaimEntered = resolve;
         });
         const port: ALWorkQueuePort = {
+            workTypes: AL_TEST_TYPES,
             retainIfAbsent: async (entry) => entry,
             readPage: async () => ({ entries: [], nextCursor: null }),
             readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
@@ -841,7 +843,7 @@ describe('ALWorkHandler', () => {
 
         // A batch the engine itself starts is worth exactly one probe to open it and one to close it.
         pending.push(toFakeALWorkClaim('engine-row'));
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(AL_TEST_TYPES);
         for (let round = 0; round < 25; round += 1) {
             await engine.executeOnce();
         }
@@ -887,7 +889,7 @@ describe('ALWorkHandler', () => {
 
         // A row nothing can claim yet: the probe reports the time it comes due, not that there is none.
         nextReadyAtMs = 15_000;
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(AL_TEST_TYPES);
         await engine.executeOnce();
 
         nowMs += AL_WORK_READINESS_MEMORY_MS;
@@ -1000,7 +1002,7 @@ describe('ALWorkHandler', () => {
         // Nobody's runtime wrote this: a server AppInbox transaction or a pub/sub requeue puts the
         // row in the queue and announces it with the engine's external-write wake alone.
         await queue.enqueue(newWorkEntry('AL_TEST', 'externally-written'));
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(AL_TEST_TYPES);
         await engine.executeOnce();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1044,7 +1046,7 @@ describe('ALWorkHandler', () => {
         // The outbound owner still answers from memory; only an external write costs it a read.
         expect(probeCounts.outbound).toBe(afterBootstrap.outbound);
 
-        engine.wakeAfterExternalWrite();
+        engine.wakeAfterExternalWrite(AL_TEST_TYPES);
         await engine.executeOnce();
 
         expect(probeCounts.outbound).toBeGreaterThan(afterBootstrap.outbound);

@@ -12,6 +12,7 @@ import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/a
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 
+import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
@@ -41,7 +42,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         async () => {
             const nowEpochMs = Date.now();
             const queue = new TestResourceInbox();
-            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+            const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
             const results = new TestResourceInboxResults();
             const attempts: RetryAttempt[] = [];
             let authorized = true;
@@ -363,7 +364,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
         expect(await readDisplayName(harness, 'causal-noop-room')).toBe('Changed Name');
     });
 
-    it('rechecks a revoked session before replaying a completed queue result', async () => {
+    it('refuses a completed-result replay once the bearer lookup no longer verifies the revoked session', async () => {
         const harness = await createAuthorityHarness(['owner']);
         await createRoom(harness, 'revoked-replay-room', 'Before Replay');
         const input: AuthenticatedGroupMutationEnqueue = {
@@ -387,7 +388,18 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
 
         await harness.authSessions.deleteSession(harness.sessions.owner);
 
-        await expect(processAs(harness, 'owner', input)).rejects.toMatchObject({ status: 403 });
+        // The route hands only a session its bearer lookup verified to the
+        // authorization, so a revoked session never reaches the replay.
+        const bearerRequest = {
+            header: (name: string) =>
+                ({
+                    authorization: `Bearer ${harness.sessions.owner.accessToken}`,
+                    'x-client-id': 'owner'
+                })[name]
+        };
+        await expect(requireApiAuthSession(bearerRequest, harness.authSessions)).rejects.toMatchObject({
+            status: 401
+        });
         expect(await listRoomEvents(harness, 'revoked-replay-room')).toHaveLength(2);
     });
 
@@ -548,6 +560,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 sessionId: 'owner-session',
                 request: {
                     generationId: 'default-equivalence-generation',
+                    connectionGenerationId: 'default-equivalence-ws-generation',
                     principalId: 'owner',
                     actorPrincipalId: 'owner',
                     actorSessionId: 'owner-session',

@@ -28,6 +28,7 @@ import {
 import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { toGroupCommandExclusionKey } from '@shared-server/rallar-system/group-state/inbox/to-group-command-exclusion-key.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
     GroupPolicyCapacityConfig
@@ -39,6 +40,7 @@ import {
     createCachedGroupStateService,
     type CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { GroupStateCurrentSnapshotCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-current-snapshot-cache.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import type {
     CreateRallarMiddlewareOptions,
@@ -81,6 +83,9 @@ import {
     type ApiMutationInboxFactories
 } from '../services/create-api-mutation-inbox-factories.ts';
 
+/** Groups whose current snapshot this server keeps between unchanged revisions (D289). */
+const GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES = 512;
+
 export interface ApiV1MutationRuntimeResilience {
     readonly inbox: ResourceInboxResilience;
     readonly outbox: ResourceInboxResilience;
@@ -96,8 +101,10 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
     readonly appInboxLaneBudgetPolicy: InboxQueueReader.LaneBudgetPolicy;
+    readonly appInboxNewLaneConcurrency: number;
     readonly groupCapacity: GroupPolicyCapacityConfig;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
@@ -119,6 +126,7 @@ export interface ApiV1MutationRuntime {
     readonly groupsRepository: GroupStateRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly groupStateService: CachedGroupStateService;
     readonly appInboxDequeueOptions: InboxQueueReader.Options;
@@ -159,6 +167,7 @@ interface ApiV1MutationResources {
     readonly groupStateEventStore: PSqlGroupStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
+    readonly groupCurrentSnapshotCache: GroupStateCurrentSnapshotCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
@@ -166,6 +175,7 @@ interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDep
     readonly groupStateService: CachedGroupStateService;
     readonly resultReader: GroupStateRepository;
     readonly groupFormationRecomputeDebounceMs: number;
+    readonly groupFormationRecomputeMaxWaitMs: number;
 }
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
@@ -204,6 +214,7 @@ export function createApiV1MutationRuntime(
         groupsRepository: resources.groupsRepository,
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
+        groupCurrentSnapshotCache: resources.groupCurrentSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics,
         groupStateService,
         appInboxDequeueOptions,
@@ -211,7 +222,8 @@ export function createApiV1MutationRuntime(
             ...stateDependencies,
             groupStateService,
             resultReader: resources.groupsRepository,
-            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs
+            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+            groupFormationRecomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
@@ -257,7 +269,8 @@ function createMutationGroupStateService(
                     : null;
             }
         }),
-        cache: resources.groupSnapshotCache
+        cache: resources.groupSnapshotCache,
+        current: resources.groupCurrentSnapshotCache
     });
 }
 
@@ -285,6 +298,12 @@ function createApiV1MutationResources(
         groupStateEventStore,
         clientSnapshotCache: new ClientStateSnapshotReadThroughCache({ clientsRepository }),
         groupSnapshotCache: new GroupStateSnapshotReadThroughCache({ groupsRepository }),
+        groupCurrentSnapshotCache: new GroupStateCurrentSnapshotCache({
+            repository: groupsRepository,
+            versionReader: runtimeStateRepository,
+            nowEpochMs,
+            maxEntries: GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES
+        }),
         groupFormationMetrics: createGroupFormationMetricsRecorder()
     };
 }
@@ -353,6 +372,7 @@ function createGroupStateInboxServiceFactory(
             runtimeRepository: input.runtimeStateRepository,
             outboxQueueReader,
             recomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
+            recomputeMaxWaitMs: input.groupFormationRecomputeMaxWaitMs,
             database: input.database,
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,
@@ -404,7 +424,8 @@ function createAppClientInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                clientStateService: clientStateService
+                clientStateService: clientStateService,
+                wsTickets: input.authSessionRepository
             },
             {
                 serviceId: input.serviceId,
@@ -451,12 +472,13 @@ function createAppInboxDequeueOptions(
     completionNotifications: ResourceInboxCompletionNotifications
 ): InboxQueueReader.Options {
     const finalizeAppInboxRetry = createAppInboxRetryFinalizer({
-        completionNotifications,
         database: input.database,
         timing: input.timing
     });
     return {
         laneBudgetPolicy: input.appInboxLaneBudgetPolicy,
+        newLaneConcurrency: input.appInboxNewLaneConcurrency,
+        toComputeExclusionKey: (_key, attempt) => toGroupCommandExclusionKey(attempt.entry),
         completionNotifications,
         nowEpochMs: input.nowEpochMs,
         onRetryExhausted: finalizeAppInboxRetry,

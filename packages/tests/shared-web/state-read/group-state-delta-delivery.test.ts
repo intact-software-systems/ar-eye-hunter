@@ -116,6 +116,28 @@ describe('produced group delta delivery through durable AL admission', () => {
         expect(requests).toHaveLength(1);
     });
 
+    // Step 2g D300 (reverted) sent only the newest of a queued run of deltas: a browser at the run's first predecessor
+    // then had a gap and re-read the whole snapshot. Delivered in order, each delta applies onto the one before it.
+    it('applies a run of consecutive deltas in order without re-reading the snapshot', async () => {
+        const receiver = new GroupDeltaReceiver();
+        const revisions = [toSnapshot(7, 4, 4), toSnapshot(8, 4, 5), toSnapshot(9, 5, 6), toSnapshot(10, 5, 7)];
+        await receiver.hydrate(revisions[0]!);
+        const snapshotReads: string[] = [];
+        vi.stubGlobal('fetch', async (url: string | URL | Request) => {
+            snapshotReads.push(String(url));
+            return new Response(null, { status: 500 });
+        });
+
+        for (const [index, resulting] of revisions.slice(1).entries()) {
+            await receiver.receive(toProducedMessage(revisions[index]!, resulting));
+            await expect.poll(() => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group))
+                .toEqual(resulting);
+        }
+
+        expect(receiver.delivered).toHaveLength(3);
+        expect(snapshotReads).toEqual([]);
+    });
+
     it('keeps a valid foreign-scope delta out of the current browser cache', async () => {
         const receiver = new GroupDeltaReceiver();
         const cached = toSnapshot(7, 4, 4);

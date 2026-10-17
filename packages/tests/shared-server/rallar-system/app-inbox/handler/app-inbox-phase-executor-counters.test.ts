@@ -11,6 +11,7 @@ import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbo
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { createAtomicHarness } from '../test-support/app-inbox-transaction-test-runtime.ts';
 
@@ -33,7 +34,9 @@ describe('AppInbox phase timing executor counters', () => {
                 resultRepository: { replace: async (entry) => entry, findByKey: async () => undefined },
                 transactionWriter: writer,
                 database: database.sql,
-                nowEpochMs: () => 1_000
+                nowEpochMs: () => 1_000,
+                dequeueNowEpochMs: () => harness.context.attemptTelemetry.selectedAtEpochMs,
+                timers: createDefaultTimers()
             },
             { serviceId: 'server-1', timing: (event) => timing.push(event), options: { phaseTiming: true } }
         );

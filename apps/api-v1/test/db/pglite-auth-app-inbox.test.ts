@@ -23,13 +23,16 @@ import {
     withPGliteSql
 } from './pglite-auth-test-harness.ts';
 
-Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
+Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and the issued ticket', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 1
+        });
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
         const credentialIssuer = createHmacAuthCredentialIssuer(secret);
 
@@ -118,40 +121,6 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
             )
         );
 
-        const consumers = [
-            appAuth.consumeWebSocketTicket({
-                requestId: 'pglite-ws-consume-a',
-                expectedSessionId: session.sessionId,
-                ticket
-            }),
-            appAuth.consumeWebSocketTicket({
-                requestId: 'pglite-ws-consume-b',
-                expectedSessionId: session.sessionId,
-                ticket
-            })
-        ];
-        await waitForPGliteQueueRows({
-            sql,
-            typeId: 'APP_INBOX',
-            status: 'NEW',
-            minimum: 2
-        });
-        await inboxReader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createApiV1TestQueueResilience()
-        );
-        await inboxReader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            createApiV1TestQueueResilience()
-        );
-        const consumed = await Promise.all(consumers);
-        assert.equal(consumed.filter((result) => result.right !== undefined).length, 1);
-        assert.equal(consumed.filter((result) => result.left?.status === 404).length, 1);
-        assert.equal(
-            (await runtime.findAllEntries('auth-sessions:ws-tickets')).length,
-            0
-        );
-
         const logoutPending = appAuth.logoutSession({
             requestId: 'pglite-logout-request-identity-0123456789abcdef',
             session
@@ -189,37 +158,16 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     });
 });
 
-interface WaitForPGliteQueueRowsInput {
-    readonly sql: PGliteSql;
-    readonly typeId: string;
-    readonly status: string;
-    readonly minimum: number;
-}
-
-async function waitForPGliteQueueRows(input: WaitForPGliteQueueRowsInput): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await input.sql<{ count: string; }[]>`
-      select count(*) as count
-      from resource_inbox
-      where ri_type_id = ${input.typeId} and ri_status = ${input.status}
-    `;
-        if (Number(row?.count ?? 0) >= input.minimum) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(
-        `Timed out waiting for ${input.minimum} ${input.typeId} ${input.status} queue rows`
-    );
-}
-
 Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
         const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(nowEpochMs));
         const resourceResults = new ResourceInboxResultsRepository(sql);
-        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+        const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+            laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 1
+        });
 
         const user = {
             clientId: 'policy-client',
@@ -310,7 +258,10 @@ Deno.test(
             const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const resourceInbox = createPSqlResourceInboxRepository(sql, () => new Date(databaseNowEpochMs));
             const resourceResults = new ResourceInboxResultsRepository(sql);
-            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), { laneBudgetPolicy: 'fixed-retry-two' });
+            const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox, Temporal.Now.instant), {
+                laneBudgetPolicy: 'fixed-retry-two',
+                newLaneConcurrency: 1
+            });
 
             let authFactNowEpochMs = databaseNowEpochMs;
             const issuer = createHmacAuthCredentialIssuer(

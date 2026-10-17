@@ -443,6 +443,7 @@
         },
         "body": {
           "generationId": "generation-ws-iso-{runId}",
+          "connectionGenerationId": "connection-generation-ws-iso-{runId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -530,6 +531,7 @@
         },
         "body": {
           "generationId": "generation-ws-iso-{runId}",
+          "connectionGenerationId": "connection-generation-ws-iso-{runId}",
           "principalId": "{aliceClientId}"
         }
       },

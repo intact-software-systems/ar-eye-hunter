@@ -81,6 +81,21 @@ with `RALLAR_BLACK_BOX_WAIT_INVALID` and the unresolved reference in its details
 recipe pins a wait on an identity it cannot know when it is authored, such as the msgId a send was
 given.
 
+`wait.timeoutFrom` is exactly one such token naming an epoch in milliseconds; the timeout then counts from
+that epoch instead of the wait's start. An `absent: true` wait so closes a quiet window that opened
+before it: the ALM scale recipes count the layout quiet window from
+`{…layout-readiness.value.acceptedHeldSinceEpochMs}`, the page's own clock when it first held the
+accepted layout at the readiness group revision, and a layout that settled earlier is checked against
+the buffered events and released at once. The accepted overlay's `updatedAtEpochMs` is no anchor: it is
+the server's planning time, before the promotion. An epoch later than the wait's start counts from the
+start, so the wait never outlasts its own timeout. A recipe whose `timeoutFrom` is not one token, which a
+loop child may key by its `{loop.*}` placeholders, is refused when it is loaded; at run time a token
+naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`.
+
+`formation.readiness` reports `acceptedHeldSinceEpochMs` beside the formation summary and omits it while
+no layout is accepted, so the scale recipes gate the stable-layout loop on its presence and fail within
+seconds when no layout is accepted.
+
 ## Formation Commands
 
 `formation.command` and `formation.readiness` drive the shipped browser room

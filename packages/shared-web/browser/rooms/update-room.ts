@@ -45,6 +45,8 @@ interface RunRoomTargetMutationExecutionInput {
     readonly scope: StateScope;
     readonly policies: CommandsOrchestratorPolicies<GroupSnapshot>;
     readonly generationId: string;
+    readonly context: ApiMiddleware;
+    readonly signal: AbortSignal | undefined;
 }
 
 interface UpdateRoomOperationInput extends Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> {
@@ -81,7 +83,9 @@ export async function runRoomTargetMutation(
             session,
             scope,
             policies: toRallarWorkflowPolicies<GroupSnapshot>(operationOptions),
-            generationId: context.middleware.heartbeat.generationId
+            generationId: context.middleware.heartbeat.generationId,
+            context,
+            signal: operationOptions.signal
         });
         await input.acceptSnapshots({ context, clients: [], groups: [snapshot], scope });
         return snapshot;

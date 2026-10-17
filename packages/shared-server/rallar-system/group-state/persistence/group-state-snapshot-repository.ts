@@ -7,6 +7,10 @@ import type {
     GroupScope,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+import type {
+    RuntimeStateReadBatchVersion,
+    RuntimeStateReadBatchVersionReader
+} from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -43,8 +47,18 @@ import { canonicalStoredMember } from './membership/group-membership-repository.
 import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
 import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
 import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
-import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
+import {
+    readGroupStateAuthorityBatch,
+    readVersionedGroupStateAuthorityBatch,
+    type GroupStateAuthorityBatchRead
+} from './read-group-state-authority.ts';
 import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
+
+/** A snapshot and the version of exactly the stored rows it was assembled from; null when it came from several reads. */
+export interface VersionedGroupSnapshot {
+    readonly snapshot: GroupSnapshot;
+    readonly version: RuntimeStateReadBatchVersion | null;
+}
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
@@ -239,36 +253,72 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         ref: GroupRef
     ): Promise<GroupStateAuthoritativeSnapshot | undefined> {
         const observedAtEpochMs = Date.now();
-        const groupKey = groupStateGroupStorageKey(ref);
         const batch = await readGroupStateAuthorityBatch(
             this.repository,
             ref,
             async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
         );
-        if (batch.status === 'stable') {
-            if (batch.group === undefined) {
-                return undefined;
-            }
-            const stored = canonicalStoredGroup(batch.group, ref);
-            return {
-                snapshot: this.toSnapshot({
-                    group: stored.value,
-                    members: batch.members.map((entry) => canonicalStoredMember(entry, ref).value),
-                    summary: batch.summary === undefined
-                        ? undefined
-                        : canonicalStoredSummary(batch.summary, ref).value,
-                    authoritativeSessions: batch.sessions.map(
-                        (entry) => canonicalStoredSession(entry, ref).value
-                    ),
-                    groupRevision: stored.value.snapshotVersion,
-                    observedAtEpochMs,
-                    sessionLeaseFields: 'authoritative'
-                }),
-                authorityGuard: toGroupStateAuthorityGuard(ref, stored)
-            };
+        return batch.status === 'stable'
+            ? this.toStableAuthoritativeSnapshot(ref, batch, observedAtEpochMs)
+            : await this.readStableAuthoritativeSnapshot(ref, observedAtEpochMs);
+    }
+
+    /**
+     * The snapshot as of the caller's instant with the version of exactly the rows it was assembled from, read in
+     * one statement (D289); a read that had to fall back to several statements carries no version.
+     */
+    async readVersionedSnapshot(
+        reader: RuntimeStateReadBatchVersionReader,
+        ref: GroupRef,
+        observedAtEpochMs: number
+    ): Promise<VersionedGroupSnapshot | undefined> {
+        const batch = await readVersionedGroupStateAuthorityBatch(
+            reader,
+            ref,
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        );
+        if (batch.read.status === 'stable') {
+            const stable = this.toStableAuthoritativeSnapshot(ref, batch.read, observedAtEpochMs);
+            return stable === undefined ? undefined : { snapshot: stable.snapshot, version: batch.version ?? null };
         }
+        const fallback = await this.readStableAuthoritativeSnapshot(ref, observedAtEpochMs);
+        return fallback === undefined ? undefined : { snapshot: fallback.snapshot, version: null };
+    }
+
+    private toStableAuthoritativeSnapshot(
+        ref: GroupRef,
+        batch: Extract<GroupStateAuthorityBatchRead, { status: 'stable'; }>,
+        observedAtEpochMs: number
+    ): GroupStateAuthoritativeSnapshot | undefined {
+        if (batch.group === undefined) {
+            return undefined;
+        }
+        const stored = canonicalStoredGroup(batch.group, ref);
+        return {
+            snapshot: this.toSnapshot({
+                group: stored.value,
+                members: batch.members.map((entry) => canonicalStoredMember(entry, ref).value),
+                summary: batch.summary === undefined
+                    ? undefined
+                    : canonicalStoredSummary(batch.summary, ref).value,
+                authoritativeSessions: batch.sessions.map(
+                    (entry) => canonicalStoredSession(entry, ref).value
+                ),
+                groupRevision: stored.value.snapshotVersion,
+                observedAtEpochMs,
+                sessionLeaseFields: 'authoritative'
+            }),
+            authorityGuard: toGroupStateAuthorityGuard(ref, stored)
+        };
+    }
+
+    /** The several-statement read that retries until the aggregate is unchanged around its children. */
+    private async readStableAuthoritativeSnapshot(
+        ref: GroupRef,
+        observedAtEpochMs: number
+    ): Promise<GroupStateAuthoritativeSnapshot | undefined> {
         return await readStableStateSnapshot({
-            snapshotKey: groupKey,
+            snapshotKey: groupStateGroupStorageKey(ref),
             readAggregate: async () => await this.findGroupEntry(ref),
             readChildren: async () => {
                 const [members, summary, sessions] = await Promise.all([

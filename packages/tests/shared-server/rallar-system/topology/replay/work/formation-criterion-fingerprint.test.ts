@@ -185,7 +185,7 @@ describe('formation criterion after unchanged topology inputs', () => {
         }
     );
 
-    it('keeps the observed epoch/layout fence stale when later work supersedes it', async () => {
+    it('plans a delayed membership change from the current group, so a superseded stage petitions nothing (D290)', async () => {
         const fixture = createCriterionFingerprintFixture();
         await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
         await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
@@ -196,35 +196,13 @@ describe('formation criterion after unchanged topology inputs', () => {
         expect(fixture.submitted).toHaveLength(1);
         fixture.submitted.length = 0;
         fixture.current = lifecycleSnapshot('reconfiguring', 3);
-        await fixture.handler.onMessage(decodePersistedALMessage(delayed.resource), delayed);
-        expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(2);
-        expect(fixture.submitted).toHaveLength(1);
-        const command = fixture.submitted[0]?.command;
-        if (command?.operation !== 'activateGroup') {
-            throw new Error('Expected an activation petition');
-        }
-        const { expectedFormationEpoch, expectedLayout } = command.input;
-        if (expectedFormationEpoch === null || expectedLayout === null) {
-            throw new Error('Activation petition must carry its epoch and layout fence');
-        }
-        await fixture.process({ group: lifecycleSnapshot('reconfiguring', 3), origin: 'commanded' });
-        const currentPlan = await fixture.snapshots.findSnapshot(fixture.current.group);
-        if (currentPlan === undefined) {
-            throw new Error('Later work must publish a plan');
-        }
 
-        expect(computeExpectedLayoutFence({
-            expectedFormationEpoch,
-            expectedLayout,
-            currentFormationEpoch: fixture.current.group.formationEpoch,
-            currentPlannedLayout: toGroupLayoutIdentity(currentPlan)
-        })).toBe('stale-epoch');
-        expect(computeExpectedLayoutFence({
-            expectedFormationEpoch,
-            expectedLayout,
-            currentFormationEpoch: 2,
-            currentPlannedLayout: toGroupLayoutIdentity(currentPlan)
-        })).toBe('planned-layout-superseded');
+        await fixture.handler.onMessage(decodePersistedALMessage(delayed.resource), delayed);
+
+        // The row names revision 2, but the group has moved on to a reconfigure: no activation
+        // petition is built from the connecting stage the row was queued under.
+        expect(fixture.submitted).toEqual([]);
+        expect((await fixture.queue.getItem(delayed.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 });
 
@@ -317,7 +295,7 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
         origin: input.origin,
         requestedAtEpochMs: NOW,
         expireAtEpochMs: 4_000_000_000_000,
-        timing: { window: { debounceMs: 0, maxWaitMs: null }, replanNotBeforeEpochMs: null },
+        timing: { window: { debounceMs: 0, maxWaitMs: 0 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'criterion-server',
         previousEntry: await queue.getItem(toCoalescedGroupRevisionKey(input.group.group)) ?? null
     });

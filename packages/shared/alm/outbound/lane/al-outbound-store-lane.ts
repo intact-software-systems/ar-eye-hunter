@@ -2,7 +2,6 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '../../../al-contracts/al-control-type-ids.ts';
 import type { Unsubscribe } from '../../../cache/RepositoryInterfaces.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
@@ -64,9 +63,16 @@ import type {
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
+import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
-import { computeALOutboundCommittedRows, hasWrittenWork } from './compute-al-outbound-committed-rows.ts';
+import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-committed-rows.ts';
+import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
+import {
+    createALOutboundClaimEvidence,
+    settleALOutboundClaim,
+    type ALOutboundClaimObservation
+} from './settle-al-outbound-claim.ts';
 
 export namespace ALOutboundStoreLane {
     export interface Input<TPrepared> {
@@ -108,6 +114,7 @@ export class ALOutboundStoreLane<TPrepared> {
     /** The sweep limiter pair this lane's work port spends and its readiness scan peeks. */
     private readonly leaseRecovery: ALWorkLeaseRecovery;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
+    private readonly dequeuedAdmission: ALOutboundDequeuedAdmission<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
     private readonly removeForeignCommitListener: (() => void) | undefined;
     private readonly takeOverSubscription: Unsubscribe | undefined;
@@ -143,7 +150,13 @@ export class ALOutboundStoreLane<TPrepared> {
             runtime,
             admissionStore: stores.admissionStore,
             dispatchAdmission: this.dispatchAdmission,
-            commitDispatchPlan: (dispatch) => this.commit(dispatch),
+            sendSignal: input.sendControls.signal,
+            settlements
+        });
+        this.dequeuedAdmission = new ALOutboundDequeuedAdmission({
+            runtime,
+            admissionStore: stores.admissionStore,
+            commitDispatchPlans: (dispatches) => this.commitAllSettled(dispatches),
             sendSignal: input.sendControls.signal,
             settlements
         });
@@ -196,37 +209,50 @@ export class ALOutboundStoreLane<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundComputedDto<TPrepared>> {
-        const result = await this.readiness.runStoreOperation(() => this.dispatchAdmission.commit(dispatch));
-        this.setCanonicalHandoff(result);
-        this.recordStorageHealth(result);
-
-        if (hasWrittenWork(result)) {
-            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, [result]));
-        }
-
-        return this.toStoreComputed(result.computed);
+        const [computed] = await this.commitAll([dispatch]);
+        return computed!;
     }
 
     /** Members of one sender group may commit separately; results stay in dispatch order, with a wake after writes or before rethrow. */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {
-        const results = await this.readiness.runStoreOperation(() => this.dispatchAdmission.commitAll(dispatches))
-            .catch(
-                (error) => {
-                    // A group rethrows only after every member ran, so members before the throw may have landed.
-                    this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
-                    throw error;
-                }
-            );
-        results.forEach((result) => {
-            this.setCanonicalHandoff(result);
-            this.recordStorageHealth(result);
+        return (await this.commitAllSettled(dispatches)).map((outcome) => {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+            return outcome.value;
         });
-        if (results.some(hasWrittenWork)) {
-            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, results));
+    }
+
+    /** `commitAll` with each member's own answer, so one member's throw fails that member alone. */
+    private async commitAllSettled(
+        dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
+    ): Promise<readonly PromiseSettledResult<ALOutboundComputedDto<TPrepared>>[]> {
+        const outcomes = await this.readiness.runStoreOperation(
+            () => this.dispatchAdmission.commitAllSettled(dispatches)
+        ).catch((error) => {
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
+            throw error;
+        });
+        for (const outcome of outcomes) {
+            if (outcome.status === 'fulfilled') {
+                this.setCanonicalHandoff(outcome.value);
+                this.recordStorageHealth(outcome.value);
+            }
         }
-        return results.map((result) => this.toStoreComputed(result.computed));
+        const committedRows = computeALOutboundSettledCommittedRows(
+            this.input.stores.admissionStore.namespace,
+            outcomes
+        );
+        if (committedRows !== undefined) {
+            this.work.committed(committedRows);
+        }
+        return outcomes.map((outcome) =>
+            outcome.status === 'fulfilled'
+                ? { status: 'fulfilled', value: this.toStoreComputed(outcome.value.computed) }
+                : outcome
+        );
     }
 
     /** Before the wake: the batch it starts claims what this commit wrote and finds its canonical row here. */
@@ -354,42 +380,61 @@ export class ALOutboundStoreLane<TPrepared> {
         batchStartedAtMs: number,
         deferObservation?: ALWorkObservationDeferral
     ): Promise<ALWorkAttemptResult> {
-        const capture = this.input.runtime.receiptWorkCapture;
-        let evidence: ALOutboundReceiptWorkEvidence | undefined;
-        let result: ALWorkAttemptResult | undefined;
-        try {
+        const observed: ALOutboundClaimObservation = { evidence: undefined };
+        const attempt = (async (): Promise<ALWorkAttemptResult> => {
             const work = await this.readExpirableOutboundWork(claim.entry);
             if (work === undefined) {
                 return { status: 'completed' };
             }
-            try {
-                evidence = capture?.createEvidence({
-                    effect: work,
-                    workerId: this.input.workerId,
-                    batchStartedAtMs,
-                    deferObservation
-                });
-            }
-            catch { /* Optional evidence construction cannot change the claim's effects or release. */ }
+            observed.evidence = this.createClaimEvidence(work, batchStartedAtMs, deferObservation);
             if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
                 this.work.claimCommitted();
             }
-            result = await this.runDurableEffect(work, evidence, deferObservation);
-            return result;
-        }
-        catch (error) {
-            // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
-            if (error instanceof Error && isNotReadyException(error)) {
-                result = { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
-                return result;
-            }
-            throw error;
-        }
-        finally {
-            if (capture !== undefined) {
-                evidence?.publish(capture.observer, result);
-            }
-        }
+            return await this.runDurableEffect(work, observed.evidence, deferObservation);
+        })();
+        return await this.settleOutboundClaim(attempt, observed);
+    }
+
+    /** A selection's dequeued rows admit as one group; every other claim runs alone through `runOutboundClaim`. */
+    private runDequeueClaimGroup(
+        claims: readonly ALWorkClaim[],
+        batchStartedAtMs: number,
+        deferObservation: ALWorkObservationDeferral | undefined
+    ): ReadonlyMap<ALWorkClaim, Promise<ALWorkAttemptResult>> {
+        return runALOutboundDequeueClaimGroup<TPrepared>({
+            claims: claims.filter((claim) => this.input.dequeueTypes.has(claim.entry.typeId)),
+            readWork: (claim) => toALOutboundDequeueWork(claim.entry, this.input.runtime.readMessageFromEntry),
+            hasReachedDeadline: (claim) => this.hasReachedDeadline(claim.entry),
+            createEvidence: (work) => this.createClaimEvidence(work, batchStartedAtMs, deferObservation),
+            readSettledBeforeEffect: (work, evidence) => this.readSettledBeforeEffect(work, evidence),
+            admit: (members) => this.dequeuedAdmission.admitDequeuedMessages(members),
+            settle: (attempt, observed) => this.settleOutboundClaim(attempt, observed)
+        });
+    }
+
+    private createClaimEvidence(
+        work: ALOutboundEffectSnapshot<TPrepared>,
+        batchStartedAtMs: number,
+        deferObservation: ALWorkObservationDeferral | undefined
+    ): ALOutboundReceiptWorkEvidence | undefined {
+        return createALOutboundClaimEvidence(this.input.runtime.receiptWorkCapture, {
+            effect: work,
+            workerId: this.input.workerId,
+            batchStartedAtMs,
+            deferObservation
+        });
+    }
+
+    private async settleOutboundClaim(
+        attempt: Promise<ALWorkAttemptResult>,
+        observed: ALOutboundClaimObservation
+    ): Promise<ALWorkAttemptResult> {
+        return await settleALOutboundClaim({
+            attempt,
+            observed,
+            capture: this.input.runtime.receiptWorkCapture,
+            readNowMs: () => this.readNowMs()
+        });
     }
 
     /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
@@ -429,21 +474,15 @@ export class ALOutboundStoreLane<TPrepared> {
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        if (this.isEndedEffect(effect)) {
-            evidence?.recordStage('ended');
-            return { status: 'completed' };
+        const settled = this.readSettledBeforeEffect(effect, evidence);
+        if (settled !== undefined) {
+            return settled;
         }
-        if (effect.expireAtTimestamp <= this.readNowMs()) {
-            evidence?.recordStage('expired');
-            this.emitWorkExpiry(effect);
-            return { status: 'completed' };
-        }
-
         switch (effect.payload.kind) {
             case 'admit-message':
                 return await this.effects.admitPendingMessage(effect, evidence);
             case 'dequeue-message':
-                return await this.effects.admitDequeuedMessage(effect, evidence);
+                return await this.dequeuedAdmission.admitDequeuedMessage(effect, evidence);
             case 'admit-control':
                 return effect.payload.msg.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID
                     ? await this.receiptAdmission.replay(effect.payload)
@@ -467,6 +506,22 @@ export class ALOutboundStoreLane<TPrepared> {
                 });
                 return { status: 'completed' };
         }
+    }
+
+    private readSettledBeforeEffect(
+        effect: ALOutboundEffectSnapshot<TPrepared>,
+        evidence: ALOutboundReceiptWorkEvidence | undefined
+    ): ALWorkAttemptResult | undefined {
+        if (this.isEndedEffect(effect)) {
+            evidence?.recordStage('ended');
+            return { status: 'completed' };
+        }
+        if (effect.expireAtTimestamp <= this.readNowMs()) {
+            evidence?.recordStage('expired');
+            this.emitWorkExpiry(effect);
+            return { status: 'completed' };
+        }
+        return undefined;
     }
 
     private isEndedEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
@@ -582,6 +637,8 @@ export class ALOutboundStoreLane<TPrepared> {
             batchObservations: runtime.receiptWorkCapture?.batchObservations,
             runClaim: (claim, batchStartedAtMs, deferObservation) =>
                 this.runOutboundClaim(claim, batchStartedAtMs, deferObservation),
+            runClaimGroup: (claims, batchStartedAtMs, deferObservation) =>
+                this.runDequeueClaimGroup(claims, batchStartedAtMs, deferObservation),
             diagnostics: (event) => this.recordWorkDiagnostics(event),
             storageHealth: stores.storageHealth,
             durableOwnership: toALDurableWorkLaneOwnership(this.input.durableWorkOwnership, workType)

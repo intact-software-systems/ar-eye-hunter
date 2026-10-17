@@ -159,6 +159,7 @@ function toFixtureActiveSession(member: DeltaEnvelopeFixtureMember, groupId: str
         principalId: member.principalId,
         sessionId: member.sessionId,
         generationId: `${member.sessionId}-generation`,
+        connectionGenerationId: `${member.sessionId}-ws-generation`,
         generationVersion: 1,
         status: 'active',
         disconnectedAtEpochMs: null,

@@ -12,6 +12,7 @@ import {
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
 import {
     createBrowserSessionVolatileBound,
@@ -30,7 +31,7 @@ import {
 } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
-import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
+import { readStateClientSnapshot, readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
@@ -272,9 +273,15 @@ export async function initialiseMiddleware(
             webRtcGroupManager: rtcTransport.webRtcGroupManager,
             bootstrapDegree
         });
+        const ownWsConnectionGeneration = createBrowserOwnWsConnectionGeneration(
+            session,
+            options.scope ?? defaultStateScope(),
+            webSocketTransport.webSocketQueueBox
+        );
         const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
             authSession: session,
             scope: options.scope,
+            ownWsConnectionGeneration,
             onAuthInvalid: options.onAuthInvalid
                 ? (caught) => options.onAuthInvalid?.(toError(caught))
                 : undefined
@@ -287,6 +294,7 @@ export async function initialiseMiddleware(
                 ...webSocketTransport,
                 ...rtcTransport,
                 heartbeat: heartbeatHandle,
+                ownWsConnectionGeneration,
                 runtimeStorage,
                 storageAvailability
             }),
@@ -345,6 +353,19 @@ export function registerBrowserRttEgress(
             );
             return Promise.resolve();
         }
+    });
+}
+
+function createBrowserOwnWsConnectionGeneration(
+    session: AuthSession,
+    socketScope: StateScope,
+    webSocketQueueBox: WsQueueBoxClientService
+): BrowserOwnWsConnectionGeneration {
+    return new BrowserOwnWsConnectionGeneration({
+        socket: webSocketQueueBox.socket,
+        sessionId: session.sessionId,
+        readOwnClientSnapshot: async (signal) =>
+            (await readStateClientSnapshot(session.clientId, socketScope, { signal, authSession: session })).snapshot
     });
 }
 

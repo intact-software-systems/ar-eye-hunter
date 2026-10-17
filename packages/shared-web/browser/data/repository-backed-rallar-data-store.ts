@@ -6,8 +6,8 @@ import type {
     RallarDataStore,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar-data.ts';
-import type { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import type { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import type { WriteBehindObservableLatestRepository } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
+import type { WriteThroughObservableLatestRepository } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import type { PersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 export namespace RepositoryBackedRallarDataStore {

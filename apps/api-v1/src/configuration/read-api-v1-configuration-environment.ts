@@ -321,6 +321,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.topology.recompute.formationDebounceMs = value
     },
     {
+        name: 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_MAX_WAIT_MS',
+        decode: decodeNumber,
+        apply: (source, value) => source.topology.recompute.formationMaxWaitMs = value
+    },
+    {
         name: 'RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS',
         decode: decodeNumber,
         apply: (source, value) => source.topology.rttRefinement.minIntervalMs = value
@@ -349,6 +354,11 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         name: 'RALLAR_APP_INBOX_LANE_BUDGET_POLICY',
         decode: decodeString,
         apply: (source, value) => source.appInbox.laneBudgetPolicy = value
+    },
+    {
+        name: 'RALLAR_APP_INBOX_NEW_LANE_CONCURRENCY',
+        decode: decodeNumber,
+        apply: (source, value) => source.appInbox.newLaneConcurrency = value
     },
     {
         name: 'RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS',

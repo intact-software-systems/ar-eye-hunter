@@ -25,8 +25,7 @@ describe('GroupTopologyPlanningService', () => {
         await expect(
             service.readTopologyPlanningAuthority({
                 groupRef: group.group,
-                requestOptions: { degreeLimit: 7 },
-                snapshotSelection: 'prefer-current'
+                requestOptions: { degreeLimit: 7 }
             })
         ).resolves.toEqual({
             group,
@@ -65,35 +64,10 @@ describe('GroupTopologyPlanningService', () => {
 
         const authority = await service.readTopologyPlanningAuthority({
             groupRef: queued.group,
-            knownGroup: queued,
-            snapshotSelection: 'prefer-current'
+            knownGroup: queued
         });
 
         expect(authority.group).toBe(current);
-    });
-
-    it('preserves the queued group revision for membership-delta work', async () => {
-        const queued = createTopologyTestGroupSnapshot();
-        const current = {
-            ...queued,
-            causalRevision: {
-                groupRevision: queued.causalRevision.groupRevision + 1,
-                presenceRevision: queued.causalRevision.presenceRevision
-            },
-            group: createTestGroup({
-                ...queued.group,
-                snapshotVersion: queued.group.snapshotVersion + 1
-            })
-        };
-        const service = createPlanningService({ group: current });
-
-        const authority = await service.readTopologyPlanningAuthority({
-            groupRef: queued.group,
-            knownGroup: queued,
-            snapshotSelection: 'preserve-known-revision'
-        });
-
-        expect(authority.group).toBe(queued);
     });
 
     it('uses a newer durable roster instead of a queued group revision', async () => {
@@ -124,8 +98,7 @@ describe('GroupTopologyPlanningService', () => {
 
         const authority = await service.readTopologyPlanningAuthority({
             groupRef: queued.group,
-            knownGroup: queued,
-            snapshotSelection: 'prefer-current'
+            knownGroup: queued
         });
 
         expect(authority.group).toBe(current);
@@ -495,6 +468,7 @@ function groupWithSessionsIn(
         principalId: sessionId,
         sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: 1,
         status: 'active' as const,
         connectedAtEpochMs: 1,

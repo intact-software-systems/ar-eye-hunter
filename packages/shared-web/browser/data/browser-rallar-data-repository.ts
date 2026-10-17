@@ -15,8 +15,8 @@ import type {
 } from '@shared-web/browser/rallar-data.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
-import { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { WriteBehindObservableLatestRepository } from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
+import { WriteThroughObservableLatestRepository } from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
 const DEFAULT_CUSTOM_DATA_DB_NAME = 'rallar-custom-data';

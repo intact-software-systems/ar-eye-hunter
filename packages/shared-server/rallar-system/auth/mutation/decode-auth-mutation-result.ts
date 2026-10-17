@@ -50,7 +50,6 @@ function validateAuthLogoutResult(result: JsonWireObject): void {
 function validateDiscriminatedResult(result: JsonWireObject): void {
     switch (result.kind) {
         case 'session-issued':
-        case 'ws-ticket-consumed':
         case 'agent-ticket-consumed':
             validateSessionResult(result);
             return;

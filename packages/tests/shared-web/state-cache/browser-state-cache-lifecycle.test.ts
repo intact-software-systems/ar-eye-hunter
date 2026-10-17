@@ -631,6 +631,12 @@ describe('browser state cache lifecycle scope filtering', () => {
             webRtcGroupManager: manager,
             clientData
         });
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData,
+            clientSnapshots: [],
+            groupSnapshots: [groupSnapshot]
+        });
 
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -824,6 +830,12 @@ describe('browser state cache lifecycle scope filtering', () => {
                 inbox: webSocketQueueBox,
                 webRtcGroupManager: manager,
                 clientData
+            });
+            await browserStateCacheLifecycle.hydrate({
+                webRtcGroupManager: manager,
+                clientData,
+                clientSnapshots: [],
+                groupSnapshots: [groupSnapshot]
             });
             const receive = onInboxMessage;
             if (!receive) {

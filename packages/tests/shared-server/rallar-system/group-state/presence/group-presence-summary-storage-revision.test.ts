@@ -46,6 +46,7 @@ describe('group presence-summary causal identity', () => {
             await service.connectPresenceSession(SCOPE, 'heartbeat-room', `session-${index}`, {
                 principalId,
                 generationId: `generation-${index}`,
+                connectionGenerationId: `ws-generation-${index}`,
                 actorPrincipalId: `member-${index}`,
                 expiresAtEpochMs: baseEpochMs + 50_000,
                 requestId: `connect-${index}`

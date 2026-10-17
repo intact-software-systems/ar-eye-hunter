@@ -1,11 +1,11 @@
-import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
-import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from './ObservableLatestRepository.ts';
-import type { ObservableLatestValue } from './ObservableLatestValue.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../../persistence/PersistenceProvider.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from '../ObservableLatestRepository.ts';
+import type { ObservableLatestValue } from '../ObservableLatestValue.ts';
 import {
     type ObservableKeyedValueListener,
     type ObservableKeyedValues,
     type Unsubscribe
-} from './RepositoryInterfaces.ts';
+} from '../RepositoryInterfaces.ts';
 
 export type WriteThroughObservableLatestRepositoryOptions<K, V> =
     & Omit<ObservableLatestRepositoryOptions<K, V>, 'maxEntries'>

@@ -1,3 +1,5 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 import type {
     RallarBlackBoxTestCommandBase,
     RallarBlackBoxTestCommandKind,
@@ -16,7 +18,11 @@ import {
     type RallarBlackBoxEventHistory,
     type RallarBlackBoxEventHistorySequence
 } from '../runtime/event-history.ts';
-import { resolveWaitMatchResultReferences } from './resolve-wait-match-result-references.ts';
+import {
+    resolveWaitMatchResultReferences,
+    resolveWaitTimeoutFromEpochMs,
+    type InvalidWaitTimeoutFrom
+} from './resolve-wait-match-result-references.ts';
 import { resolveLatestWaitEvent } from './wait-event-match.ts';
 
 export const RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED = 'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED';
@@ -70,11 +76,30 @@ export async function waitForEvent(
             toWaitInvalidOutcome('Wait match references a result value no earlier command returned.', {
                 reference
             }),
-        async (match) => await waitForResolvedEvent({ ...input, command: { ...command, match } })
+        async (match) =>
+            await resolveWaitTimeoutStartEpochMs(input).fold(
+                async (invalid) => toWaitTimeoutFromInvalidOutcome(invalid),
+                async (timeoutStartEpochMs) =>
+                    await waitForResolvedEvent({ ...input, command: { ...command, match } }, timeoutStartEpochMs)
+            )
     );
 }
 
-async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBlackBoxTestCommandOutcome> {
+/** An earlier referenced epoch moves the timeout's start back; a later one leaves it at the wait's start. */
+function resolveWaitTimeoutStartEpochMs(input: WaitForEventInput): Either<InvalidWaitTimeoutFrom, number> {
+    const nowEpochMs = input.now();
+    const timeoutFrom = input.command.timeoutFrom;
+    return timeoutFrom === undefined
+        ? Either.ofRight(nowEpochMs)
+        : resolveWaitTimeoutFromEpochMs(timeoutFrom, input.resultCache).mapRight((epochMs) =>
+            Math.min(epochMs, nowEpochMs)
+        );
+}
+
+async function waitForResolvedEvent(
+    input: WaitForEventInput,
+    timeoutStartEpochMs: number
+): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     if (!isWaitHistoryCovered(input)) {
         return toEventHistoryUnavailableOutcome(input.currentEventHistory());
@@ -83,7 +108,7 @@ async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBla
     if (immediate && command.absent !== true && input.publishAfterSubscription === undefined) {
         return toWaitMatchedOutcome(immediate, input.currentStatus());
     }
-    const deadlineEpochMs = computeWaitDeadlineEpochMs(command, input.now());
+    const deadlineEpochMs = computeWaitDeadlineEpochMs(command, timeoutStartEpochMs);
     if (input.now() >= deadlineEpochMs && command.absent !== true) {
         return toWaitTimedOutOutcome(command, deadlineEpochMs);
     }
@@ -93,11 +118,11 @@ async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBla
 }
 
 /** Without either bound the default five second timeout applies; with both, the earlier one wins. */
-export function computeWaitDeadlineEpochMs(window: RallarBlackBoxTestWaitWindow, nowEpochMs: number): number {
+export function computeWaitDeadlineEpochMs(window: RallarBlackBoxTestWaitWindow, timeoutStartEpochMs: number): number {
     if (window.timeoutMs === undefined) {
-        return window.deadlineEpochMs ?? nowEpochMs + DEFAULT_WAIT_TIMEOUT_MS;
+        return window.deadlineEpochMs ?? timeoutStartEpochMs + DEFAULT_WAIT_TIMEOUT_MS;
     }
-    const timeoutDeadlineEpochMs = nowEpochMs + Math.max(0, window.timeoutMs);
+    const timeoutDeadlineEpochMs = timeoutStartEpochMs + Math.max(0, window.timeoutMs);
     return window.deadlineEpochMs === undefined
         ? timeoutDeadlineEpochMs
         : Math.min(timeoutDeadlineEpochMs, window.deadlineEpochMs);
@@ -324,6 +349,16 @@ function toWaitCancelledOutcome(command: WaitCommandWithId): RallarBlackBoxTestC
         } satisfies RallarBlackBoxTestWaitResultValue,
         nextStatus: 'cancelled'
     };
+}
+
+function toWaitTimeoutFromInvalidOutcome(invalid: InvalidWaitTimeoutFrom): RallarBlackBoxTestCommandOutcome {
+    return invalid.kind === 'not-one-reference'
+        ? toWaitInvalidOutcome('Wait timeoutFrom must be exactly one result reference.', {
+            timeoutFrom: invalid.timeoutFrom
+        })
+        : toWaitInvalidOutcome('Wait timeoutFrom references no numeric result value an earlier command returned.', {
+            reference: invalid.reference
+        });
 }
 
 function toWaitInvalidOutcome(

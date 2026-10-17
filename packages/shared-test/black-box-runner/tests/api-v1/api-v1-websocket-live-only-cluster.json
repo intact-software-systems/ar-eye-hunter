@@ -256,6 +256,7 @@
         },
         "body": {
           "generationId": "lwoc-generation-{runId}",
+          "connectionGenerationId": "lwoc-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -276,6 +277,7 @@
         },
         "body": {
           "generationId": "lwoc-generation-{runId}",
+          "connectionGenerationId": "lwoc-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

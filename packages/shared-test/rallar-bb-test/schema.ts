@@ -21,6 +21,7 @@ import {
     type RallarBlackBoxCommandFieldName,
     type RallarBlackBoxCommandFieldSet
 } from './schema/rallar-black-box-command-fields.ts';
+import { WAIT_TIMEOUT_FROM_PATTERN_SOURCE } from './wait/resolve-wait-match-result-references.ts';
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
 export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
@@ -560,7 +561,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
     }),
     wait: strictCommandSchema('wait', {
         match: waitMatchSchema,
-        absent: { const: true }
+        absent: { const: true },
+        timeoutFrom: { type: 'string', pattern: WAIT_TIMEOUT_FROM_PATTERN_SOURCE }
     }),
     assert: {
         properties: { kind: { const: 'assert' } },

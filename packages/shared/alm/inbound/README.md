@@ -55,9 +55,10 @@ namespace `browser:<name>:volatile`) and hands to both carriers beside it. So a
 volatile duplicate over the other carrier still meets its first admission. A WS
 server carries both lanes too, with an unbudgeted memory pair beside its shared
 PostgreSQL store, so a best-effort message such as an RTC signal is admitted and
-delivered in memory. A server relaying acknowledgements to other instances has no
-memory pair and keeps one backend for every message, since those instances read a
-message's admission from the shared store.
+delivered in memory. A server relaying acknowledgements to other instances keeps only
+what `keepsVolatileMessageInMemory` accepts in its memory pair: a relay-only RTC signal
+(best-effort, unacknowledged, small enough for an inline live notice). Every other
+message takes the shared store, since those instances read its admission there.
 [`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
 [`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
 its own pair on the shared engine. The IndexedDB pair is one store shared by both carriers'

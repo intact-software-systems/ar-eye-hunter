@@ -97,7 +97,11 @@ async function createMemberHarness(groupId: string): Promise<AuthorityHarness> {
 function createCachedRouteAuthority(harness: AuthorityHarness): CachedRouteAuthority {
     configureTestCacheRepositories();
     const cache = createGroupStateSnapshotReadThroughCache({ groupsRepository: harness.repository });
-    const service = createCachedGroupStateService({ durable: harness.groupStateService, cache });
+    const service = createCachedGroupStateService({
+        durable: harness.groupStateService,
+        cache,
+        current: harness.groupStateService
+    });
     return {
         service,
         authorization: createGroupStateRouteAuthorization({

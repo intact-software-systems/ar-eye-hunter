@@ -5,6 +5,7 @@ import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/i
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { computeActivationStatusClockEntry } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import {
     installTopologyAppOutbox,
@@ -23,6 +24,7 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { toAuthorisedWsClientDisconnectInput, toGroupPresenceSessionCleanupInput } from '../routes/ws-routes.ts';
 import {
     hasAuthorisedWsCloseFacts,
+    readAuthorisedWsConnectionCurrentness,
     releaseAuthorisedWsCloseFacts
 } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
@@ -36,6 +38,7 @@ export interface CreateApiV1SystemInstallersInput {
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly livePublication: RallarServerWsRouterOptions['livePublication'];
+    readonly timing: RallarTimingSink;
 }
 
 /** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
@@ -61,7 +64,14 @@ function installApiV1SystemTopics(
     }
 
     installTopologyAppOutbox(createTopologyAppOutboxOptions(input, runtime));
-    installRtcSignalingWsTopic(runtime.wsQBoxServerService, input.livePublication, input.nowEpochMs);
+    installRtcSignalingWsTopic({
+        service: runtime.wsQBoxServerService,
+        publication: input.livePublication,
+        readConnectionCurrentness: (connection) =>
+            readAuthorisedWsConnectionCurrentness(connection, (ref) => runtime.clientStateService.readSnapshot(ref)),
+        nowEpochMs: input.nowEpochMs,
+        timing: input.timing
+    });
     installRtcRttSystemTopic(runtime.wsQBoxServerService, {
         enqueueMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)
     });
@@ -96,7 +106,7 @@ function createTopologyAppOutboxOptions(
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
         formationAutomation: {
             latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
-            readGroup: async (ref) => (await topology.groupStateRepository.readSnapshot(ref))?.group ?? null,
+            readGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
             readPlanned: async (ref) => await topology.topologySnapshotRepository.findSnapshot(ref) ?? null,
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueFormationAutomationCommand(command, atEpochMs),
@@ -142,11 +152,9 @@ function createTopologyAppOutboxOptions(
         topologyPublication: {
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             // Durable, never the snapshot cache: the mint gate's stage and
-            // accepted-identity facts must not lag a cross-server write.
-            findCurrentGroup: async (ref) => {
-                const snapshot = await topology.groupStateRepository.readSnapshot(ref);
-                return snapshot?.group ?? null;
-            },
+            // accepted-identity facts must not lag a cross-server write. They
+            // live on the group row, so only that row is read (D289).
+            findCurrentGroup: async (ref) => await topology.groupStateRepository.findGroup(ref) ?? null,
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueTopologyPublicationCommand(command, atEpochMs)
         }

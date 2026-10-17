@@ -21,7 +21,7 @@ function computeInitialCoalescedEntry(groupId: string): ResourceEntry {
         groupSnapshot: topologyGroupSnapshotWithSessionIds(groupRef, ['session-a'], 500),
         requestedAtEpochMs: 500,
         expireAtEpochMs: Date.parse('9999-12-31T23:59:59Z'),
-        timing: { window: { debounceMs: 0, maxWaitMs: null }, replanNotBeforeEpochMs: null },
+        timing: { window: { debounceMs: 0, maxWaitMs: 0 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
         senderId: 'rallar-server',
         origin: 'automatic',
         previousEntry: null

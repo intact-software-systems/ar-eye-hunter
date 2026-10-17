@@ -1,4 +1,3 @@
-import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -8,32 +7,27 @@ export interface GroupSessionCleanupInput {
     readonly scope: StateScope;
     readonly authSession: Omit<IssuedAuthSession, 'accessToken'>;
     readonly principalId: string;
+    readonly connectionGenerationId: string;
     readonly disconnectedAtEpochMs: number;
 }
 
+/**
+ * The connection facts were verified when the socket was authorised, and cleanup only closes that
+ * connection's presence, so it needs no live auth session: a logout or an expired auth session
+ * before the close still closes the rows. A row another socket of the same auth session took over
+ * carries that socket's generation and stays.
+ */
 export async function readGroupSessionCleanupCandidates(
     repository: GroupStateRepository,
-    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>,
     input: GroupSessionCleanupInput
 ): Promise<readonly GroupPresenceSession[]> {
-    const authority = await authSessionRepository.findBySessionId(input.authSession.sessionId);
-    if (
-        !authority ||
-        authority.clientId !== input.principalId ||
-        authority.clientId !== input.authSession.clientId ||
-        authority.username !== input.authSession.username ||
-        authority.issuedAtEpochMs !== input.authSession.issuedAtEpochMs ||
-        authority.expiresAtEpochMs !== input.authSession.expiresAtEpochMs
-    ) {
-        throw new TypeError('Group session cleanup authority is no longer valid');
-    }
-
-    return (await repository.listAllPresenceSessions()).filter(
+    return (await repository.listPresenceSessionsForSessionIds([input.authSession.sessionId])).filter(
         (session) =>
             session.applicationId === input.scope.applicationId &&
             session.workspaceId === input.scope.workspaceId &&
-            session.sessionId === input.authSession.sessionId &&
             session.principalId === input.principalId &&
+            session.principalId === input.authSession.clientId &&
+            session.connectionGenerationId === input.connectionGenerationId &&
             session.disconnectedAtEpochMs === null &&
             session.connectedAtEpochMs <= input.disconnectedAtEpochMs &&
             session.lastHeartbeatAtEpochMs <= input.disconnectedAtEpochMs

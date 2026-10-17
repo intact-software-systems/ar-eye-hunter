@@ -6,9 +6,8 @@ import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
-import { requireApiAuthSession, requireWsAuthSession } from '../src/services/request-auth-service.ts';
+import { requireApiAuthSession } from '../src/services/request-auth-service.ts';
 
 Deno.test('requireApiAuthSession validates bearer token and client id', async () => {
     const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
@@ -59,78 +58,6 @@ Deno.test('requireApiAuthSession validates bearer token and client id', async ()
                 repository
             ),
         /Unauthorized: Access token does not match x-client-id/
-    );
-});
-
-Deno.test('requireWsAuthSession consumes websocket tickets and rejects mismatches', async () => {
-    const expiresAtEpochMs = Date.now() + 60_000;
-    const session = {
-        clientId: 'client-1',
-        accessToken: 'token-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs
-    };
-    const tickets = new Map([['ticket-1', session], ['ticket-2', session]]);
-    const appAuthInbox = {
-        consumeWebSocketTicket: (input: { ticket: string; expectedSessionId: string; }) => {
-            const current = tickets.get(input.ticket);
-            if (!current || current.sessionId !== input.expectedSessionId) {
-                return Promise.resolve(Either.ofLeft({ message: 'invalid' }));
-            }
-            tickets.delete(input.ticket);
-            return Promise.resolve(Either.ofRight(current));
-        }
-    } as never;
-
-    const authorised = await requireWsAuthSession(
-        {
-            sessionId: 'session-1',
-            ticket: 'ticket-1'
-        },
-        appAuthInbox,
-        { requestId: 'consume-1' }
-    );
-    assert.equal(authorised.clientId, 'client-1');
-
-    await assert.rejects(
-        () =>
-            requireWsAuthSession(
-                {
-                    sessionId: 'session-1',
-                    ticket: 'ticket-1'
-                },
-                appAuthInbox,
-                { requestId: 'consume-2' }
-            ),
-        /Unauthorized: Invalid or expired websocket auth ticket/
-    );
-
-    await assert.rejects(
-        () =>
-            requireWsAuthSession(
-                {
-                    sessionId: 'session-2',
-                    ticket: 'ticket-2'
-                },
-                appAuthInbox,
-                { requestId: 'consume-3' }
-            ),
-        /Unauthorized: Invalid or expired websocket auth ticket/
-    );
-
-    await assert.rejects(
-        () =>
-            requireWsAuthSession(
-                {
-                    sessionId: 'session-1',
-                    ticket: 'missing-ticket'
-                },
-                appAuthInbox,
-                { requestId: 'consume-4' }
-            ),
-        /Unauthorized: Invalid or expired websocket auth ticket/
     );
 });
 

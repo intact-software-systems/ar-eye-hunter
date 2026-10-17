@@ -134,6 +134,7 @@ export async function processGroupSessionCleanup(
         scope: input.facts.connection.scope,
         authSession: input.facts.connection.authSession,
         principalId: input.facts.connection.principalId,
+        connectionGenerationId: input.facts.connection.generationId,
         disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs
     });
     const mutations = await Promise.all(

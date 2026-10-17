@@ -8,6 +8,7 @@ import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin
 import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -40,7 +41,7 @@ export class RealEngineAdminPruneFixture {
         this.now = now;
         const repository = createPSqlResourceInboxRepository(sql, () => new Date(this.now));
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const resilience = createApiV1TestQueueResilience();
         registerApplicationQueueReaderTasks({
@@ -99,7 +100,7 @@ export class RealEngineAdminPruneFixture {
     /** The port it stands in for is the middleware's, which announces an external write. */
     private wake(): void {
         this.wakeCount += 1;
-        this.engine.wakeAfterExternalWrite();
+        this.engine.wakeAfterExternalWrite(new Set([EnqueuedType.APP_INBOX]));
     }
 
     private adminAuthority(): {

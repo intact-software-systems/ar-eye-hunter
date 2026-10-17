@@ -20,6 +20,7 @@ import {
     createPostgresAppInboxWorkerRuntime,
     createPostgresAppInboxWorkerTrace
 } from '../../../../packages/tests/shared-server/integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
+import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -35,8 +36,22 @@ interface SnapshotRecipient {
     readonly scope: StateScope;
 }
 
-for (const placement of ['publisher', 'remote'] as const) {
-    Deno.test(`committed client snapshot reaches ${placement} socket through registered cluster bridge`, async () => {
+/**
+ * `after-commit`: the upgrade route registers the socket only after its connect commits, so the row can be
+ * delivered while the session is expected but not yet open; the hold delivers it when the socket opens.
+ */
+for (
+    const [placement, registration] of [
+        ['publisher', 'before-delivery'],
+        ['remote', 'before-delivery'],
+        ['publisher', 'after-commit'],
+        ['remote', 'after-commit'],
+        ['unbridged', 'before-delivery'],
+        ['unbridged', 'after-commit']
+    ] as const
+) {
+    // `unbridged`: RALLAR_DB_PUBSUB=disabled installs no cluster bridge; the dequeuing server's own sends deliver.
+    Deno.test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
         await withPGliteSql(async (sql) => {
             const recipient: SnapshotRecipient = {
                 sessionId: crypto.randomUUID(),
@@ -50,12 +65,22 @@ for (const placement of ['publisher', 'remote'] as const) {
                 recipientScope: recipient.scope
             });
             const native = new TestWebSocket('ws://recipient');
-            native.open();
-            const recipientSocket = createRecipientSocket(recipient, native);
+            const recipientSocket = new JsonWebSocketServer();
+            if (registration === 'before-delivery') {
+                native.open();
+                registerRecipientConnection(recipientSocket, recipient, native);
+            }
+            else {
+                recipientSocket.expectedConnections.expect({
+                    id: recipient.sessionId,
+                    generationId: 'generation',
+                    expiresAtEpochMs: recipient.now + 60_000
+                });
+            }
             const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
             const publisherEngine = new InboxOutboxEngine();
             const remoteEngine = new InboxOutboxEngine();
-            const publisherSocket = placement === 'publisher' ? recipientSocket : new JsonWebSocketServer();
+            const publisherSocket = placement === 'remote' ? new JsonWebSocketServer() : recipientSocket;
             const remoteSocket = placement === 'remote' ? recipientSocket : new JsonWebSocketServer();
             const publisher = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
@@ -79,7 +104,8 @@ for (const placement of ['publisher', 'remote'] as const) {
             const bridge = new SnapshotBridge();
             let bodyFailure: Error | undefined;
             try {
-                for (const [service, socket, id] of [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const) {
+                const bridged = placement === 'unbridged' ? [] : [[publisher, publisherSocket, 'publisher'], [remote, remoteSocket, 'remote']] as const;
+                for (const [service, socket, id] of bridged) {
                     await installQueueBoxPubSubBridge({
                         wsQBoxServerService: service,
                         bridge,
@@ -95,7 +121,12 @@ for (const placement of ['publisher', 'remote'] as const) {
                     await new Promise((resolve) => setTimeout(resolve, 10));
                 }
                 assert.equal((await stores.workQueue.getItem(entry.key))?.status, EntityStatus.COMPLETED);
-                assert.equal(bridge.published.length, 1);
+                assert.equal(bridge.published.length, placement === 'unbridged' ? 0 : 1);
+                if (registration === 'after-commit') {
+                    assert.equal(native.sent.length, 0);
+                    registerRecipientConnection(recipientSocket, recipient, native);
+                    native.open();
+                }
                 assert.equal(native.sent.length, 1);
             }
             catch (caught) {
@@ -142,10 +173,12 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
     };
     const runtime = createPostgresAppInboxWorkerRuntime({ sql, serviceId: 'producer', atEpochMs: recipient.now, trace: createPostgresAppInboxWorkerTrace() });
     await runtime.authSessions.putSession(authSession);
+    const ticketDigest = await putAuthorisedWsTestTicket(runtime.authSessions, authSession);
     const result = await runtime.runUntilCompletion(() =>
-        runtime.client.processAuthorisedWsClientConnect({
+        runtime.client.writeAuthorisedWsClientConnect({
             authSession,
             generationId: 'generation',
+            ticketDigest,
             input: {
                 ...recipient.scope,
                 clientInstanceId: 'browser',
@@ -163,8 +196,7 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
     return toDomain(rows[0]!);
 }
 
-function createRecipientSocket(recipient: SnapshotRecipient, native: TestWebSocket): JsonWebSocketServer {
-    const socket = new JsonWebSocketServer();
+function registerRecipientConnection(socket: JsonWebSocketServer, recipient: SnapshotRecipient, native: TestWebSocket): void {
     socket.addConnection(
         new ConnectionContext({ id: recipient.sessionId, socket: native, generationId: 'generation', generationStartedAtEpochMs: recipient.now })
     );
@@ -187,7 +219,6 @@ function createRecipientSocket(recipient: SnapshotRecipient, native: TestWebSock
         capabilities: [],
         expiresAtEpochMs: recipient.now + 60_000
     });
-    return socket;
 }
 
 class SnapshotBridge implements QueueBoxPubSubBridge {

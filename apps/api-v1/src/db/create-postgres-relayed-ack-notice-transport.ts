@@ -8,10 +8,12 @@ import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configu
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 import { createPostgresNoticeTransport } from './create-postgres-notice-transport.ts';
 
+/** Its own channel, so neither the QueueBox key listener nor the live notice subscriber parses a relayed ACK. */
+export const API_V1_RELAYED_ACK_CHANNEL = 'ws-relayed-ack';
+
 export interface CreateApiV1RelayedAckNoticesInput {
     readonly mode: ApiV1DatabaseConfiguration['pubSub'];
     readonly notification: ApiV1DatabaseNotificationPort | null;
-    readonly channel: string;
     readonly publisherId: string;
 }
 
@@ -29,7 +31,7 @@ export function createApiV1RelayedAckNotices(
     }
     return {
         transport: createPostgresRelayedAckNoticeTransport(input.notification),
-        channel: input.channel,
+        channel: API_V1_RELAYED_ACK_CHANNEL,
         publisherId: input.publisherId
     };
 }

@@ -317,6 +317,7 @@
         },
         "body": {
           "generationId": "activationrace-generation-{runId}",
+          "connectionGenerationId": "activationrace-connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -337,6 +338,7 @@
         },
         "body": {
           "generationId": "activationrace-generation-{runId}",
+          "connectionGenerationId": "activationrace-connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

@@ -896,3 +896,56 @@ it('retains exactly the first ten short desired and ready identities in original
         }]
     });
 });
+
+function toAcceptedLayout(harness: FormationHarness, identity: GroupLayoutIdentity) {
+    return { role: 'accepted' as const, identity, overlay: createAcceptedOverlayFixture(harness.snapshot, identity.version, []) };
+}
+
+function createOpenFormationHarness(): FormationHarness {
+    return new FormationHarness({ stage: 'active', formationEpoch: 3, desiredPeerIds: ['b'], readyPeerIds: ['b'], state: 'open' });
+}
+
+// A follow-up re-plan comes from the group revision the acceptance wrote, so the quiet window counts from when this
+// page first held that layout at that revision, on its own clock: neither planning time nor a server clock.
+it('reports when the page first held the accepted layout at the readiness revision, on its own clock', async () => {
+    const harness = createOpenFormationHarness();
+    const unsubscribe = harness.controller.installDiagnostics(roomRef);
+
+    harness.nowEpochMs = 10_000;
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.nowEpochMs = 12_000;
+    harness.emitChange({ coverageRate: 1 });
+    harness.nowEpochMs = 20_000;
+    const settled = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    harness.nowEpochMs = 21_000;
+    const causalRevision = harness.snapshot.causalRevision;
+    harness.emitChange({ snapshot: { ...harness.snapshot, causalRevision: { ...causalRevision, groupRevision: causalRevision.groupRevision + 1 } } });
+    harness.nowEpochMs = 22_000;
+    const advanced = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    unsubscribe();
+
+    expect(settled.acceptedHeldSinceEpochMs).toBe(10_000);
+    expect(advanced.acceptedHeldSinceEpochMs).toBe(21_000);
+});
+
+it('counts the hold from the readiness itself when the page observed no earlier change', async () => {
+    const harness = createOpenFormationHarness();
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+
+    harness.nowEpochMs = 20_000;
+    const first = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 23_000;
+    const second = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(first.acceptedHeldSinceEpochMs).toBe(20_000);
+    expect(second.acceptedHeldSinceEpochMs).toBe(20_000);
+});
+
+it('reports no hold while no layout is accepted', async () => {
+    const harness = createOpenFormationHarness();
+
+    const result = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(result).not.toHaveProperty('acceptedHeldSinceEpochMs');
+});

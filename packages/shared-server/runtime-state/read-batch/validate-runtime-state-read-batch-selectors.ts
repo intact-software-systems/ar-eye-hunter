@@ -58,21 +58,50 @@ function toRuntimeStateReadBatchSelector(
             keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`)
         };
     }
-    if (selector.kind === 'prefix-suffix') {
-        requireExactKeys(
-            selector,
-            ['selectorId', 'kind', 'namespace', 'keyPrefix', 'keySuffix'],
-            label
-        );
+    if (selector.kind === 'prefix-suffix' || selector.kind === 'suffix') {
+        return toRuntimeStateReadBatchSuffixSelector(input);
+    }
+    throw invalidReadBatch(`${label} kind is invalid`);
+}
+
+function toRuntimeStateReadBatchSuffixSelector(
+    input: RuntimeStateReadBatchSelectorInput
+): RuntimeStateReadBatchSelector {
+    const { selector, selectorId, namespace, label } = input;
+    if (selector.kind === 'suffix') {
+        requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'keySuffix'], label);
         return {
             selectorId,
             kind: selector.kind,
             namespace,
-            keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`),
-            keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
+            keySuffix: requireSuffixRangeBound(requireNonEmptyString(selector.keySuffix, `${label} key suffix`), label)
         };
     }
-    throw invalidReadBatch(`${label} kind is invalid`);
+    requireExactKeys(
+        selector,
+        ['selectorId', 'kind', 'namespace', 'keyPrefix', 'keySuffix'],
+        label
+    );
+    return {
+        selectorId,
+        kind: 'prefix-suffix',
+        namespace,
+        keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`),
+        keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
+    };
+}
+
+/**
+ * The reversed suffix ends with the suffix's first character, and its exclusive range end increments
+ * that last UTF-16 unit; a surrogate there could become a lone surrogate, so the first character
+ * must lie in the Basic Multilingual Plane.
+ */
+function requireSuffixRangeBound(keySuffix: string, label: string): string {
+    const firstUnit = keySuffix.charCodeAt(0);
+    if (firstUnit >= 0xd800 && firstUnit <= 0xdfff) {
+        throw invalidReadBatch(`${label} key suffix must start with a Basic Multilingual Plane character`);
+    }
+    return keySuffix;
 }
 
 function requireDenseArray(

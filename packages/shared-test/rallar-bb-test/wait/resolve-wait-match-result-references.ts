@@ -8,7 +8,19 @@ export interface UnresolvedWaitMatchReference {
     readonly reference: string;
 }
 
+export type InvalidWaitTimeoutFrom =
+    | Readonly<{ kind: 'not-one-reference'; timeoutFrom: string; }>
+    | Readonly<{ kind: 'unresolved-reference'; reference: string; }>;
+
+/**
+ * A wait's `timeoutFrom` as a recipe authors it: exactly one result reference, which a loop child may key by its
+ * `{loop.*}` placeholders; the schema and the control validation hold a recipe to it when it is loaded.
+ */
+export const WAIT_TIMEOUT_FROM_PATTERN_SOURCE =
+    '^\\{resultCache\\.(?:[^{}]|\\{loop\\.(?:index|iteration|elapsedMs|commandIndex)\\})+\\}$';
+
 const RESULT_REFERENCE_PATTERN = /\{(resultCache\.[^{}]+)\}/g;
+const SINGLE_RESULT_REFERENCE_PATTERN = /^\{(resultCache\.[^{}]+)\}$/;
 const RESULT_REFERENCE_ROOT = 'resultCache.';
 
 /**
@@ -44,6 +56,21 @@ export function resolveResultReferencesInText(
     return Either.ofRight(
         text.replace(RESULT_REFERENCE_PATTERN, (token, reference: string) => texts.get(reference) ?? token)
     );
+}
+
+/** A wait's `timeoutFrom` is exactly one token naming a finite number, the epoch an earlier command returned. */
+export function resolveWaitTimeoutFromEpochMs(
+    timeoutFrom: string,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<InvalidWaitTimeoutFrom, number> {
+    const reference = SINGLE_RESULT_REFERENCE_PATTERN.exec(timeoutFrom)?.[1];
+    if (reference === undefined) {
+        return Either.ofLeft({ kind: 'not-one-reference', timeoutFrom });
+    }
+    const lookup = decodePayloadPathValue(resultCache, reference.slice(RESULT_REFERENCE_ROOT.length));
+    return lookup.exists && typeof lookup.value === 'number' && Number.isFinite(lookup.value)
+        ? Either.ofRight(lookup.value)
+        : Either.ofLeft({ kind: 'unresolved-reference', reference });
 }
 
 function toReferencedResultText(

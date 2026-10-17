@@ -240,6 +240,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             request: {
                 principalId: actorPrincipalId,
                 generationId: `${sessionId}:generation-1`,
+                connectionGenerationId: `${sessionId}:ws-generation-1`,
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 61_000,

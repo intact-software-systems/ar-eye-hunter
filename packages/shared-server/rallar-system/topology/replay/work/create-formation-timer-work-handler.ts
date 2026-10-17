@@ -125,8 +125,7 @@ async function evaluateFormationDeadline(
     const [authority, lifecyclePolicy] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupRef,
-            knownGroup: snapshot,
-            snapshotSelection: 'prefer-current'
+            knownGroup: snapshot
         }),
         options.readLifecyclePolicy(work.groupRef)
     ]);

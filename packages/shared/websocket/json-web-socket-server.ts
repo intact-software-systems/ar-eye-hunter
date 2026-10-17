@@ -1,4 +1,5 @@
 import { validateJsonMessageSize, type JsonMessageRejection } from '../api/json-message-validation.ts';
+import { ExpectedConnectionHolds } from './expected-connection-holds.ts';
 
 export interface WebSocketServerCallbacks {
     onConnection?: (ctx: ConnectionContext) => void;
@@ -55,11 +56,19 @@ export namespace JsonWebSocketServer {
         nativeCall: 'not-called' | 'invoked' | 'returned';
     }
 
-    export interface CreateConnectionInput {
+    export interface CreateConnectionInput extends MintGenerationInput {
         readonly id: string;
         readonly socket: WebSocket;
+    }
+
+    export interface MintGenerationInput {
         readonly generationId?: string;
         readonly observedAtEpochMs?: number;
+    }
+
+    export interface ConnectionGeneration {
+        readonly generationId: string;
+        readonly generationStartedAtEpochMs: number;
     }
 }
 
@@ -69,8 +78,22 @@ export class JsonWebSocketServer {
     private lastGenerationStartedAtEpochMs = -1;
 
     public readonly connections = new Map<string, ConnectionContext>();
+    public readonly expectedConnections = new ExpectedConnectionHolds({
+        isOpen: (id) => this.connections.get(id)?.isOpen === true,
+        nowEpochMs: Date.now
+    });
 
     createConnectionContext(input: JsonWebSocketServer.CreateConnectionInput): ConnectionContext {
+        return new ConnectionContext({
+            id: input.id,
+            socket: input.socket,
+            ...this.mintConnectionGeneration(input)
+        });
+    }
+
+    mintConnectionGeneration(
+        input: JsonWebSocketServer.MintGenerationInput = {}
+    ): JsonWebSocketServer.ConnectionGeneration {
         const generationId = input.generationId ?? crypto.randomUUID();
         const observedAtEpochMs = input.observedAtEpochMs ?? Date.now();
         if (!Number.isSafeInteger(observedAtEpochMs) || observedAtEpochMs < 0) {
@@ -84,12 +107,7 @@ export class JsonWebSocketServer {
             this.lastGenerationStartedAtEpochMs + 1
         );
         this.lastGenerationStartedAtEpochMs = generationStartedAtEpochMs;
-        return new ConnectionContext({
-            id: input.id,
-            socket: input.socket,
-            generationId,
-            generationStartedAtEpochMs
-        });
+        return { generationId, generationStartedAtEpochMs };
     }
 
     // --------------------
@@ -130,6 +148,7 @@ export class JsonWebSocketServer {
 
     private addAllEventListeners(ctx: ConnectionContext) {
         ctx.socket.addEventListener('open', (_: Event) => {
+            this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
             for (const cb of this.webSocketServerCallbacks.values()) {
                 try {
                     cb.onConnection?.(ctx);
@@ -157,6 +176,7 @@ export class JsonWebSocketServer {
             if (this.connections.get(ctx.id) === ctx) {
                 this.connections.delete(ctx.id);
             }
+            this.expectedConnections.release({ id: ctx.id, generationId: ctx.generationId });
 
             for (const cb of this.webSocketServerCallbacks.values()) {
                 try {

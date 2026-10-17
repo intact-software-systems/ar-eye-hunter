@@ -1,4 +1,5 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import type { RallarSessionHeartbeat } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     refreshStateHeartbeat,
@@ -83,6 +84,8 @@ function resolveHeartbeatRenewal(input: HeartbeatRenewalInput): HeartbeatRenewal
 
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
+    /** Absent for a heartbeat without a socket; the client session then keeps no socket generation. */
+    ownWsConnectionGeneration?: BrowserOwnWsConnectionGeneration;
     scope?: StateScope;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
     onAuthInvalid?: (error: Error) => void | Promise<void>;
@@ -180,6 +183,7 @@ class BrowserStateHeartbeatRuntime {
         const joinedGroups = this.readJoinedGroups();
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
             generationId: this.handle.generationId,
+            wsConnectionGenerationId: (await this.#options.ownWsConnectionGeneration?.read())?.right,
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
                 this.#clientData.clientId
             ),

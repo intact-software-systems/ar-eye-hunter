@@ -385,7 +385,15 @@ function createMessageContext(
     return {
         enqueue,
         message,
-        attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0, reservationLeaseMs: 60_000 },
+        attemptTelemetry: {
+            selectedLane: Reservator.NEW,
+            queueAgeMs: 0,
+            dueAgeMs: 0,
+            attempt: 7,
+            selectedDueAtEpochMs: 0,
+            reservationLeaseMs: 60_000,
+            selectedAtEpochMs: 0
+        },
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,

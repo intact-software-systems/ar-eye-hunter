@@ -1,5 +1,6 @@
 import { type ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 interface AuthorisedWsClientDisconnectInput {
@@ -59,6 +60,28 @@ export function readAuthorisedWsConnectionEligibility(
         principalId: authorised.principalId,
         expiresAtEpochMs: authorised.expiresAtEpochMs
     };
+}
+
+/**
+ * Whether a socket here is its session's current connection: the generation the session entry of its principal's
+ * client snapshot names, which the authorised connect writes cluster-wide before every upgrade (D269, D284).
+ */
+export async function readAuthorisedWsConnectionCurrentness(
+    connection: ConnectionContext,
+    readClientSnapshot: (ref: ClientPrincipalRef) => Promise<ClientSnapshot | undefined>
+): Promise<boolean> {
+    const facts = readAuthorisedWsConnectionEligibility(connection);
+    if (!facts) {
+        return false;
+    }
+    const snapshot = await readClientSnapshot({
+        applicationId: facts.scope.applicationId,
+        workspaceId: facts.scope.workspaceId,
+        principalId: facts.principalId
+    });
+    return snapshot?.activeSessions.some((session) =>
+        session.sessionId === connection.id && session.generationId === connection.generationId
+    ) === true;
 }
 
 export function toAuthorisedWsClientDisconnectInput(

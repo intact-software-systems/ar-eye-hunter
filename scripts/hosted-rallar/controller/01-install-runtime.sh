@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
 source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-apt-sources.sh"
+source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
 
 RALLAR_APT_PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rallar-apt-profiles.XXXXXX")"
 trap 'rm -rf -- "${RALLAR_APT_PROFILE_DIR}"' EXIT
@@ -73,6 +74,9 @@ write_rallar_apt_profile caddy "${caddy_apt_config}"
 env APT_CONFIG="${caddy_apt_config}" apt update
 env APT_CONFIG="${caddy_apt_config}" apt install -y caddy
 
+echo "==> Installing the API-v1 PostgreSQL server"
+install_rallar_api_postgres_server
+
 echo "==> Creating Rallar service user and directories"
 if ! id rallar >/dev/null 2>&1; then
 	useradd --system --home /opt/rallar --shell /usr/sbin/nologin rallar
@@ -89,5 +93,6 @@ node -v
 npm -v
 deno --version
 caddy version
+psql --version
 
 echo "Runtime installation complete."

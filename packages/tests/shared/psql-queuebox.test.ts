@@ -247,14 +247,16 @@ describe('PSqlQueueBox', () => {
     });
 
     it('threads the attempt budget and lease through the one-statement PostgreSQL work advertisement', async () => {
-        const readWorkPresence = vi.fn<PSqlResourceInboxReservationRepository['readWorkPresence']>(async () => ({
-            newRow: false,
-            dueRetry: false,
-            overdueRetry: false,
-            timedOutReservation: false,
-            staleExhaustedReservation: false
-        }));
-        const queue = new PSqlQueueBox(createQueueBoxRepositoryFixture({ readWorkPresence }), Temporal.Now.instant);
+        const readWorkPresences = vi.fn<PSqlResourceInboxReservationRepository['readWorkPresences']>(async (reads) =>
+            reads.map(() => ({
+                newRow: false,
+                dueRetry: false,
+                overdueRetry: false,
+                timedOutReservation: false,
+                staleExhaustedReservation: false
+            }))
+        );
+        const queue = new PSqlQueueBox(createQueueBoxRepositoryFixture({ readWorkPresences }), Temporal.Now.instant);
 
         const advertised = await queue.isAnyEntryToLock(
             new Set(['type-1']),
@@ -267,13 +269,13 @@ describe('PSqlQueueBox', () => {
         );
 
         expect(advertised).toBe(false);
-        expect(readWorkPresence).toHaveBeenCalledWith({
+        expect(readWorkPresences).toHaveBeenCalledWith([{
             typeIds: new Set(['type-1']),
             maxAttempts: 2,
             reservationLeaseMs: 5 * 60 * 1000,
             finalizationStaleAfterMs: 5 * 60 * 1000,
             staleDueThresholdMs: 30_000
-        });
+        }]);
     });
 
     it('returns the exact timestamps persisted by the fenced PostgreSQL release', async () => {
@@ -486,7 +488,7 @@ describe('PSqlQueueBox', () => {
 });
 
 interface PSqlQueueBoxTestRepositoryOverrides {
-    readWorkPresence?: PSqlResourceInboxReservationRepository['readWorkPresence'];
+    readWorkPresences?: PSqlResourceInboxReservationRepository['readWorkPresences'];
     reserveEntriesSkipLocked?: PSqlResourceInboxReservationRepository['reserveEntriesSkipLocked'];
     findEntriesSkipLocked?: PSqlResourceInboxReservationRepository['findEntriesSkipLocked'];
     findTimedOutReservedEntriesSkipLocked?: PSqlResourceInboxReservationRepository['findTimedOutReservedEntriesSkipLocked'];
@@ -517,13 +519,15 @@ function createQueueBoxRepositoryFixture(overrides: PSqlQueueBoxTestRepositoryOv
     Object.assign(
         repository.reservations,
         {
-            readWorkPresence: overrides.readWorkPresence ?? vi.fn(async () => ({
-                newRow: false,
-                dueRetry: false,
-                overdueRetry: false,
-                timedOutReservation: false,
-                staleExhaustedReservation: false
-            })),
+            readWorkPresences: overrides.readWorkPresences ?? vi.fn(async (reads) =>
+                reads.map(() => ({
+                    newRow: false,
+                    dueRetry: false,
+                    overdueRetry: false,
+                    timedOutReservation: false,
+                    staleExhaustedReservation: false
+                }))
+            ),
             reserveEntriesSkipLocked: overrides.reserveEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findEntriesSkipLocked: overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),
             findTimedOutReservedEntriesSkipLocked: overrides.findTimedOutReservedEntriesSkipLocked ?? vi.fn(async () => new Map<string, ResourceEntry>()),

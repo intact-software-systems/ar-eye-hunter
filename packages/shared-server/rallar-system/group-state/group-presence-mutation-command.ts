@@ -49,6 +49,12 @@ function toConnectPresenceCommand(
     if (typeof request.principalId !== 'string' || request.principalId.length === 0) {
         throw new NonRetryableException('Group presence principal id is required');
     }
+    if (
+        !('connectionGenerationId' in request) || typeof request.connectionGenerationId !== 'string' ||
+        request.connectionGenerationId.length === 0
+    ) {
+        throw new NonRetryableException('Group presence connection generation id is required');
+    }
     return {
         operation: 'connectPresence',
         aggregateRef: { ...descriptor.scope, groupId: descriptor.groupId },
@@ -57,6 +63,7 @@ function toConnectPresenceCommand(
         input: {
             principalId: request.principalId,
             generationId: request.generationId,
+            connectionGenerationId: request.connectionGenerationId,
             connectedAtEpochMs: 'connectedAtEpochMs' in request
                 ? (request.connectedAtEpochMs ?? null)
                 : null,

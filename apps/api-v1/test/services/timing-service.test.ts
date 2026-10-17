@@ -6,6 +6,7 @@ Deno.test('API app inbox options preserve every resolved wait policy field', () 
         toApiAppInboxServiceOptions({
             phaseTiming: true,
             laneBudgetPolicy: 'fixed-retry-two',
+            newLaneConcurrency: 4,
             completionWait: {
                 maxElapsedMs: 45_000,
                 retryIntervalMs: 125,

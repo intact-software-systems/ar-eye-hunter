@@ -187,7 +187,7 @@ describe('verified direct room row delivery', () => {
         send.mockRestore();
         expect(await fixture.repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key))).toBeUndefined();
         await expect.poll(async () => {
-            fixture.engine.wakeAfterExternalWrite();
+            fixture.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
             await fixture.engine.executeOnce();
             return fixture.native.get('session')!.sent.length;
         }).toBe(1);
@@ -222,6 +222,28 @@ describe('verified direct room row delivery', () => {
         await fixture.engine.executeOnce();
         await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
         expect([...fixture.native.values()].flatMap((native) => native.sent)).toEqual([]);
+    });
+
+    it('decodes a dequeued room row once from its claim to its bridge publication and socket send', async () => {
+        const fixture = new RoomFixture();
+        const bridge = new RecordingBridge();
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: fixture.service,
+            bridge,
+            channel: 'events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+        });
+        const { message, entry } = await fixture.publish(['session']);
+        const decodes = countMessageDecodes(message);
+
+        await fixture.engine.executeOnce();
+        await expect.poll(() => fixture.native.get('session')!.sent.length).toBe(1);
+        await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+
+        // Before step 2g the row was parsed and validated twelve times on this path.
+        expect(bridge.published).toHaveLength(1);
+        expect(decodes()).toBe(1);
     });
 
     it.each(['local', 'remote'] as const)('carries frozen room sessions and scope through the %s bridge send', async (placement) => {
@@ -331,7 +353,7 @@ class RoomFixture {
             throw new Error('Missing completed room row');
         }
         await this.stores.workQueue.replaceIfObserved(completed, { ...completed, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
-        this.engine.wakeAfterExternalWrite();
+        this.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
         await this.engine.executeOnce();
         await expect.poll(async () => (await this.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
     }
@@ -363,6 +385,20 @@ class RoomFixture {
         await this.stores.workQueue.enqueue(entry);
         return { message, entry };
     }
+}
+
+/** How many times a JSON text holding this message is parsed: every AL message decode parses its row first. */
+function countMessageDecodes(message: ALMessage): () => number {
+    const parse = JSON.parse;
+    let decodes = 0;
+    vi.spyOn(JSON, 'parse').mockImplementation((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+        const value = parse(text, reviver);
+        if (value?.id?.msgId === message.id.msgId && value?.route !== undefined) {
+            decodes += 1;
+        }
+        return value;
+    });
+    return () => decodes;
 }
 
 interface RoomProofInput {

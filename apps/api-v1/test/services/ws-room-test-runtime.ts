@@ -8,7 +8,7 @@ import {
     type CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureSharedStateRepositories } from '@shared/repository/configure-shared-state-repositories.ts';
 
@@ -47,20 +47,18 @@ export function createRoomStateTestRuntime(
     });
     const reads = { snapshots: 0, revisions: 0 };
     const cache = new GroupStateSnapshotReadThroughCache({ groupsRepository: repository, manager });
-    const service = createCachedGroupStateService({
-        durable: {
-            ...durable,
-            readSnapshot: (ref) => {
-                reads.snapshots += 1;
-                return durable.readSnapshot(ref);
-            },
-            readCausalRevision: (ref) => {
-                reads.revisions += 1;
-                return durable.readCausalRevision(ref);
-            }
+    const counted = {
+        ...durable,
+        readSnapshot: (ref: GroupRef) => {
+            reads.snapshots += 1;
+            return durable.readSnapshot(ref);
         },
-        cache
-    });
+        readCausalRevision: (ref: GroupRef) => {
+            reads.revisions += 1;
+            return durable.readCausalRevision(ref);
+        }
+    };
+    const service = createCachedGroupStateService({ durable: counted, cache, current: counted });
     return { runtimeRepository, repository, groupStateService: service, cache, manager, reads };
 }
 

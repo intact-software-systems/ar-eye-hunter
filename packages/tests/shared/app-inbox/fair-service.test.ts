@@ -12,7 +12,7 @@ import { createQueueMessage, createQueueResilience, seedRetry } from './fair-ser
 describe('AppInbox fair service', () => {
     it('keeps unrelated type sets and outboxes on their existing drain defaults', async () => {
         const queue = new InMemoryQueueBox();
-        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const inbox = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const outbox = new OutboxQueueReader(queue);
         const delivered: string[] = [];
         const callback = {
@@ -34,7 +34,7 @@ describe('AppInbox fair service', () => {
     it('completes an overdue retry before trailing NEW work is consumed', async () => {
         let now = Date.now();
         const queue = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(now));
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', nowEpochMs: () => now });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'adaptive-retry', newLaneConcurrency: 1, nowEpochMs: () => now });
         const resilience = createQueueResilience();
         const retry = await seedRetry(queue, 'retry');
         const first = await reader.enqueueIfAbsent(createQueueMessage('first'));

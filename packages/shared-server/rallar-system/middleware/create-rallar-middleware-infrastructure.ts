@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -15,6 +15,7 @@ import { toAppInboxEntryCompletionAwaitability } from '../app-inbox/app-inbox-co
 import { isAppInboxRetryableConflict } from '../app-inbox/app-inbox-error-classification.ts';
 import { AppInboxDequeuePassTiming } from '../app-inbox/handler/app-inbox-dequeue-pass-timing.ts';
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { isInstanceLocalRtcSignal } from '../communication/is-instance-local-rtc-signal.ts';
 import { nowMs } from '../observability/timing.ts';
 import { installAppInboxCompletionNoticeSubscriber } from '../queue-pubsub/app-inbox-completion-notice.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
@@ -36,6 +37,19 @@ interface InstallMiddlewareLiveWsNoticeSubscriberInput {
     readonly wsQBoxServerService: RallarMiddlewareInfrastructure['wsQBoxServerService'];
 }
 
+/**
+ * The queues an AppInbox-pipeline writer fills: its command rows, the outbox rows its commit writes, and
+ * the WS outbox rows its state sync writes. AL work rows are written only by their own runtime.
+ */
+const APP_INBOX_PIPELINE_TYPES: ReadonlySet<string> = new Set([
+    EnqueuedType.APP_INBOX,
+    EnqueuedType.APP_OUTBOX,
+    EnqueuedType.WS_OUTBOX
+]);
+
+/** A pub/sub requeue puts a failed remote send's WS outbox row back. */
+const PUB_SUB_REQUEUE_TYPES: ReadonlySet<string> = new Set([EnqueuedType.WS_OUTBOX]);
+
 interface CreateMiddlewareWsQueueBoxServerInput {
     readonly options: CreateRallarMiddlewareOptions;
     readonly queueEngine: InboxOutboxEngine;
@@ -47,7 +61,6 @@ export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
     queueEngine: InboxOutboxEngine
 ): RallarMiddlewareInfrastructure {
-    assertSharedInboundStoreAcrossInstances(options);
     initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
@@ -67,7 +80,7 @@ export function createRallarMiddlewareInfrastructure(
             ...options.queuePubSubBridge,
             wsQBoxServerService,
             receiptObserver: options.wsReceiptObserver,
-            wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
+            wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite(PUB_SUB_REQUEUE_TYPES)
         })
         : Promise.resolve();
     const liveWsNoticeSubscriberReadiness = Promise.all([
@@ -94,7 +107,7 @@ export function createRallarMiddlewareInfrastructure(
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
         liveWsNoticeSubscriberReadiness,
-        wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
+        wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite(APP_INBOX_PIPELINE_TYPES)
     };
 }
 
@@ -154,6 +167,7 @@ function createMiddlewareWsQueueBoxServer(
         readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         inboundVolatileStores: options.inboundVolatileStores,
+        keepsVolatileMessageInMemory: options.relayedAckNotices === undefined ? undefined : isInstanceLocalRtcSignal,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
@@ -167,18 +181,6 @@ function createMiddlewareWsQueueBoxServer(
             : undefined,
         forwardsRoomScopedMessages: false
     });
-}
-
-/**
- * Another instance proves a relayed acknowledgement's sender against the message's admission, and reads an oversized
- * live notice's message, from the shared inbound store: a memory pair would hide both from it.
- */
-function assertSharedInboundStoreAcrossInstances(options: CreateRallarMiddlewareOptions): void {
-    if (options.inboundVolatileStores !== undefined && options.relayedAckNotices !== undefined) {
-        throw new TypeError(
-            'A WS server relaying acknowledgements to other instances admits every message to its shared inbound store.'
-        );
-    }
 }
 
 function installMiddlewareLiveWsNoticeSubscriber(

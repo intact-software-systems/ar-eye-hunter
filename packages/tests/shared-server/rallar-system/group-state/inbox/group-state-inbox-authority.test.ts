@@ -296,7 +296,7 @@ describe('GroupStateInboxService authenticated authority', () => {
         await authSessions.putSession(attacker);
 
         const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two' });
+        const reader = new InboxQueueReader(queue, { laneBudgetPolicy: 'fixed-retry-two', newLaneConcurrency: 1 });
         const results = new TestResourceInboxResults();
         const eventStore = new InMemoryGroupStateEventStore();
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
@@ -448,6 +448,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                     request: {
                         principalId: 'victim',
                         generationId: 'victim-generation',
+                        connectionGenerationId: 'victim-ws-generation',
                         connectedAtEpochMs: harness.nowEpochMs,
                         lastHeartbeatAtEpochMs: harness.nowEpochMs,
                         expiresAtEpochMs: harness.nowEpochMs + 60_000,

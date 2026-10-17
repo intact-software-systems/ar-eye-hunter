@@ -411,6 +411,33 @@
       }
     },
     {
+      "name": "captureAlphaFirstSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{alphaClientId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "alphaFirstSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{alphaSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "connectAlphaPresence",
       "type": "http",
       "connection": "api",
@@ -423,6 +450,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-{runId}",
+          "connectionGenerationId": "{alphaFirstSocketGenerationId}",
           "principalId": "{alphaClientId}"
         }
       },
@@ -448,6 +476,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-beta-{runId}",
+          "connectionGenerationId": "connection-generation-reconnect-beta-{runId}",
           "principalId": "{betaClientId}"
         }
       },
@@ -637,6 +666,7 @@
         },
         "body": {
           "generationId": "generation-reconnect-alpha-second-{runId}",
+          "connectionGenerationId": "connection-generation-reconnect-alpha-second-{runId}",
           "principalId": "{alphaClientId}"
         }
       },
@@ -918,9 +948,93 @@
       }
     },
     {
+      "name": "captureAlphaSecondSocketGeneration",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{alphaClientId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "alphaSecondSocketGenerationId": "body.activeSessions.0.generationId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeSessions": [
+            {
+              "sessionId": "{alphaSessionId}",
+              "transport": "ws"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "relabelAlphaPresenceForTheSecondSocket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}/requests/presence-reconnect-alpha-relabel-{runId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "generationId": "generation-reconnect-alpha-second-{runId}",
+          "connectionGenerationId": "{alphaSecondSocketGenerationId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
       "name": "closeAlphaSecondWs",
       "type": "ws.close",
       "connection": "wsAlpha2"
+    },
+    {
+      "name": "theSecondSocketCloseLeavesOnlyBetaInTheTopology",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "activeSessionIds": [
+              "{betaSessionId}"
+            ]
+          }
+        }
+      }
     },
     {
       "name": "closeBetaWs",

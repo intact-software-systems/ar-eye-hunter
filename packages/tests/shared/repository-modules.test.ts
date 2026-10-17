@@ -730,6 +730,9 @@ describe('repository modules', () => {
                 adoptedCount: 1,
                 equalCount: 1,
                 dominatedDroppedCount: 1,
+                membershipIneligibleDroppedCount: 0,
+                membershipIneligibleDeferredCount: 0,
+                membershipDeferredAdoptedCount: 0,
                 incomparableConflictCount: 2,
                 serverSupersededBootstrapCount: 0,
                 bootstrapDroppedOverServerCount: 0
@@ -1097,6 +1100,7 @@ function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['ac
         sessionId,
         principalId: sessionId,
         generationId: `generation-${sessionId}`,
+        connectionGenerationId: `ws-generation-${sessionId}`,
         generationVersion: 1,
         status: 'active',
         connectedAtEpochMs: 1,

@@ -86,8 +86,12 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
             statements: EXPECTED_PASS_STATEMENTS_OUTSIDE_HANDLER,
             executorWaitMs: passLines[0]?.details?.executorWaitMs,
             lanesProbed: 'NEW',
-            claimedInPass: 1
+            claimedInPass: 1,
+            passWallMs: passLines[0]?.details?.passWallMs,
+            handlersMs: passLines[0]?.details?.handlersMs
         });
+        const { passWallMs, handlersMs } = passLines[0]?.details ?? {};
+        assert.ok(typeof passWallMs === 'number' && typeof handlersMs === 'number' && handlersMs >= 0 && passWallMs >= handlersMs);
         assert.equal(passLines[0]?.requestId, REQUEST_ID);
         assert.equal(handlerAction?.details?.statements, EXPECTED_HANDLER_STATEMENTS, 'the handler read plus its two-statement transaction');
         assert.equal(transaction?.details?.statements, 2, 'reservation finish and result replacement');
@@ -136,9 +140,10 @@ function createDequeuePassRuntime(sql: PGliteSql): DequeuePassRuntime {
     const completionNotifications = ResourceInboxCompletionNotifications.createDefault();
     const queueInbox = createPSqlResourceInboxRepository(sql, () => new Date());
     const queueBox = new PSqlQueueBox(queueInbox, Temporal.Now.instant);
-    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ completionNotifications, database: sql });
+    const finalizeAppInboxRetry = createAppInboxRetryFinalizer({ database: sql });
     const inboxQueueReader = new InboxQueueReader(queueBox, {
         laneBudgetPolicy: 'adaptive-retry',
+        newLaneConcurrency: 1,
         completionNotifications,
         onRetryExhausted: finalizeAppInboxRetry,
         onRetryExhaustionRecovery: finalizeAppInboxRetry

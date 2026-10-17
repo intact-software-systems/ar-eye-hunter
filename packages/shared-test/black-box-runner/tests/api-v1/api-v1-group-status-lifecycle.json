@@ -246,6 +246,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -266,6 +267,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },
@@ -821,6 +823,7 @@
         },
         "body": {
           "generationId": "generation-{runId}",
+          "connectionGenerationId": "connection-generation-{runId}",
           "principalId": "{carolClientId}"
         }
       },

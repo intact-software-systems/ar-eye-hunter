@@ -171,6 +171,7 @@ describe('convergent group and presence state', () => {
                 traceId: null,
                 principalId: 'bob',
                 generationId: 'bob-generation',
+                connectionGenerationId: 'bob-ws-generation',
                 connectedAtEpochMs: 1_000,
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 10_000

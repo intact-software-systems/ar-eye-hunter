@@ -28,6 +28,7 @@ const PRESENCE_SESSION_KEYS = [
     'principalId',
     'generationId',
     'generationVersion',
+    'connectionGenerationId',
     'connectedAtEpochMs',
     'lastHeartbeatAtEpochMs',
     'expiresAtEpochMs',
@@ -77,6 +78,7 @@ export function validatePresenceSession(
     requireNonEmptyString(value.sessionId, `${label} sessionId`);
     requireNonEmptyString(value.principalId, `${label} principalId`);
     requireNonEmptyString(value.generationId, `${label} generationId`);
+    requireNonEmptyString(value.connectionGenerationId, `${label} connectionGenerationId`);
     requirePositiveSafeInteger(value.connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
     requirePositiveSafeInteger(value.generationVersion, 'Stored presence generationVersion');
     if (value.generationVersion !== value.connectedAtEpochMs) {

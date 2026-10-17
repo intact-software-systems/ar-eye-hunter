@@ -7,11 +7,11 @@ import {
 import {
     WriteBehindObservableLatestRepository,
     type WriteBehindObservableLatestRepositoryOptions
-} from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+} from '@shared/cache/store-backed/write-behind-observable-latest-repository.ts';
 import {
     WriteThroughObservableLatestRepository,
     type WriteThroughObservableLatestRepositoryOptions
-} from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+} from '@shared/cache/store-backed/write-through-observable-latest-repository.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest';
 

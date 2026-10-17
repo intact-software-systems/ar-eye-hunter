@@ -99,7 +99,7 @@ describe('WS first dequeue authority', () => {
                 await fixture.stores.workQueue.removeItem(toALOutboundIdentityKey(canonical.key));
             }
 
-            fixture.engine.wakeAfterExternalWrite();
+            fixture.engine.wakeAfterExternalWrite(new Set([EnqueuedType.WS_OUTBOX]));
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(observed.key))?.status)
                 .toBe(shape === 'canonical-with-identity' ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE);

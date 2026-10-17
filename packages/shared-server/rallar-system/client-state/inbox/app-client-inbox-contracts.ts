@@ -61,6 +61,12 @@ export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
     expiresAtEpochMs: number;
 }>;
 
+/** The connect consumes the upgrade's WebSocket ticket in its own transaction (D269). */
+export type ClientAuthorisedWsTicketConnectAppInboxPayload = Readonly<{
+    connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    ticketDigest: string;
+}>;
+
 export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
     disconnectedAtEpochMs: number;
