@@ -1,5 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
+import { decodeResultReleaseArtifact } from '../../../shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts';
 import type { RallarBlackBoxEventHistory } from '../../../shared-test/rallar-bb-test/runtime/event-history.ts';
 import type { RtcBaselineJson } from '../contracts/rtc-baseline-contracts.ts';
 import { toRtcB06EventHistory } from './to-rtc-b06-event-history.ts';
@@ -37,9 +38,16 @@ export function toRtcB06JournalRuntimeRow(
     row: Readonly<Record<string, RtcBaselineJson>>,
     boundary: RtcB06BrowserRecordingReading
 ): Either<string, RtcB06JournalRuntimeRow | null> {
+    const release = decodeResultReleaseArtifact(row, { runId: boundary.runId, agentIds: new Set([boundary.agentId]) });
+    if (release.left !== undefined) {
+        return Either.ofLeft(`journal-malformed-release-acknowledgement: ${release.left}`);
+    }
+    if (release.right !== null) {
+        return Either.ofRight(null);
+    }
     const value = toRecord(row.value);
     if (
-        !['rtc-diagnostic', 'crdt-diagnostic'].includes(String(row.kind)) || value === undefined ||
+        (row.kind !== 'rtc-diagnostic' && row.kind !== 'crdt-diagnostic') || value === undefined ||
         typeof value.eventId !== 'string' || value.eventId.length === 0 ||
         typeof value.topic !== 'string' || value.topic.length === 0 ||
         typeof value.atEpochMs !== 'number' || !Number.isFinite(value.atEpochMs) ||

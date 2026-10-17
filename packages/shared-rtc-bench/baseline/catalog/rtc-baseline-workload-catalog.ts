@@ -381,6 +381,7 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-release-evidence.ts',
     'packages/shared-test/rallar-bb-test/result-release/release-control-results.ts',
     'packages/shared-test/rallar-bb-test/result-release/result-release-protocol.ts',
+    'packages/shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts',
     'packages/shared-test/rallar-bb-test/runtime/release-runtime-results.ts',
     'packages/shared-test/rallar-bb-test/runtime/resolve-released-result-reference.ts',
     'packages/shared-test/rallar-bb-test/control-retention-canonical.ts',

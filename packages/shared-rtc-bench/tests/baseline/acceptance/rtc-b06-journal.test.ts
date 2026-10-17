@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import { controlEventArtifactJsonl } from '../../../../../apps/rallar-black-box-control-server/src/control-artifacts.ts';
 import { readRtcB06Journal } from '../../../baseline/acceptance/rtc-b06-journal.ts';
 import { toRtcB06BrowserRecordingReadings } from '../../../baseline/acceptance/validate-rtc-b06-browser-recording.ts';
 
@@ -108,6 +109,7 @@ it.each(
         'agent',
         'control',
         'kind',
+        'outer-kind',
         'malformed-history',
         'missing-history',
         'counter',
@@ -153,6 +155,9 @@ it.each(
     }
     if (failure === 'kind') {
         row.value.kind = 'invalid';
+    }
+    if (failure === 'outer-kind') {
+        Object.assign(row, { kind: ['rtc-diagnostic'] });
     }
     if (failure === 'malformed-history') {
         Object.assign(row.value, { history: { ordinal: '5' } });
@@ -302,3 +307,86 @@ it('classifies the canonical sequence-free control stats and report rows without
     const bytes = encoder.encode([...generated, ...fixture.rows].map((row) => JSON.stringify(row)).join('\n') + '\n');
     expect((await readRtcB06Journal(chunks(bytes, 17), fixture.boundaries)).right?.rows).toBe(23);
 });
+
+it('interleaves real recorder release acknowledgements without changing runtime ordinals or counts', async () => {
+    const fixture = journalFixture();
+    const acknowledgement = controlEventArtifactJsonl({
+        kind: 'diagnostic',
+        protocolVersion: 1,
+        runId: 'run',
+        agentId: 'a',
+        atEpochMs: 1,
+        payload: { topic: 'rallar.bb.results.release', requestId: 'retention-release-1-root', status: 'released', releasedResults: 1, reason: 'captured' }
+    });
+    const lines = fixture.rows.map((row) => JSON.stringify(row) + '\n');
+    lines.splice(3, 0, acknowledgement);
+    const bytes = encoder.encode(lines.join(''));
+    const result = await readRtcB06Journal(chunks(bytes, 17), fixture.boundaries);
+    expect(result.left).toBeUndefined();
+    expect(result.right).toMatchObject({
+        bytes: bytes.length,
+        rows: 22,
+        agents: ['a', 'b', 'c'].map((agentId) => ({ agentId, capturedRows: 3, countsAfterFirstHealth: { ...kinds, event: 2 } }))
+    });
+});
+
+it.each(
+    [
+        'foreign-run',
+        'foreign-agent',
+        'invalid-count',
+        'invalid-status',
+        'non-string-status',
+        'missing-reason',
+        'empty-request',
+        'missing-time',
+        'runtime-history',
+        'runtime-event-id'
+    ] as const
+)(
+    'refuses %s release acknowledgements instead of exempting arbitrary diagnostics',
+    async (failure) => {
+        const fixture = journalFixture();
+        const row = JSON.parse(controlEventArtifactJsonl({
+            kind: 'diagnostic',
+            protocolVersion: 1,
+            runId: 'run',
+            agentId: 'a',
+            atEpochMs: 1,
+            payload: { topic: 'rallar.bb.results.release', requestId: 'retention-release-1-root', status: 'released', releasedResults: 1, reason: 'captured' }
+        }));
+        if (failure === 'foreign-run') {
+            row.runId = 'foreign';
+        }
+        if (failure === 'foreign-agent') {
+            row.agentId = 'foreign';
+        }
+        if (failure === 'invalid-count') {
+            row.value.releasedResults = -1;
+        }
+        if (failure === 'invalid-status') {
+            row.value.status = 'unknown';
+        }
+        if (failure === 'non-string-status') {
+            row.value.status = ['released'];
+        }
+        if (failure === 'missing-reason') {
+            delete row.value.reason;
+        }
+        if (failure === 'empty-request') {
+            row.value.requestId = '';
+        }
+        if (failure === 'missing-time') {
+            delete row.atEpochMs;
+        }
+        if (failure === 'runtime-history') {
+            row.value.history = { runtimeId: 'runtime-a', generation: 1, ordinal: 5 };
+        }
+        if (failure === 'runtime-event-id') {
+            row.value.eventId = 'runtime-event';
+        }
+        const lines = fixture.rows.map((entry) => JSON.stringify(entry) + '\n');
+        lines.splice(3, 0, JSON.stringify(row) + '\n');
+        expect((await readRtcB06Journal(chunks(encoder.encode(lines.join('')), 17), fixture.boundaries)).left).toBeDefined();
+    }
+);

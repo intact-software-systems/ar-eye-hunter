@@ -113,7 +113,7 @@ function resolveAssertSource(source: string, roots: AssertSourceRoots): PayloadP
     return decodePayloadPathValue(root, pathParts.join('.'));
 }
 
-function toAssertSourceRoots(evidence: AssertCommandEvidence): AssertSourceRoots {
+export function toAssertSourceRoots(evidence: Pick<AssertCommandEvidence, 'state' | 'config'>): AssertSourceRoots {
     const { state, config } = evidence;
     const events = state.events;
     const messages = events.filter((event) => event.kind === 'message');

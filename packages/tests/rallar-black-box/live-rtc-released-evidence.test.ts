@@ -46,23 +46,41 @@ async function releasedFixture(failed: boolean) {
     const outcome = await runtime.releaseResults({ runId, agentId, requestId, receipts });
     expect(outcome.status).toBe('released');
     expect(runtime.state().resultCache).toEqual({});
+    const acknowledgement = controlEventArtifactJsonl({
+        kind: 'diagnostic',
+        protocolVersion: 1,
+        runId,
+        agentId,
+        atEpochMs: 1,
+        payload: { topic: 'rallar.bb.results.release', ...outcome }
+    });
+    const step = toControlResultArtifactLines({
+        kind: 'result',
+        protocolVersion: 1,
+        runId,
+        agentId,
+        commandId: fullResult.commandId,
+        ok: fullResult.ok,
+        result: fullResult
+    }).eventLine;
+    const diagnostic = controlEventArtifactJsonl({
+        kind: 'diagnostic',
+        protocolVersion: 1,
+        runId,
+        agentId,
+        atEpochMs: 1,
+        payload: { topic: 'rallar.bb.application', value: 'ordinary runtime diagnostic' }
+    });
     const files = {
         'results.jsonl': toRecordedResult(fullResult),
         'result-receipts.jsonl': receipts.map((receipt) => JSON.stringify(receipt)).join('\n') + '\n',
-        'events.jsonl': controlEventArtifactJsonl({
-            kind: 'diagnostic',
-            protocolVersion: 1,
-            runId,
-            agentId,
-            atEpochMs: 1,
-            payload: { topic: 'rallar.bb.results.release', ...outcome }
-        })
+        'events.jsonl': step + diagnostic + acknowledgement
     };
     for (const [name, bytes] of Object.entries(files)) {
         await writeFile(join(storage, name), bytes);
     }
     const evidence = createReleaseAttempt(failed);
-    return { repoRoot, storage, files, evidence };
+    return { repoRoot, storage, files, evidence, acknowledgement };
 }
 
 function createReleaseAttempt(failed: boolean): RtcBaselineExternalAttemptDto {
@@ -210,6 +228,11 @@ it.each([
     'foreign-result-run',
     'ack-missing-kind',
     'ack-missing-status',
+    'ack-invalid-count',
+    'ack-invalid-outcome',
+    'ack-empty-request',
+    'ack-runtime-history',
+    'foreign-ordinary-row',
     'malformed-reload'
 ])(
     'refuses %s release proof while preserving original owned bytes',
@@ -219,7 +242,9 @@ it.each([
         if (failure === 'missing-ack' || failure === 'wrong-agent') {
             await writeFile(
                 join(fixture.storage, 'events.jsonl'),
-                failure === 'missing-ack' ? '{}' : fixture.files['events.jsonl'].replace('"agent"', '"foreign"')
+                failure === 'missing-ack'
+                    ? fixture.files['events.jsonl'].replace(fixture.acknowledgement, '')
+                    : fixture.files['events.jsonl'].replace(fixture.acknowledgement, fixture.acknowledgement.replace('"agent"', '"foreign"'))
             );
         }
         if (failure === 'corrupt-result') {
@@ -243,7 +268,7 @@ it.each([
             );
         }
         if (failure === 'extra-ack' || failure === 'foreign-run') {
-            const row = JSON.parse(fixture.files['events.jsonl']);
+            const row = JSON.parse(fixture.acknowledgement);
             if (failure === 'extra-ack') {
                 row.value.requestId = 'retention-release-99-foreign';
             }
@@ -252,7 +277,9 @@ it.each([
             }
             await writeFile(
                 join(fixture.storage, 'events.jsonl'),
-                failure === 'extra-ack' ? fixture.files['events.jsonl'] + JSON.stringify(row) + '\n' : JSON.stringify(row) + '\n'
+                failure === 'extra-ack'
+                    ? fixture.files['events.jsonl'] + JSON.stringify(row) + '\n'
+                    : fixture.files['events.jsonl'].replace(fixture.acknowledgement, JSON.stringify(row) + '\n')
             );
         }
         if (failure === 'foreign-result-run') {
@@ -261,9 +288,30 @@ it.each([
             await writeFile(join(fixture.storage, 'results.jsonl'), JSON.stringify(row) + '\n');
         }
         if (failure === 'ack-missing-kind' || failure === 'ack-missing-status') {
-            const row = JSON.parse(fixture.files['events.jsonl']);
+            const row = JSON.parse(fixture.acknowledgement);
             delete row[failure === 'ack-missing-kind' ? 'kind' : 'status'];
-            await writeFile(join(fixture.storage, 'events.jsonl'), JSON.stringify(row) + '\n');
+            await writeFile(join(fixture.storage, 'events.jsonl'), fixture.files['events.jsonl'].replace(fixture.acknowledgement, JSON.stringify(row) + '\n'));
+        }
+        if (['ack-invalid-count', 'ack-invalid-outcome', 'ack-empty-request', 'ack-runtime-history'].includes(failure)) {
+            const row = JSON.parse(fixture.acknowledgement);
+            if (failure === 'ack-invalid-count') {
+                row.value.releasedResults = -1;
+            }
+            if (failure === 'ack-invalid-outcome') {
+                row.value.status = 'unknown';
+            }
+            if (failure === 'ack-empty-request') {
+                row.value.requestId = '';
+            }
+            if (failure === 'ack-runtime-history') {
+                row.value.history = { runtimeId: 'foreign', generation: 1, ordinal: 1 };
+            }
+            await writeFile(join(fixture.storage, 'events.jsonl'), fixture.files['events.jsonl'].replace(fixture.acknowledgement, JSON.stringify(row) + '\n'));
+        }
+        if (failure === 'foreign-ordinary-row') {
+            const rows = fixture.files['events.jsonl'].trim().split('\n').map((line) => JSON.parse(line));
+            rows[0].runId = 'foreign';
+            await writeFile(join(fixture.storage, 'events.jsonl'), rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
         }
         if (failure === 'malformed-reload') {
             await writeFile(join(fixture.storage, 'results.jsonl'), fixture.files['results.jsonl'] + JSON.stringify({ action: 'agent.reload' }) + '\n');

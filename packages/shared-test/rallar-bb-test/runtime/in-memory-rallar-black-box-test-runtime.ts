@@ -284,6 +284,9 @@ export class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRunt
             this.releasedReceipts.set(receipt.capture.ordinal, receipt);
         }
         this.currentState = released.state;
+        for (const event of released.ownedResultEvents) {
+            this.ownedResultEvents.add(event);
+        }
         this.notify();
         return {
             ...toResultReleaseOutcome(
@@ -667,7 +670,11 @@ export class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRunt
         if (captureIssues.length > 0) {
             return toInvalidRecipeOutcome(captureIssues);
         }
-        const unavailable = resolveReleasedResultReference(command, this.releasedCommands, this.currentState);
+        const unavailable = resolveReleasedResultReference(command, {
+            releasedCommands: this.releasedCommands,
+            ownedResultEvents: this.ownedResultEvents,
+            state: this.currentState
+        });
         if (unavailable) {
             return unavailable;
         }

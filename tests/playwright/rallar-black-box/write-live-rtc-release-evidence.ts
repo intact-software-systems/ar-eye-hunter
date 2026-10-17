@@ -8,6 +8,11 @@ import {
     CONTROL_RETENTION_PLAN_LIMITS
 } from '@shared-test/rallar-bb-test/control-retention-canonical.ts';
 import {
+    decodeResultReleaseArtifact,
+    type ResultReleaseArtifact,
+    type ResultReleaseArtifactOwner
+} from '@shared-test/rallar-bb-test/result-release/decode-result-release-artifact.ts';
+import {
     computeResultCaptureReceipts,
     isResultCaptureReceipt,
     type ResultCaptureReceipt
@@ -44,7 +49,7 @@ interface ReleasedRoot {
     readonly commandId: string;
     readonly captures: readonly ResultCaptureReceipt[];
     readonly receipts: ReadonlyMap<string, ResultCaptureReceipt>;
-    readonly acknowledgements: readonly ApiJsonObject[];
+    readonly acknowledgements: readonly ResultReleaseArtifact[];
 }
 
 interface LiveRtcOwnedResultIdentity {
@@ -152,7 +157,10 @@ async function writeReleaseRecovery(
 
 async function readReleasedRoots(paths: ReadonlyMap<string, string>, runId: string): Promise<number> {
     const receipts = await readCapturedReceipts(paths.get('result-receipts.jsonl')!, runId);
-    const acknowledgements = await readReleaseAcknowledgements(paths.get('events.jsonl')!, runId);
+    const acknowledgements = await readReleaseAcknowledgements(paths.get('events.jsonl')!, {
+        runId,
+        agentIds: new Set([...receipts.values()].map((receipt) => receipt.agentId))
+    });
     const consumed = new Set<string>();
     let releasedRoots = 0;
     for await (const row of readArtifactRows(paths.get('results.jsonl')!)) {
@@ -211,16 +219,16 @@ function assertReleasedRoot(root: ReleasedRoot): void {
         }
     }
     const acknowledgements = root.acknowledgements.filter((row) => {
-        const outcome = jsonRecord(normalizeJson(row.value));
-        return row.agentId === root.agentId && typeof outcome?.requestId === 'string' &&
+        const outcome = row.outcome;
+        return row.agentId === root.agentId &&
             outcome.requestId.startsWith('retention-release-') && outcome.requestId.endsWith(`-${root.commandId}`) &&
             /^[1-9]\d*$/.test(outcome.requestId.slice('retention-release-'.length, -(root.commandId.length + 1)));
     });
     if (acknowledgements.length !== 1) {
         throw new Error('Exact release acknowledgement is missing or ambiguous.');
     }
-    const outcome = jsonRecord(normalizeJson(acknowledgements[0]!.value));
-    if (outcome?.status !== 'released' || outcome.releasedResults !== root.captures.length) {
+    const outcome = acknowledgements[0]!.outcome;
+    if (outcome.status !== 'released' || outcome.releasedResults !== root.captures.length) {
         throw new Error('Release acknowledgement does not prove all original results were released.');
     }
 }
@@ -241,23 +249,21 @@ async function readCapturedReceipts(path: string, runId: string): Promise<Readon
     return receipts;
 }
 
-async function readReleaseAcknowledgements(path: string, runId: string): Promise<readonly ApiJsonObject[]> {
-    const acknowledgements: ApiJsonObject[] = [];
+async function readReleaseAcknowledgements(
+    path: string,
+    owner: ResultReleaseArtifactOwner
+): Promise<readonly ResultReleaseArtifact[]> {
+    const acknowledgements: ResultReleaseArtifact[] = [];
     for await (const row of readArtifactRows(path)) {
-        if (row.runId !== undefined && row.runId !== runId) {
+        if (row.runId !== undefined && row.runId !== owner.runId) {
             throw new Error('Release event belongs to a foreign run.');
         }
-        if (jsonRecord(normalizeJson(row.value))?.topic === 'rallar.bb.results.release') {
-            const outcome = jsonRecord(normalizeJson(row.value));
-            if (
-                row.kind !== 'rtc-diagnostic' || row.status !== 'diagnostic' ||
-                typeof row.agentId !== 'string' || row.agentId.length === 0 ||
-                typeof row.atEpochMs !== 'number' || !Number.isFinite(row.atEpochMs) ||
-                typeof outcome?.reason !== 'string'
-            ) {
-                throw new Error('Release acknowledgement has a malformed diagnostic record.');
-            }
-            acknowledgements.push(row);
+        const decoded = decodeResultReleaseArtifact(row, owner);
+        if (decoded.left !== undefined) {
+            throw new Error(decoded.left);
+        }
+        if (decoded.right !== null) {
+            acknowledgements.push(decoded.right!);
         }
     }
     return acknowledgements;

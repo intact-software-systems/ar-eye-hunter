@@ -15,6 +15,7 @@ import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 export interface RuntimeResultsReleased {
     readonly state: RallarBlackBoxTestState;
     readonly receipts: readonly ResultCaptureReceipt[];
+    readonly ownedResultEvents: readonly RallarBlackBoxTestEvent[];
 }
 
 export async function readVerifiedRuntimeRelease(
@@ -69,6 +70,11 @@ export function computeReleasedRuntimeResults(
     ) {
         return undefined;
     }
+    const releasedEvents = state.events.map((event) =>
+        containsReleasedResult(event.payload, selectedResults)
+            ? { ...event, payload: toReleasedResultMarkers(event.payload, selectedResults) }
+            : event
+    );
     return {
         state: {
             ...state,
@@ -79,17 +85,14 @@ export function computeReleasedRuntimeResults(
                     !selectedOrdinals.has(result.capture?.ordinal ?? -1)
                 )
             ),
-            events: state.events.map((event) =>
-                containsReleasedResult(event.payload, selectedResults)
-                    ? { ...event, payload: toReleasedResultMarkers(event.payload, selectedResults) }
-                    : event
-            ),
+            events: releasedEvents,
             resultHistory: {
                 ...state.resultHistory,
                 releasedResults: state.resultHistory.releasedResults + selected.length
             }
         },
-        receipts: selected.map((result) => receipts.get(result.capture!.ordinal)!)
+        receipts: selected.map((result) => receipts.get(result.capture!.ordinal)!),
+        ownedResultEvents: releasedEvents.filter((event, index) => ownedResultEvents.has(state.events[index]))
     };
 }
 

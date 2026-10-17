@@ -188,3 +188,142 @@ it('preserves protected native events that own an exact captured result and refu
     expect(runtime.state().events.at(-1)?.payload).toEqual(result);
     expect(runtime.state().resultCache['native-owner']).toBe(result);
 });
+
+it.each([
+    'events.0.payload.value',
+    'recentEvents.0.payload.value',
+    'state.events.0.payload.value',
+    ' events..payload.00.payload.value ',
+    'events.$.0.payload.value'
+])('refuses released payload absence through %s after acknowledged capture', async (source) => {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+    expect(captured.value).toBeDefined();
+    const before = await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, identity);
+    expect(before.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
+    const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+    expect((await runtime.releaseResults({ ...identity, requestId: 'event-alias', receipts: [receipt] })).status).toBe('released');
+
+    const after = await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, identity);
+    expect(after.ok).toBe(false);
+    expect(after.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+});
+
+it.each(['events', 'recentEvents', 'state.events'])(
+    'refuses released %s comparison payloads while preserving marker metadata and application events',
+    async (root) => {
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: (command) => command.kind === 'health' ? { status: 'ok', value: ['one'] } : undefined
+        });
+        const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'application',
+            payload: {
+                values: ['one'],
+                resultUnavailable: 'released-after-durable-capture',
+                commandId: captured.commandId,
+                capture: captured.capture,
+                applicationValue: 'application'
+            }
+        });
+        const command = {
+            kind: 'assert',
+            source: `${root}.1.payload.values`,
+            operator: 'sameUniqueStringSet',
+            comparisonSource: `${root}.0.payload.value`
+        } as const;
+        expect((await runtime.execute(command, identity)).ok).toBe(true);
+        const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+        expect((await runtime.releaseResults({ ...identity, requestId: 'comparison', receipts: [receipt] })).status).toBe('released');
+
+        expect((await runtime.execute(command, identity)).error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+        for (
+            const [path, expected] of [
+                ['0.payload.commandId', 'captured'],
+                ['0.payload.capture.ordinal', captured.capture!.ordinal],
+                ['0.payload.resultUnavailable', 'released-after-durable-capture'],
+                ['1.payload.applicationValue', 'application']
+            ] as const
+        ) {
+            expect((await runtime.execute({ kind: 'assert', source: `${root}.${path}`, operator: 'equals', expected }, identity)).ok).toBe(true);
+        }
+        expect((await runtime.execute({ kind: 'assert', source: `${root}.0.payload.capture.absent`, operator: 'exists', expected: false }, identity)).ok).toBe(
+            true
+        );
+        expect((await runtime.execute({ kind: 'assert', source: `${root}.1.payload.absent`, operator: 'exists', expected: false }, identity)).ok).toBe(true);
+        expect((await runtime.execute({ kind: 'assert', source: `${root}.0.payload`, operator: 'exists' }, identity)).ok).toBe(true);
+        expect(runtime.state().events[0].payload).toEqual({
+            resultUnavailable: 'released-after-durable-capture',
+            commandId: 'captured',
+            capture: captured.capture
+        });
+    }
+);
+
+it('resolves released recentEvents payloads in the twenty-event view rather than the complete event history', async () => {
+    for (const released of [false, true]) {
+        const runtime = createDefaultRallarBlackBoxTestRuntime();
+        for (let index = 0; index < 22; index += 1) {
+            runtime.recordEvent({ kind: 'message', topic: 'application', payload: { index } });
+        }
+        const captured = await runtime.execute({ kind: 'health', commandId: 'captured' }, identity);
+        if (released) {
+            const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+            expect((await runtime.releaseResults({ ...identity, requestId: 'recent-window', receipts: [receipt] })).status).toBe('released');
+        }
+        const assertion = await runtime.execute({ kind: 'assert', source: 'recentEvents.19.payload.value', operator: 'exists', expected: false }, identity);
+        expect(assertion.error?.code).toBe(released ? 'RALLAR_BLACK_BOX_RESULT_RELEASED' : 'RALLAR_BLACK_BOX_ASSERT_FAILED');
+    }
+});
+
+it.each(['events', 'recentEvents', 'state.events'])(
+    'keeps owned %s release markers unavailable across assignments without preserving replay tombstones',
+    async (root) => {
+        let effects = 0;
+        const runtime = createDefaultRallarBlackBoxTestRuntime({
+            commandExecutor: (command) => command.kind === 'health' ? { status: 'ok', value: ['one', String(++effects)] } : undefined
+        });
+        const captured = await runtime.execute({ kind: 'health', commandId: 'reused' }, identity);
+        const source = `${root}.0.payload.value`;
+        expect((await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, identity)).error?.code).toBe(
+            'RALLAR_BLACK_BOX_ASSERT_FAILED'
+        );
+        const receipt = (await computeResultCaptureReceipt(captured, identity))!;
+        expect((await runtime.releaseResults({ ...identity, requestId: 'before-reassignment', receipts: [receipt] })).status).toBe('released');
+        const marker = structuredClone(runtime.state().events[0].payload);
+        runtime.recordEvent({ kind: 'message', topic: 'application', payload: marker });
+        runtime.recordEvent({ kind: 'result', topic: 'rallar.bb.command.result', commandId: 'reused', payload: marker });
+        const nextIdentity = { ...identity, runId: 'next-assignment' };
+
+        const after = await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, nextIdentity);
+        expect(after.ok).toBe(false);
+        expect(after.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+        const comparison = await runtime.execute({
+            kind: 'assert',
+            source: `${root}.0.payload.commandId`,
+            operator: 'sameUniqueStringSet',
+            comparisonSource: source
+        }, nextIdentity);
+        expect(comparison.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+        for (const index of [2, 3]) {
+            expect((await runtime.execute({ kind: 'assert', source: `${root}.${index}.payload.value`, operator: 'exists', expected: false }, nextIdentity)).ok)
+                .toBe(true);
+        }
+        expect(
+            (await runtime.execute({
+                kind: 'assert',
+                source: `${root}.0.payload.capture.assignment`,
+                operator: 'equals',
+                expected: captured.capture!.assignment
+            }, nextIdentity)).ok
+        ).toBe(true);
+        const replacement = await runtime.execute({ kind: 'health', commandId: 'reused' }, nextIdentity);
+        expect(replacement.ok).toBe(true);
+        expect(replacement.value).toEqual(['one', '2']);
+        expect(effects).toBe(2);
+        expect((await runtime.execute({ kind: 'assert', source, operator: 'exists', expected: false }, nextIdentity)).error?.code).toBe(
+            'RALLAR_BLACK_BOX_RESULT_RELEASED'
+        );
+    }
+);

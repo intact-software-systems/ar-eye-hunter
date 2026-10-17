@@ -180,9 +180,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
         }
 
-        for (const key of keysToRemove) {
-            this.removeEntry(key);
-        }
+        this.applyEntries(keysToRemove.map((key) => [key, undefined] as const)).publish();
 
         return keysToRemove.length > 0;
     }
@@ -260,14 +258,26 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return this.applyEntries([...replacements]);
     }
 
-    private applyEntries(entries: readonly (readonly [string, ResourceEntry])[]): SynchronousNotifications.Publication {
+    private applyEntries(
+        entries: readonly (readonly [string, ResourceEntry | undefined])[]
+    ): SynchronousNotifications.Publication {
         const workIndex = this.workIndex.clone();
         for (const [key, entry] of entries) {
-            workIndex.replace(key, this.data.get(key), entry);
+            if (entry === undefined) {
+                workIndex.remove(key, this.data.get(key));
+            }
+            else {
+                workIndex.replace(key, this.data.get(key), entry);
+            }
         }
         const publication = this.changes.capture(entries.map(([key]) => key));
         for (const [key, entry] of entries) {
-            this.data.set(key, entry);
+            if (entry === undefined) {
+                this.data.delete(key);
+            }
+            else {
+                this.data.set(key, entry);
+            }
         }
         this.workIndex = workIndex;
         return publication;
@@ -433,17 +443,19 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             })
             .slice(0, maxToReserve);
         const reserved = new Map<Key, ResourceInboxFairnessSelection>();
+        const replacements: (readonly [string, ResourceEntry])[] = [];
 
         for (const [key, entry] of candidates) {
             const selectedNextTs = entry.dequeueAudit.nextTs;
             const updated = computeReservedResourceEntry(entry, now);
-            this.storeEntry(key, updated);
+            replacements.push([key, updated]);
             reserved.set(toResourceEntryKey(key), {
                 entry: toResourceEntrySnapshot(updated),
                 selectedDueTs: selectedNextTs!
             });
         }
 
+        this.applyEntries(replacements).publish();
         return reserved;
     }
 
@@ -464,13 +476,15 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             candidates.push(candidate);
         }
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
+        const replacements: (readonly [string, ResourceEntry])[] = [];
         for (const [key, entry] of candidates) {
             const selectedDueTs = entry.dequeueAudit.startTs!;
             const updated = computeReservedResourceEntry(entry, now);
-            this.storeEntry(key, updated);
+            replacements.push([key, updated]);
             const snapshot = toResourceEntrySnapshot(updated);
             reserved.set(snapshot.key, { entry: snapshot, selectedDueTs });
         }
+        this.applyEntries(replacements).publish();
         return reserved;
     }
 
