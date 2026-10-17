@@ -20,7 +20,38 @@ finalization, repeat selection, and archive verification preserve each run's
 source, environment, exact attempts, raw samples, and checksums. Tooling is
 implemented; capture and ranking acceptance remain separate outcomes.
 
-**Current checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
+**Current sequencing decision, 2026-10-17:** E3 is **conditionally completed for
+sequencing only**, as requested by the human after the bounded remaining-heap
+investigation produced limited actionable reductions. **Accepted E3 cohorts remain
+zero; heap acceptance is open.** This status permits independent plan work to continue;
+it is not a passing result, waiver, or completion of the overall baseline.
+
+The corrected 700-cycle diagnostic completed over 72.74 minutes with continuous
+profiling. Terminal message-owner cohorts turn over, dedup expires at its existing
+one-hour horizon, and released command payload history/cache remain bounded. Total
+heap still grows. Existing-function compilation tiers account for most of the early
+16.097 MiB code increase; no duplicated-module cause or safe production-code reduction
+was established. Replay metadata has modest private representation opportunities,
+not a safe shorter idempotency lifetime. Hidden diagnostic panels cannot simply be
+unmounted because they own resource and subscription lifetimes.
+
+[PR #671](https://github.com/intact-software-systems/ar-eye-hunter/pull/671) publishes the
+retention and complete-artifact reader corrections with the inherited baseline work.
+Normal correctness review and checks remain distinct from performance acceptance.
+The next two slices are E1 evidence recovery/reconciliation and E2 archive/noise
+reconciliation. Initial reconciliation verified all 37 E2 archive/index pairs with the
+canonical verifier; comparable-population and noise assessment remains. A bounded search
+of the two known profiling worktrees did not recover the original E1 corpus; its historical
+Issue report alone does not supply the missing bytes. The remaining heap investigation and unchanged canonical E3 primary
+and conditional repeat are the **final overall plan point**, after the other required
+outcomes are ready. Section 11 defines that sequencing; Section 6's workload and
+acceptance rules and Section 12's overall completion gate are unchanged.
+
+Prefer existing `packages/shared/**` libraries and one canonical implementation.
+Do not introduce legacy retention paths, duplicated policies, or migration scaffolding.
+No code migration is required for the identified private representation opportunities.
+
+**Historical checkpoint, 2026-10-13:** [PR645](https://github.com/intact-software-systems/ar-eye-hunter/pull/645)
 is merged into `codex/rtc-baseline-refresh`; this is not evidence of a direct merge to `main`.
 Configurable routine browser diagnostic recording is published in draft
 [PR659](https://github.com/intact-software-systems/ar-eye-hunter/pull/659), stacked on
@@ -2601,11 +2632,11 @@ justified yet.”
 | 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                                                                                                                                                                             |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                                                                                                                                                                               |
-| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                                                                                                                                                                                  |
-| 10      | E3 has zero accepted primaries/repeats. Run 37108696378 recovery remains proposed in PR #639 at its last verified OPEN/unmerged status. Tasks 17–28 delivered reviewed bounded observations and exact-source proofs; Task 28 producer FAILURE retains usefulness PASS only. Tasks 30/31 completed source/evidence diagnosis; historical cause/native application/lifetime/issuer and unseen facts remain unknown.                                                                      |
+| 8       | E1 capture remains unverified. Recover and validate original primary/repeat evidence now; specify fresh governed capture only if recovery fails. Independent evidence reconciliation may proceed before final E3 under the human sequencing decision.                                                                                                                                                                                                                                  |
+| 9       | E2 has 37 indexed observations. Canonical archive and comparable-population/noise reconciliation is the second active slice; the inventory count alone is not fresh verification.                                                                                                                                                                                                                                                                                                      |
+| 10      | E3 conditionally completed for sequencing only. Zero accepted cohorts; heap acceptance remains open. The remaining heap investigation and unchanged canonical primary/conditional repeat are the final overall plan point. Earlier failures and diagnostics remain preserved.                                                                                                                                                                                                          |
 | 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                                                                                                               |
+| 12      | Prepare provisional coverage/comparison after E1/E2 reconciliation. Final ranking remains gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                                                                                             |
 | 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                                                                                                                                                                      |
 | 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                                                                                                                                                                                   |
 | 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                                                                                                                                                                       |
@@ -2648,48 +2679,68 @@ justified yet.”
 
 ## 11. Current Implementation Horizon
 
-The diagnostics-disabled primary is complete and heap-failed; accepted E3 cohorts remain
-zero. The independently reviewed six-snapshot diagnostic locates the unbounded canonical
-runtime event history and a concurrent React projection, but does not prove savings or
-close the heap gate. Configurable retention for all black-box recipes is approved, with
-recent/64 and diagnostics disabled selected for E3. Preserve the complete durable journal,
-cumulative counters and explicit refusal of queries outside retained coverage.
+The human authorizes conditional E3 sequencing completion after the bounded code and
+replay-metadata investigation. E3's heap result remains open with zero accepted cohorts.
+Preserve every original failed attempt and diagnostic, their source/configuration
+identity, and all unchanged acceptance rules. A source merged after a measurement is
+a new candidate; earlier profiles do not qualify it automatically.
 
-The human requests main preparation now and E3 completion in a separate session after code
-integration. Keep only these next two useful implementation slices concrete:
+Keep only these next two independently testable slices concrete:
 
-1. **Complete generic retention source and semantic TDD:** implement the approved bounded
-   recent view in the existing runtime owner, with truthful history coverage and cumulative
-   counters. Prove retained ordering, uncovered-history refusal, absence witnesses,
-   cancellation, barrier identity and current connection facts at their owned boundaries.
-   Preserve verified ordinary full-history wait/assert/reconnect behavior. Do not equate
-   diagnostic-recording selection with history retention or replace row growth with a
-   duplicated unbounded buffer. Close independent review findings, including small-window
-   barrier observation, capture reassignment and supported connection stats. Carry the
-   selection through recipe/run/manifest settings, visible operator controls, reload
-   segmentation and real browser construction roots and expose attributable Health/final
-   evidence. Prove complete connected journal preservation and irreversible
-   incomplete-capture reporting for a publication or offline gap, including reset and
-   assignment ownership. Complete recursive touched-file closure, affected browser/app/package
-   validation and independent specification/quality review.
-2. **Prepare the source stack for main:** publish the coherent reviewed code, update the
-   semantic PR descriptions, complete whole-stack review, exact-source Branch Release Gate
-   and selected distributed-manifest validation, then prepare dependency-ordered native
-   review and integration. Preserve isolated child diffs when a parent actually lands;
-   mergeable BEHIND alone creates no refresh work. Stop each PR when GitHub reports it merged.
+1. **Recover and reconcile E1 evidence.** Locate the original B01–B04 primary and required
+   repeat associated with the historical report in
+   [Issue #267](https://github.com/intact-software-systems/ar-eye-hunter/issues/267).
+   Verify original envelopes, complete warmup/attempt accounting, raw checksums,
+   primary/repeat linkage, source, runtime, configuration and units with the canonical
+   package validator. A closed tooling issue or synthetic scale fixture is not recovered
+   measurement evidence. Bound the recovery search and explicitly classify missing bytes.
+   If recovery cannot establish acceptance, specify fresh governed acquisition on the
+   current harness, preserving the original workload/sample/noise rules and quiet-host
+   requirement. Do not mix historical and current harness populations. This independent
+   evidence work may proceed before final E3 acceptance under the human's sequencing change.
+2. **Reconcile E2 observations and prepare a provisional evidence comparison.** Verify the
+   checked-in B05 archive/index pairs through the canonical observation verifier; inventory
+   source/environment/harness identity, primary/repeat decisions and metric noise. There
+   are currently 37 indexed observations, which is an inventory count rather than a fresh
+   acceptance claim. Group only comparable observations and retain noisy/inconclusive
+   classifications. Produce a gap/coverage assessment across B01–B06 and an explicitly
+   provisional shortlist or `no optimization justified yet`; final ranking cannot claim
+   representative E3 acceptance. Validate analysis against original archive bytes and
+   existing semantic accounting/statistics tests if implementation changes are needed.
 
-The separate E3 session must first bind recent/64 and diagnostics disabled to actual three-page
-policy/instance/generation/capture receipts and verify the complete durable journal with bounded
-streaming acceptance through a known Health boundary. Missing, duplicate, malformed, out-of-order
-or incomplete capture fails; preview suffixes, local socket success and memory fallback do not
-certify durability. Then acquire an exact frozen source/configuration using the unchanged E3
-primary and conditional repeat. Preserve the same three pages, 100 cycles, eleven checkpoints,
-original assertions and deadlines. Do not overlap native measurement with
-agents, tests, builds, downloads or artifact analysis. Neither semantic tests, normal CI
-nor an instrumented diagnostic accepts E3. Later outcomes remain successful E3 and all
-remaining B01–B06, deployed HOST/RUN, actual Actions and Task65 gates; B07 stays held.
-Retention implementation is underway; no post-change memory saving or E3 acceptance is
-claimed. Harness optimization and production optimization remain separate findings.
+Later required outcomes remain outcome-shaped: complete any fresh E1 acquisition required
+after bounded recovery fails; resolve remaining visible/operator,
+deployed HOST/RUN, actual Actions and Task65 acceptance gaps from current evidence;
+complete any candidate-required E4 evidence; and prepare final baseline reconciliation.
+B07 remains held unless separately authorized or required for a distributed claim.
+Do not expand the next-two-slice horizon into speculative implementation tasks.
+
+**Final overall plan point: remaining heap investigation and canonical E3 acceptance.**
+Revisit the code-family and run-lifetime replay owners only after the preceding required
+outcomes are ready. Safe optional metadata candidates are a membership-only Set and
+value sharing of already-verified equal receipt strings; they preserve every replay
+fact, exact duplicate-release behavior and reset/assignment lifetime. Their measured
+candidate duplicate-string footprint is only about 0.395 MiB at cycle 100, and no
+reclaimed-memory result is established. Use ordinary collections and existing shared
+libraries; do not add an interning framework, parallel legacy store or protocol migration.
+Do not remove validation, replay tombstones or receipt evidence to obtain a heap pass.
+An inactive-view optimization needs a resource-lifetime design and visible tab-switch
+regressions before measurement, rather than blanket conditional unmounting.
+
+Bind the exact reviewed candidate and canonical durable-release caller configuration,
+recent/64 and diagnostics-disabled actual receipts, complete durable journal and source
+proof before acquisition. Run the unchanged primary: three warmups plus eleven retained
+attempts (5 default, 3 all-scenarios, 3 retention), 100 retention cycles, zero retries.
+Only the existing controller's passing-primary decision may select the unchanged repeat:
+three warmups plus twenty-two retained attempts (10/6/6). Heap failure remains at least
+2 of 3 retained runs above both 110% of cycle-zero heap and cycle-zero plus 5 MiB;
+the repeat fails at 4 of 6. Settled peer/lane/timer mismatches independently fail.
+No new warmup, subtraction of code heap, relaxed baseline, shortened dedup horizon or
+long-run plateau criterion replaces this gate. Keep profiling continuity whenever
+performing a diagnostic, and serialize native measurement against other host work.
+
+Conditional sequencing completion does not satisfy Section 12. Final ranking and
+overall plan completion remain dependent on the original successful acceptance gates.
 
 ### Earlier implementation horizon (historical)
 
